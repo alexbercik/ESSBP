@@ -179,16 +179,30 @@ class PdeBase:
     def var2plot(self):
          raise Exception('This base method should not be called')
         
-    def calc_LF_const(self):
+    def calc_LF_const(self,q=None,use_local=False):
         ''' Calculate the constant for the Lax-Friedrichs flux, also useful
-        to set the CFL number. Equal to max(dEdq). Note this is approximate
-        as it only estimates the LF constant from the initial condition.'''
-        q = fn.check_q_shape(self.set_q0())
-        C = np.max(np.abs(self.dEdq(q)))
-        if isinstance(C,float):
-            return C
-        else:
-            return 1
+        to set the CFL number. Equal to max(dEdq). See Hesthaven pg. 33. 
+        If q is given, use that. If not, use the initial condition.
+        If use_local=True, uses a local lax-friedrichs flux constant, which is 
+        less dissipative, and returns a vector of shape (1,nelem). Otherwise 
+        it uses a global lax-friedrichs flux constant, and returns a float.'''
+        if q==None:
+            q = self.set_q0()
+        if self.neq_node == 1: # scalar
+            if use_local:
+                return np.max(np.abs(self.dEdq(q)),axis=(0,1))
+            else:
+                return np.max(np.abs(self.dEdq(q)))
+        else: # system
+            # TODO: Could save a variable containing dEdq, eigenvalues, eigenvectors
+            # so that I don't have to compute it multiple times for different
+            # parts of the code
+            dEdq_mod = np.transpose(self.dEdq(q),axes=(2,0,1))
+            eig_val = np.linalg.eigvals(dEdq_mod)
+            if use_local:
+                return np.max(np.abs(eig_val),axis=1)
+            else:
+                return np.max(np.abs(eig_val))
 
     def set_mesh(self, mesh):
         '''
@@ -288,7 +302,7 @@ class PdeBase:
 
 
     def plot_sol(self, q, time=None, fig_no=1, plot_exa=True, plt_save_name=None,
-                 show_fig=True,ymin=None, ymax=None, display_time=False):
+                 show_fig=True, ymin=None, ymax=None, display_time=False):
         '''
         Purpose
         ----------
