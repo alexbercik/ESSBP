@@ -183,6 +183,30 @@ def block_diag(*entries):
         mat[a:b,a:b,:] = blocks[i,:,:,:]    
     return mat
 
+@jit(nopython=True)
+def abs_eig_mat(mat):
+    '''
+    Given a 3d array in the shape (nen*neq_node,nen*neq_node,nelem), return
+    a 3d array in the same shape where the matrices in each element are now
+    absoluted through it's eigenvalues. That is, if A is one such matrix, 
+    and it has eigenvalues L and right eigenvectors X, then this returns
+    X @ abs(L) @ X.T
+
+    Parameters
+    ----------
+    *entries : numpy arrays of shape (nen,nelem)
+
+    Returns
+    -------
+    c : numpy array of shape (nen*neq_node,nen*neq_node)
+    '''
+    nodes,_,nelem = mat.shape
+    mat_abs = np.zeros((nodes,nodes,nelem))
+    for elem in range(nelem):
+        eig_val, eig_vec = np.linalg.eig(mat[:,:,elem])
+        mat_abs[:,:,elem] = eig_vec @ np.diag(np.abs(eig_val)) @ np.linalg.inv(eig_vec)
+    return mat_abs
+
 
 
 """ Old functions (no longer useful)
