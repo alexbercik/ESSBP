@@ -317,13 +317,13 @@ class PdeSolver(PdeSolverFd, PdeSolverSbp, PdeSolverDg):
             if self.q_sol.ndim == 2: q = self.q_sol
             elif self.q_sol.ndim == 3: q = self.q_sol[:,:,-1]
         if method == None:
-            if self.spat_disc_type == 'FD': method = 'Rms'
+            if self.disc_type == 'FD': method = 'Rms'
             else: method = 'SBP'
         if use_all_t:
             assert(self.q_sol.ndim == 3),'ERROR: There is only one time step for q_sol.'
             steps = np.shape(self.q_sol)[2]
             errors = np.zeros(steps)
-            times = np.linspace(self.t_init,self.t_final,steps)
+            times = np.linspace(0,self.t_final,steps)
             # TODO: generalize this for varying time steps, if we ever implement this
             for i in range(steps):
                 errors[i] = self.calc_error(self.q_sol[:,:,i],times[i],method=method)
@@ -381,7 +381,8 @@ class PdeSolver(PdeSolverFd, PdeSolverSbp, PdeSolverDg):
                       bool_plot_sol=self.bool_plot_sol, print_sol_norm=self.print_sol_norm)
     
     def check_eigs(self, q=None, plot_eigs=True, returnA=False, step=1.0e-2,
-                   tol=1.0e-10):
+                   tol=1.0e-10, plt_save_name=None, ymin=None, ymax=None,
+                   xmin=None, xmax=None, time=None, display_time=False, **kargs):
         '''
         Call on self.diffeq.dqdt to check the stability of the spatial operator
         at a particular state q using central finite differences (approximate!).
@@ -401,6 +402,14 @@ class PdeSolver(PdeSolverFd, PdeSolverSbp, PdeSolverDg):
         tol : float, optional
             The tolerance allowed for detecting postive eigenvaules. 
             The default is 1.0e-10.
+        plt_save_name : str, optional
+            name of saved file, without file extension
+            The defualt is None. 
+        ymin, ymax, xmin, xmax : str, optional
+            Y and X axis limits.
+            The defualt is None.
+        **kargs : nothing
+            This just absorbs additional unecessary keword arguments
 
         Returns
         -------
@@ -446,6 +455,16 @@ class PdeSolver(PdeSolverFd, PdeSolverSbp, PdeSolverDg):
             plt.xlabel(r'Real Component ($x<0$ for stability)',fontsize=14)
             plt.ylabel(r'Imaginary Component',fontsize=14)
             plt.title(r'Eigenvalues',fontsize=16)
+            plt.ylim(ymin,ymax)
+            plt.xlim(xmin,xmax)
+            if display_time and (time is not None):
+                ax = plt.gca()
+                # define matplotlib.patch.Patch properties
+                props = dict(boxstyle='round', facecolor='white')
+                ax.text(0.05, 0.95, r'$t=$ '+str(round(time,2))+' s', transform=ax.transAxes, 
+                        fontsize=14, verticalalignment='top', bbox=props)           
+            if plt_save_name is not None:
+                plt.savefig(plt_save_name+'.eps', format='eps')
             plt.show()
         
         if returnA:
@@ -565,7 +584,7 @@ class PdeSolver(PdeSolverFd, PdeSolverSbp, PdeSolverDg):
         ''' plot the error from all time steps '''
         errors = self.calc_error(method=method, use_all_t=True)
         steps = np.shape(self.q_sol)[2]
-        times = np.linspace(self.t_init,self.t_final,steps)
+        times = np.linspace(0,self.t_final,steps)
         plt.figure(figsize=(6,4))
         plt.ylabel(r"{0} Error".format(method),fontsize=16)
         plt.xlabel(r"Time",fontsize=16)
@@ -573,6 +592,7 @@ class PdeSolver(PdeSolverFd, PdeSolverSbp, PdeSolverDg):
         plt.yscale('log')
         if savefile is not None:
             plt.savefig(savefile,dpi=600)
+    
         
         
         
