@@ -8,6 +8,7 @@ Created on Mon Jan 18 00:17:18 2021
 import subprocess # see https://www.youtube.com/watch?v=2Fp1N6dof0Y for tutorial
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
 
 def animate(solver, file_name='animation', make_video=True, make_gif=False,
                plotfunc='plot_sol',plotargs={}, skipsteps=0,fps=24,
@@ -37,10 +38,10 @@ def animate(solver, file_name='animation', make_video=True, make_gif=False,
         at least the following (keyword) arguments: 
             q : solution
             time (optional) : time at which to plot solution
-            plt_save_name (optional) : name of saved file, without file extension,
+            plt_save_name (optional) : name of saved file, without file extension
             show_fig (optional) : Boolean to be set to False
             ymin & ymax (optional) : y-axis limits
-        The default is solver.diffeq.plot_sol
+        The default is solver.plot_sol (calls solver.diffeq.plot_sol)
     plotargs: dict, optional
         keyword arguments to pass to solver.plotfunc.
         The default is {} (empty, no arguments).
@@ -80,7 +81,7 @@ def animate(solver, file_name='animation', make_video=True, make_gif=False,
         frames = int((steps-1)/(skipsteps+1)) + 1 # note int acts as a floor fn
     else:
         assert(tfinal <= solver.t_final),"tfinal must not exceed simulation time"
-        frames = int((tfinal-solver.t_init)/((skipsteps+1)*solver.dt)) + 1 # note int acts as a floor fn
+        frames = int(tfinal/((skipsteps+1)*solver.dt)) + 1 # note int acts as a floor fn
     numfill = len(str(frames)) # format appending number for saved files
         
     plotargs['show_fig']=False
@@ -101,7 +102,7 @@ def animate(solver, file_name='animation', make_video=True, make_gif=False,
     print('...Making Frames')    
     for i in range(frames):
         stepi = i*(skipsteps+1)
-        timei = solver.t_init + solver.dt*stepi # or (tfinal-solver.t_init)/steps*stepi
+        timei =  solver.dt*stepi # or tfinal/steps*stepi
         
         # call plotting function from solver module
         plot(solver.q_sol[:,:,stepi], **plotargs, time=timei,
@@ -139,3 +140,207 @@ def animate(solver, file_name='animation', make_video=True, make_gif=False,
     
     print('All Done! Results are saved in '+file_name+' folder.') 
 
+
+def eigvec_history(solver, A=None, tfinal=None, save_file=None, window_size=1,
+                   plot_difference=False, individual_plots=False, use_percent=True,
+                   fit_data=True, plot_theory=False):
+    '''
+    Decompose a solution in an eigendecomposition of either a given matrix or
+    the linearized RHS operator of the initial state. Takes a matrix A, finds
+    it's eigendecomposition X, then decomposes every solution vector from q_sol
+    into eigenbasis. Plots the evolution of the coefficients in time.
+
+    Parameters
+    ----------
+    solver : class instance
+        the solver class instance of solved ODE/PDE
+    A : numpy 2d array, optional
+        The matrix we use to find a decomposition of. Shape (nen*neq_node,nen*neq_node)
+        If None, uses solver.check_eigs(q=solver.q_sol[:,:,0], plot_eigs=False, returnA=True)
+        The default is None.
+    tfinal : int, optional
+        The final time to run the animation until. If None, uses default 
+        solver.t_final. Must be less than solver.t_final.
+        The default is None.
+    save_file : str, optional
+        If given, name of the file to save (all plots will add to this base).
+        The name can include a specific path (ex. ../../folder/filename) and
+        should not include the file extension.
+        The default is None.
+    window_size : int, optional
+        Perform a moving average on the quantities using this given window size.
+        If =1, no moving average is performed. The default is 1.
+    plot_difference : bool, optional
+        If False, plots the absolute value of the coefficients
+        If True, plots the change in the coefficients
+        The Default is False
+    individual_plots : bool, optional
+        If True, plots every eigenvector evolution separately. The default is False.
+    use_percent : bool, optional
+        If True, plots the percent change in the coefficients The default is False.
+
+    '''
+    if A is None:
+        A = solver.check_eigs(q=solver.q_sol[:,:,0], plot_eigs=False, returnA=True)
+    if tfinal is None:
+        tfinal = solver.t_final
+    else:
+        assert(tfinal <= solver.t_final),"tfinal must not exceed simulation time"
+    time = np.arange(0,tfinal,step=solver.dt)
+    steps = len(time)
+
+    assert(solver.q_sol.ndim == 3),'solver.q_sol of wrong dimension'
+    assert(A.shape==(solver.nn,solver.nn)),'The solution array {0} does not match operator shape {1}'.format(solver.nn,A.shape)
+    sols = solver.q_sol[:,:,:steps].reshape((solver.nn,steps),order='F')
+    
+    if use_percent: plot_difference=True
+    if plot_theory: individual_plots=True
+    
+    V, X = np.linalg.eig(A)
+    # column X[:,i] is the eigenvector corresponding to eigenvalue V[i]
+    
+    C = np.zeros((solver.nn,steps),dtype=complex) # store coefficients of eigenvector decomposition
+    for i in range(steps):
+        C[:,i] = X@sols[:,i] # C[j,i] is the coefficient of eigenvector X[:,j] at step i
+        
+    C_theory = np.zeros((solver.nn,steps),dtype=complex)
+    for j in range(solver.nn):
+        C_theory[j,:] = C[j,0]*np.exp(time*V[j])
+
+    i = np.argmax(V.real)
+    print('Eigenvalue with max real part is {0} with value {1:.3f}'.format(i,V[i]))
+    
+    C_fit = np.zeros((solver.nn,steps),dtype=complex)
+    if fit_data:
+        fit_vals = np.zeros(solver.nn,dtype=complex)
+        for i in range(solver.nn):
+            def fit_func(t,real,imag):
+                return abs(C[i,0] * np.exp((real+1j*imag)*t))
+            popt, pcov = curve_fit(fit_func, time, abs(C[i,:]),p0=(0,np.imag(C[i,0])))
+            C_fit[i,:] = fit_func(time, *popt)
+            fit_vals[i] = popt[0] + 1j*popt[1]
+    
+    # apply moving average - if window_size=1 then this does nothing
+    i = 0
+    C_avg = []          # will be shape (steps-window_size+1,solver.nn)
+    C_theory_avg = []   # will be shape (steps-window_size+1,solver.nn)
+    C_fit_avg = []      # will be shape (steps-window_size+1,solver.nn)
+    time_avg = []       # will be shape (steps-window_size+1)
+    while i < steps - window_size + 1:
+        C_window = C[:,i : i + window_size]
+        C_theory_window = C_theory[:,i : i + window_size]
+        C_fit_window = C_fit[:,i : i + window_size]
+        C_avg.append(np.sum(C_window,axis=1) / window_size)
+        C_theory_avg.append(np.sum(C_theory_window,axis=1) / window_size)
+        C_fit_avg.append(np.sum(C_fit_window,axis=1) / window_size)
+        time_avg.append((time[i]+time[i+window_size-1])/2)
+        i += 1
+    C_avg = np.array(C_avg).T
+    C_theory_avg = np.array(C_theory_avg).T
+    C_fit_avg = np.array(C_fit_avg).T
+    time_avg = np.array(time_avg)
+    
+    
+    # Plot the overall behaviour of all eigenvectors
+    plt.figure()
+    for i in range(solver.nn):
+        if plot_difference:
+            C0 = abs(C[i,0])
+            if use_percent:
+                plt.plot(time,100*(abs(C[i,:])-C0)/C0)
+                plt.ylabel(r'\% Change in Coefficient',fontsize=14)
+            else:
+                plt.plot(time,abs(C[i,:])-C0)
+                plt.ylabel(r'Change in Coefficient',fontsize=14)
+        else:
+            plt.plot(time,abs(C[i,:]))
+            plt.ylabel(r'Coefficient',fontsize=14)
+    plt.xlabel(r'Time',fontsize=14)
+    plt.title(r'Eigenvector Decomposition of Solution',fontsize=16)
+    if save_file is not None:
+        plt.savefig(save_file+'_all.eps', format='eps')
+    
+    # Plot overall moving averages of all eigenvectors
+    if window_size >1:
+        plt.figure()
+        for i in range(solver.nn):
+            if plot_difference:
+                C0 = abs(C_avg[i,0])
+                if use_percent:
+                    plt.plot(time_avg,100*(abs(C_avg[i,:])-C0)/C0)
+                    plt.ylabel(r'\% Change in Coefficient',fontsize=14)
+                else:
+                    plt.plot(time_avg,abs(C_avg[i,:])-C0)
+                    plt.ylabel(r'Change in Coefficient',fontsize=14)
+            else:
+                plt.plot(time_avg,abs(C_avg[i,:]))
+                plt.ylabel(r'Coefficient',fontsize=14)
+        plt.xlabel(r'Average Time (window size {0:.2f}s)'.format(solver.dt*window_size),fontsize=14)
+        plt.title(r'Moving Averages of Eigenvector Decomposition',fontsize=16)
+        if save_file is not None:
+            plt.savefig(save_file+'_all_avg.eps', format='eps')
+            
+    # Plot fits
+    if fit_data:
+        plt.figure()
+        for i in range(solver.nn):
+            if plot_difference:
+                C0 = abs(C_fit_avg[i,0])
+                if use_percent:
+                    plt.plot(time_avg,100*(abs(C_fit_avg[i,:])-C0)/C0)
+                    plt.ylabel(r'\% Change in Coefficient',fontsize=14)
+                else:
+                    plt.plot(time_avg,abs(C_fit_avg[i,:])-C0)
+                    plt.ylabel(r'Change in Coefficient',fontsize=14)
+            else:
+                plt.plot(time_avg,abs(C_fit_avg[i,:]))
+                plt.ylabel(r'Fit to Coefficient',fontsize=14)
+        if window_size >1:
+            plt.xlabel(r'Average Time (window size {0:.2f}s)'.format(solver.dt*window_size),fontsize=14)
+        else:
+            plt.xlabel(r'Time',fontsize=14)
+        plt.title(r'Coefficient Fit Eigenvector Decomposition',fontsize=16)
+        if save_file is not None:
+            plt.savefig(save_file+'_all_fits.eps', format='eps')
+    
+    # same plots as above but now for each individual eigenvector
+    if individual_plots:
+        for i in range(solver.nn):
+            plt.figure()
+            plt.title('Eigenvector {0}, Eigval {1:.2f}'.format(i,V[i]),fontsize=16)
+            if plot_difference:
+                C0 = abs(C_avg[i,0])
+                C0_theory = abs(C_theory_avg[i,0])
+                C0_fit = abs(C_fit_avg[i,0])
+                if use_percent:
+                    plt.plot(time_avg,100*(abs(C_avg[i,:])-C0)/C0,label='Numerical')
+                    if plot_theory:
+                        plt.plot(time_avg,100*(abs(C_theory_avg[i,:])-C0_theory)/C0_theory,label='Theory')
+                    if fit_data:
+                        plt.plot(time_avg,100*(abs(C_fit_avg[i,:])-C0_fit)/C0_fit,label='Fit $\lambda = {0:.2f}$'.format(fit_vals[i]))
+                    plt.ylabel(r'\% Change in Coefficient',fontsize=14)
+                else:
+                    plt.plot(time_avg,abs(C_avg[i,:])-C0,label='Numerical')
+                    if plot_theory:
+                        plt.plot(time_avg,abs(C_theory_avg[i,:])-C0_theory,label='Theory')
+                    if plot_theory:
+                        plt.plot(time_avg,abs(C_fit_avg[i,:])-C0_fit,label='Fit $\lambda = {0:.2f}$'.format(fit_vals[i]))
+                    plt.ylabel(r'Change in Coefficient',fontsize=14)
+            else:
+                plt.plot(time_avg,abs(C_avg[i,:]),label='Numerical')
+                if plot_theory:
+                    plt.plot(time_avg,abs(C_theory_avg[i,:]),label='Theory')
+                if plot_theory:
+                    plt.plot(time_avg,abs(C_fit_avg[i,:]),label='Fit $\lambda = {0:.2f}$'.format(fit_vals[i]))
+                plt.ylabel(r'Coefficient',fontsize=14)
+            if plot_theory or fit_data:
+                plt.legend(loc='upper left',fontsize=12)
+            if window_size >1:
+                plt.xlabel(r'Average Time (window size {0:.2f}s)'.format(solver.dt*window_size),fontsize=14)
+                if save_file is not None:
+                    plt.savefig(save_file+'_eig{0}_avg.eps'.format(i), format='eps')
+            else: 
+                plt.xlabel(r'Time',fontsize=14)
+                if save_file is not None:
+                    plt.savefig(save_file+'_eig{0}.eps'.format(i), format='eps')
+         
