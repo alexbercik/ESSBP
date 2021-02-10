@@ -28,13 +28,11 @@ class NumFlux:
         '''
 
         if method == 'central':
-            if self.neq_node == 1:
-                C = self.calc_LF_const()
-                self.numflux = lambda qA,qB: self.LF_scalar(qA,qB,0,C)
-        elif method == 'upwind':
-            if self.neq_node == 1:
-                C = self.calc_LF_const()
-                self.numflux = lambda qA,qB: self.LF_scalar(qA,qB,1,C)
+            self.numflux = lambda qA,qB: self.LF(qA,qB,0,0)
+        elif method == 'upwind' or method == 'upwind_global' or method == 'LF_upwind_global':
+            C = self.calc_LF_const()
+            # TODO: global and local need to be defined better as I don't pass in q...
+            self.numflux = lambda qA,qB: self.LF_scalar(qA,qB,1,C)
         elif method == 'split':
             if self.diffeq_name == 'Burgers':
                 self.numflux = lambda qA,qB: self.split(qA,qB,2/3)
@@ -54,9 +52,9 @@ class NumFlux:
         else:
             raise Exception('Choice of Numerical Flux not understood.')
             
-    def LF_scalar(self, qA, qB, alpha, C, avg='simple_E'):
+    def LF(self, qA, qB, alpha, C):
         '''
-        Lax-Friedrichs flux for scalar equations.
+        Lax-Friedrichs flux (works for scalar and 1D system).
 
         Parameters
         ----------
@@ -67,25 +65,18 @@ class NumFlux:
         alpha : float
             upwinding parameter. alpha=0 yields central flux, alpha=1 yields
             upwind flux
-        C : float
+        C : float or np array
             the constant that controls dissipation. This should be greater 
-            than max dEdq (either locally or globally). Currenty this is set
-            automatically as the max|dEdq| from the initial condition
-            # TODO: Find a better way to set this parameter
+            than max dEdq (either locally or globally).
+            
+        TODO: generalize for cases where qA and qB are not on the boundary
 
         Returns
         -------
         The numerical flux on both sides of the interface.
         '''
-        if avg=='simple':
-            avgE = self.calcE((qA + qB)/2)
-        elif avg=='simple_E':
-            avgE = (self.calcE(qA) + self.calcE(qB))/2
-        elif avg=='roe':
-            raise Exception('Roe Average not coded up yet')
-        else:
-            raise Exception('Averaging method not understood.')
-
+        avgE = (self.calcE(qA) + self.calcE(qB))/2
+        # TODO: Do I want different kinds of averaging here? Then no longer LF...
         flux = avgE + 0.5*C*alpha*(qA-qB)
         return flux, -flux
     
