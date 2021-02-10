@@ -895,19 +895,8 @@ class Quasi1dEuler(PdeBaseCons):
 class Quasi1dEulerSbp(SatBaseCons, Quasi1dEuler):
 
     def dEdq_eig_abs(self, dEdq):
-        #TODO: set this up as an imported function. Then maybe make functions a class
-        
-        if dEdq.ndim == 2:
-            eig_val, eig_vec = np.linalg.eig(dEdq)
-            dEdq_eig_abs = eig_vec @ np.diag(np.abs(eig_val)) @ np.linalg.inv(eig_vec)
-        elif dEdq.ndim ==3:
-            dEdq_mod = np.transpose(dEdq,axes=(2,0,1))
-            eig_val, eig_vec = np.linalg.eig(dEdq_mod)
-            dEdq_eig_abs = np.zeros(dEdq.shape)
-            for i in range(len(eig_val)):
-                dEdq_eig_abs[:,:,i] = eig_vec[i,:,:] @ np.diag(np.abs(eig_val[i])) @ np.linalg.inv(eig_vec[i,:,:])
 
-        return dEdq_eig_abs
+        return fn.abs_eig_mat(dEdq)
     '''
     def dfdq(self, q,  xy_idx0=None, xy_idx1=None):
         A = self.dEdq(q)
