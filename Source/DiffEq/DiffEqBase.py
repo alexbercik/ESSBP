@@ -45,10 +45,16 @@ PdeBaseCons:
     -Builds from PdeBase by adding methods for PDEs that are of the
     form dqdt + dEdx = G, ie no second or higher derivatives
 The PDEs are solved in this form:
-    The Diffeq:             dqdt + r = 0
-    Time marching methods   dqdt = f(q)
-    Therefore:              f = -r = Aq
-    Jacobian                A := dfdq = -drdq
+    The Diffeq:             dqdt = -dEdx + G + diss = f
+    Time marching methods:  dqdt = f(q) = rhs(q)
+    Linearization:          f(q) = dfdq @ q 
+        * note: dfdq \neq dEdq , analytic flux jacobian
+    Implicit Euler:         dq = q^{n+1} - q^{n}
+                            dq = h*f(q^{n+1}) = h*(f(q^{n}) + dfdq(q^{n})@dq) + O(h^2)
+        * note: of course if f(q) is linear (i.e. dfdq is constant), this time 
+                linearization is unecessary and above trivially reduces to 
+                dq = h*f(q^{n+1}) = h*(f(q^{n}) + f(q^{n+1}) - f(q^{n})) = h*(f(q^{n+1})
+    
 '''
 
 class PdeBase:
@@ -384,8 +390,7 @@ class PdeBase:
         return np.zeros(q.shape)
 
     def dGdq(self, q):
-        nq = q.shape[0]
-        return np.zeros((nq, nq))
+        return np.zeros(q.shape)
 
 
 class PdeBaseCons(PdeBase):
@@ -400,6 +405,15 @@ class PdeBaseCons(PdeBase):
         dqdt = -dEdx + G
         return dqdt
 
+    def dfdq(self, q):
+        # WARNING: Does not apply for split forms
+
+        A = self.dEdq(q)
+        dGdq = self.dGdq(q)
+
+        dfdq = - fn.lm_gm(self.der1, A) + dGdq
+        return dfdq
+    
     def set_sbp_op(self, dd_phys, qq_phys, hh_inv_phys, rrL, rrR):
 
         self.der1 = dd_phys
