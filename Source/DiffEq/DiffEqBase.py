@@ -258,8 +258,10 @@ class PdeBase:
         if xy is None:
             xy = self.xy
 
+        xy_shape = xy.shape
         if xy.ndim == 2:
-            xy = xy[:,0]
+            #xy = xy[:,0]
+            xy = xy.flatten(order='F')
 
         if q0_type == 'GaussWave':
             # The initial condition is a Gauss-like wave
@@ -298,11 +300,14 @@ class PdeBase:
             raise Exception('Unknown q0_type for initial solution')
         
         # restructure in shape (nen,nelem), i.e. columns are each element
-        return np.reshape(q0,(self.nen*self.neq_node,self.nelem),'F')
+        if xy.size == self.nn:
+            return np.reshape(q0,(self.nen*self.neq_node,self.nelem),'F')
+        else:
+            return np.reshape(q0,xy_shape,'F')
 
 
     def plot_sol(self, q, time=None, fig_no=1, plot_exa=True, plt_save_name=None,
-                 show_fig=True, ymin=None, ymax=None, display_time=False):
+                 show_fig=True, ymin=None, ymax=None, display_time=False, title=None):
         '''
         Purpose
         ----------
@@ -320,7 +325,7 @@ class PdeBase:
         else:
             num_sol = self.var2plot(q.flatten('F'))
 
-        plt.plot(self.xy, num_sol, **self.plt_style_sol[0])
+        plt.plot(self.xy, num_sol, **self.plt_style_sol[0], label='Numerical')
 
         if plot_exa and self.has_exa_sol:
             q_exa = self.exact_sol(time)
@@ -330,7 +335,7 @@ class PdeBase:
             else:
                 exa_sol = self.var2plot(q_exa.flatten('F'))
 
-            plt.plot(self.xy, exa_sol, **self.plt_style_exa_sol)
+            plt.plot(self.xy, exa_sol, **self.plt_style_exa_sol, label='Exact')
             
         plt.xlabel(r'$x$',fontsize=self.plt_label_font_size)
 
@@ -351,6 +356,10 @@ class PdeBase:
 
         plt.ylim(ymin,ymax)
         plt.tight_layout()
+        
+        if plt.title is not None:
+            plt.title(title,fontsize=self.plt_label_font_size+1)
+            plt.legend(loc='best',fontsize=self.plt_label_font_size-1)
         
         if plt_save_name is not None:
             plt.savefig(plt_save_name+'.eps', format='eps')
