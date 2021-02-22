@@ -9,6 +9,7 @@ import subprocess # see https://www.youtube.com/watch?v=2Fp1N6dof0Y for tutorial
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
+from sympy import nsimplify
 
 def animate(solver, file_name='animation', make_video=True, make_gif=False,
                plotfunc='plot_sol',plotargs={}, skipsteps=0,fps=24,
@@ -343,4 +344,27 @@ def eigvec_history(solver, A=None, tfinal=None, save_file=None, window_size=1,
                 plt.xlabel(r'Time',fontsize=14)
                 if save_file is not None:
                     plt.savefig(save_file+'_eig{0}.eps'.format(i), format='eps')
-         
+
+
+def symbolic(A):
+    ''' Use sympy to make a matrix or vector symbolic '''
+    shape = A.shape
+    A1 = np.copy(A)
+    A = np.zeros(shape,dtype=object)
+    
+    if len(shape) ==1:
+        for i in range(shape[0]):
+                A[i] = nsimplify(A1[i],tolerance=1e-10,rational=True)
+    
+    elif len(shape) == 2:
+        for i in range(shape[0]):
+            for j in range(shape[1]):
+                A[i,j] = nsimplify(A1[i,j],tolerance=1e-10,rational=True)
+                
+    elif len(shape) ==3:
+        for i in range(shape[0]):
+            for j in range(shape[1]):
+                for k in range(shape[2]):
+                    A[i,j,k] = nsimplify(A1[i,j,k],tolerance=1e-10,rational=True)
+    
+    return np.array(A)
