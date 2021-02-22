@@ -26,9 +26,6 @@ class PdeSolverSbp():
             self.sbp = MakeSbpOp(self.p, self.disc_type, self.nn)
         elif self.nen>0:
             self.sbp = MakeSbpOp(self.p, self.disc_type, self.nen)
-        elif self.nelem>1:
-            self.nen = self.nn // self.nelem
-            self.sbp = MakeSbpOp(self.p, self.disc_type, self.nen)
         else:
             self.sbp = MakeSbpOp(self.p, self.disc_type)
 

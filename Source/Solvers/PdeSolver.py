@@ -382,7 +382,7 @@ class PdeSolver(PdeSolverFd, PdeSolverSbp, PdeSolverDg):
     
     def check_eigs(self, q=None, plot_eigs=True, returnA=False, step=1.0e-2,
                    tol=1.0e-10, plt_save_name=None, ymin=None, ymax=None,
-                   xmin=None, xmax=None, time=None, display_time=False, **kargs):
+                   xmin=None, xmax=None, time=None, display_time=False, title=None, **kargs):
         '''
         Call on self.diffeq.dqdt to check the stability of the spatial operator
         at a particular state q using central finite differences (approximate!).
@@ -454,7 +454,10 @@ class PdeSolver(PdeSolverFd, PdeSolverSbp, PdeSolverDg):
             plt.axvline(x=0, linewidth=1, linestyle='--', color='black')
             plt.xlabel(r'Real Component ($x<0$ for stability)',fontsize=14)
             plt.ylabel(r'Imaginary Component',fontsize=14)
-            plt.title(r'Eigenvalues',fontsize=16)
+            if title is None:
+                plt.title(r'Eigenvalues',fontsize=16)
+            else:
+                plt.title(title,fontsize=16)
             plt.ylim(ymin,ymax)
             plt.xlim(xmin,xmax)
             if display_time and (time is not None):
@@ -580,7 +583,7 @@ class PdeSolver(PdeSolverFd, PdeSolverSbp, PdeSolverDg):
         if 'plot_exa' not in kwargs: kwargs['plot_exa']=True
         self.diffeq.plot_sol(q, **kwargs)
         
-    def plot_error(self, method=None, savefile=None):
+    def plot_error(self, method=None, savefile=None, extra_fn=None, extra_label=None, title=None):
         ''' plot the error from all time steps '''
         errors = self.calc_error(method=method, use_all_t=True)
         steps = np.shape(self.q_sol)[2]
@@ -588,10 +591,16 @@ class PdeSolver(PdeSolverFd, PdeSolverSbp, PdeSolverDg):
         plt.figure(figsize=(6,4))
         plt.ylabel(r"{0} Error".format(method),fontsize=16)
         plt.xlabel(r"Time",fontsize=16)
-        plt.plot(times,errors)
+        plt.plot(times,errors,label='Error')
+        if extra_fn is not None:
+            plt.plot(times,extra_fn(times),label=extra_label)
         plt.yscale('log')
+        if extra_label is not None:
+            plt.legend(loc='best',fontsize=14)
+        if title is not None:
+            plt.title(title,fontsize=18)
         if savefile is not None:
-            plt.savefig(savefile,dpi=600)
+            plt.savefig(savefile+'.eps', format='eps')
     
         
         
