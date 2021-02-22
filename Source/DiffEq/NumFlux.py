@@ -84,6 +84,8 @@ class NumFlux:
         '''
         A split form skew-symmetric flux. Yields EC flux with alpha=2/3 for
         Burgers equation and alpha=1/2 for variable coeff. advection.
+        
+        Need to modify diffq term for general eq. Only works for Burgers. (See Gassner et all eq 17)
 
         Parameters
         ----------
@@ -94,6 +96,7 @@ class NumFlux:
         alpha : float
             constant used to determine split form. use alpha=2/3 for Burgers.
         '''
+        assert(self.diffeq_name == 'Burgers'),'Not set up for other equation types'
         if avg=='simple':
             avgE = self.calcE((qA + qB)/2)
         elif avg=='simple_E':
@@ -112,6 +115,8 @@ class NumFlux:
         A split form skew-symmetric flux from Tadmor 2003 that attempts to
         remove anti-dissipative components. Yields modified EC flux with 
         alpha=2/3 for Burgers equation.
+        
+        Need to modify diffq term for general eq. Only works for Burgers. (See Gassner et all eq 23)
 
         Parameters
         ----------
@@ -122,6 +127,7 @@ class NumFlux:
         alpha : float
             constant used to determine split form. use alpha=2/3 for Burgers.
         '''
+        assert(self.diffeq_name == 'Burgers'),'Not set up for other equation types'
         avgE = (self.calcE(qA) + self.calcE(qB))/2
         diffq = qB - qA
         coeff = np.maximum((1-alpha)*diffq/2,0)
@@ -132,6 +138,7 @@ class NumFlux:
         '''
         The standard Rusanov flux function, see Gassner 2020 or Toro, E.F. 2009
         '''
+        assert(self.diffeq_name == 'Burgers'),'Not set up for other equation types'
         avgE = (self.calcE(qA) + self.calcE(qB))/2
         diffq = qB - qA
         coeff = np.maximum(abs(qA),abs(qB))
@@ -143,6 +150,7 @@ class NumFlux:
         The modified Rusanov flux function from Gassner 2020 (stability issues)
         This should probably only be used for Burgers equation
         '''
+        assert(self.diffeq_name == 'Burgers'),'Not set up for other equation types'
         avgE = (self.calcE(qA) + self.calcE(qB))/2
         diffq = qB - qA
         coeff = diffq/6 + np.maximum(abs(qA),abs(qB))
