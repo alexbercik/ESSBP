@@ -56,13 +56,16 @@ class Burgers(PdeBaseCons):
         return dEdq
 
     def dfdq(self, q):
-        # TODO: Does this need a split form? not sure if entirely correct
-        print('WARNING: NOT ENTIRELY SURE IF CORRECT.')
+        # take dEdx as a vector a_i(q) and find matrix d(a_i)/d(q_j)
 
-        A = self.dEdq(q)
-        dGdq = self.dGdq(q)
-
-        dfdq = - fn.lm_gm(self.der1, A) + dGdq
+        if self.use_split_form:
+            # these both do the same, but the second is a bit faster
+            #dfdq = -(1/3)*(2*fn.lm_gm(self.der1,fn.diag(q)) + fn.diag(self.der1@q) + fn.gm_lm(fn.diag(q),self.der1))
+            dfdq = -(1/3)*(2*np.multiply(self.der1[:,:,None],q) + fn.diag(self.der1 @ q) + fn.gm_lm(fn.diag(q),self.der1))
+        else:
+            # this does the same as the base function, just a bit faster
+            dfdq = - np.multiply(self.der1[:,:,None],q)
+            
         return dfdq
 
     def calc_obj(self, *argv):
