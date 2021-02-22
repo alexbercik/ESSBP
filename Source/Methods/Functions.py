@@ -95,6 +95,8 @@ def gm_lm(A,B):
 @jit(nopython=True)
 def lm_gm(A,B):
     '''
+    NOTE: NOT equivalent to A @ B 
+    That returns the elemntwise transpose of the desired result.
     Equivalent to np.einsum('ij,jlk->ilk',A,B) where A is a 2-tensor of shape
     (nen,nen) and B is a 3-tensor of shape (nen,nen,nelem). This can be 
     thought of as a local matrix @ global matrix.
