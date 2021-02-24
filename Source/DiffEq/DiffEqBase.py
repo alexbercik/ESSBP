@@ -29,8 +29,8 @@ import quadpy as qp
 '''
 The classes in this file are inheritated by the classes for ODEs and PDEs.
 The order of inheritance is as follows:
-        PdeBaseCons       <- PdeBase    <- DiffEqBase
-        OdeBase           <- DiffEqBase
+        PdeBaseCons       <- PdeBase
+        PdeBasePar       <- PdeBase
 PdeBase:
     -Provides an init function for the parameter and the names of the
     objectives functions.
@@ -44,6 +44,9 @@ PdeBase:
 PdeBaseCons:
     -Builds from PdeBase by adding methods for PDEs that are of the
     form dqdt + dEdx = G, ie no second or higher derivatives
+PdeBasePar:
+    -Builds from PdeBase by adding methods for PDEs that are of the
+    form dqdt + dEdx = d^2EVdx^2 + G, ie with second derivatives
 The PDEs are solved in this form:
     The Diffeq:             dqdt = -dEdx + G + diss = f
     Time marching methods:  dqdt = f(q) = rhs(q)
@@ -421,7 +424,6 @@ class PdeBaseCons(PdeBase):
         self.hh_inv = hh_inv_phys
         self.rrL = rrL
         self.rrR = rrR
-
         self.nn_elem = self.hh_inv.shape[0]  # No. of nodes per element
     
     def set_dg_strong_op(self, dd_phys):
@@ -437,9 +439,43 @@ class PdeBaseCons(PdeBase):
         eye = sp.eye(self.neq_node, format="csr")
         if der1_bcL is None: der1_bcL = 0
         if der1_bcR is None: der1_bcR = 0
-        self.der1 = sp.kron(der1, eye).todense()
-        self.der1_bcL = sp.kron(der1_bcL, eye).todense()
-        self.der1_bcR = sp.kron(der1_bcR, eye).todense()
+        self.der1 = np.array(sp.kron(der1, eye).todense())
+        self.der1_bcL = np.array(sp.kron(der1_bcL, eye).todense())
+        self.der1_bcR = np.array(sp.kron(der1_bcR, eye).todense())
+        
+class PdeBasePar(PdeBase):
+    
+    ''' This base class is for mixed hyperbolic-parabolic PDEs of the form 
+    dqdt + dEdx = G + d^2EVdx^2 '''
+
+    def set_sbp_op(self, dd_phys, qq_phys, hh_inv_phys, rrL, rrR):
+
+        self.der1 = dd_phys
+        self.der2 = self.der1 @ self.der1
+        self.qq = qq_phys
+        self.hh_inv = hh_inv_phys
+        self.rrL = rrL
+        self.rrR = rrR
+
+    def set_fd_op(self, p):
+
+        self.p = p
+
+        # Construct the finite difference operator
+        der1, der1_bcL, der1_bcR = FiniteDiff.der1(self.p, self.nn, self.dx, self.isperiodic)
+        der2, der2_bcL, der2_bcR = FiniteDiff.der2(self.p, self.nn, self.dx, self.isperiodic)
+        eye = sp.eye(self.neq_node, format="csr")
+        if der1_bcL is None: der1_bcL = 0
+        if der1_bcR is None: der1_bcR = 0
+        if der2_bcL is None: der1_bcL = 0
+        if der2_bcR is None: der1_bcR = 0
+        self.der1 = np.array(sp.kron(der1, eye).todense())
+        self.der2 = np.array(sp.kron(der2, eye).todense())
+        # Need to know what the coefficient is in front of the derivative term
+        # der_bcL = der1_bcL + der2_bcL
+        # der_bcR = der1_bcR + der2_bcR
+        self.der_bcL = np.array(sp.kron(der_bcL, eye).todense())
+        self.der_bcR = np.array(sp.kron(der_bcR, eye).todense())
             
 class DiffEqOverwrite:
 # Allows you to overwrite the methods in the Diffeq class

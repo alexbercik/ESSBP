@@ -22,7 +22,8 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
                  bool_plot_sol=False, fun_plot_sol=None,
                  bool_calc_obj=True, fun_calc_obj=None,
                  bool_calc_cons_obj=False, fun_calc_cons_obj=None,
-                 print_sol_norm=False, print_residual=False):
+                 print_sol_norm=False, print_residual=False,
+                 dqdt=None, dfdq=None):
         '''
         Parameters
         ----------
@@ -81,8 +82,14 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
 
         ''' Extract other required parameters '''
 
-        self.f_dqdt = self.diffeq.dqdt
-        self.f_dfdq = self.diffeq.dfdq
+        if dqdt is None:
+            self.f_dqdt = self.diffeq.dqdt
+        else:
+            self.f_dqdt = dqdt
+        if dfdq is None:
+            self.f_dfdq = self.diffeq.dfdq
+        else:
+            self.f_ddfdq = dfdq
 
         self.n_obj = self.diffeq.n_obj
         if self.n_obj == 0: self.bool_calc_obj = False

@@ -17,10 +17,10 @@ for i in range(n_nested_folder):
 
 path.append(folder_path)
 
-from Source.DiffEq.LinearConv import LinearConvSbp
-from Source.DiffEq.LinearConv import LinearConvFd
-from Source.DiffEq.LinearConv import LinearConvDg
-from Source.Solvers.PdeSolver import PdeSolver
+from Source.DiffEq.LinearConv import LinearConv
+from Source.Solvers.PdeSolverFd import PdeSolverFd
+from Source.Solvers.PdeSolverSbp import PdeSolverSbp
+from Source.Solvers.PdeSolverDg import PdeSolverDg
 
 ''' Run code '''
 
@@ -34,7 +34,7 @@ dt = 0.001
 # note: should set according to courant number C = a dt / dx
 dt_init = dt
 t_init = 0
-tf = 2.0
+tf = 10.000
 
 # Domain
 xmin = -1
@@ -42,12 +42,12 @@ xmax = 1
 isperiodic = True
 
 # Spatial discretization
-disc_type = 'lgl' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
+disc_type = 'dg' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
 nn = 50
-p = 2
+p = 3
 nelem = 20 # optional, number of elements
 nen = 0 # optional, number of nodes per element
-sat_flux_type = 'upwind'
+sat_flux_type = 'central'
 
 # Initial solution
 q0 = None # can overwrite q0_type from DiffEq
@@ -55,7 +55,7 @@ q0_type = 'GaussWave' # 'GaussWave', 'SinWave'
 
 # Other
 bool_plot_sol = False
-print_sol_norm = False
+print_sol_norm = True
 
 obj_name = None
 cons_obj_name = ('Energy','Conservation') # 'Energy', 'Conservation', 'None'
@@ -63,15 +63,15 @@ cons_obj_name = ('Energy','Conservation') # 'Energy', 'Conservation', 'None'
 ''' Set diffeq and solve '''
 
 if disc_type == 'fd':
-    DiffEq = LinearConvFd
+    c_solver = PdeSolverFd
 elif disc_type == 'dg':
-    DiffEq = LinearConvDg
+    c_solver = PdeSolverDg
 else:
-    DiffEq = LinearConvSbp
+    c_solver = PdeSolverSbp
 
-diffeq = DiffEq(para, obj_name, q0_type)
+diffeq = LinearConv(para, obj_name, q0_type)
 
-solver = PdeSolver(diffeq,                              # Diffeq
+solver = c_solver(diffeq,                              # Diffeq
                   tm_method, dt, tf,                    # Time marching
                   q0,                                   # Initial solution
                   p, disc_type, nn,                     # Discretization
@@ -82,3 +82,4 @@ solver = PdeSolver(diffeq,                              # Diffeq
 
 solver.solve()
 solver.plot_sol()
+solver.plot_cons_obj()
