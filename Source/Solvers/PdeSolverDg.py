@@ -9,17 +9,20 @@ import numpy as np
 
 from Source.Disc.MakeMesh import MakeMesh
 from Source.Disc.MakeDgOp import MakeDgOp
-from Source.DiffEq.DiffEqBase import DiffEqOverwrite
+from Source.Disc.NumFlux import NumFlux
+from Source.Solvers.PdeSolver import PdeSolver
 
-class PdeSolverDg():
+class PdeSolverDg(PdeSolver, NumFlux):
     
     weak_form = False # if False, uses strong form
 
-    def dg_init(self):
+    def init_disc_specific(self):
+            
+        self.energy = self.dg_energy
+        self.conservation = self.dg_conservation
 
         ''' Setup the discretization '''
 
-        self.neq_node = self.diffeq.neq_node
         if self.nen > 0:
             print('WARNING: Can not set nen explicitly for DG. Ignoring, using p.')
 
@@ -88,23 +91,16 @@ class PdeSolverDg():
         ''' Modify solver approach '''
         
         if self.weak_form:
-            self.dg_dqdt = self.dg_dqdt_weak
-            self.dg_dfds = None
-            self.dg_dfdq = None
+            self.dqdt = self.dg_dqdt_weak
+            self.dfdq = None
         else:
-            self.dg_dqdt = self.dg_dqdt_strong
-            self.dg_dfds = None
-            self.dg_dfdq = None
+            self.dqdt = self.dg_dqdt_strong
+            self.dfdq = None
 
-        self.diffeq_in = self.diffeq
         # TODO: this will cause problems if nodes not collocated (ex. plotting)
-        self.diffeq_in.set_mesh(self.mesh)
-        self.diffeq_in.set_numflux(self.flux_type)
+        self.diffeq.set_mesh(self.mesh)
+        self.init_numflux_class(self.sat_flux_type)
 
-
-        # Create a modified diffeq class with the dqdt, dfdq and dqds for DG op
-        self.diffeq = DiffEqOverwrite(self.diffeq_in, self.dg_dqdt, self.dg_dfdq, self.dg_dfds,
-                                           self.calc_cons_obj, self.n_cons_obj)
 
     
     def dg_dqdt_strong(self, q):
@@ -113,23 +109,96 @@ class PdeSolverDg():
         q_facB = self.vanf[0] @ q
         q_facA = self.vanf[1] @ q
         
-        dqdt_out = self.vol @ self.diffeq_in.dqdt(q_flux)
+        dqdt_out = self.vol @ self.diffeq.dqdt(q_flux)
         
         nfluxA, nfluxB = np.empty((1,self.nelem)) , np.empty((1,self.nelem))
-        nfluxA[:,:-1] , nfluxB[:,1:] = self.diffeq_in.numflux(q_facA[:,:-1], q_facB[:,1:])
+        nfluxA[:,:-1] , nfluxB[:,1:] = self.numflux(q_facA[:,:-1], q_facB[:,1:])
         
         if self.isperiodic:
-            nfluxA[:,[-1]] , nfluxB[:,[0]] = self.diffeq_in.numflux(q_facA[:,[-1]], q_facB[:,[0]])
+            nfluxA[:,[-1]] , nfluxB[:,[0]] = self.numflux(q_facA[:,[-1]], q_facB[:,[0]])
         else:
             # TODO: Generalize to include varying qL and qR
-            nfluxA[:,[-1]] = self.diffeq_in.numflux(self.diffeq_in.qL, q_facB[:,[0]])
-            nfluxB[:,[0]] = self.diffeq_in.numflux(q_facA[:,[-1]], self.diffeq_in.qR)
+            nfluxA[:,[-1]] = self.numflux(self.diffeq.qL, q_facB[:,[0]])
+            nfluxB[:,[0]] = self.numflux(q_facA[:,[-1]], self.diffeq.qR)
             
-        flux = self.diffeq_in.calcE(q_flux)
+        flux = self.diffeq.calcE(q_flux)
         dqdt_out -= self.mass_inv @ ( self.surf_num[1]@nfluxA - self.surf_flux[1]@flux \
                                     + self.surf_num[0]@nfluxB - self.surf_flux[0]@flux )
 
         return dqdt_out
+    
+    def dg_dfdq_strong(self, q):
+        
+        q_flux = self.van @ q
+        q_facB = self.vanf[0] @ q
+        q_facA = self.vanf[1] @ q
+        
+        dqdt_out = self.vol @ self.diffeq.dqdt(q_flux)
+        
+        nfluxA, nfluxB = np.empty((1,self.nelem)) , np.empty((1,self.nelem))
+        nfluxA[:,:-1] , nfluxB[:,1:] = self.numflux(q_facA[:,:-1], q_facB[:,1:])
+        
+        if self.isperiodic:
+            nfluxA[:,[-1]] , nfluxB[:,[0]] = self.numflux(q_facA[:,[-1]], q_facB[:,[0]])
+        else:
+            # TODO: Generalize to include varying qL and qR
+            nfluxA[:,[-1]] = self.numflux(self.diffeq.qL, q_facB[:,[0]])
+            nfluxB[:,[0]] = self.numflux(q_facA[:,[-1]], self.diffeq.qR)
+            
+        flux = self.diffeq.calcE(q_flux)
+        dqdt_out -= self.mass_inv @ ( self.surf_num[1]@nfluxA - self.surf_flux[1]@flux \
+                                    + self.surf_num[0]@nfluxB - self.surf_flux[0]@flux )
+
+        return dqdt_out
+    
+#         n = q.size
+#         dfdq_out = np.zeros((n,n))
+# 
+#         # Calculate the derivative of the sol at all the elements
+#         for ie in range(self.nelem):
+#             idx0, idx1 = self.get_elem_idx_1d(ie)
+#             xy_idx0 = idx0 // self.neq_node
+#             xy_idx1 = idx1 // self.neq_node
+# 
+#             q_elem = q[idx0:idx1]
+#             dfdq_out[idx0:idx1, idx0:idx1] = self.diffeq_in.dfdq(q_elem, xy_idx0, xy_idx1).todense()
+# 
+#         # Calculate the numerical flux at each of the facets
+#         for i_facet in range(self.mesh.nfacet):
+#             idx_elems = self.mesh.gf2ge[:,i_facet]
+# 
+#             idx_elem_facetA = idx_elems[0]
+#             idx_elem_facetB = idx_elems[1]
+# 
+#             # Calculate the value of q on each side of the interface
+#             if idx_elem_facetA >= 0:
+#                 idxA0, idxA1 = self.get_elem_idx_1d(idx_elem_facetA)
+#                 qelemA = q[idxA0:idxA1]
+#             else:
+#                 # TODO: Generalize to include varying qL
+#                 qelemA = self.diffeq_in.qL
+# 
+#             if idx_elem_facetB >= 0:
+#                 idxB0, idxB1 = self.get_elem_idx_1d(idx_elem_facetB)
+#                 qelemB = q[idxB0:idxB1]
+#             else:
+#                 # TODO:  Generalize to include varying qR
+#                 qelemB = self.diffeq_in.qR
+# 
+#             # Calculate the SATs
+#             dSatA_dqA, dSatA_dqB, dSatB_dqA, dSatB_dqB = self.diffeq_in.dfdq_sat(qelemA, qelemB)
+# 
+#             if idx_elem_facetA >= 0:
+#                 dfdq_out[idxA0:idxA1, idxA0:idxA1] += self.hh_inv_phys @ dSatA_dqA
+# 
+#             if idx_elem_facetB >= 0:
+#                 dfdq_out[idxB0:idxB1, idxB0:idxB1] += self.hh_inv_phys @ dSatB_dqB
+# 
+#             if idx_elem_facetA >=0 and idx_elem_facetB >= 0:
+#                 dfdq_out[idxB0:idxB1, idxA0:idxA1] += self.hh_inv_phys @ dSatB_dqA
+#                 dfdq_out[idxA0:idxA1, idxB0:idxB1] += self.hh_inv_phys @ dSatA_dqB
+# 
+#         return dfdq_out
     
     def dg_dqdt_weak(self, q):
         # ONLY WORKS FOR WEAK FORM IN DIVERGENCE FORM (NO SPLIT FORM DIFFEQ)
@@ -140,17 +209,17 @@ class PdeSolverDg():
         q_facA = self.vanf[1] @ q
         # TODO: Generalize calcE to handle cases when passed x (physical flux nodes)
         # TODO: Gereralize calcE and vol to handle multiple dimensions
-        dqdt_out = self.mass_inv @ (self.vol @ self.diffeq_in.calcE(q_flux) + self.proj @ self.diffeq_in.calcG(q_flux))
+        dqdt_out = self.mass_inv @ (self.vol @ self.diffeq.calcE(q_flux) + self.proj @ self.diffeq.calcG(q_flux))
 
         nfluxA, nfluxB = np.empty((1,self.nelem)) , np.empty((1,self.nelem))
-        nfluxA[:,:-1] , nfluxB[:,1:] = self.diffeq_in.numflux(q_facA[:,:-1], q_facB[:,1:])
+        nfluxA[:,:-1] , nfluxB[:,1:] = self.numflux(q_facA[:,:-1], q_facB[:,1:])
         
         if self.isperiodic:
-            nfluxA[:,[-1]] , nfluxB[:,[0]] = self.diffeq_in.numflux(q_facA[:,[-1]], q_facB[:,[0]])
+            nfluxA[:,[-1]] , nfluxB[:,[0]] = self.numflux(q_facA[:,[-1]], q_facB[:,[0]])
         else:
             # TODO: Generalize to include varying qL and qR
-            nfluxA[:,[-1]] = self.diffeq_in.numflux(self.diffeq_in.qL, q_facB[:,[0]])
-            nfluxB[:,[0]] = self.diffeq_in.numflux(q_facA[:,[-1]], self.diffeq_in.qR)
+            nfluxA[:,[-1]] = self.numflux(self.diffeq.qL, q_facB[:,[0]])
+            nfluxB[:,[0]] = self.numflux(q_facA[:,[-1]], self.diffeq.qR)
             
         dqdt_out += self.mass_inv @ ( self.surf[1]@nfluxA + self.surf[0]@nfluxB )
 

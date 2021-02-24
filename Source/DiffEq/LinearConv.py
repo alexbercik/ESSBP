@@ -9,8 +9,6 @@ Created on Mon May 18 13:16:51 2020
 import numpy as np
 
 from Source.DiffEq.DiffEqBase import PdeBaseCons
-from Source.DiffEq.SatBase import SatBaseCons
-from Source.DiffEq.NumFlux import NumFlux
 import Source.Methods.Functions as fn
 
 
@@ -26,6 +24,7 @@ class LinearConv(PdeBaseCons):
     dim = 1
     neq_node = 1    # 1 equation in 1D
     npar = 0        # No. of design parameters
+    pde_order = 1 # Order of the highest derivative in the PDE
     xy = None
     has_exa_sol = True
     para_names = ('a',)
@@ -67,14 +66,7 @@ class LinearConv(PdeBaseCons):
         dEdq = fn.diag(np.ones(q.shape)*self.a)
         return dEdq
 
-class LinearConvFd(LinearConv):
-    ''' Solve the linear convection eq with finite difference '''
-
-class LinearConvSbp(SatBaseCons, LinearConv):
-    ''' Solve the linear convection eq with SBP operators '''
-
-    def dfdq_sat_der1_upwind(self, q_fA, q_fB):
-        return self.dfdq_sat_der1_upwind_scalar(q_fA, q_fB)
+    ''' Methods for the element solvers, like SBP and DG '''
 
     def dEdq_eig_abs(self, dEdq):
 
@@ -84,9 +76,6 @@ class LinearConvSbp(SatBaseCons, LinearConv):
     def d2Edq2(self, q):
         n = q.size
         return np.zeros((n,n))
-
-class LinearConvDg(LinearConv, NumFlux):
-    ''' Solve the linear convection eq with DG '''
 
     def calc_LF_const(self):
         ''' Constant for the Lax-Friedrichs flux'''

@@ -9,8 +9,6 @@ Created on Wed Jun 17 12:41:26 2020
 import numpy as np
 
 from Source.DiffEq.DiffEqBase import PdeBaseCons
-from Source.DiffEq.SatBase import SatBaseCons
-from Source.DiffEq.NumFlux import NumFlux
 import Source.Methods.Functions as fn
 
 class Burgers(PdeBaseCons):
@@ -26,6 +24,7 @@ class Burgers(PdeBaseCons):
     npar = 0        # No. of design parameters
     neq_node = 1    # 1 equation in 1D
     eq_type = 'pde'
+    pde_order = 1
 
     def __init__(self, para=None, obj_name=None, q0_type='SinWave',
                  use_split_form=False):
@@ -41,8 +40,8 @@ class Burgers(PdeBaseCons):
     def dEdx(self, q):
 
         if self.use_split_form:
-            #q_diag = self.diag(q)
-            #dEdx = (1/3)*self.m_v((self.lm_m(self.der1,q_diag) + self.m_lm(q_diag,self.der1)), q)
+            #q_diag = fn.diag(q)
+            #dEdx = (1/3)*fn.gm_gv((fn.lm_gm(self.der1,q_diag) + fn.gm_lm(q_diag,self.der1)), q)
             dEdx = (1/3)*((self.der1 @ q**2) + (q * (self.der1 @ q)))
         else:
             E = self.calcE(q)
@@ -76,17 +75,40 @@ class Burgers(PdeBaseCons):
         q = fn.check_q_shape(self.set_q0())
         return np.max(np.abs(q))
 
-class BurgersFd(Burgers):
-    ''' Solve the Burgers eq with finite difference operators '''
-
-class BurgersSbp(SatBaseCons, Burgers):
-    ''' Solve the Burgers eq with SBP operators '''
-
     def dEdq_eig_abs(self, dEdq):
 
         dEdq_eig_abs = abs(dEdq)
         return dEdq_eig_abs
-    
-class BurgersDg(Burgers, NumFlux):
-    ''' Solve the Burgers eq with DG '''
-        
+
+
+    def sat_der1_ec(self, q_fL, q_fR, sigma=1, avg='simple'):
+        '''
+        Purpose
+        ----------
+        Calculate the entropy conservative SAT for Burgers equation
+        Parameters
+        ----------
+        q_fL : np array, shape (neq_node,nelem)
+            The extrapolated solution of the left element(s) to the facet(s).
+        q_fR : np array, shape (neq_node,nelem)
+            The extrapolated solution of the left element(s) to the facet(s).
+        sigma: float (default=1)
+            if sigma=1, creates upwinding SAT
+            if sigma=0, creates symmetric SAT
+        Returns
+        -------
+        satL : np array
+            The contribution of the SAT for the first derivative to the element(s)
+            on the left.
+        satR : np array
+            The contribution of the SAT for the first derivative to the element(s)
+            on the right.
+        '''
+        qLqR = q_fL * q_fR
+        qL2 = q_fL**2
+        qR2 = q_fR**2
+
+        satL = self.rrR @ (qL2/3 - qLqR/6 - qR2/6)    # SAT for the left of the interface
+        satR = self.rrL @ (-qR2/3 + qLqR/6 + qL2/6)    # SAT for the right of the interface
+
+        return satL, satR

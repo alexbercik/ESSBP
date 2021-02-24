@@ -12,13 +12,9 @@ import matplotlib.pyplot as plt
 from matplotlib import rc
 rc('text', usetex=True)
 
-from Source.Solvers.PdeSolverFd import PdeSolverFd
-from Source.Solvers.PdeSolverSbp import PdeSolverSbp
-from Source.Solvers.PdeSolverDg import PdeSolverDg
 from Source.TimeMarch.TimeMarching import TimeMarching
-from Source.DiffEq.DiffEqBase import DiffEqOverwrite
 
-class PdeSolver(PdeSolverFd, PdeSolverSbp, PdeSolverDg):
+class PdeSolver:
 
     
     # Initialize parameters
@@ -113,7 +109,9 @@ class PdeSolver(PdeSolverFd, PdeSolverSbp, PdeSolverDg):
         self.nn = nn
         self.nelem = nelem
         self.nen = nen
+        self.neq_node = self.diffeq.neq_node
         self.sat_flux_type = sat_flux_type
+        self.pde_order = self.diffeq.pde_order
 
         # Other
         self.obj_name = obj_name
@@ -147,6 +145,8 @@ class PdeSolver(PdeSolverFd, PdeSolverSbp, PdeSolverDg):
                 print(cons_obj_name)
                 raise Exception('The variable cons_obj_name has to be either a string or a tuple of strings')
 
+        self.diffeq.calc_cons_obj = self.calc_cons_obj
+        self.diffeq.n_cons_obj = self.n_cons_obj
 
         ''' Check all inputs '''
 
@@ -172,54 +172,17 @@ class PdeSolver(PdeSolverFd, PdeSolverSbp, PdeSolverDg):
         self.xmin = xmin
         self.xmax = xmax
         
-        ''' Set Discretization '''
-        
-        if disc_type == 'fd':
-            if cons_obj_name is not None:
-                self.cons_obj_name = None
-                self.bool_calc_cons_obj = False
-                self.n_cons_obj = 0
-                print('WARNING: No conservation objectives currently defined for Finite Difference. Ignoring.')
-
-            self.calc_cons_obj = None # TODO
-            self.fd_init()
-
-            # TODO: create these functions for FD and uncomment lines below
-            # self.energy = self.fd_energy
-            # self.conservation = self.fd_conservation
-            # self.calc_error = self.fd_calc_error
-
-        elif disc_type == 'lgl' or disc_type == 'lg' or disc_type == 'nc' or disc_type == 'csbp':
-
-            self.sat_type = sat_flux_type
-            self.sbp_init()
-
-            self.energy = self.sbp_energy
-            self.energy_elem = self.sbp_energy_elem
-            self.conservation = self.sbp_conservation
-            self.conservation_elem = self.sbp_conservation_elem
-            
-        elif disc_type == 'dg':
-            
-            self.flux_type = sat_flux_type
-            self.dg_init()
-            
-            self.energy = self.dg_energy
-            self.energy_elem = self.dg_energy_elem
-            self.conservation = self.dg_conservation
-            self.conservation_elem = self.dg_conservation_elem
-
-        else:
-            raise Exception('Unknown spatial discretization')
+        ''' Call the discretisation specific method to finish the class initialization '''
+        self.init_disc_specific()        
         
         ''' Sanity Checks '''
         
         # time step stability
-        if self.dt > 0.1*(self.xmax-self.xmin)/self.nn/self.diffeq_in.calc_LF_const():
+        if self.dt > 0.1*(self.xmax-self.xmin)/self.nn/self.diffeq.calc_LF_const():
             print('WARNING: time step dt may not be small enough to remain stable.')
             print('Assuming CFL = 0.1 and max wave speed = {0:.2g}, try dt < {1:.2g}'.format(
-                self.diffeq_in.calc_LF_const(),
-                0.1*(self.xmax-self.xmin)/self.nn/self.diffeq_in.calc_LF_const()))
+                self.diffeq.calc_LF_const(),
+                0.1*(self.xmax-self.xmin)/self.nn/self.diffeq.calc_LF_const()))
         
 
     def solve(self, q0_in=None, q0_idx=None):
@@ -237,7 +200,8 @@ class PdeSolver(PdeSolverFd, PdeSolverSbp, PdeSolverDg):
                         bool_plot_sol = self.bool_plot_sol,
                         bool_calc_obj = self.bool_calc_obj,
                         bool_calc_cons_obj = self.bool_calc_cons_obj,
-                        print_sol_norm = self.print_sol_norm)
+                        print_sol_norm = self.print_sol_norm,
+                        dqdt=self.dqdt, dfdq=self.dfdq)
         
         self.q_sol =  tm_class.solve(q0, self.dt, self.n_ts)
         self.obj = tm_class.obj
@@ -331,15 +295,15 @@ class PdeSolver(PdeSolverFd, PdeSolverSbp, PdeSolverDg):
 
         # determine error to use
         if method == 'SBP' or method == 'Rms':
-            q_exa = self.diffeq_in.exact_sol(tf)
+            q_exa = self.diffeq.exact_sol(tf)
             error = q - q_exa
         elif method == 'max diff':
-            q_exa = self.diffeq_in.exact_sol(tf)
+            q_exa = self.diffeq.exact_sol(tf)
             error = np.max(abs(q-q_exa))
         elif method == 'Boundary':
             error = abs(q[0]-q[-1])
         elif method == 'Truncation-SBP' or method == 'Truncation-Rms':
-            q_exa = self.diffeq_in.exact_sol(tf)
+            q_exa = self.diffeq.exact_sol(tf)
             error = self.diffeq.dqdt(q - q_exa)
         else:
             raise Exception('Unknown error method. Use one of: H-norm, Rms, Boundary, Truncation-SBP, Truncation-Rms')
@@ -429,14 +393,14 @@ class PdeSolver(PdeSolverFd, PdeSolverSbp, PdeSolverDg):
         
         nnelem,nelem = q.shape      
         A = np.zeros((nelem*nnelem,nelem*nnelem))      
-        assert(self.nn*self.diffeq_in.neq_node==q.size),"ERROR: sizes don't match"
+        assert(self.nn*self.neq_node==q.size),"ERROR: sizes don't match"
         
         for i in range(nnelem):
             for j in range(nelem):
                 ei = np.zeros((nnelem,nelem))
                 ei[i,j] = 1.*step
-                q_r = self.diffeq.dqdt(q+ei).flatten('F')
-                q_l = self.diffeq.dqdt(q-ei).flatten('F')
+                q_r = self.dqdt(q+ei).flatten('F')
+                q_l = self.dqdt(q-ei).flatten('F')
                 idx = np.where(ei.flatten('F')>step/10)[0][0]
                 A[:,idx] = (q_r - q_l)/(2*step)
         
@@ -463,9 +427,9 @@ class PdeSolver(PdeSolverFd, PdeSolverSbp, PdeSolverDg):
             if display_time and (time is not None):
                 ax = plt.gca()
                 # define matplotlib.patch.Patch properties
-                props = dict(boxstyle='round', facecolor='white')
+                #props = dict(boxstyle='round', facecolor='white')
                 ax.text(0.05, 0.95, r'$t=$ '+str(round(time,2))+' s', transform=ax.transAxes, 
-                        fontsize=14, verticalalignment='top', bbox=props)           
+                        fontsize=14, verticalalignment='top')           
             if plt_save_name is not None:
                 plt.savefig(plt_save_name+'.eps', format='eps')
             plt.show()
@@ -524,17 +488,27 @@ class PdeSolver(PdeSolverFd, PdeSolverSbp, PdeSolverDg):
             The default is None, in which case the default q0_type for the
             DiffEq is used.
         '''
-        self.diffeq_unforced = self.diffeq
-        q0 = self.diffeq_unforced.set_q0(q0_type)
+
+        q0 = self.diffeq.set_q0(q0_type)
         
-        rhs = self.diffeq_unforced.dqdt(q0)
-        new_dqdt = lambda q: self.diffeq_unforced.dqdt(q) - rhs
+        if self.disc_type == 'fd':
+            rhs = self.diffeq.dqdt(q0)
+            self.dqdt = lambda q: self.diffeq.dqdt(q) - rhs
+        elif self.disc_type == 'lgl' or self.disc_type == 'lg' or self.disc_type == 'nc' or self.disc_type == 'csbp':
+            rhs = self.sbp_dqdt(q0)
+            self.dqdt = lambda q: self.sbp_dqdt(q) - rhs           
+        elif self.disc_type == 'dg':
+            if self.weak_form:
+                rhs = self.dg_dqdt_weak(q0)
+                self.dqdt = lambda q: self.dg_dqdt_weak(q) - rhs  
+            else:
+                rhs = self.dg_dqdt_strong(q0)
+                self.dqdt = lambda q: self.dg_dqdt_strong(q) - rhs  
+        else:
+            raise Exception('Invalid discretization type')
         
-        self.diffeq = DiffEqOverwrite(self.diffeq, new_dqdt, self.diffeq.dfdq, self.diffeq.dfds,
-                                           self.calc_cons_obj, self.n_cons_obj)
-        
-        self.diffeq_in.exact_sol = lambda *args: q0
-        self.diffeq_in.has_exa_sol = True
+        self.diffeq.exact_sol = lambda *args: q0
+        self.diffeq.has_exa_sol = True
         
     def perturb_q0(self, eigmode=True, randnoise=False, ampli=0.001):
         '''

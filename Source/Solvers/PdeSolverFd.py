@@ -7,14 +7,26 @@ Created on Thu Oct  1 11:33:50 2020
 """
 
 from Source.Disc.MakeMesh import MakeMesh
+from Source.Solvers.PdeSolver import PdeSolver
 
-class PdeSolverFd():
+class PdeSolverFd(PdeSolver):
 
-    def fd_init(self):
+    def init_disc_specific(self):
+
+        # TODO: create these functions for FD and uncomment lines below
+        # self.energy = self.fd_energy
+        # self.conservation = self.fd_conservation
+        # self.calc_error = self.fd_calc_error
+
+        if self.cons_obj_name is not None:
+            self.cons_obj_name = None
+            self.bool_calc_cons_obj = False
+            self.n_cons_obj = 0
+            print('WARNING: No conservation objectives currently defined for Finite Difference. Ignoring.')
 
         ''' Verify inputs '''
 
-        assert self.disc_type == 'fd', 'Invalid spatial discretization type'
+        assert self.disc_type.lower() == 'fd', 'Invalid spatial discretization type'
 
         ''' Calculate other parameters '''
 
@@ -23,5 +35,7 @@ class PdeSolverFd():
 
         self.xy = self.mesh.xy
         self.diffeq.set_mesh(self.mesh)
-        self.diffeq.set_fd_op(self.p,False)
-        self.diffeq_in = self.diffeq
+        self.diffeq.set_fd_op(self.p)
+        self.dfdq = None # use default diffeq ones
+        self.dqdt = None
+        
