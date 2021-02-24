@@ -21,11 +21,12 @@ np.printoptions(precision=2)
 dim = 1 # 1D or 2D (will add 3D another time)
 p = 4
 pcub = 2*p-1
-sbp_fam = 'Rdn1' # Rd, Rdn1, R0
+sbp_type = 'lgl' # lg, lgl, nc, csbp
 basis_type = 'monomial' # Optional arg, does not impact the const. of sbp op
+nn = 0 # number of nodes (optional)
 
 # Construct the SBP operators
-sbp = MakeSbpOp(p, dim, sbp_fam, basis_type=basis_type)
+sbp = MakeSbpOp(p, sbp_type, nn, basis_type)
 
 xy = sbp.xy
 d1 = sbp.dd[0,:,:]
