@@ -53,6 +53,11 @@ class Burgers(PdeBaseCons):
 
         dEdq = fn.diag(q)
         return dEdq
+    
+    def d2Edq2(self, q):
+        
+        d2Edq2 = fn.diag(np.ones(q.shape))
+        return d2Edq2
 
     def dfdq(self, q):
         # take dEdx as a vector a_i(q) and find matrix d(a_i)/d(q_j)
@@ -80,35 +85,3 @@ class Burgers(PdeBaseCons):
         dEdq_eig_abs = abs(dEdq)
         return dEdq_eig_abs
 
-
-    def sat_der1_ec(self, q_fL, q_fR, sigma=1, avg='simple'):
-        '''
-        Purpose
-        ----------
-        Calculate the entropy conservative SAT for Burgers equation
-        Parameters
-        ----------
-        q_fL : np array, shape (neq_node,nelem)
-            The extrapolated solution of the left element(s) to the facet(s).
-        q_fR : np array, shape (neq_node,nelem)
-            The extrapolated solution of the left element(s) to the facet(s).
-        sigma: float (default=1)
-            if sigma=1, creates upwinding SAT
-            if sigma=0, creates symmetric SAT
-        Returns
-        -------
-        satL : np array
-            The contribution of the SAT for the first derivative to the element(s)
-            on the left.
-        satR : np array
-            The contribution of the SAT for the first derivative to the element(s)
-            on the right.
-        '''
-        qLqR = q_fL * q_fR
-        qL2 = q_fL**2
-        qR2 = q_fR**2
-
-        satL = self.rrR @ (qL2/3 - qLqR/6 - qR2/6)    # SAT for the left of the interface
-        satR = self.rrL @ (-qR2/3 + qLqR/6 + qL2/6)    # SAT for the right of the interface
-
-        return satL, satR

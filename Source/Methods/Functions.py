@@ -16,25 +16,28 @@ import numpy as np
 def gm_gv(A,b):
     '''
     Equivalent to np.einsum('ijk,jk->ik',A,b) where A is a 3-tensor of shape
-    (nen,nen,nelem) and b is a 2-tensor of shape (nen,nelem). This can be 
+    (nen1,nen2,nelem) and b is a 2-tensor of shape (nen2,nelem). This can be 
     thought of as a global matrix @ global vector.
 
     Parameters
     ----------
-    A : numpy array of shape (nen,nen,nelem)
-    b : numpy array of shape (nen,nelem)
-    
-    note: in theory this works for general shapes (i,j,k) and (j,k)
+    A : numpy array of shape (nen1,nen2,nelem)
+    b : numpy array of shape (nen2,nelem)
 
     Returns
     -------
-    c : numpy array of shape (nen,nelem)
+    c : numpy array of shape (nen1,nelem)
     '''
-    ri,rj,re = np.shape(A)
-    c = np.zeros((ri,re))
-    for i in range(ri):
-        for j in range(rj):
-            for e in range(re):
+    nen1,nen2,nelem = np.shape(A)
+    nen2b,nelemb = np.shape(b)
+    if nen2!=nen2b:
+        raise Exception('array shapes do not match')    
+    if nelem!=nelemb:
+        raise Exception('element shapes do not match')   
+    c = np.zeros((nen1,nelem))
+    for i in range(nen1):
+        for j in range(nen2):
+            for e in range(nelem):
                 c[i,e] += A[i,j,e]*b[j,e]
     return c
 
@@ -42,26 +45,29 @@ def gm_gv(A,b):
 def gm_gm(A,B):
     '''
     Equivalent to np.einsum('ijk,jlk->ilk',A,B) where A is a 3-tensor of shape
-    (nen,nen,nelem) and B is a 3-tensor of shape (nen,nen,nelem). This can be 
+    (nen1,nen2,nelem) and B is a 3-tensor of shape (nen2,nen3,nelem). This can be 
     thought of as a global matrix @ global matrix.
 
     Parameters
     ----------
-    A : numpy array of shape (nen,nen,nelem)
-    B : numpy array of shape (nen,nen,nelem)
-    
-    note: this does not work for general shapes (i,j,k) and (j,l,k)
+    A : numpy array of shape (nen1,nen2,nelem)
+    B : numpy array of shape (nen2,nen3,nelem)
 
     Returns
     -------
-    c : numpy array of shape (nen,nen,nelem)
+    c : numpy array of shape (nen1,nen3,nelem)
     '''
-    ri,rj,re = np.shape(A)
-    c = np.zeros((ri,rj,re))
-    for i in range(ri):
-        for j in range(rj):
-            for l in range(rj):
-                for e in range(re):
+    nen1,nen2,nelem = np.shape(A)
+    nen2b,nen3,nelemb = np.shape(B)
+    if nen2!=nen2b:
+        raise Exception('array shapes do not match')    
+    if nelem!=nelemb:
+        raise Exception('element shapes do not match')   
+    c = np.zeros((nen1,nen3,nelem))
+    for i in range(nen1):
+        for j in range(nen2):
+            for l in range(nen3):
+                for e in range(nelem):
                     c[i,l,e] += A[i,j,e]*B[j,l,e]
     return c
 
@@ -69,26 +75,27 @@ def gm_gm(A,B):
 def gm_lm(A,B):
     '''
     Equivalent to np.einsum('ijk,jl->ilk',A,B) where A is a 3-tensor of shape
-    (nen,nen,nelem) and B is a 2-tensor of shape (nen,nen). This can be 
+    (nen1,nen2,nelem) and B is a 2-tensor of shape (nen2,nen3). This can be 
     thought of as a global matrix @ local matrix.
 
     Parameters
     ----------
-    A : numpy array of shape (nen,nen,nelem)
-    B : numpy array of shape (nen,nen)
-    
-    note: this does not work for general shapes (i,j,k) and (j,l,k)
+    A : numpy array of shape (nen1,nen2,nelem)
+    B : numpy array of shape (nen2,nen3)
 
     Returns
     -------
-    c : numpy array of shape (nen,nen,nelem)
+    c : numpy array of shape (nen1,nen3,nelem)
     '''
-    ri,rj,re = np.shape(A)
-    c = np.zeros((ri,rj,re))
-    for i in range(ri):
-        for j in range(rj):
-            for l in range(rj):
-                for e in range(re):
+    nen1,nen2,nelem = np.shape(A)
+    nen2b,nen3 = np.shape(B)
+    if nen2!=nen2b:
+        raise Exception('shapes do not match')
+    c = np.zeros((nen1,nen3,nelem))
+    for i in range(nen1):
+        for j in range(nen2):
+            for l in range(nen3):
+                for e in range(nelem):
                     c[i,l,e] += A[i,j,e]*B[j,l]
     return c
 
@@ -98,27 +105,112 @@ def lm_gm(A,B):
     NOTE: NOT equivalent to A @ B 
     That returns the elemntwise transpose of the desired result.
     Equivalent to np.einsum('ij,jlk->ilk',A,B) where A is a 2-tensor of shape
-    (nen,nen) and B is a 3-tensor of shape (nen,nen,nelem). This can be 
+    (nen1,nen2) and B is a 3-tensor of shape (nen2,nen3,nelem). This can be 
     thought of as a local matrix @ global matrix.
 
     Parameters
     ----------
-    A : numpy array of shape (nen,nen)
-    B : numpy array of shape (nen,nen,nelem)
-    
-    note: this does not work for general shapes (i,j,k) and (j,l,k)
+    A : numpy array of shape (nen1,nen2)
+    B : numpy array of shape (nen2,nen3,nelem)
 
     Returns
     -------
-    c : numpy array of shape (nen,nen,nelem)
+    c : numpy array of shape (nen1,nen3,nelem)
     '''
-    ri,rj,re = np.shape(B)
-    c = np.zeros((ri,rj,re))
-    for i in range(ri):
-        for j in range(rj):
-            for l in range(rj):
-                for e in range(re):
+    nen1,nen2 = np.shape(A)
+    nen2b,nen3,nelem = np.shape(B)
+    if nen2!=nen2b:
+        raise Exception('shapes do not match')
+    c = np.zeros((nen1,nen3,nelem))
+    for i in range(nen1):
+        for j in range(nen2):
+            for l in range(nen3):
+                for e in range(nelem):
                     c[i,l,e] += A[i,j]*B[j,l,e]
+    return c
+
+@jit(nopython=True)
+def gs_lm(A,B):
+    '''
+    Takes a global scalar of shape either (nelem,) or (1,nelem) and a local
+    matrix of shape (nen1,nen2) and returns a global matrix of shape 
+    (nen1,nen2,nelem) where each matrix is multiplied by the corresponding scalar
+
+    Parameters
+    ----------
+    A : numpy array of shape (nelem,) or (1,nelem)
+    B : numpy array of shape (nen1,nen2)
+
+    Returns
+    -------
+    c : numpy array of shape (nen1,nen2,nelem)
+    '''
+    nelem = A.size
+    nen1,nen2 = np.shape(B)
+    c = np.zeros((nen1,nen2,nelem))
+    if A.ndim == 1:
+        for e in range(nelem):
+            c[:,:,e] = A[e]*B
+    elif A.ndim == 2:
+        for e in range(nelem):
+            c[:,:,e] = A[0,e]*B
+    else: raise Exception('Scalar shape not understood. Should be (nelem,) or (1,nelem)')
+
+    return c
+
+@jit(nopython=True)
+def gv_lm(A,B):
+    '''
+    Takes a global vector of shape (nen1,nelem) and a local matrix of shape (nen1,nen2) 
+    and returns a global matrix of shape (nen1,nen2,nelem)
+
+    Parameters
+    ----------
+    A : numpy array of shape (nen1,nelem)
+    B : numpy array of shape (nen1,nen2)
+
+    Returns
+    -------
+    c : numpy array of shape (nen1,nen2,nelem)
+    '''
+    nen1,nelem = np.shape(A)
+    nen1b,nen2 = np.shape(B)
+    if nen1!=nen1b:
+        raise Exception('shapes do not match')
+    c = np.zeros((nen1,nen2,nelem))
+    for e in range(nelem):
+            c[:,:,e] = A[:,e] @ B
+
+    return c
+
+@jit(nopython=True)
+def gv_lvT(A,B):
+    '''
+    Takes a global vector of shape (nen1,nelem) and a local vector of shape 
+    (nen2,) or (1,nen2) and returns the outer product global matrix of shape 
+    (nen1,nen2,nelem)
+
+    Parameters
+    ----------
+    A : numpy array of shape (nen1,nelem)
+    B : numpy array of shape (nen2,) or (1,nen2)
+
+    Returns
+    -------
+    c : numpy array of shape (nen1,nen2,nelem)
+    '''
+    nen1,nelem = np.shape(A)
+    nen2 = B.size
+    c = np.zeros((nen1,nen2,nelem))
+    if B.ndim == 1:
+        for e in range(nelem):
+            c[:,:,e] = np.outer(A[:,e],B)
+    elif B.ndim == 2:
+        b = B[0,:]
+        for e in range(nelem):
+            c[:,:,e] = np.outer(A[:,e],b)
+    else: raise Exception('Local vector shape not understood. Should be (nen,) or (1,nen)')
+
     return c
 
 @jit(nopython=True)
@@ -210,8 +302,121 @@ def abs_eig_mat(mat):
     return mat_abs
 
 
+@jit(nopython=True)
+def glob_block_2d_mat(blockL,blockM,blockR):
+    '''
+    Takes 3 3d arrays, blockL and blockR of shape (nen,nen,nelem-1) and 
+    blockM of shape (nen,nen,nelem) returns a 2d array of shape (nen*nelem,nen*nelem)
+    where the nelem (nen,nen) blocks are along the diagonal, blockL blocks are
+    to the left of the main diagonal, and blockR blocks are to the right.
+    
+    actually faster than using slicing! slower function below in commented section
+
+    Returns
+    -------
+    c : numpy array of shape (nen*neq_node,nen*neq_node)
+    '''
+    nen,nenb,nelem = blockM.shape
+    nenc,nend,nelemb = blockL.shape
+    nene,nenf,nelemc = blockR.shape
+    if (nenb!=nen or nenc!=nen or nend!=nen or nene!=nen or nenf!=nen):
+        raise Exception('block shapes do not match')    
+    if (nelemb!=nelem-1 or nelemc!=nelem-1):
+        raise Exception('number of blocks do not match')    
+        
+    mat = np.zeros((nen*nelem,nen*nelem))
+    for e in range(nelem-1):
+        for i in range(nen):
+            for j in range(nen):
+                mat[nen*e+i,nen*e+j] = blockM[i,j,e]
+                mat[nen*e+i+nen,nen*e+j] = blockL[i,j,e]
+                mat[nen*e+i,nen*e+j+nen] = blockR[i,j,e]
+    e = nelem-1
+    for i in range(nen):
+        for j in range(nen):
+            mat[nen*e+i,nen*e+j] = blockM[i,j,e]
+            
+    return mat
+                
+
+@jit(nopython=True)
+def glob_block_2d_mat_periodic(blockL,blockM,blockR):
+    '''
+    Takes 3 3d arrays of shape (nen,nen,nelem) and returns a 2d array of shape 
+    (nen*nelem,nen*nelem) where the nelem (nen,nen) blocks are along the diagonal, 
+    blockL blocks are to the left of the main diagonal, and blockR blocks are 
+    to the right. The first block of blockL is sent to the top right while the
+    last block of blockR is sent to the bottom left.
+
+    Returns
+    -------
+    c : numpy array of shape (nen*neq_node,nen*neq_node)
+    '''
+    nen,nenb,nelem = blockM.shape
+    nenc,nend,nelemb = blockL.shape
+    nene,nenf,nelemc = blockR.shape
+    if (nenb!=nen or nenc!=nen or nend!=nen or nene!=nen or nenf!=nen):
+        raise Exception('block shapes do not match')    
+    if (nelemb!=nelem or nelemc!=nelem):
+        raise Exception('number of blocks do not match')  
+    
+    mat = np.zeros((nen*nelem,nen*nelem))        
+    for e in range(nelem-1):
+        for i in range(nen):
+            for j in range(nen):
+                mat[nen*e+i,nen*e+j] = blockM[i,j,e]
+                mat[nen*e+i,nen*(e-1)+j] = blockL[i,j,e]
+                mat[nen*e+i,nen*(e+1)+j] = blockR[i,j,e]
+    e = nelem-1
+    for i in range(nen):
+        for j in range(nen):
+            mat[nen*e+i,nen*e+j] = blockM[i,j,e]
+            mat[nen*e+i,nen*(e-1)+j] = blockL[i,j,e]
+            mat[nen*e+i,j] = blockR[i,j,e]
+            
+    return mat
+
+
 
 """ Old functions (no longer useful)
+
+@jit(nopython=True)
+def glob_block_2d_mat(blockL,blockM,blockR):
+    '''
+    Takes 3 3d arrays, blockL and blockR of shape (nen,nen,nelem-1) and 
+    blockM of shape (nen,nen,nelem) returns a 2d array of shape (nen*nelem,nen*nelem)
+    where the nelem (nen,nen) blocks are along the diagonal, blockL blocks are
+    to the left of the main diagonal, and blockR blocks are to the right.
+
+    Returns
+    -------
+    c : numpy array of shape (nen*neq_node,nen*neq_node)
+    '''
+    nen,nenb,nelem = blockM.shape
+    nenc,nend,nelemb = blockL.shape
+    nene,nenf,nelemc = blockR.shape
+    if (nenb!=nen or nenc!=nen or nend!=nen or nene!=nen or nenf!=nen):
+        raise Exception('block shapes do not match')    
+    if (nelemb!=nelem-1 or nelemc!=nelem-1):
+        raise Exception('number of blocks do not match')    
+        
+    mat = np.zeros((nen*nelem,nen*nelem))
+    for e in range(nelem-1):
+        nene = nen*e
+        nenen = nene+nen
+        for j in range(nen):
+            nenej = nene+j
+            mat[nene:nenen,nenej] = blockM[:,j,e]
+            mat[nenen:nenen+nen,nenej] = blockL[:,j,e]
+            mat[nene:nenen,nenen+j] = blockR[:,j,e]
+    e = nelem-1
+    nene = nen*e
+    nenen = nene+nen
+    for j in range(nen):
+        nenej = nene+j
+        mat[nene:nenen,nenej] = blockM[:,j,e]
+        
+    return mat
 
 @jit(nopython=True)
 def lm_lv(A,b):

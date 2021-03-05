@@ -35,7 +35,7 @@ tm_method = 'rk4' # explicit_euler, rk4
 dt = 0.0001
 dt_init = dt
 t_init = 0
-tf = 10.00
+tf = 0.10
 
 # Domain
 xmin = -1
@@ -48,8 +48,8 @@ nn = 60
 nelem = 10 # optional, number of elements
 nen = 0 # optional, number of nodes per element
 p = 3
-use_split_form = True
-sat_flux_type = 'ec'
+use_split_form = False
+sat_flux_type = 'central'
 
 # Initial solution
 q0 = None
@@ -86,7 +86,7 @@ solver = c_solver(diffeq,                              # Diffeq
 #solver.weakform = True
 solver.force_steady_solution()
 solver.perturb_q0()
-A = solver.check_eigs(plt_save_name=savefile+'_eigs',returnA=True,title='Eigenvalues: ' + title)
+A = solver.check_eigs(plt_save_name=savefile+'_eigs',returnA=True,title='Eigenvalues: ' + title,exact_dfdq=True)
 eigs = np.linalg.eigvals(A)
 max_eig = max(eigs.real)
 def theory_fn(time):
@@ -94,11 +94,11 @@ def theory_fn(time):
 
 solver.solve()
 diffeq.plt_style_sol[0] = {'color':'b','linestyle':'-','marker':'','linewidth':3}
-solver.plot_sol(plt_save_name=savefile+'_sol',title=title)
-solver.plot_error(method='max diff',savefile=savefile+'_error', extra_fn=theory_fn, extra_label='Theory', title=title)
+#solver.plot_sol(plt_save_name=savefile+'_sol',title=title)
+#solver.plot_error(method='max diff',savefile=savefile+'_error', extra_fn=theory_fn, extra_label='Theory', title=title)
 #from Methods.Analysis import animate
 #animate(solver, plotargs={'display_time':True},skipsteps=100)
 
 #solver.solve()
 #solver.plot_sol()
-solver.plot_cons_obj()
+#solver.plot_cons_obj()

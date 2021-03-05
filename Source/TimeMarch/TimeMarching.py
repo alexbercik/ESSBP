@@ -89,7 +89,7 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
         if dfdq is None:
             self.f_dfdq = self.diffeq.dfdq
         else:
-            self.f_ddfdq = dfdq
+            self.f_dfdq = dfdq
 
         self.n_obj = self.diffeq.n_obj
         if self.n_obj == 0: self.bool_calc_obj = False
@@ -145,6 +145,7 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
             self.cons_obj = np.zeros((self.n_cons_obj, n_ts+1))
 
         self.shape_q = q0.shape
+        self.len_q = q0.size
 
         return self.tm_solver(q0, dt, n_ts)
 
