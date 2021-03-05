@@ -47,24 +47,22 @@ class TimeMarchingOneStep:
 
     def implicit_euler(self, q0, dt, n_ts):
 
-        I = sp.eye(self.len_q)
+        I = np.eye(self.len_q)
 
         # self.M = np.eye(self.len_q)
 
         def calc_time_step(q_in):
 
+            shape = q_in.shape
             ff = self.f_dqdt(q_in)
             dfdq = self.f_dfdq(q_in)
 
             lhs = I - dt*dfdq
-            rhs = dt*ff
+            rhs = dt*(ff.flatten('F'))
 
-            if sp.issparse(lhs):
-                dq = spsolve(lhs, rhs)
-            else:
-                dq = np.linalg.solve(lhs, rhs)
+            dq = np.linalg.solve(lhs, rhs)
 
-            q_new = q_in + dq
+            q_new = q_in + np.reshape(dq, shape, 'F')
 
             # self.M = self.M @ (I + dfdq)
 
@@ -74,15 +72,15 @@ class TimeMarchingOneStep:
         self.common(q, 0, n_ts, dt)
 
         if self.keep_all_ts:
-            q_vec = np.zeros([self.len_q, n_ts+1])
-            q_vec[:, 0] = q
+            q_vec = np.zeros([*self.shape_q, n_ts+1])
+            q_vec[:, :, 0] = q
 
         for i in range(1, n_ts+1):
 
             q = calc_time_step(q)
 
             if self.keep_all_ts:
-                q_vec[:,i] = q
+                q_vec[:,:,i] = q
 
             self.common(q, i, n_ts, dt)
 
@@ -98,22 +96,20 @@ class TimeMarchingOneStep:
     def trapezoidal(self, q0, dt, n_ts):
 
         self.len_q = q0.size
-        I = sp.eye(self.len_q)
+        I = np.eye(self.len_q)
 
         def calc_time_step(q_in):
 
+            shape = q_in.shape
             ff = self.f_dqdt(q_in)
             dfdq = self.f_dfdq(q_in)
 
             lhs = I - 0.5*dt*dfdq
-            rhs = dt*ff
+            rhs = dt*ff.flatten('F')
 
-            if sp.issparse(lhs):
-                dq = spsolve(lhs, rhs)
-            else:
-                dq = np.linalg.solve(lhs, rhs)
+            dq = np.linalg.solve(lhs, rhs)
 
-            q_new = q_in + dq
+            q_new = q_in + np.reshape(dq, shape, 'F')
 
             return q_new
 
@@ -121,14 +117,14 @@ class TimeMarchingOneStep:
         self.common(q, 0, n_ts, dt)
 
         if self.keep_all_ts:
-            q_vec = np.zeros([self.len_q, n_ts+1])
-            q_vec[:, 0] = q
+            q_vec = np.zeros([*self.shape_q, n_ts+1])
+            q_vec[:, :, 0] = q
 
         for i in range(1, n_ts+1):
             q = calc_time_step(q)
 
             if self.keep_all_ts:
-                q_vec[:,i] = q
+                q_vec[:,:,i] = q
 
             self.common(q, i, n_ts, dt)
 

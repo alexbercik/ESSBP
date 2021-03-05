@@ -12,6 +12,7 @@ from Source.Disc.MakeMesh import MakeMesh
 from Source.Disc.MakeSbpOp import MakeSbpOp
 from Source.Disc.Sat import Sat
 from Source.Solvers.PdeSolver import PdeSolver
+import Source.Methods.Functions as fn
 
 
 class PdeSolverSbp(PdeSolver, Sat):
@@ -87,88 +88,52 @@ class PdeSolverSbp(PdeSolver, Sat):
     def sbp_dqdt(self, q):
         
         dqdt_out = self.diffeq.dqdt(q)
-        satA , satB = np.empty(q.shape) , np.empty(q.shape)
-        satA[:,:-1] , satB[:,1:] = self.calc_sat(q[:,:-1], q[:,1:])
+        satL , satR = np.empty(q.shape) , np.empty(q.shape)
+        satL[:,:-1] , satR[:,1:] = self.calc_sat(q[:,:-1], q[:,1:])
         
         if self.isperiodic:
-            satA[:,[-1]] , satB[:,[0]] = self.calc_sat(q[:,[-1]], q[:,[0]])
+            satL[:,[-1]] , satR[:,[0]] = self.calc_sat(q[:,[-1]], q[:,[0]])
         else:
             # TODO: Generalize to include varying qL and qR
-            satA[:,[-1]] = self.calc_sat(self.diffeq.qL.reshape((self.neq_node,1)), q[:,[0]])[0]
-            satB[:,[0]] = self.calc_sat(q[:,[-1]], self.diffeq.qR.reshape((self.neq_node,1)))[1]
+            satL[:,[-1]] = self.calc_sat(self.diffeq.qL.reshape((self.neq_node,1)), q[:,[0]])[0]
+            satR[:,[0]] = self.calc_sat(q[:,[-1]], self.diffeq.qR.reshape((self.neq_node,1)))[1]
             
-        dqdt_out += self.hh_inv_phys @ ( satA + satB )
+        dqdt_out += self.hh_inv_phys @ ( satL + satR )
 
         return dqdt_out
     
     def sbp_dfdq(self, q):
         
-        dfdq_out = self.diffeq.dfdq(q)
+        dfdq_diffeq = self.diffeq.dfdq(q)
+        shape = dfdq_diffeq.shape
         
-        dsatAdq , dsatBdq = np.empty(q.shape) , np.empty(q.shape)
-        dsatAdq[:,:-1] , dsatBdq[:,1:] = self.calc_sat(q[:,:-1], q[:,1:])
+        # notation is: given an element q, SatL and SatR correspond to L and R interfaces
+        # SatL has derivatives with respect to q and qL, the element to L
+        # SatR has derivatives with respect to q and qR, the element to R
+        # note that this is slightly different notation than the interface based one used in Sat class
+        dSatLdq, dSatRdq, dSatLdqL, dSatRdqR = np.zeros(shape), np.empty(shape), np.zeros(shape), np.empty(shape)
+        dSatRdq[:,:,:-1], dSatRdqR[:,:,:-1], dSatLdqL[:,:,1:], dSatLdq[:,:,1:] = self.calc_dfdq_sat(q[:,:-1], q[:,1:])                
         
         if self.isperiodic:
-            satA[:,[-1]] , satB[:,[0]] = self.calc_sat(q[:,[-1]], q[:,[0]])
+            dSatRdq[:,:,[-1]], dSatRdqR[:,:,[-1]], dSatLdqL[:,:,[0]], dSatLdq[:,:,[0]] = self.calc_dfdq_sat(q[:,[-1]], q[:,[0]])
         else:
-            # TODO: Generalize to include varying qL and qR
-            satA[:,[-1]] = self.calc_sat(self.diffeq.qL.reshape((self.neq_node,1)), q[:,[0]])[0]
-            satB[:,[0]] = self.calc_sat(q[:,[-1]], self.diffeq.qR.reshape((self.neq_node,1)))[1]
+            raise Exception('Linearization not coded up yet for boundary SATs')
+        
+        # global 2d matrix blocks acting on element q blocks
+        dfdq_q = dfdq_diffeq + fn.lm_gm(self.hh_inv_phys, dSatLdq + dSatRdq)
+        # global 2d matrix blocks acting on element qL blocks (to the left of dfdq_q)
+        # length nelem if periodic (first goes to top right, remaining under main diagonal)
+        dfdq_qL = fn.lm_gm(self.hh_inv_phys, dSatLdqL)
+        # global 2d matrix blocks acting on element qR blocks (to the right of dfdq_q)
+        # length nelem if periodic (last goes to bottom left, remaining above main diagonal)
+        dfdq_qR = fn.lm_gm(self.hh_inv_phys, dSatRdqR)
+        
+        if self.isperiodic:
+            dfdq_2d = fn.glob_block_2d_mat_periodic(dfdq_qL,dfdq_q,dfdq_qR)
+        else:
+            raise Exception('Linearization not coded up yet for boundary SATs')        
             
-        dfdq_out += self.hh_inv_phys @ ( satA + satB )
-
-# =============================================================================
-#     def sbp_dfdq_unstruc(self, q):
-# 
-#         n = q.size
-#         dfdq_out = np.zeros((n,n))
-# 
-#         # Calculate the derivative of the sol at all the elements
-#         for ie in range(self.nelem):
-#             idx0, idx1 = self.get_elem_idx_1d(ie)
-#             xy_idx0 = idx0 // self.neq_node
-#             xy_idx1 = idx1 // self.neq_node
-# 
-#             q_elem = q[idx0:idx1]
-#             dfdq_out[idx0:idx1, idx0:idx1] = self.diffeq_in.dfdq(q_elem, xy_idx0, xy_idx1).todense()
-# 
-#         # Calculate the numerical flux at each of the facets
-#         for i_facet in range(self.mesh.nfacet):
-#             idx_elems = self.mesh.gf2ge[:,i_facet]
-# 
-#             idx_elem_facetA = idx_elems[0]
-#             idx_elem_facetB = idx_elems[1]
-# 
-#             # Calculate the value of q on each side of the interface
-#             if idx_elem_facetA >= 0:
-#                 idxA0, idxA1 = self.get_elem_idx_1d(idx_elem_facetA)
-#                 qelemA = q[idxA0:idxA1]
-#             else:
-#                 # TODO: Generalize to include varying qL
-#                 qelemA = self.diffeq_in.qL
-# 
-#             if idx_elem_facetB >= 0:
-#                 idxB0, idxB1 = self.get_elem_idx_1d(idx_elem_facetB)
-#                 qelemB = q[idxB0:idxB1]
-#             else:
-#                 # TODO:  Generalize to include varying qR
-#                 qelemB = self.diffeq_in.qR
-# 
-#             # Calculate the SATs
-#             dSatA_dqA, dSatA_dqB, dSatB_dqA, dSatB_dqB = self.diffeq_in.dfdq_sat(qelemA, qelemB)
-# 
-#             if idx_elem_facetA >= 0:
-#                 dfdq_out[idxA0:idxA1, idxA0:idxA1] += self.hh_inv_phys @ dSatA_dqA
-# 
-#             if idx_elem_facetB >= 0:
-#                 dfdq_out[idxB0:idxB1, idxB0:idxB1] += self.hh_inv_phys @ dSatB_dqB
-# 
-#             if idx_elem_facetA >=0 and idx_elem_facetB >= 0:
-#                 dfdq_out[idxB0:idxB1, idxA0:idxA1] += self.hh_inv_phys @ dSatB_dqA
-#                 dfdq_out[idxA0:idxA1, idxB0:idxB1] += self.hh_inv_phys @ dSatA_dqB
-# 
-#         return dfdq_out
-# =============================================================================
+        return dfdq_2d
 
 
     def sbp_energy_elem(self,q):

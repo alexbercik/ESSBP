@@ -344,8 +344,8 @@ class PdeSolver:
                       obj_name=self.bool_calc_obj, cons_obj_name=self.cons_obj_name,
                       bool_plot_sol=self.bool_plot_sol, print_sol_norm=self.print_sol_norm)
     
-    def check_eigs(self, q=None, plot_eigs=True, returnA=False, step=1.0e-2,
-                   tol=1.0e-10, plt_save_name=None, ymin=None, ymax=None,
+    def check_eigs(self, q=None, plot_eigs=True, returnA=False, exact_dfdq=False,
+                   step=1.0e-2, tol=1.0e-10, plt_save_name=None, ymin=None, ymax=None,
                    xmin=None, xmax=None, time=None, display_time=False, title=None, **kargs):
         '''
         Call on self.diffeq.dqdt to check the stability of the spatial operator
@@ -391,18 +391,20 @@ class PdeSolver:
             else:
                 q = self.diffeq.set_q0()
         
-        nnelem,nelem = q.shape      
-        A = np.zeros((nelem*nnelem,nelem*nnelem))      
-        assert(self.nn*self.neq_node==q.size),"ERROR: sizes don't match"
-        
-        for i in range(nnelem):
-            for j in range(nelem):
-                ei = np.zeros((nnelem,nelem))
-                ei[i,j] = 1.*step
-                q_r = self.dqdt(q+ei).flatten('F')
-                q_l = self.dqdt(q-ei).flatten('F')
-                idx = np.where(ei.flatten('F')>step/10)[0][0]
-                A[:,idx] = (q_r - q_l)/(2*step)
+        if exact_dfdq:
+            A = self.dfdq(q)
+        else:
+            nen,nelem = q.shape      
+            A = np.zeros((nelem*nen,nelem*nen))      
+            assert(self.nn*self.neq_node==q.size),"ERROR: sizes don't match"           
+            for i in range(nen):
+                for j in range(nelem):
+                    ei = np.zeros((nen,nelem))
+                    ei[i,j] = 1.*step
+                    q_r = self.dqdt(q+ei).flatten('F')
+                    q_l = self.dqdt(q-ei).flatten('F')
+                    idx = np.where(ei.flatten('F')>step/10)[0][0]
+                    A[:,idx] = (q_r - q_l)/(2*step)
         
         eigs = np.linalg.eigvals(A)
         print('Max real component =',max(eigs.real))

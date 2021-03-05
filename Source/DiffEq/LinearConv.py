@@ -66,16 +66,15 @@ class LinearConv(PdeBaseCons):
         dEdq = fn.diag(np.ones(q.shape)*self.a)
         return dEdq
 
-    ''' Methods for the element solvers, like SBP and DG '''
+    def d2Edq2(self, q):
+        
+        d2Edq2 = fn.diag(np.zeros(q.shape))
+        return d2Edq2
 
     def dEdq_eig_abs(self, dEdq):
 
         dEdq_eig_abs = np.abs(dEdq)
         return dEdq_eig_abs
-
-    def d2Edq2(self, q):
-        n = q.size
-        return np.zeros((n,n))
 
     def calc_LF_const(self):
         ''' Constant for the Lax-Friedrichs flux'''

@@ -84,11 +84,8 @@ class SatDer1:
         satR = self.rrL @ fn.gm_gv(A_upwind, qf_diff)    # SAT for the right of the interface
 
         return satL, satR
-
-
-    ###################################### TODO ######################################
     
-    def dfdq_sat_der1_upwind_scalar(self, q_fA, q_fB, sigma=1):
+    def dfdq_sat_der1_upwind_scalar(self, q_fL, q_fR, sigma=1, avg='simple'):
         '''
         Purpose
         ----------
@@ -96,50 +93,71 @@ class SatDer1:
         Used for implicit time marching.
         Parameters
         ----------
-        q_fA : np array
-            The extrapolated solution of the left element to the facet.
-        q_fB : np array
-            The extrapolated solution of the left element to the facet.
+        q_fL : np array, shape (1,nelem)
+            The extrapolated solution of the left element(s) to the facet(s).
+        q_fR : np array, shape (1,nelem)
+            The extrapolated solution of the left element(s) to the facet(s).
         sigma: float (default=1)
             if sigma=1, creates upwinding SAT
             if sigma=0, creates symmetric SAT
         Returns
         -------
-        satA : np array
-            The derivative of the contribution of the SAT for the first derivative to the element
-            on the left.
-        satB : np array
-            The derivative of the contribution of the SAT for the first derivative to the element
-            on the right.
+        Given an interface, SatL and SatR are the contributions to either side
+        qL are the solutions (NOT extrapolated) on either side. Therefore:
+            dSatLdqL : derivative of the SAT in the left element wrt left solution
+            dSatLdqR : derivative of the SAT in the left element wrt right solution
+            dSatRdqL : derivative of the SAT in the right element wrt left solution
+            dSatRdqR : derivative of the SAT in the right element wrt right solution
+ 
         '''
+        if avg=='simple':
+            qfacet = (q_fL + q_fR)/2 # Alternatively, a Roe average can be used
+            # derivative of qfacet wrt qL and qR
+            dqfacetdqL = self.rrR.T / 2
+            dqfacetdqR = self.rrL.T / 2
+        elif avg=='roe':
+            raise Exception('Roe Average not coded up yet')
+        else:
+            raise Exception('Averaging method not understood.')
 
-        qf = (q_fA + q_fB)/2
-        qf_diff = (q_fA - q_fB)[0]
+        qfacet = (q_fL + q_fR)/2 # Assumes simple averaging, will need to be modified otherwise
+        qf_diff = q_fL - q_fR
 
         # First derivative of the flux wrt q
-        A = self.diffeq.calc_dEdq(qf).todense()[0,0]
+        A = self.diffeq.dEdq(qfacet)
+        #A_abs = self.diffeq.dEdq_eig_abs(A) # actually just absolute value (scalar in 3d format)
+        A_abs = abs(A)
+        sign_A = np.sign(A)
+        
+        # second derivative of the flux wrt q
+        dAdq = self.diffeq.d2Edq2(qfacet)
+        
+        # derivative of q_diff wrt qL and qR
+        dqf_diffdqL = self.rrR.T
+        dqf_diffdqR = - self.rrL.T
+        
+        factor_qL = fn.gm_lm(dAdq,dqfacetdqL)*qf_diff
+        factor_qR = fn.gm_lm(dAdq,dqfacetdqR)*qf_diff
+        sigmasignA = sigma*sign_A
+        sigmaA_abs = sigma*A_abs
+        psigsignA = 1+sigmasignA
+        msigsignA = 1-sigmasignA
+        ApsigmaA_abs = A + sigmaA_abs
+        AmsigmaA_abs = A - sigmaA_abs
+        # these do the same thing, but the second is a bit quicker (order of gm_lm needs to be fixed)
+        # for derivation of below, see personal notes
+        #dSatRdqL = 0.5*fn.lm_gm(self.rrL, factor_qL + fn.gm_lm(A, dqf_diffdqL) + sigma*(sign_A*factor_qL + fn.gm_lm(A_abs, dqf_diffdqL)))
+        #dSatRdqR = 0.5*fn.lm_gm(self.rrL, factor_qR + fn.gm_lm(A, dqf_diffdqR) + sigma*(sign_A*factor_qR + fn.gm_lm(A_abs, dqf_diffdqR)))
+        #dSatLdqL = 0.5*fn.lm_gm(self.rrR, factor_qL + fn.gm_lm(A, dqf_diffdqL) - sigma*(sign_A*factor_qL + fn.gm_lm(A_abs, dqf_diffdqL)))
+        #dSatLdqR = 0.5*fn.lm_gm(self.rrR, factor_qR + fn.gm_lm(A, dqf_diffdqR) - sigma*(sign_A*factor_qR + fn.gm_lm(A_abs, dqf_diffdqR)))       
+        dSatRdqL = 0.5*fn.lm_gm(self.rrL,psigsignA*factor_qL + fn.gm_lm(ApsigmaA_abs, dqf_diffdqL))
+        dSatRdqR = 0.5*fn.lm_gm(self.rrL,psigsignA*factor_qR + fn.gm_lm(ApsigmaA_abs,dqf_diffdqR))
+        dSatLdqL = 0.5*fn.lm_gm(self.rrR,msigsignA*factor_qL + fn.gm_lm(AmsigmaA_abs, dqf_diffdqL))
+        dSatLdqR = 0.5*fn.lm_gm(self.rrR,msigsignA*factor_qR + fn.gm_lm(AmsigmaA_abs, dqf_diffdqR))
 
-        A_eig = self.diffeq.calc_dEdq_eig(A) # Works for scalar equations
-        sign_A_eig = np.sign(A_eig)
+        return dSatLdqL, dSatLdqR, dSatRdqL, dSatRdqR
 
-        factor_Ap = (1 + sign_A_eig*sigma)/2
-        factor_An = (1 - sign_A_eig*sigma)/2
-
-        A_upwind = factor_Ap * A
-        A_downwind = factor_An * A
-
-        d2Edq2 = self.diffeq.calc_d2Edq2(qf)[0,0]
-        dAp_dq = factor_Ap * d2Edq2
-        dAn_dq = factor_An * d2Edq2
-
-        dSatA_dqA = self.rrR @ self.rrR.T * (dAn_dq * qf_diff/2 + A_downwind)
-        dSatA_dqB = self.rrR @ self.rrL.T * (dAn_dq * qf_diff/2 - A_downwind)
-        dSatB_dqA = self.rrL @ self.rrR.T * (dAp_dq * qf_diff/2 + A_upwind)
-        dSatB_dqB = self.rrL @ self.rrL.T * (dAp_dq * qf_diff/2 - A_upwind)
-
-        return dSatA_dqA, dSatA_dqB, dSatB_dqA, dSatB_dqB
-
-    def dfdq_sat_der1_complexstep(self, qelemA, qelemB, eps_imag=1e-30):
+    def dfdq_sat_der1_complexstep(self, q_fL, q_fR, eps_imag=1e-30):
         '''
         Purpose
         ----------
@@ -150,55 +168,86 @@ class SatDer1:
         More details are given below.
         Parameters
         ----------
-        q_fA : np array
+        q_fL : np array, shape (neq_node,nelem)
             The extrapolated solution of the left element to the facet.
-        q_fB : np array
+        q_fR : np array, shape (neq_node,nelem)
             The extrapolated solution of the left element to the facet.
         eps_imag : float, optional
             Size of the complex step
         Returns
         -------
         The derivative of the SAT contribution to the elements on both sides
-        of the interface.
+        of the interface. shapes (nen*neq_node,nen*neq_node,nelem)
         '''
 
-        q_fA, q_fB = self.get_interface_sol_unstruc(qelemA, qelemB)
+        satL_pert_qL, satR_pert_qL = self.sat_der1(q_fL + eps_imag * 1j, q_fR)
+        satL_pert_qR, satR_pert_qR = self.sat_der1(q_fL, q_fR + eps_imag * 1j) 
+        
+        dSatLdqL = fn.gv_lvT(np.imag(satL_pert_qL) / eps_imag , self.rrR.T)
+        dSatLdqR = fn.gv_lvT(np.imag(satL_pert_qR) / eps_imag , self.rrL.T)
+        dSatRdqL = fn.gv_lvT(np.imag(satR_pert_qL) / eps_imag , self.rrR.T)
+        dSatRdqR = fn.gv_lvT(np.imag(satR_pert_qR) / eps_imag , self.rrL.T)
 
-        # Unperturbed case
-        satA, satB = self.calc_sat(q_fA, q_fB)
+        return dSatLdqL, dSatLdqR, dSatRdqL, dSatRdqR
 
-        # Calculate perturbed matrices
-        sat_len = satA.size
-        neq_node = self.neq_node
-        satA_pert_qA = np.zeros((sat_len, neq_node), dtype=complex)
-        satA_pert_qB = np.zeros((sat_len, neq_node), dtype=complex)
+    def sat_der1_burgers_ec(self, q_fL, q_fR):
+        '''
+        Purpose
+        ----------
+        Calculate the entropy conservative SAT for Burgers equation
+        
+        Parameters
+        ----------
+        q_fL : np array, shape (neq_node,nelem)
+            The extrapolated solution of the left element(s) to the facet(s).
+        q_fR : np array, shape (neq_node,nelem)
+            The extrapolated solution of the left element(s) to the facet(s).
 
-        satB_pert_qA = np.zeros((sat_len, neq_node), dtype=complex)
-        satB_pert_qB = np.zeros((sat_len, neq_node), dtype=complex)
+        Returns
+        -------
+        satL : np array
+            The contribution of the SAT for the first derivative to the element(s)
+            on the left.
+        satR : np array
+            The contribution of the SAT for the first derivative to the element(s)
+            on the right.
+        '''
+        qLqR = q_fL * q_fR
+        qL2 = q_fL**2
+        qR2 = q_fR**2
 
-        for i in range(neq_node):
-            perturbation = np.zeros(neq_node, dtype=complex)
-            perturbation[i] = eps_imag * 1j
-            q_fA_pert = q_fA + perturbation
-            q_fB_pert = q_fB + perturbation
+        satL = self.rrR @ (qL2/3 - qLqR/6 - qR2/6)    # SAT for the left of the interface
+        satR = self.rrL @ (-qR2/3 + qLqR/6 + qL2/6)    # SAT for the right of the interface
 
-            satA_pert_qA[:, i], satB_pert_qA[:, i] = self.calc_sat(q_fA_pert, q_fB)
-            satA_pert_qB[:, i], satB_pert_qB[:, i] = self.calc_sat(q_fA, q_fB_pert)
+        return satL, satR
 
-        dSatA_dqA = np.imag(satA_pert_qA - satA[:, None]) /eps_imag
-        dSatA_dqB = np.imag(satA_pert_qB - satA[:, None]) /eps_imag
-        dSatB_dqA = np.imag(satB_pert_qA - satB[:, None]) /eps_imag
-        dSatB_dqB = np.imag(satB_pert_qB - satB[:, None]) /eps_imag
+    def dfdq_sat_der1_burgers_ec(self, q_fL, q_fR):
+        '''
+        Purpose
+        ----------
+        Calculate the derivative of the entropy conservative SAT for Burgers equation.
 
-        # Everything up to this step would work with differential equations
-        # that have higher derivative terms. However, the chain rule that adds
-        # the term rrR.T and rrL.T only applies to SATs for first derivatives
-        # The complex step calculates dSAT_dq_fA and this adds the term
-        # dq_fA_dqA = rrR.T. Together this gives dSAT_dqA, which is what we
-        # want. The derivative wrt to qB is analogous.
-        dSatA_dqA = dSatA_dqA @ self.rrR.T
-        dSatA_dqB = dSatA_dqB @ self.rrL.T
-        dSatB_dqA = dSatB_dqA @ self.rrR.T
-        dSatB_dqB = dSatB_dqB @ self.rrL.T
+        Parameters
+        ----------
+        q_fL : np array, shape (1,nelem)
+            The extrapolated solution of the left element(s) to the facet(s).
+        q_fR : np array, shape (1,nelem)
+            The extrapolated solution of the left element(s) to the facet(s).
 
-        return dSatA_dqA, dSatA_dqB, dSatB_dqA, dSatB_dqB
+        Returns
+        -------
+        Given an interface, SatL and SatR are the contributions to either side
+        qL are the solutions (NOT extrapolated) on either side. Therefore:
+            dSatLdqL : derivative of the SAT in the left element wrt left solution
+            dSatLdqR : derivative of the SAT in the left element wrt right solution
+            dSatRdqL : derivative of the SAT in the right element wrt left solution
+            dSatRdqR : derivative of the SAT in the right element wrt right solution
+        '''
+
+        dSatLdqL = fn.gs_lm((4*q_fL - q_fR)/6, self.rrR @ self.rrR.T)
+        dSatLdqR = fn.gs_lm(-(q_fL + 2*q_fR)/6, self.rrR @ self.rrL.T)
+        dSatRdqL = fn.gs_lm((q_fR + 2*q_fL)/6, self.rrL @ self.rrR.T)
+        dSatRdqR = fn.gs_lm((q_fL - 4*q_fR)/6, self.rrL @ self.rrL.T)
+
+        return dSatLdqL, dSatLdqR, dSatRdqL, dSatRdqR
+    

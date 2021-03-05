@@ -34,18 +34,18 @@ class Sat(SatDer1, SatDer2):
                     self.dfdq_sat_der1 = lambda qL,qR: self.dfdq_sat_der1_upwind_scalar(qL, qR, 0)
                 else:
                     self.sat_der1 = lambda qL,qR: self.sat_der1_upwind(qL, qR, 0) # use Roe average?
-                    self.dfdq_sat_der1 = lambda qL,qR: self.dfdq_sat_der1_complexstep(qL, qR)
+                    self.dfdq_sat_der1 = self.dfdq_sat_der1_complexstep
             elif method == 'upwind':
                 if self.neq_node == 1:
                     self.sat_der1 = lambda qL,qR: self.sat_der1_upwind(qL, qR, 1) 
                     self.dfdq_sat_der1 = lambda qL,qR: self.self.dfdq_sat_der1_upwind_scalar(qL, qR, 1)
                 else:
                     self.sat_der1 = lambda qL,qR: self.sat_der1_upwind(qL, qR, 1) # use Roe average?
-                    self.dfdq_sat_der1 = lambda qL,qR: self.dfdq_sat_der1_complexstep(qL, qR)
-            elif method.lower() == 'ec':
-                    self.sat_der1 = lambda qL,qR: self.diffeq.sat_der1_ec(qL, qR, 0)
-                    # TODO: Add 'try' if it is there, if not revert to complexstep
-                    self.dfdq_sat_der1 = lambda qL,qR: self.dfdq_sat_der1_complexstep(qL, qR)
+                    self.dfdq_sat_der1 = self.dfdq_sat_der1_complexstep
+            elif (method.lower()=='ec' and self.diffeq.diffeq_name=='Burgers') or method.lower()=='burgers ec':
+                    self.sat_der1 = self.sat_der1_burgers_ec
+                    self.dfdq_sat_der1 = self.dfdq_sat_der1_burgers_ec
+            # TODO: Add 'try' if it is there, if not revert to complexstep
             else:
                 raise Exception('Choice of SAT not understood.')
 
