@@ -34,7 +34,7 @@ def gm_gv(A,b):
         raise Exception('array shapes do not match')    
     if nelem!=nelemb:
         raise Exception('element shapes do not match')   
-    c = np.zeros((nen1,nelem))
+    c = np.zeros((nen1,nelem),dtype=b.dtype)
     for i in range(nen1):
         for j in range(nen2):
             for e in range(nelem):
@@ -184,36 +184,6 @@ def gv_lm(A,B):
     return c
 
 @jit(nopython=True)
-def gv_lvT(A,B):
-    '''
-    Takes a global vector of shape (nen1,nelem) and a local vector of shape 
-    (nen2,) or (1,nen2) and returns the outer product global matrix of shape 
-    (nen1,nen2,nelem)
-
-    Parameters
-    ----------
-    A : numpy array of shape (nen1,nelem)
-    B : numpy array of shape (nen2,) or (1,nen2)
-
-    Returns
-    -------
-    c : numpy array of shape (nen1,nen2,nelem)
-    '''
-    nen1,nelem = np.shape(A)
-    nen2 = B.size
-    c = np.zeros((nen1,nen2,nelem))
-    if B.ndim == 1:
-        for e in range(nelem):
-            c[:,:,e] = np.outer(A[:,e],B)
-    elif B.ndim == 2:
-        b = B[0,:]
-        for e in range(nelem):
-            c[:,:,e] = np.outer(A[:,e],b)
-    else: raise Exception('Local vector shape not understood. Should be (nen,) or (1,nen)')
-
-    return c
-
-@jit(nopython=True)
 def diag(q):
     '''
     Takes a 2-dim numpy array q of shape (nen,nelem) and returns a 3-dim
@@ -262,8 +232,9 @@ def block_diag(*entries):
     '''
     neq_node = int(np.sqrt(len(entries)))
     nen,nelem = entries[0].shape
-    blocks = np.zeros((nen,neq_node,neq_node,nelem))
-    mat = np.zeros((nen*neq_node,nen*neq_node,nelem))
+    dtype = entries[0].dtype
+    blocks = np.zeros((nen,neq_node,neq_node,nelem),dtype=dtype)
+    mat = np.zeros((nen*neq_node,nen*neq_node,nelem),dtype=dtype)
 
     idx = 0
     for entry in literal_unroll(entries): # add literal_unroll for heterogeneous tuple types
@@ -284,7 +255,8 @@ def abs_eig_mat(mat):
     a 3d array in the same shape where the matrices in each element are now
     absoluted through it's eigenvalues. That is, if A is one such matrix, 
     and it has eigenvalues L and right eigenvectors X, then this returns
-    X @ abs(L) @ X.T
+    X @ abs(L) @ inv(X
+    note: inv(X) = X.T if eigenvectors X orthogonal, i.e. if A symmetric real (sym hyperbolic)
 
     Parameters
     ----------
@@ -295,10 +267,11 @@ def abs_eig_mat(mat):
     c : numpy array of shape (nen*neq_node,nen*neq_node)
     '''
     nodes,_,nelem = mat.shape
-    mat_abs = np.zeros((nodes,nodes,nelem))
+    dtype=mat.dtype
+    mat_abs = np.zeros((nodes,nodes,nelem),dtype=dtype)
     for elem in range(nelem):
         eig_val, eig_vec = np.linalg.eig(mat[:,:,elem])
-        mat_abs[:,:,elem] = eig_vec @ np.diag(np.abs(eig_val)) @ np.linalg.inv(eig_vec)
+        mat_abs[:,:,elem] = eig_vec @ np.diag(np.abs(eig_val)).astype(dtype) @ np.linalg.inv(eig_vec)
     return mat_abs
 
 
@@ -379,6 +352,36 @@ def glob_block_2d_mat_periodic(blockL,blockM,blockR):
 
 
 """ Old functions (no longer useful)
+
+@jit(nopython=True)
+def gv_lvT(A,B):
+    '''
+    Takes a global vector of shape (nen1,nelem) and a local vector of shape 
+    (nen2,) or (1,nen2) and returns the outer product global matrix of shape 
+    (nen1,nen2,nelem)
+
+    Parameters
+    ----------
+    A : numpy array of shape (nen1,nelem)
+    B : numpy array of shape (nen2,) or (1,nen2)
+
+    Returns
+    -------
+    c : numpy array of shape (nen1,nen2,nelem)
+    '''
+    nen1,nelem = np.shape(A)
+    nen2 = B.size
+    c = np.zeros((nen1,nen2,nelem))
+    if B.ndim == 1:
+        for e in range(nelem):
+            c[:,:,e] = np.outer(A[:,e],B)
+    elif B.ndim == 2:
+        b = B[0,:]
+        for e in range(nelem):
+            c[:,:,e] = np.outer(A[:,e],b)
+    else: raise Exception('Local vector shape not understood. Should be (nen,) or (1,nen)')
+
+    return c
 
 @jit(nopython=True)
 def glob_block_2d_mat(blockL,blockM,blockR):
