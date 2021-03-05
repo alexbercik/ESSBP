@@ -179,14 +179,23 @@ class SatDer1:
         The derivative of the SAT contribution to the elements on both sides
         of the interface. shapes (nen*neq_node,nen*neq_node,nelem)
         '''
-
-        satL_pert_qL, satR_pert_qL = self.sat_der1(q_fL + eps_imag * 1j, q_fR)
-        satL_pert_qR, satR_pert_qR = self.sat_der1(q_fL, q_fR + eps_imag * 1j) 
+        neq_node,nelem = q_fL.shape
+        assert neq_node == self.neq_node,'neq_node does not match'
+        satL_pert_qL = np.zeros((self.nen*neq_node,neq_node,nelem),dtype=complex)
+        satR_pert_qL = np.zeros((self.nen*neq_node,neq_node,nelem),dtype=complex)
+        satL_pert_qR = np.zeros((self.nen*neq_node,neq_node,nelem),dtype=complex)
+        satR_pert_qR = np.zeros((self.nen*neq_node,neq_node,nelem),dtype=complex)
         
-        dSatLdqL = fn.gv_lvT(np.imag(satL_pert_qL) / eps_imag , self.rrR.T)
-        dSatLdqR = fn.gv_lvT(np.imag(satL_pert_qR) / eps_imag , self.rrL.T)
-        dSatRdqL = fn.gv_lvT(np.imag(satR_pert_qL) / eps_imag , self.rrR.T)
-        dSatRdqR = fn.gv_lvT(np.imag(satR_pert_qR) / eps_imag , self.rrL.T)
+        for neq in range(neq_node):
+            pert = np.zeros((self.neq_node,nelem),dtype=complex)
+            pert[neq,:] = eps_imag * 1j
+            satL_pert_qL[:,neq,:], satR_pert_qL[:,neq,:] = self.sat_der1(q_fL + pert, q_fR)
+            satL_pert_qR[:,neq,:], satR_pert_qR[:,neq,:] = self.sat_der1(q_fL, q_fR + pert)
+        
+        dSatLdqL = fn.gm_lm(np.imag(satL_pert_qL) / eps_imag , self.rrR.T)
+        dSatLdqR = fn.gm_lm(np.imag(satL_pert_qR) / eps_imag , self.rrL.T)
+        dSatRdqL = fn.gm_lm(np.imag(satR_pert_qL) / eps_imag , self.rrR.T)
+        dSatRdqR = fn.gm_lm(np.imag(satR_pert_qR) / eps_imag , self.rrL.T)
 
         return dSatLdqL, dSatLdqR, dSatRdqL, dSatRdqR
 

@@ -12,7 +12,6 @@ import numpy as np
 from scipy.optimize import newton, bisect
 
 from Source.DiffEq.DiffEqBase import PdeBaseCons
-from Source.DiffEq.SatBase import SatBaseCons
 import Source.Methods.Functions as fn
 
 class Quasi1dEuler(PdeBaseCons):
@@ -23,6 +22,7 @@ class Quasi1dEuler(PdeBaseCons):
     neq_node = 3            # No. of equations per node
     npar = 0                # No. of design parameters
     has_exa_sol = True
+    pde_order = 1
 
     # Problem constants
     R = 287
@@ -806,24 +806,17 @@ class Quasi1dEuler(PdeBaseCons):
     
     def dEdq(self, q):
         q_0, q_1, q_2 = self.decompose_q(q)
-        u = q_1 / q_0
-
-        '''
-        n_node = q_0.shape[0]
-        # dEdq is complex if using complex step for implicit time
-        # marching with SBP operators
-        if np.any(np.iscomplex(q)):
-            dEdq = np.zeros((n_node, 3, 3), dtype=complex)
-        else:
-            dEdq = np.zeros((n_node, 3, 3))
-        '''
-        
+        u = q_1 / q_0        
         u2 = u**2
         q2_q0 = q_2/q_0
 
         # entries of the dEdq (A) matrix
-        r1 = np.ones(q_0.shape)
-        r0 = np.zeros(q_0.shape)
+        if np.any(np.iscomplex(q)):
+            r1 = np.ones(q_0.shape, dtype=complex)
+            r0 = np.zeros(q_0.shape, dtype=complex)
+        else:
+            r1 = np.ones(q_0.shape)
+            r0 = np.zeros(q_0.shape)
         r21 = 0.5*(self.g-3) * u2
         r22 = (3-self.g) * u
         r23 = r1*(self.g-1)
@@ -891,8 +884,6 @@ class Quasi1dEuler(PdeBaseCons):
 
         return dGdq
     '''
-
-class Quasi1dEulerSbp(SatBaseCons, Quasi1dEuler):
 
     def dEdq_eig_abs(self, dEdq):
 

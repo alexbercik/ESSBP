@@ -16,9 +16,10 @@ for i in range(n_nested_folder):
 
 path.append(folder_path)
 
-#from Source.DiffEq.Quasi1dEuler import Quasi1dEulerFd
-from Source.DiffEq.Quasi1dEulerA import Quasi1dEulerSbp
-from Source.Solvers.PdeSolver import PdeSolver
+from Source.DiffEq.Quasi1dEulerA import Quasi1dEuler
+from Source.Solvers.PdeSolverFd import PdeSolverFd
+from Source.Solvers.PdeSolverSbp import PdeSolverSbp
+from Source.Solvers.PdeSolverDg import PdeSolverDg
 
 
 '''
@@ -39,11 +40,11 @@ dt = 0.0001
 dt_init = dt
 nts = 500
 t_init = 0
-tf = 0.1 #nts * dt # set to None to do automatically or use a convergence criterion
+tf = 0.001 #nts * dt # set to None to do automatically or use a convergence criterion
 # note: can add option to pass None, then that triggers it to check diffeq, if not can pass 'steady' in which case it uses converged criteria
 
 # Spatial discretization
-disc_type = 'lg' 
+disc_type = 'lgl' 
 nn = 99
 nelem = 10 # optional, number of elements
 nen = 0 # optional, number of nodes per element
@@ -65,17 +66,18 @@ xmin = -1
 xmax = 1
 
 
-''' Setup diffeq and solve '''
+''' Set diffeq and solve '''
 
-#if disc_type == 'FD':
-#    DiffEq = Quasi1dEulerFd
-#else:
-DiffEq = Quasi1dEulerSbp
+if disc_type == 'fd':
+    c_solver = PdeSolverFd
+elif disc_type == 'dg':
+    c_solver = PdeSolverDg
+else:
+    c_solver = PdeSolverSbp
 
-diffeq = DiffEq(para, obj_name, q0_type, test_case, nozzle_shape, bool_norm_var)
+diffeq = Quasi1dEuler(para, obj_name, q0_type, test_case, nozzle_shape, bool_norm_var)
 
-
-solver = PdeSolver(diffeq,                              # Diffeq
+solver = c_solver(diffeq,                              # Diffeq
                   tm_method, dt, tf,                    # Time marching
                   q0,                                   # Initial solution
                   p, disc_type, nn,                     # Discretization
