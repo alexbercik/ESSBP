@@ -349,6 +349,22 @@ def glob_block_2d_mat_periodic(blockL,blockM,blockR):
             
     return mat
 
+@jit(nopython=True)
+def lm_gm_hadamard(A,B):
+    '''
+    Compute the hadamard product between a local matrix (nen1,nen2) and 
+    global matrix (nen1,nen2,nelem)
+
+    Returns
+    -------
+    C : numpy array of shape (nen1,nen2,nelem)
+    '''
+    nen,nen2,nelem = B.shape
+    C = np.zeros((nen,nen2,nelem))
+    for e in range(nelem):
+        C[:,:,e] = np.multiply(A,B[:,:,e])
+            
+    return C
 
 
 """ Old functions (no longer useful)

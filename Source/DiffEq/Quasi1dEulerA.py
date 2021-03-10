@@ -7,6 +7,7 @@ Created on Mon Jan 25 23:51:27 2021
 """
 
 import numpy as np
+from numba import jit
 #import scipy.sparse as sp
 #from scipy.sparse.linalg import spsolve
 from scipy.optimize import newton, bisect
@@ -48,7 +49,7 @@ class Quasi1dEuler(PdeBaseCons):
     #self.svec_elem = like q_sol # maybe not needed
 
     def __init__(self, para=None, obj_name=None, q0_type=None, test_case='subsonic',
-                 nozzle_shape='book', norm_var=True):
+                 nozzle_shape='book', norm_var=True, vol_type='cons'):
 
         ''' Add inputs to the class '''
 
@@ -56,6 +57,7 @@ class Quasi1dEuler(PdeBaseCons):
         self.test_case = test_case
         self.nozzle_shape = nozzle_shape
         self.norm_var = norm_var
+        self.vol_type = vol_type
         
         if self.q0_type == None:
             self.q0_type = 'linear' # can be exact, linear
@@ -117,6 +119,27 @@ class Quasi1dEuler(PdeBaseCons):
         else: raise Exception('Test case not understood.')
 
         self.length_nozzle = self.xmax_nozzle - self.xmin_nozzle
+        
+        if self.vol_type == 'cons':
+            # use default dEdq and etc
+            self.dEdq = self.dEdq_cons
+            #pass
+        elif self.vol_type == 'ec':
+            # can general later for other flux types
+            assert self.g==1.4,'self.g=1.4 hard coded in Ismail_Roe. Change it there or remove numba use.'
+            self.ec_flux = Ismail_Roe # can generalize later for different self.vol_type
+            self.dEdx = self.dEdx_ec   
+            def dEdq_temp(q):
+                try:
+                    return self.dEdq_ec(q)
+                except:
+                    print('WARNING: Tried to get dEdq but failed. Using Conservation form. \n' \
+                          + '         Should NOT be used for time marching.')
+                    return self.dEdq_cons(q)
+            self.dEdq = dEdq_temp
+        else:
+            raise Exception("Volume type not understood. Try 'cons' or 'ec'")
+        
 
         if self.isperiodic == False:
             
@@ -345,6 +368,17 @@ class Quasi1dEuler(PdeBaseCons):
             P = P[0]
             a = a[0]
         return rho, u, e, P, a
+    
+    def entropy(self, q):
+        ''' return the nodal values of the entropy s(q). '''
+        # TODO: Make this work with variable svec
+        q_0, q_1, q_2 = self.decompose_q(q)
+        rho = q_0 
+        u = q_1 / q_0
+        e = q_2 
+        p = (self.g-1)*(e - (rho * u**2)/2)
+        s = np.log(p/rho**self.g)
+        return (-rho*s/(self.g-1))
 
     def exact_sol(self, time=0, xx=[], extra_vars=False, reshape=True, normalize=True):
         ''' Returns the exact solution at given time. Use default time=0 for
@@ -804,7 +838,16 @@ class Quasi1dEuler(PdeBaseCons):
         E = self.assemble_vec((e0, e1, e2))
         return E
     
-    def dEdq(self, q):
+    def dEdx_ec(self, q):
+        # uses forumaltion from Crean et al 2018 with Ismail Roe flux
+
+        F = build_F_vol(q, self.neq_node, self.ec_flux)     
+        dEdx = 2*np.sum(fn.lm_gm_hadamard(self.der1, F),axis=1)
+     
+        return dEdx  
+    
+    def dEdq_cons(self, q):
+        ''' for the normal conservative form (as opposed to ec form) '''
         q_0, q_1, q_2 = self.decompose_q(q)
         u = q_1 / q_0        
         u2 = u**2
@@ -827,6 +870,10 @@ class Quasi1dEuler(PdeBaseCons):
         dEdq = fn.block_diag(r0,r1,r0,r21,r22,r23,r31,r32,r33)
 
         return dEdq
+    
+    def dEdq_ec(self, q):
+        ''' for the entropy conservative form'''
+        raise Exception('Not coded up yet.')
     
     def calcG(self, q, elem_idx=None):
 
@@ -896,3 +943,87 @@ class Quasi1dEuler(PdeBaseCons):
         dfdq = -self.der1 @ A + dGdq
         return dfdq    
     '''
+    
+@jit(nopython=True)  
+def build_F_vol(q, neq, ec_flux):
+    # uses forumaltion from Crean et al 2018 with Ismail Roe flux
+    nen_neq, nelem = q.shape
+    nen = int(nen_neq / neq)
+    F = np.zeros((nen_neq,nen_neq,nelem))
+    for e in range(nelem):
+        for i in range(nen):
+            for j in range(i,nen):
+                idxi = i*neq
+                idxi2 = (i+1)*neq
+                idxj = j*neq
+                idxj2 = (j+1)*neq
+                diag = np.diag(ec_flux(q[idxi:idxi2,e],q[idxj:idxj2,e]))
+                F[idxi:idxi2,idxj:idxj2,e] = diag
+                if i != j:
+                    F[idxj:idxj2,idxi:idxi2,e] = diag
+    return F
+
+@jit(nopython=True)  
+def build_F_int(q1, q2, neq, ec_flux):
+    ''' just like build_F_vol but now does not take advantage of symmetry '''
+    # uses forumaltion from Crean et al 2018 with Ismail Roe flux
+    nen_neq, nelem = q1.shape
+    nen = int(nen_neq / neq)
+    F = np.zeros((nen_neq,nen_neq,nelem))
+    for e in range(nelem):
+        for i in range(nen):
+            for j in range(nen):
+                idxi = i*neq
+                idxi2 = (i+1)*neq
+                idxj = j*neq
+                idxj2 = (j+1)*neq
+                F[idxi:idxi2,idxj:idxj2,e] = np.diag(ec_flux(q1[idxi:idxi2,e],q2[idxj:idxj2,e]))
+    return F
+
+@jit(nopython=True)  
+def Ismail_Roe(qL,qR):
+    '''
+    Return the ismail roe flux given two states uL and rR where each is
+    of shape (neq=3,), and returns a numerical flux of shape (neq=3,)
+    note subroutine defined in ismail-roe appendix B for logarithmic mean
+    '''
+    g = 1.4 # hard coded!!! (otherwise I can't use numba)
+    
+    rhoL, rhoR = qL[0], qR[0]
+    uL, uR = qL[1]/rhoL, qR[1]/rhoR
+    pL, pR = (g-1)*(qL[2] - (rhoL * uL**2)/2), (g-1)*(qR[2] - (rhoR * uR**2)/2)
+
+    alphaL = np.sqrt(rhoL/pL)
+    alphaR = np.sqrt(rhoR/pR)
+    betaL = np.sqrt(rhoL*pL)
+    betaR = np.sqrt(rhoR*pR)
+
+    xi_alpha = alphaL/alphaR
+    zeta_alpha = (1-xi_alpha)/(1+xi_alpha)
+    zeta_alpha2 = zeta_alpha**2
+    if zeta_alpha2 < 0.01:
+        F_alpha = 2*(1. + zeta_alpha2/3. + zeta_alpha2**2/5. + zeta_alpha2**3/7.)
+    else:
+        F_alpha = - np.log(xi_alpha)/zeta_alpha
+    alpha_ln = (alphaL+alphaR)/F_alpha
+
+    xi_beta = betaL/betaR
+    zeta_beta = (1-xi_beta)/(1+xi_beta)
+    zeta_beta2 = zeta_beta**2
+    if zeta_beta2 < 0.01:
+        F_beta = 2*(1. + zeta_beta2/3. + zeta_beta2**2/5. + zeta_beta2**3/7.)
+    else:
+        F_beta = - np.log(xi_beta) / zeta_beta
+    beta_ln = (betaL+betaR)/F_beta
+
+    alpha_avg = 0.5*(alphaL+alphaR)
+    beta_avg = 0.5*(betaL+betaR)
+
+    rho_avg = alpha_avg * beta_ln
+    a_avg2 = (0.5/rho_avg)*((g+1)*beta_ln/alpha_ln + (g-1)*beta_avg/alpha_avg)
+    u_avg = 0.5 * (uL*alphaL + uR*alphaR) / alpha_avg
+    p_avg = beta_avg / alpha_avg
+    H_avg = a_avg2/(g - 1) + 0.5*u_avg**2
+    
+    rhou_avg = rho_avg*u_avg
+    return np.array([rhou_avg, rhou_avg*u_avg + p_avg, rhou_avg*H_avg]) 

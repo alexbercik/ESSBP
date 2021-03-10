@@ -45,6 +45,9 @@ class Sat(SatDer1, SatDer2):
             elif (method.lower()=='ec' and self.diffeq.diffeq_name=='Burgers') or method.lower()=='burgers ec':
                     self.sat_der1 = self.sat_der1_burgers_ec
                     self.dfdq_sat_der1 = self.dfdq_sat_der1_burgers_ec
+            elif (method.lower()=='ec' and self.diffeq.diffeq_name=='Quasi1dEuler') or method.lower()=='crean ec':
+                    self.sat_der1 = self.sat_der1_crean_ec
+                    #self.dfdq_sat_der1 = complex step?
             # TODO: Add 'try' if it is there, if not revert to complexstep
             else:
                 raise Exception('Choice of SAT not understood.')
