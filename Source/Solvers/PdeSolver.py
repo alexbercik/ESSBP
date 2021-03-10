@@ -236,6 +236,8 @@ class PdeSolver:
 
             if cons_obj_name_i == 'energy':
                 cons_obj[i] = self.energy(q)
+            elif cons_obj_name_i == 'entropy':
+                cons_obj[i] = self.entropy(q)
             elif cons_obj_name_i == 'conservation':
                 cons_obj[i] = self.conservation(q)
             else:
@@ -344,8 +346,8 @@ class PdeSolver:
                       obj_name=self.bool_calc_obj, cons_obj_name=self.cons_obj_name,
                       bool_plot_sol=self.bool_plot_sol, print_sol_norm=self.print_sol_norm)
     
-    def check_eigs(self, q=None, plot_eigs=True, returnA=False, exact_dfdq=False,
-                   step=1.0e-2, tol=1.0e-10, plt_save_name=None, ymin=None, ymax=None,
+    def check_eigs(self, q=None, plot_eigs=True, returnA=False, exact_dfdq=True,
+                   step=1.0e-4, tol=1.0e-10, plt_save_name=None, ymin=None, ymax=None,
                    xmin=None, xmax=None, time=None, display_time=False, title=None, **kargs):
         '''
         Call on self.diffeq.dqdt to check the stability of the spatial operator
@@ -392,8 +394,12 @@ class PdeSolver:
                 q = self.diffeq.set_q0()
         
         if exact_dfdq:
-            A = self.dfdq(q)
-        else:
+            try:  
+                A = self.dfdq(q)
+            except:
+                exact_dfdq = False
+                print('WARNING: self.dfdq(q) returned errors. Using finite diff approximation')
+        if not exact_dfdq:
             nen,nelem = q.shape      
             A = np.zeros((nelem*nen,nelem*nen))      
             assert(self.nn*self.neq_node==q.size),"ERROR: sizes don't match"           
@@ -462,6 +468,11 @@ class PdeSolver:
                 #plt.plot(np.linspace(0,self.t_final,len(self.cons_obj[i])),abs(self.cons_obj[i]-norm)) 
                 #plt.yscale('log')
                 #plt.gca().invert_yaxis()
+                
+            elif cons_obj_name_i == 'entropy':
+                plt.title(r'Change in Entropy',fontsize=18)
+                plt.ylabel(r'$ 1 H s(x,t) - 1 H s(x,0) $',fontsize=16)
+                plt.plot(np.linspace(0,self.t_final,len(self.cons_obj[i])),self.cons_obj[i]-norm) 
     
             elif cons_obj_name_i == 'conservation':
                 plt.title(r'Change in Conservation',fontsize=18)

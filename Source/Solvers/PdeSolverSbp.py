@@ -21,6 +21,7 @@ class PdeSolverSbp(PdeSolver, Sat):
         
         self.energy = self.sbp_energy
         self.conservation = self.sbp_conservation
+        self.entropy = self.sbp_entropy
 
         ''' Setup the discretization '''
 
@@ -69,6 +70,7 @@ class PdeSolverSbp(PdeSolver, Sat):
 
         # Apply kron products to SBP operators
         eye = np.eye(self.neq_node)
+        self.hh_phys_unkronned = self.hh_phys
         self.hh_phys = np.kron(self.hh_phys, eye)
         self.hh_inv_phys = np.kron(self.hh_inv_phys, eye)
         self.qq_phys = np.kron(self.qq_phys, eye)
@@ -151,5 +153,10 @@ class PdeSolverSbp(PdeSolver, Sat):
     def sbp_conservation(self,q):
         ''' compute the global SBP conservation of global solution vector q '''
         return np.sum(self.hh_phys @ q)
+    
+    def sbp_entropy(self,q):
+        ''' compute the global SBP entropy of global solution vector q '''
+        s = self.diffeq.entropy(q)
+        return np.sum(self.hh_phys_unkronned @ s)
 
 

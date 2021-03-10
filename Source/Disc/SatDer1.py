@@ -7,6 +7,7 @@ Created on Tue Feb 23 19:02:07 2021
 """
 import numpy as np
 import Source.Methods.Functions as fn
+#from Source.DiffEq.Quasi1DEulerA import build_F_vol, build_F_int
 
 class SatDer1:
 
@@ -259,4 +260,43 @@ class SatDer1:
         dSatRdqR = fn.gs_lm((q_fL - 4*q_fR)/6, self.rrL @ self.rrL.T)
 
         return dSatLdqL, dSatLdqR, dSatRdqL, dSatRdqR
-    
+
+    def sat_der1_crean_ec(self, q_fL, q_fR):
+        '''
+        Purpose
+        ----------
+        Calculate the SATs for the entropy consistent scheme by Crean et al 2018
+        NOTE: ONLY WORKS FOR ELEMENTS WITH BOUNDARY NODES! Should use more
+        general matrix formulations for other cases. See notes.
+        
+        Parameters
+        ----------
+        q_fL : np array, shape (neq_node,nelem)
+            The extrapolated solution of the left element(s) to the facet(s).
+        q_fR : np array, shape (neq_node,nelem)
+            The extrapolated solution of the left element(s) to the facet(s).
+
+        Returns
+        -------
+        satL : np array
+            The contribution of the SAT for the first derivative to the element(s)
+            on the left.
+        satR : np array
+            The contribution of the SAT for the first derivative to the element(s)
+            on the right.
+        '''
+        
+        #TODO: Rework Ismail_Roe to accept shapes (neq_node,nelem) rather than (neq_node,)
+        neq,nelem = q_fL.shape
+        numflux = np.zeros((neq,nelem))
+        for e in range(nelem):
+            numflux[:,e] = self.diffeq.ec_flux(q_fL[:,e], q_fR[:,e])
+        
+        satL = self.rrR @ ( self.diffeq.calcE(q_fL) - numflux )
+        satR = self.rrL @ ( numflux - self.diffeq.calcE(q_fR) )
+        
+        #F_vol = build_F_vol(q, self.neq_node, self.diffeq.ec_flux)
+        #build_F_int(q1, q2, neq, ec_flux)
+        #build_F_vol(q, neq, ec_flux)
+
+        return satL, satR    
