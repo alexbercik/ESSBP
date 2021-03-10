@@ -49,8 +49,8 @@ nn = 99
 nelem = 20 # optional, number of elements
 nen = 0 # optional, number of nodes per element
 p = 3
-sat_flux_type='upwind'
-vol_type='cons'
+sat_flux_type='es'
+vol_type='ec'
 isperiodic = None # set to none so it is done automatically
 
 # Initial solution
@@ -89,4 +89,4 @@ solver = c_solver(diffeq,                              # Diffeq
 
 solver.solve()
 solver.plot_sol()
-#solver.plot_cons_obj()
+solver.plot_cons_obj()

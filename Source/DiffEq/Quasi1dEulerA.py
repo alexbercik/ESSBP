@@ -123,6 +123,8 @@ class Quasi1dEuler(PdeBaseCons):
         if self.vol_type == 'cons':
             # use default dEdq and etc
             self.dEdq = self.dEdq_cons
+            self.dissipation = lambda q : 0
+            self.dDdq = lambda q : 0
             #pass
         elif self.vol_type == 'ec':
             # can general later for other flux types
@@ -137,6 +139,24 @@ class Quasi1dEuler(PdeBaseCons):
                           + '         Should NOT be used for time marching.')
                     return self.dEdq_cons(q)
             self.dEdq = dEdq_temp
+            self.dissipation = lambda q : 0
+            self.dDdq = lambda q : 0
+        elif self.vol_type == 'ediss':
+            raise Exception('not coded up yet')
+            # can general later for other flux types
+            assert self.g==1.4,'self.g=1.4 hard coded in Ismail_Roe. Change it there or remove numba use.'
+            self.ec_flux = Ismail_Roe # can generalize later for different self.vol_type
+            self.dEdx = self.dEdx_ec   
+            def dEdq_temp(q):
+                try:
+                    return self.dEdq_ec(q)
+                except:
+                    print('WARNING: Tried to get dEdq but failed. Using Conservation form. \n' \
+                          + '         Should NOT be used for time marching.')
+                    return self.dEdq_cons(q)
+            self.dEdq = dEdq_temp
+            self.dissipation = self.dissipation_something
+            self.dDdq = self.dDdq_something
         else:
             raise Exception("Volume type not understood. Try 'cons' or 'ec'")
         
@@ -379,6 +399,22 @@ class Quasi1dEuler(PdeBaseCons):
         p = (self.g-1)*(e - (rho * u**2)/2)
         s = np.log(p/rho**self.g)
         return (-rho*s/(self.g-1))
+    
+    def entropy_var(self, q):
+        ''' return the nodal values of the entropy variables w(q). '''
+        # TODO: Make this work with variable svec
+        #TODO: Clean up
+        q_0, q_1, q_2 = self.decompose_q(q)
+        rho = q_0 
+        u = q_1 / q_0
+        e = q_2 
+        p = (self.g-1)*(e - (rho * u**2)/2)
+        s = np.log(p/rho**self.g)
+        w = np.zeros(q.shape)
+        w[0::self.neq_node,:] = (self.g-s)/(self.g-1) - 0.5*rho*u**2/p
+        w[1::self.neq_node,:] = rho*u/p
+        w[2::self.neq_node,:] = -rho/p
+        return w
 
     def exact_sol(self, time=0, xx=[], extra_vars=False, reshape=True, normalize=True):
         ''' Returns the exact solution at given time. Use default time=0 for
@@ -822,6 +858,25 @@ class Quasi1dEuler(PdeBaseCons):
             return u / a
         else:
             raise Exception('Requested variable to plot is not available')
+            
+    def dqdt(self, q):
+
+        dEdx = self.dEdx(q)
+        G = self.calcG(q)
+        D = self.dissipation(q)
+
+        dqdt = -dEdx + G + D
+        return dqdt
+    
+    def dfdq(self, q):
+        # warning, will have to modify dEdq term
+
+        A = self.dEdq(q)
+        dGdq = self.dGdq(q)
+        dDdq = self.dDdq(q)
+
+        dfdq = - fn.lm_gm(self.der1, A) + dGdq + dDdq
+        return dfdq
 
     def calcE(self, q):
 
@@ -874,6 +929,19 @@ class Quasi1dEuler(PdeBaseCons):
     def dEdq_ec(self, q):
         ''' for the entropy conservative form'''
         raise Exception('Not coded up yet.')
+        
+    def dqdw(self,q):
+        ''' return hessian P of potential phi wrt entropy variables w, or dqdw '''
+        q_0, q_1, q_2 = self.decompose_q(q)
+        r11 = q_0
+        r12 = q_1
+        r13 = q_2
+        r22 = (2*(self.g-1)*q_0*q_2-q_1**2*(self.g-3))/(2*q_0)
+        r23 = ((1-self.g)*q_1**2+2*q_0*q_2*self.g*q_1)/(2*q_0**2)
+        r33 = ((4*self.g*q_0**2*q_2**2+(1-self.g)*q_1**4))/(4*q_0**3)
+        
+        dqdw = fn.block_diag(r11,r12,r13,r12,r22,r23,r13,r23,r33)
+        return dqdw
     
     def calcG(self, q, elem_idx=None):
 
@@ -931,6 +999,14 @@ class Quasi1dEuler(PdeBaseCons):
 
         return dGdq
     '''
+    
+    def dissipation_something(self,q):
+        ''' some entropy-stable volume dissipation '''
+        raise Exception('Not coded up yet')
+        
+    def dDdq_something(q):
+        ''' linearization of volume dissipation '''
+        raise Exception('Not coded up yet')
 
     def dEdq_eig_abs(self, dEdq):
 

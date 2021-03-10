@@ -11,37 +11,8 @@ import Source.Methods.Functions as fn
 
 class SatDer1:
 
-    def sat_der1_master(self, qL, qR):
-        '''
-        Parameters
-        ----------
-        qL : np array
-            The solution at the nodes in the element(s) to the left of the interface.
-        qR : np array
-            The solution at the nodes in the element(s) to the right of the interface.
-        '''
 
-        q_fL, q_fR = self.get_interface_sol(qL, qR)
-
-        return self.sat_der1(q_fL, q_fR)
-
-    def dfdq_sat_der1_master(self, qL, qR):
-        '''
-        Parameters
-        ----------
-        qL : np array
-            The solution at the nodes in the element(s) to the left of the interface.
-        qR : np array
-            The solution at the nodes in the element(s) to the right of the interface.
-        '''
-
-        q_fL, q_fR = self.get_interface_sol(qL, qR)
-
-        return self.dfdq_sat_der1(q_fL, q_fR)
-
-
-
-    def sat_der1_upwind(self, q_fL, q_fR, sigma=1, avg='simple'):
+    def sat_der1_upwind(self, q_L, q_R, sigma=1, avg='simple'):
         '''
         Purpose
         ----------
@@ -65,6 +36,8 @@ class SatDer1:
             The contribution of the SAT for the first derivative to the element(s)
             on the right.
         '''
+        q_fL, q_fR = self.get_interface_sol(q_L, q_R)
+        
         if avg=='simple':
             qfacet = (q_fL + q_fR)/2 # Alternatively, a Roe average can be used
         elif avg=='roe':
@@ -86,7 +59,7 @@ class SatDer1:
 
         return satL, satR
     
-    def dfdq_sat_der1_upwind_scalar(self, q_fL, q_fR, sigma=1, avg='simple'):
+    def dfdq_sat_der1_upwind_scalar(self, q_L, q_R, sigma=1, avg='simple'):
         '''
         Purpose
         ----------
@@ -111,6 +84,8 @@ class SatDer1:
             dSatRdqR : derivative of the SAT in the right element wrt right solution
  
         '''
+        q_fL, q_fR = self.get_interface_sol(q_L, q_R)
+        
         if avg=='simple':
             qfacet = (q_fL + q_fR)/2 # Alternatively, a Roe average can be used
             # derivative of qfacet wrt qL and qR
@@ -158,7 +133,7 @@ class SatDer1:
 
         return dSatLdqL, dSatLdqR, dSatRdqL, dSatRdqR
 
-    def dfdq_sat_der1_complexstep(self, q_fL, q_fR, eps_imag=1e-30):
+    def dfdq_sat_der1_complexstep(self, q_L, q_R, eps_imag=1e-30):
         '''
         Purpose
         ----------
@@ -180,6 +155,8 @@ class SatDer1:
         The derivative of the SAT contribution to the elements on both sides
         of the interface. shapes (nen*neq_node,nen*neq_node,nelem)
         '''
+        q_fL, q_fR = self.get_interface_sol(q_L, q_R)
+        
         neq_node,nelem = q_fL.shape
         assert neq_node == self.neq_node,'neq_node does not match'
         satL_pert_qL = np.zeros((self.nen*neq_node,neq_node,nelem),dtype=complex)
@@ -200,7 +177,7 @@ class SatDer1:
 
         return dSatLdqL, dSatLdqR, dSatRdqL, dSatRdqR
 
-    def sat_der1_burgers_ec(self, q_fL, q_fR):
+    def sat_der1_burgers_ec(self, q_L, q_R):
         '''
         Purpose
         ----------
@@ -222,6 +199,8 @@ class SatDer1:
             The contribution of the SAT for the first derivative to the element(s)
             on the right.
         '''
+        q_fL, q_fR = self.get_interface_sol(q_L, q_R)
+        
         qLqR = q_fL * q_fR
         qL2 = q_fL**2
         qR2 = q_fR**2
@@ -231,7 +210,7 @@ class SatDer1:
 
         return satL, satR
 
-    def dfdq_sat_der1_burgers_ec(self, q_fL, q_fR):
+    def dfdq_sat_der1_burgers_ec(self, q_L, q_R):
         '''
         Purpose
         ----------
@@ -253,6 +232,7 @@ class SatDer1:
             dSatRdqL : derivative of the SAT in the right element wrt left solution
             dSatRdqR : derivative of the SAT in the right element wrt right solution
         '''
+        q_fL, q_fR = self.get_interface_sol(q_L, q_R)
 
         dSatLdqL = fn.gs_lm((4*q_fL - q_fR)/6, self.rrR @ self.rrR.T)
         dSatLdqR = fn.gs_lm(-(q_fL + 2*q_fR)/6, self.rrR @ self.rrL.T)
@@ -261,7 +241,7 @@ class SatDer1:
 
         return dSatLdqL, dSatLdqR, dSatRdqL, dSatRdqR
 
-    def sat_der1_crean_ec(self, q_fL, q_fR):
+    def sat_der1_crean_ec(self, q_L, q_R):
         '''
         Purpose
         ----------
@@ -285,6 +265,7 @@ class SatDer1:
             The contribution of the SAT for the first derivative to the element(s)
             on the right.
         '''
+        q_fL, q_fR = self.get_interface_sol(q_L, q_R)
         
         #TODO: Rework Ismail_Roe to accept shapes (neq_node,nelem) rather than (neq_node,)
         neq,nelem = q_fL.shape
@@ -299,4 +280,57 @@ class SatDer1:
         #build_F_int(q1, q2, neq, ec_flux)
         #build_F_vol(q, neq, ec_flux)
 
-        return satL, satR    
+        return satL, satR   
+    
+    def sat_der1_crean_es(self, qL, qR):
+        '''
+        Purpose
+        ----------
+        Calculate the SATs for the entropy dissipative scheme by Crean et al 2018
+        NOTE: ONLY WORKS FOR ELEMENTS WITH BOUNDARY NODES! Should use more
+        general matrix formulations for other cases. See notes.
+        
+        Parameters
+        ----------
+        q_fL : np array, shape (neq_node,nelem)
+            The extrapolated solution of the left element(s) to the facet(s).
+        q_fR : np array, shape (neq_node,nelem)
+            The extrapolated solution of the left element(s) to the facet(s).
+
+        Returns
+        -------
+        satL : np array
+            The contribution of the SAT for the first derivative to the element(s)
+            on the left.
+        satR : np array
+            The contribution of the SAT for the first derivative to the element(s)
+            on the right.
+        '''
+        q_fL, q_fR = self.get_interface_sol(qL, qR)
+        
+        #TODO: Rework Ismail_Roe to accept shapes (neq_node,nelem) rather than (neq_node,)
+        neq,nelem = q_fL.shape
+        numflux = np.zeros((neq,nelem))
+        for e in range(nelem):
+            numflux[:,e] = self.diffeq.ec_flux(q_fL[:,e], q_fR[:,e])
+        
+        qfacet = (q_fL + q_fR)/2 # Assumes simple averaging, can generalize
+        # TODO: This will get all fucked up by svec
+        rhoL, rhouL, eL = self.diffeq.decompose_q(qL)
+        uL = rhouL / rhoL
+        pL = (self.diffeq.g-1)*(eL - (rhoL * uL**2)/2)
+        aL = np.sqrt(self.diffeq.g * pL/rhoL)
+        rhoR, rhouR, eR = self.diffeq.decompose_q(qR)
+        uR = rhouR / rhoR
+        pR = (self.diffeq.g-1)*(eR - (rhoR * uR**2)/2)
+        aR = np.sqrt(self.diffeq.g * pR/rhoR)
+        LF_const = np.max([np.abs(uL)+aL,np.abs(uR)+aR],axis=(0,1))
+        Lambda = self.diffeq.dqdw(qfacet)*LF_const
+        
+        w_fL= self.rrR.T @ self.diffeq.entropy_var(qL)
+        w_fR= self.rrL.T @ self.diffeq.entropy_var(qR)
+        
+        satL = self.rrR @ ( self.diffeq.calcE(q_fL) - numflux - fn.gm_gv(Lambda, w_fL - w_fR))
+        satR = self.rrL @ ( numflux - self.diffeq.calcE(q_fR) - fn.gm_gv(Lambda, w_fR - w_fL))
+
+        return satL, satR 

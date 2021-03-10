@@ -30,24 +30,27 @@ class Sat(SatDer1, SatDer2):
             
             if method == 'central':
                 if self.neq_node == 1:
-                    self.sat_der1 = lambda qL,qR: self.sat_der1_upwind(qL, qR, 0)
-                    self.dfdq_sat_der1 = lambda qL,qR: self.dfdq_sat_der1_upwind_scalar(qL, qR, 0)
+                    self.calc_sat = lambda qL,qR: self.sat_der1_upwind(qL, qR, 0)
+                    self.calc_dfdq_sat = lambda qL,qR: self.dfdq_sat_der1_upwind_scalar(qL, qR, 0)
                 else:
-                    self.sat_der1 = lambda qL,qR: self.sat_der1_upwind(qL, qR, 0) # use Roe average?
-                    self.dfdq_sat_der1 = self.dfdq_sat_der1_complexstep
+                    self.calc_sat = lambda qL,qR: self.sat_der1_upwind(qL, qR, 0) # use Roe average?
+                    self.calc_dfdq_sat = self.dfdq_sat_der1_complexstep
             elif method == 'upwind':
                 if self.neq_node == 1:
-                    self.sat_der1 = lambda qL,qR: self.sat_der1_upwind(qL, qR, 1) 
-                    self.dfdq_sat_der1 = lambda qL,qR: self.self.dfdq_sat_der1_upwind_scalar(qL, qR, 1)
+                    self.calc_sat = lambda qL,qR: self.sat_der1_upwind(qL, qR, 1) 
+                    self.calc_dfdq_sat = lambda qL,qR: self.self.dfdq_sat_der1_upwind_scalar(qL, qR, 1)
                 else:
-                    self.sat_der1 = lambda qL,qR: self.sat_der1_upwind(qL, qR, 1) # use Roe average?
-                    self.dfdq_sat_der1 = self.dfdq_sat_der1_complexstep
+                    self.calc_sat = lambda qL,qR: self.sat_der1_upwind(qL, qR, 1) # use Roe average?
+                    self.calc_dfdq_sat = self.dfdq_sat_der1_complexstep
             elif (method.lower()=='ec' and self.diffeq.diffeq_name=='Burgers') or method.lower()=='burgers ec':
-                    self.sat_der1 = self.sat_der1_burgers_ec
-                    self.dfdq_sat_der1 = self.dfdq_sat_der1_burgers_ec
+                    self.calc_sat = self.sat_der1_burgers_ec
+                    self.calc_dfdq_sat = self.dfdq_sat_der1_burgers_ec
             elif (method.lower()=='ec' and self.diffeq.diffeq_name=='Quasi1dEuler') or method.lower()=='crean ec':
-                    self.sat_der1 = self.sat_der1_crean_ec
-                    #self.dfdq_sat_der1 = complex step?
+                    self.calc_sat = self.sat_der1_crean_ec
+                    #self.calc_dfdq_sat = complex step?
+            elif (method.lower()=='es' and self.diffeq.diffeq_name=='Quasi1dEuler') or method.lower()=='crean es':
+                    self.calc_sat = self.sat_der1_crean_es
+                    #self.calc_dfdq_sat = complex step?
             # TODO: Add 'try' if it is there, if not revert to complexstep
             else:
                 raise Exception('Choice of SAT not understood.')
@@ -56,9 +59,6 @@ class Sat(SatDer1, SatDer2):
             # Set the method for the sat and dfdq_sat for the first derivative
             #self.calc_sat_der1 = getattr(self, self.diffeq.sat_type_der1)
             #self.calc_dfdq_sat_der1 = getattr(self, self.diffeq.dfdq_sat_type_der1)
-
-            self.calc_sat = self.sat_der1_master
-            self.calc_dfdq_sat = self.dfdq_sat_der1_master
 
         elif self.pde_order == 2:
             
