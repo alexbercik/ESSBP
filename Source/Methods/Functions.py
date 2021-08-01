@@ -12,12 +12,14 @@ import numpy as np
 
 # The useful functions are defined first, the others are shoved to the bottom
 
+# TODO: This is the function to speed up (is approximately 40% of total code runtime)
 @jit(nopython=True)
 def gm_gv(A,b):
     '''
     Equivalent to np.einsum('ijk,jk->ik',A,b) where A is a 3-tensor of shape
     (nen1,nen2,nelem) and b is a 2-tensor of shape (nen2,nelem). This can be 
     thought of as a global matrix @ global vector.
+    Faster than A[:,:,e]@b[:,e] because A[:,:,e] is not a contigous array
 
     Parameters
     ----------
@@ -69,7 +71,7 @@ def gm_gm(A,B):
             for l in range(nen3):
                 for e in range(nelem):
                     c[i,l,e] += A[i,j,e]*B[j,l,e]
-    return c
+    return c  
 
 @jit(nopython=True)
 def gm_lm(A,B):
@@ -162,7 +164,7 @@ def gs_lm(A,B):
 def gv_lm(A,B):
     '''
     Takes a global vector of shape (nen1,nelem) and a local matrix of shape (nen1,nen2) 
-    and returns a global matrix of shape (nen1,nen2,nelem)
+    and returns a global matrix of shape (nen2,nelem)
 
     Parameters
     ----------
@@ -177,10 +179,113 @@ def gv_lm(A,B):
     nen1b,nen2 = np.shape(B)
     if nen1!=nen1b:
         raise Exception('shapes do not match')
+    c = np.zeros((nen2,nelem))
+    for e in range(nelem):
+            c[:,e] = A[:,e] @ B
+
+    return c
+
+@jit(nopython=True)
+def gdiag_lm(H,D):
+    '''
+    Takes a global array of shape (nen1,nelem) that simulates a global diagonal
+    matrix of shape (nen1,nen1,nelem), and a local matrix of shape (nen1,nen2) 
+    and returns a global matrix of shape (nen1,nen2,nelem), i.e. H @ D
+
+    Parameters
+    ----------
+    H : numpy array of shape (nen1,nelem)
+    D : numpy array of shape (nen1,nen2)
+
+    Returns
+    -------
+    c : numpy array of shape (nen1,nen2,nelem)
+    ''' 
+    nen1,nelem = np.shape(H)
+    nen1b,nen2 = np.shape(D)
+    if nen1!=nen1b:
+        raise Exception('shapes do not match')
+    c = np.zeros((nen1,nen2,nelem)) 
+    for e in range(nelem):
+        c[:,:,e] = (D.T * H[:,e]).T
+    return c
+
+@jit(nopython=True)
+def lm_gdiag(D,H):
+    '''
+    Takes a a local matrix of shape (nen1,nen2) and a global array of shape 
+    (nen2,nelem) that simulates a global diagonal matrix of shape (nen2,nen2,nelem), 
+    and returns a global matrix of shape (nen1,nen2,nelem), i.e. D @ H
+
+    Parameters
+    ----------
+    D : numpy array of shape (nen1,nen2)
+    H : numpy array of shape (nen2,nelem)
+
+    Returns
+    -------
+    c : numpy array of shape (nen1,nen2,nelem)
+    ''' 
+    nen2b,nelem = np.shape(H)
+    nen1,nen2 = np.shape(D)
+    if nen2!=nen2b:
+        raise Exception('shapes do not match')
+    c = np.zeros((nen1,nen2,nelem)) 
+    for e in range(nelem):
+        c[:,:,e] = D * H[:,e]
+    return c
+
+@jit(nopython=True)
+def gdiag_gm(H,D):
+    '''
+    Takes a global array of shape (nen1,nelem) that simulates a global diagonal
+    matrix of shape (nen1,nen1,nelem), and a global matrix of shape (nen1,nen2,nelem) 
+    and returns a global matrix of shape (nen1,nen2,nelem), i.e. H @ D
+
+    Parameters
+    ----------
+    H : numpy array of shape (nen1,nelem)
+    D : numpy array of shape (nen1,nen2,nelem)
+
+    Returns
+    -------
+    c : numpy array of shape (nen1,nen2,nelem)
+    ''' 
+    nen1,nelem = np.shape(H)
+    nen1b,nen2,nelemb = np.shape(D)
+    if nen1!=nen1b:
+        raise Exception('array shapes do not match')    
+    if nelem!=nelemb:
+        raise Exception('element shapes do not match')   
     c = np.zeros((nen1,nen2,nelem))
     for e in range(nelem):
-            c[:,:,e] = A[:,e] @ B
+        c[:,:,e] = (D[:,:,e].T * H[:,e]).T
+    return c
 
+@jit(nopython=True)
+def gdiag_gv(H,q):
+    '''
+    NOTE: Faster to directly use H * q
+    Takes a global array of shape (nen,nelem) that simulates a global diagonal
+    matrix of shape (nen,nen,nelem), and a global vector of shape (nen,nelem) 
+    and returns a global vector of shape (nen,nelem), i.e. H @ q
+
+    Parameters
+    ----------
+    H : numpy array of shape (nen,nelem)
+    D : numpy array of shape (nen,nelem)
+
+    Returns
+    -------
+    c : numpy array of shape (nen1,nen2,nelem)
+    ''' 
+    nen,nelem = np.shape(H)
+    nenb,nelemb = np.shape(q)
+    if nen!=nenb:
+        raise Exception('array shapes do not match')    
+    if nelem!=nelemb:
+        raise Exception('element shapes do not match')   
+    c = H * q
     return c
 
 @jit(nopython=True)
@@ -276,9 +381,9 @@ def abs_eig_mat(mat):
 
 
 @jit(nopython=True)
-def glob_block_2d_mat(blockL,blockM,blockR):
+def gm_triblock_flat(blockL,blockM,blockR):
     '''
-    Takes 3 3d arrays, blockL and blockR of shape (nen,nen,nelem-1) and 
+    Takes 3 global matrices, blockL and blockR arrays of shape (nen,nen,nelem-1) and 
     blockM of shape (nen,nen,nelem) returns a 2d array of shape (nen*nelem,nen*nelem)
     where the nelem (nen,nen) blocks are along the diagonal, blockL blocks are
     to the left of the main diagonal, and blockR blocks are to the right.
@@ -313,13 +418,13 @@ def glob_block_2d_mat(blockL,blockM,blockR):
                 
 
 @jit(nopython=True)
-def glob_block_2d_mat_periodic(blockL,blockM,blockR):
+def gm_triblock_flat_periodic(blockL,blockM,blockR):
     '''
-    Takes 3 3d arrays of shape (nen,nen,nelem) and returns a 2d array of shape 
-    (nen*nelem,nen*nelem) where the nelem (nen,nen) blocks are along the diagonal, 
-    blockL blocks are to the left of the main diagonal, and blockR blocks are 
-    to the right. The first block of blockL is sent to the top right while the
-    last block of blockR is sent to the bottom left.
+    Takes 3 global matrices of shape (nen,nen,nelem) and returns a 2d array 
+    of shape (nen*nelem,nen*nelem) where the nelem blockM (nen,nen) blocks are 
+    along the diagonal, blockL blocks are to the left of the main diagonal, 
+    and blockR blocks are to the right. The first block of blockL is sent to 
+    the top right while the last block of blockR is sent to the bottom left.
 
     Returns
     -------
@@ -350,6 +455,53 @@ def glob_block_2d_mat_periodic(blockL,blockM,blockR):
     return mat
 
 @jit(nopython=True)
+def gm_triblock_2D_flat_periodic(blockL,blockM,blockR,blockD,blockU,nelemy):
+    '''
+    Takes 5 global matrices of shape (nen^2,nen^2,nelemx*nelemy) and returns a 2d array 
+    of shape (nen^2*nelemx*nelemy,nen^2*nelemx*nelemy) where the nelemx*nelemy
+    blockM (nen^2,nen^2) blocks are along the diagonal, blockL blocks are nelemy 
+    blocks to the left of the main diagonal, blockR blocks are nelemy blocks to 
+    the right, blockD are immediately to the left, and blockU are immediately to 
+    the right. The first block of blockL is sent to -nelemy from the top right,
+    the last block of blockR is sent to nelemy from the bottom left. The first
+    block of blockD is sent to nelemy from the top left, and the last block of
+    blockU is sent to -nelemy from the bottom right.
+
+    Returns
+    -------
+    c : numpy array of shape (nen^2*nelemx*nelemy,nen^2*nelemx*nelemy)
+    '''
+    nen,nenb,nelem = blockM.shape
+    nenc,nend,nelemb = blockL.shape
+    nene,nenf,nelemc = blockR.shape
+    neng,nenh,nelemd = blockD.shape
+    neni,nenj,neleme = blockU.shape
+    if (nenb!=nen or nenc!=nen or nend!=nen or nene!=nen or nenf!=nen or neng!=nen or nenh!=nen or neni!=nen or nenj!=nen):
+        raise Exception('block shapes do not match')    
+    if (nelemb!=nelem or nelemc!=nelem or nelemd!=nelem or neleme!=nelem):
+        raise Exception('number of blocks do not match')  
+    
+    mat = np.zeros((nen*nelem,nen*nelem))        
+    for e in range(nelem-1):
+        for i in range(nen):
+            for j in range(nen):
+                mat[nen*e+i,nen*e+j] = blockM[i,j,e]
+                mat[nen*e+i,nen*(e-nelemy)+j] = blockL[i,j,e]
+                mat[nen*e+i,nen*(e+nelemy)+j] = blockR[i,j,e]
+                mat[nen*e+i,nen*(e-1)+j] = blockD[i,j,e]
+                mat[nen*e+i,nen*(e+1)+j] = blockU[i,j,e]
+    e = nelem-1
+    for i in range(nen):
+        for j in range(nen):
+            mat[nen*e+i,nen*e+j] = blockM[i,j,e]
+            mat[nen*e+i,nen*(e-nelemy)+j] = blockL[i,j,e]
+            mat[nen*e+i,nen*nelemy+j] = blockR[i,j,e]
+            mat[nen*e+i,nen*(e-1)+j] = blockD[i,j,e]
+            mat[nen*e+i,j] = blockU[i,j,e]
+            
+    return mat
+
+@jit(nopython=True)
 def lm_gm_hadamard(A,B):
     '''
     Compute the hadamard product between a local matrix (nen1,nen2) and 
@@ -366,8 +518,184 @@ def lm_gm_hadamard(A,B):
             
     return C
 
+def isDiag(M):
+    if M.ndim==2:
+        i, j = M.shape
+        assert i == j 
+        test = M.reshape(-1)[:-1].reshape(i-1, j+1)
+        return ~np.any(test[:, 1:])
+    elif M.ndim==3:
+        i, j, e = M.shape
+        assert i == j 
+        test = M.reshape(-1)[:-e].reshape(i-1, (j+1)*e)
+        return ~np.any(test[:, e:])
+    else:
+        raise Exception('Inputted shape not understood.')
+        
+@jit(nopython=True)
+def pad_periodic_1d(q):
+    '''
+    Take a global vector (nen,nelem) and pad it so that it becomes a global
+    vector (nen,nelem+2) where the first element is the last element and the
+    last element is the first element. Used in dqdt for periodic bc.
+
+    Returns
+    -------
+    qpad : numpy array of shape (nen,nelem)
+    '''
+    nen,nelem = q.shape
+    qpad = np.zeros((nen,nelem+2))
+    qpad[:,1:-1] = q
+    qpad[:,0] = q[:,-1]
+    qpad[:,-1] = q[:,0]           
+    return qpad
+
+@jit(nopython=True)
+def pad_1d(q,qL,qR):
+    '''
+    Take a global vector (nen,nelem) and pad it so that it becomes a global
+    vector (nen,nelem+2) where the first element is qL and the last element is 
+    qR. Used in Sat calculations.
+
+    Returns
+    -------
+    qpad : numpy array of shape (nen,nelem+2)
+    '''
+    nen,nelem = q.shape
+    if qL.shape!=(nen,) or qR.shape!=(nen,):
+        raise Exception('shapes do not match') 
+    qpad = np.zeros((nen,nelem+2))
+    qpad[:,1:-1] = q
+    qpad[:,0] = qL
+    qpad[:,-1] = qR          
+    return qpad
+
+@jit(nopython=True)
+def pad_1dL(q,qL):
+    '''
+    Take a global vector (nen,nelem) and pad it so that it becomes a global
+    vector (nen,nelem+1) where the first element is qL. Used in Sat calculations.
+
+    Returns
+    -------
+    qpad : numpy array of shape (nen,nelem+1)
+    '''
+    nen,nelem = q.shape
+    if qL.shape!=(nen,):
+        raise Exception('shapes do not match') 
+    qpad = np.zeros((nen,nelem+1))
+    qpad[:,1:] = q
+    qpad[:,0] = qL         
+    return qpad
+
+@jit(nopython=True)
+def pad_1dR(q,qR):
+    '''
+    Take a global vector (nen,nelem) and pad it so that it becomes a global
+    vector (nen,nelem+1) where the last element is qR. Used in Sat calculations.
+
+    Returns
+    -------
+    qpad : numpy array of shape (nen,nelem+1)
+    '''
+    nen,nelem = q.shape
+    if qR.shape!=(nen,):
+        raise Exception('shapes do not match') 
+    qpad = np.zeros((nen,nelem+1))
+    qpad[:,:-1] = q
+    qpad[:,-1] = qR          
+    return qpad
+
+@jit(nopython=True) # TODO: renamed from fix_satL_1D
+def shift_left(q):
+    '''
+    Take a global vector (nen,nelem) and move the first elem to the last elem.
+    This is used for example for periodic cases to create qR from q.
+
+    Returns
+    -------
+    qfix : numpy array of shape (nen,nelem)
+    '''
+    nen,nelem = q.shape
+    qfix = np.zeros((nen,nelem))
+    qfix[:,:-1] = q[:,1:]
+    qfix[:,-1] = q[:,0]            
+    return qfix
+
+@jit(nopython=True)
+def shift_right(q):
+    '''
+    Take a global vector (nen,nelem) and move the first elem to the last elem.
+    This is used for example for periodic cases to create qL from q.
+
+    Returns
+    -------
+    qfix : numpy array of shape (nen,nelem)
+    '''
+    nen,nelem = q.shape
+    qfix = np.zeros((nen,nelem))
+    qfix[:,1:] = q[:,:-1]
+    qfix[:,0] = q[:,-1]            
+    return qfix
+
+@jit(nopython=True)
+def fix_dsatL_1D(q):
+    '''
+    Take a global matrix (nen,nen,nelem) and move the first elem to the last elem.
+    Used in dqdt to fix the dsatL vector which has contributions for elements
+    -1, 0, 1, ..., -2. Fixes it to contribute to 0, 1, ..., -2, -1.
+
+    Returns
+    -------
+    qfix : numpy array of shape (nen,nelem)
+    '''
+    nen,nen1,nelem = q.shape
+    qfix = np.zeros((nen,nen1,nelem))
+    qfix[:,:,:-1] = q[:,:,1:]
+    qfix[:,:,-1] = q[:,:,0]            
+    return qfix
+
+@jit(nopython=True)
+def reshape_to_meshgrid(q,nen,nelemx,nelemy):
+    ''' take a 2D vector q in the shape (nen**2,nelemx*nelemy) and reshape
+    to a 2D mesh in the shape (nen*nelem, nen*nelemy) as would be created
+    by meshgrid. Can think of this array ordering being the actual bird's 
+    eye view of the mesh. '''
+    if q.shape != (nen**2,nelemx*nelemy):
+        raise Exception('Shape does not match.')  
+        
+    Q = np.zeros((nen*nelemx, nen*nelemy))
+    for ex in range(nelemx):
+        for ey in range(nelemy):
+            for nx in range(nen):
+                for ny in range(nen):
+                    Q[ex*nen + nx, ey*nen + ny] = q[nx*nen + ny,ex*nelemy + ey]
+    return Q
+    
+    
+
+
 
 """ Old functions (no longer useful)
+
+def ldiag_gdiag2(l,g):
+    '''
+    Takes a a local array of shape (nen) that simulates a local diagonal 
+    matrix of shape (nen,nen), and a global array of shape (nen,nelem)
+    that simulates a global diagonal matrix of shape (nen,nen,nelem), 
+    and returns a global array of shape (nen,nelem), simulating a global
+    matrix of shape (nen,nen,nelem), i.e. l @ g
+
+    Parameters
+    ----------
+    l : numpy array of shape (nen)
+    g : numpy array of shape (nen,nelem)
+
+    Returns
+    -------
+    c : numpy array of shape (nen,nelem)
+    ''' 
+    return l[:,None] * g
 
 @jit(nopython=True)
 def gv_lvT(A,B):
@@ -400,7 +728,7 @@ def gv_lvT(A,B):
     return c
 
 @jit(nopython=True)
-def glob_block_2d_mat(blockL,blockM,blockR):
+def gm_triblock_flat(blockL,blockM,blockR):
     '''
     Takes 3 3d arrays, blockL and blockR of shape (nen,nen,nelem-1) and 
     blockM of shape (nen,nen,nelem) returns a 2d array of shape (nen*nelem,nen*nelem)

@@ -3,7 +3,7 @@
 """
 Created on Sat Feb 15 19:52:32 2020
 
-@author: andremarchildon
+@author: alexbercik
 """
 
 from sys import platform

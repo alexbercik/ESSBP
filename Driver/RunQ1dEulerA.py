@@ -40,17 +40,21 @@ dt = 0.0001
 dt_init = dt
 nts = 500
 t_init = 0
-tf = 0.501 #nts * dt # set to None to do automatically or use a convergence criterion
+tf = 0.5 #nts * dt # set to None to do automatically or use a convergence criterion
 # note: can add option to pass None, then that triggers it to check diffeq, if not can pass 'steady' in which case it uses converged criteria
+
+# TODO: Add flag that stops sim when it hits negative pressures
 
 # Spatial discretization
 disc_type = 'lgl' 
 nn = 99
-nelem = 20 # optional, number of elements
+nelem = 10 # optional, number of elements
 nen = 0 # optional, number of nodes per element
 p = 3
 sat_flux_type='es'
 vol_type='ec'
+savefile = 'euler_dissipative'
+title=r'1D Euler, Entropy Dissipative'
 isperiodic = None # set to none so it is done automatically
 
 # Initial solution
@@ -59,7 +63,7 @@ q0_type = 'linear'
 
 # Other
 bool_plot_sol = False
-print_sol_norm = True
+print_sol_norm = False
 cons_obj_name=('Energy','Conservation','Entropy') # note: should I modify this for systems?
 
 bool_norm_var = False
@@ -78,6 +82,8 @@ else:
 
 diffeq = Quasi1dEuler(para, obj_name, q0_type, test_case, nozzle_shape, bool_norm_var, vol_type)
 
+diffeq.plt_style_exa_sol = {'color':'r','linestyle':'-','marker':'','linewidth':2}
+
 solver = c_solver(diffeq,                              # Diffeq
                   tm_method, dt, tf,                    # Time marching
                   q0,                                   # Initial solution
@@ -87,6 +93,21 @@ solver = c_solver(diffeq,                              # Diffeq
                   obj_name, cons_obj_name,              # Other
                   bool_plot_sol, print_sol_norm)
 
+A = solver.check_eigs(plt_save_name=savefile+'_eigs',returnA=True,title='Eigenvalues: ' + title)
+#import numpy as np
+#eigs = np.linalg.eigvals(A)
+#max_eig = max(eigs.real)
+#def theory_fn(time):
+#    return 0.001*np.exp(max_eig * time)
+
+diffeq.plt_style_sol[0] = {'color':'b','linestyle':'-','marker':'','linewidth':3}
 solver.solve()
-solver.plot_sol()
-solver.plot_cons_obj()
+solver.plot_sol(plt_save_name=savefile+'_sol',title=title,display_time=True)
+solver.plot_error(method='max diff',savefile=savefile+'_error', title=title)
+solver.plot_cons_obj(savefile=savefile)
+#from Methods.Analysis import animate
+#animate(solver, plotargs={'display_time':True},skipsteps=100)
+
+#solver.solve()
+#solver.plot_sol()
+#solver.plot_cons_obj()

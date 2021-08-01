@@ -21,8 +21,8 @@ class SatDer2:
             qder1_fL = self.diffeq.q_derL
         else:
             at_bdy_L = False
-            q_fL = self.rrR.T @ qL
-            qder1_fL = self.rrR.T @ self.der1 @ qL
+            q_fL = self.tRT @ qL
+            qder1_fL = self.tRT @ self.der1 @ qL
 
         ''' Get the solution to the right of the facet '''
         if qR.size == self.neq_node:
@@ -31,8 +31,8 @@ class SatDer2:
             qder1_fR = self.diffeq.q_derR
         else:
             at_bdy_R = False
-            q_fR = self.rrL.T @ qL
-            qder1_fR = self.rrL.T @ self.der1 @ qR
+            q_fR = self.tLT @ qL
+            qder1_fR = self.tLT @ self.der1 @ qR
 
         return (q_fL, qder1_fL, at_bdy_L), (q_fR, qder1_fR, at_bdy_R)
 

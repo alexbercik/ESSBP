@@ -18,18 +18,18 @@ class PdeSolver:
 
     
     # Initialize parameters
-    dim = 1             # TODO: tensor product dim > 1
     q_sol = None        # Solution of the Diffeq
     obj = None          # Objective(s)
     cons_obj = None     # Conservation Objective(s)
     keep_all_ts = True  # whether to keep all time steps on solve
 
-    def __init__(self, diffeq,                              # Diffeq
+    def __init__(self, diffeq, settings,                            # Diffeq
                  tm_method, dt, t_final,                    # Time marching
                  q0=None,                                   # Initial solution
-                 p=2, disc_type='lgl', nn=0,                # Discretization
-                 nelem=0, nen=0, sat_flux_type='upwind',
-                 isperiodic=None, xmin=0, xmax=1,          # Domain
+                 dim=1, p=2, disc_type='div',               # Discretization
+                 surf_type='upwind', diss_type=None,
+                 nelem=0, nen=0,  disc_nodes='lgl',
+                 bc=None, xmin=0, xmax=1,     # Domain
                  obj_name=None, cons_obj_name=None,         # Other
                  bool_plot_sol=False, print_sol_norm=False):
         '''
@@ -53,29 +53,24 @@ class PdeSolver:
         disc_type : str, optional
             Indicates the type of spatial discretization that is used.
             The default is 'lgl'.
-        nn : int, optional
-            The number of nodes in the mesh (this is used as an approximate
-            ndof and set automatically if elements are used) This does
-            nothing if nelem>0 and is set automatically by nelem and nen.
-            The default is 0.
         nelem : int, optional (Not used for FD)
-            The number of elements in the mesh. This does nothing if nelem=0
-            and is set automatically by nn and nen.
+            The number of elements in the mesh.
             The default is 0.
         nen : int, optional (Not used for FD)
-            The number of nodes per element (only used if nelem>0). The actual
-            number of nodes per element is set according to whichever of p or
-            nen results in the largest number of nodes (See SbpQuadRule).
+            The number of nodes per element. The actual number of nodes per 
+            element is set according to whichever of p or nen results in the 
+            largest number of nodes (See SbpQuadRule).
             The default is 0.
-        isperiodic : bool, optional
-            True if the mesh is periodic.
+        bc : str or tuple
+            Indicates boundary conditions, ex. 'periodic' if the mesh is periodic.
             The default is None, in which case it searches diffeq for default.
-        xmin : float, optional
-            The minimum of the mesh.
-            The default is 0.
-        xmax : float, optional
-            The maximum of the mesh.
-            The default is 1.
+        xmin : float or (float,float)
+            Min coordinate of the mesh, either x in 1D or (x,y) in 2D
+        xmax : float or (float,float)
+             Max coordinate of the mesh, either x in 1D or (x,y) in 2D
+        xmax : float
+             Factor by which to warp the 2D mesh. Typically use 0.2
+             The defualt is 0.
         bool_calc_obj : bool, optional
             The objective(s) is calculated if this is set to True.
             The default is True, unless n_obj=0.
@@ -94,9 +89,27 @@ class PdeSolver:
         ''' Add all inputs to the class '''
 
         self.diffeq = diffeq
+        
+        self.settings = settings
+        
+        ''' Set default settings if not given '''
+        self.settings.setdefault('warp_factor',0.) 
+        # called by Disc.MakeMesh. Warps / stretches mesh.
+        self.settings.setdefault('warp_type','default')
+        # called by Disc.MakeMesh. Options: 'defualt', 'papers', 'quad'
+        self.settings.setdefault('metric_method','exact') 
+        # called by Disc.MakeMesh.get_jac_metrics. Options: 'calculate', 'VinokurYee', 'ThomasLombard', 'exact'
+        self.settings.setdefault('bdy_metric_method','exact') 
+        # called by Disc.MakeMesh.get_jac_metrics. Options: 'calculate', 'VinokurYee', 'ThomasLombard', 'exact', 'interpolate'
+        self.settings.setdefault('use_optz_metrics',True) 
+        # called by Disc.MakeMesh.get_jac_metrics. Uses optimized metrics for free stream preservation.
+        self.settings.setdefault('calc_exact_metrics',False) 
+        # called by Disc.MakeMesh.get_jac_metrics. Calculates exact metrics alongside regular method..
+        self.settings.setdefault('metric_optz_method','default') 
+        # called by Disc.MakeMesh.get_jac_metrics. Define the metric optimization procedure.
 
         # Time marching
-        self.tm_method = tm_method
+        self.tm_method = tm_method.lower()
         self.dt = dt
         self.t_final = t_final
 
@@ -104,14 +117,71 @@ class PdeSolver:
         self.q0 = q0
         
         # Discretization
-        self.p = p
-        self.disc_type = disc_type
-        self.nn = nn
-        self.nelem = nelem
-        self.nen = nen
+        self.dim = dim
+        if disc_type.lower() == 'div' or disc_type.lower() == 'divergence':
+            self.disc_type = 'div'
+        elif disc_type.lower() == 'had' or disc_type.lower() == 'hadamard':
+            self.disc_type = 'had'
+        else: raise Exception('Discretization type not understood. Try div or had.')
+        self.disc_nodes = disc_nodes.lower()
         self.neq_node = self.diffeq.neq_node
-        self.sat_flux_type = sat_flux_type
+        self.surf_type = surf_type.lower()
+        self.diss_type = diss_type
         self.pde_order = self.diffeq.pde_order
+
+        assert isinstance(p, int), 'p must be an integer'
+        self.p = p
+        assert isinstance(nen, int), 'nen must be an integer'
+        self.nen = nen
+        
+        if self.dim == 1:
+            assert isinstance(nelem, int), 'nelem must be an integer'
+            assert isinstance(xmin, float) or isinstance(xmin, int), 'xmin must be a float or integer'
+            assert isinstance(xmax, float) or isinstance(xmax, int), 'xmax must be a float or integer'
+            self.nelem = nelem
+            self.xmin = xmin
+            self.xmax = xmax
+
+        elif self.dim == 2:
+            if isinstance(nelem, int):
+                self.nelem = (nelem, nelem)
+            elif (isinstance(nelem, tuple) and len(nelem)==2):
+                self.nelem = nelem
+            else: 
+                'nelem must be an integer or tuple of integers. Inputted: ', nelem
+            if isinstance(xmin, float) or isinstance(xmin, int):
+                self.xmin = (xmin, xmin)
+            elif (isinstance(xmin, tuple) and len(xmin)==2):
+                self.xmin = xmin
+            else: 
+                'xmin must be a float/integer or tuple of float/integers. Inputted: ', xmin
+            if isinstance(xmax, float) or isinstance(xmax, int):
+                self.xmax = (xmax, xmax)
+            elif (isinstance(xmax, tuple) and len(xmax)==2):
+                self.xmax = xmax
+            else: 
+                'xmax must be a float/integer or tuple of float/integers. Inputted: ', xmax
+                
+        elif self.dim == 3:
+            if isinstance(nelem, int):
+                self.nelem = (nelem, nelem, nelem)
+            elif (isinstance(nelem, tuple) and len(nelem)==3):
+                self.nelem = nelem
+            else: 
+                'nelem must be an integer or tuple of integers. Inputted: ', nelem
+            if isinstance(xmin, float) or isinstance(xmin, int):
+                self.xmin = (xmin, xmin, xmin)
+            elif (isinstance(xmin, tuple) and len(xmin)==3):
+                self.xmin = xmin
+            else: 
+                'xmin must be a float/integer or tuple of float/integers. Inputted: ', xmin
+            if isinstance(xmax, float) or isinstance(xmax, int):
+                self.xmax = (xmax, xmax, xmax)
+            elif (isinstance(xmax, tuple) and len(xmax)==3):
+                self.xmax = xmax
+            else: 
+                'xmax must be a float/integer or tuple of float/integers. Inputted: ', xmax
+        else: raise Exception('Only set up currently for 1D, 2D, and 3D')
 
         # Other
         self.obj_name = obj_name
@@ -138,7 +208,7 @@ class PdeSolver:
             # Standardize format for the name of the objective(s)
             if isinstance(self.cons_obj_name, str):
                 self.n_cons_obj = 1
-                self.cons_obj_name = (self.cons_obj_name,)
+                self.cons_obj_name = (self.cons_obj_name.lower(),)
             elif isinstance(cons_obj_name, tuple):
                 self.n_cons_obj = len(self.cons_obj_name)
             else:
@@ -157,7 +227,9 @@ class PdeSolver:
         if isinstance(self.t_final, int) or isinstance(self.t_final, float):
             self.n_ts = int(np.round(self.t_final / self.dt))
             if abs(self.n_ts - (self.t_final / self.dt)) > 1e-10:
-                print('WARNING: Final time may not be exact! Check time step size.')
+                dt_old = np.copy(self.dt)
+                self.dt = self.t_final/self.n_ts
+                print('WARNING: To ensure final time is exact, changing dt from {0} to {1}'.format(dt_old,self.dt))
         elif self.t_final == 'steady':
             print('Indicated steady problem. Will use a convergence criteria to stop time march.')
             raise Exception('Have not coded this up yet!')
@@ -165,12 +237,29 @@ class PdeSolver:
             print('ERROR: No t_final found.') # unsure whether to throw exception error...
 
         # Domain
-        if isperiodic == None:
-            print('No indication of periodicity provided. Checking diffeq for a default.')
-            self.isperiodic = diffeq.isperiodic
-        else: self.isperiodic = isperiodic
-        self.xmin = xmin
-        self.xmax = xmax
+        if bc == None:
+            print('No boundary conditions provided. Checking diffeq for a default.')
+            self.bc = diffeq.bc
+        else: self.bc = bc
+        if self.dim == 1:
+            assert isinstance(self.bc, str), 'bc must be a string'
+            if self.bc == 'periodic': self.periodic = True
+        elif self.dim == 2:
+            if isinstance(self.bc, str):
+                self.bc = (self.bc, self.bc)
+            assert isinstance(self.bc, tuple) and len(self.bc)==2, 'bc must be a string or tuple of strings'
+            self.periodic = [False,False]
+            if self.bc[0] == 'periodic': self.periodic[0] = True
+            if self.bc[1] == 'periodic': self.periodic[1] = True               
+        elif self.dim == 3:
+            if isinstance(self.bc, str):
+                self.bc = (self.bc, self.bc, self.bc)
+            assert isinstance(self.bc, tuple) and len(self.bc)==3, 'bc must be a string or tuple of strings'
+            self.periodic = [False,False,False]
+            if self.bc[0] == 'periodic': self.periodic[0] = True
+            if self.bc[1] == 'periodic': self.periodic[1] = True
+            if self.bc[2] == 'periodic': self.periodic[2] = True
+            
         
         ''' Call the discretisation specific method to finish the class initialization '''
         self.init_disc_specific()        
@@ -178,12 +267,38 @@ class PdeSolver:
         ''' Sanity Checks '''
         
         # time step stability
-        if self.dt > 0.1*(self.xmax-self.xmin)/self.nn/self.diffeq.calc_LF_const():
-            print('WARNING: time step dt may not be small enough to remain stable.')
-            print('Assuming CFL = 0.1 and max wave speed = {0:.2g}, try dt < {1:.2g}'.format(
-                self.diffeq.calc_LF_const(),
-                0.1*(self.xmax-self.xmin)/self.nn/self.diffeq.calc_LF_const()))
-        
+        q = self.diffeq.set_q0()
+        if self.dim==1:
+            LFconst = np.max(self.diffeq.maxeig_dEdq(q))
+            dt = 0.1*(self.xmax-self.xmin)/self.nn/LFconst
+            if self.dt > dt:
+                print('WARNING: time step dt may not be small enough to remain stable.')
+                print('Assuming CFL = 0.1 and max wave speed = {0:.2g}, try dt < {1:.2g}'.format(LFconst, dt))
+        elif self.dim==2:
+            LFconstx = np.max(self.diffeq.maxeig_dExdq(q))
+            LFconsty = np.max(self.diffeq.maxeig_dEydq(q))
+            const = np.sqrt(LFconstx**2 + LFconsty**2)
+            dx = min((self.xmax[0]-self.xmin[0])/self.nn[0],(self.xmax[1]-self.xmin[1])/self.nn[1])
+            dt = 0.1*dx/const
+            if self.dt > dt:
+                print('WARNING: time step dt may not be small enough to remain stable.')
+                print('Assuming CFL = 0.1 and max wave speed = ({0:.2g}, {1:.2g}), try dt < {2:.2g}'.format(LFconstx, LFconsty, dt))
+        elif self.dim==3:
+            LFconstx = np.max(self.diffeq.maxeig_dExdq(q))
+            LFconsty = np.max(self.diffeq.maxeig_dEydq(q))
+            LFconstz = np.max(self.diffeq.maxeig_dEzdq(q))
+            const = np.sqrt(LFconstx**2 + LFconsty**2 + LFconstz**2)
+            dx = min((self.xmax[0]-self.xmin[0])/self.nn[0],(self.xmax[1]-self.xmin[1])/self.nn[1])
+            dt = 0.1*dx/const
+            if self.dt > dt:
+                print('WARNING: time step dt may not be small enough to remain stable.')
+                print('Assuming CFL = 0.1 and max wave speed = ({0:.2g}, {1:.2g}, {2:.2g}), try dt < {3:.2g}'.format(LFconstx, LFconsty, LFconstz, dt))
+                
+        # Free Stream Preservation
+        test = self.dqdt(np.ones(self.qshape))
+        if np.max(abs(test))>1e-12:
+            print('WARNING: Free Stream is not preserved. Check Metrics and/or SAT discretization.')
+            print('         Free Stream is violated by a maximum of {0:.2g}'.format(np.max(abs(test))))
 
     def solve(self, q0_in=None, q0_idx=None):
 
@@ -230,6 +345,9 @@ class PdeSolver:
         '''
 
         cons_obj = np.zeros(self.n_cons_obj)
+        
+        if any('der' in name.lower() for name in self.cons_obj_name):
+            dqdt = self.dqdt(q) #TODO: Wildly inneficient. Can i get this from tm class?
 
         for i in range(self.n_cons_obj):
             cons_obj_name_i = self.cons_obj_name[i].lower()
@@ -240,6 +358,10 @@ class PdeSolver:
                 cons_obj[i] = self.entropy(q)
             elif cons_obj_name_i == 'conservation':
                 cons_obj[i] = self.conservation(q)
+            elif cons_obj_name_i == 'energy_der':
+                cons_obj[i] = self.energy_der(q,dqdt)
+            elif cons_obj_name_i == 'conservation_der':
+                cons_obj[i] = self.conservation_der(dqdt)
             else:
                 raise Exception('Unknown conservation objective function')
 
@@ -333,18 +455,20 @@ class PdeSolver:
         for i in range(len(variables)):
             attribute , value = variables[i]
             if hasattr(self, attribute):
-                self.tm_solver = setattr(self, attribute, value)
+                setattr(self, attribute, value)
             else:
                 print("ERROR: solver has no attribute '{0}'. Ignoring.".format(attribute))
 
-        self.__init__(self.diffeq_in,
+        self.__init__(self.diffeq, self.settings, 
                       self.tm_method, self.dt, self.t_final, 
                       q0=self.q0, 
-                      p=self.p, disc_type=self.disc_type, nn=self.nn,
-                      nelem=self.nelem, nen=self.nen,
-                      isperiodic=self.isperiodic, xmin=self.xmin, xmax=self.xmax,
+                      dim=self.dim, p=self.p, disc_type=self.disc_type,
+                      surf_type=self.surf_type, diss_type=self.diss_type,
+                      nelem=self.nelem, nen=self.nen, disc_nodes=self.disc_nodes,
+                      bc=self.bc, xmin=self.xmin, xmax=self.xmax,
                       obj_name=self.bool_calc_obj, cons_obj_name=self.cons_obj_name,
                       bool_plot_sol=self.bool_plot_sol, print_sol_norm=self.print_sol_norm)
+
     
     def check_eigs(self, q=None, plot_eigs=True, returnA=False, exact_dfdq=True,
                    step=1.0e-4, tol=1.0e-10, plt_save_name=None, ymin=None, ymax=None,
@@ -484,7 +608,7 @@ class PdeSolver:
                 raise Exception('Unknown conservation objective function')
                 
             if savefile is not None:
-                plt.savefig(savefile+cons_obj_name_i+'.jpg',dpi=600)
+                plt.savefig(savefile+'_'+cons_obj_name_i+'.jpg',dpi=600)
 
     def force_steady_solution(self, q0_type=None):
         '''
@@ -507,7 +631,7 @@ class PdeSolver:
         if self.disc_type == 'fd':
             rhs = self.diffeq.dqdt(q0)
             self.dqdt = lambda q: self.diffeq.dqdt(q) - rhs
-        elif self.disc_type == 'lgl' or self.disc_type == 'lg' or self.disc_type == 'nc' or self.disc_type == 'csbp':
+        elif self.disc_type == 'div' or self.disc_type == 'had':
             rhs = self.sbp_dqdt(q0)
             self.dqdt = lambda q: self.sbp_dqdt(q) - rhs           
         elif self.disc_type == 'dg':

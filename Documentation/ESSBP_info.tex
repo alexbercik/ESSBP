@@ -1,0 +1,606 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage[left=2cm,right=2cm,top=2cm,bottom=2cm]{geometry}
+\author{Alex Bercik}
+\title{ESSBP Overview}
+
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=cyan,
+    filecolor=magenta,      
+    urlcolor=blue,
+}
+
+\usepackage{listings}
+\usepackage{xcolor}
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+\lstset{style=mystyle,
+	language=Python,
+	morekeywords={self,True,False}}
+	
+\usepackage{amsmath}
+\usepackage{bm}
+\usepackage{amsthm} % use for theorem, corollary, Remark, Proof environments
+\usepackage{dsfont} % for special characters like R^n
+\usepackage{upgreek} % to make letters like tau nicer
+\usepackage{cancel}
+
+\newcommand{\te}[1]{\texttt{\detokenize{#1}}}
+\lstMakeShortInline[columns=fixed]|
+
+\newcommand{\pder}[2][]{\dfrac{\partial #1}{\partial #2}} %comand for partial derivative
+\newcommand{\der}[2][]{\dfrac{d #1}{d #2}} %comand for derivative
+\newcommand{\norm}[1]{\left\vert \left\vert #1 \right\vert \right\vert} %comand for norm
+\newcommand{\myeq}[1]{\mathrel{\overset{\text{#1}}{=}}} % overlay text on =
+\newcommand{\up}{\textsuperscript} % quick superscript
+\newcommand{\fn}[1]{\mathcal{#1}} % continuous function
+\newcommand{\fnb}[1]{\bm{\mathcal{#1}}} % bold continuous function
+\newcommand{\amean}[1]{ \{\!\!\{ #1 \}\!\!\} } % arithmetic mean
+\newcommand{\lmean}[1]{ \{\!\!\{ #1 \}\!\!\}_\text{log} } % logarithmic mean
+\newcommand{\pmean}[1]{ \left( \!  \left( #1 \right) \! \right) } % product mean
+\newcommand{\jump}[1]{ \left[ \! \left[ #1 \right] \! \right] } % jump
+
+\begin{document}
+\maketitle
+This is a brief introduction to \href{https://github.com/alexbercik/ESSBP}{ESSBP}, a tensor-product Entropy-Stable Summation By Parts solver for the numerical solution of PDEs in Python.
+\tableofcontents
+
+\newpage
+
+\section{Code Organization}
+The code is structured into 2 main sections: \te{Driver} and \te{Source}.
+
+\subsection{\te{Driver}}
+This directory contains the files required to run the code in \te{Source}. These files define parameters, then call the classes defined in \te{Source} to initialize problems with the parameters provided. Each instance of the class defines a new problem, and so if multiple problems are to be run at once, one only need to define several instances in the driver file. One can also perform analysis here in the driver file.
+
+\subsection{\te{Source}}
+Holds the source code for the solver. \te{DiffEq} holds classes for each type of equation to be solved, as well as the base class \te{DiffEqBase}. Here is where information on how to solve the specific equation is stored, such as fluxes. \te{Disc} stores information for spatial discretization, such as definition of operators and the mesh. \te{Solvers} holds information specific to the method used, such as Finite Difference, SBP, or DG. This calls \te{Disc} classes and to complete the methods written in a more general form. \te{TimeMarch} defines methods to time march the resulting semi-discretized ODE and is called by the \te{solve} function in \te{Solvers/PdeSolver}. Finally \te{Methods} contains specific functions that are useful throughout the code. These can be plotting tools, animation tools, and convergence tests in \te{Methods/Analysis}, debugging tools in \te{Methods/DebugTools}, or various functions such as 3D matrix multiplication compiled with Numba to speed up performance in \te{Methods/Functions}.
+
+\newpage
+\section{Example Problem: SBP Linear Convection}
+We begin in \te{Driver/RunLCE} by defining parameters. We choose one of the 4 SBP finite difference choices for \te{disc_type}, noting that since we are solving the problem in 1 dimension, \te{`Rdn1'} and \te{`R0'} will result in the same operators.
+
+We initialize a class instance \te{diffeq} for our problem with 
+\begin{lstlisting}
+from Source.DiffEq.LinearConv import LinearConvSbp
+diffeq = LinearConvSbp(para, obj_name, q0_type)
+\end{lstlisting}
+where \te{para} is the wave speed, \te{obj_name=None} means we have no objective function to calculate (see \ref{objective} for the case where calculate an objective function), and \te{q0_type} is a string that will automatically create an initial condition under \te{PdeBase.set_q0} (unless a specific initial condition is given to the solver as variable \te{q0}).
+
+The initialization of \te{diffeq} will first trigger the initialization defined in \te{LinearConv}, which stores the wave speed \te{para} as an attribute, and then inherits the initialization from \te{PdeBase}. This similarly stores the initial condition setting as an attribute, then once again inherits the initialization of \te{DiffEqBase}. Aside from a few more parameters being redundantly stored, no further initialization occurs for this case. We notice however important differences for cases with varying parameters. Since these cases differ in treatment in several aspects of the code, they are described later in \ref{varying_para}.
+
+\te{diffeq} is now a class instance with access to all the functions responsible for calculating the residual in any given physical element. These functions include various derivatives of the residual used for implicit time marching, and includes functions to calculate the contributions from the SATs at any particular interface. This is because \te{diffeq} inherited the functions from \te{PdeBaseCons} (specific to conservative PDEs in the form $q_t + E_x(q) = G(q,t)$) as well as its parent classes \te{PdeBase} and \te{DiffEqBase}, but also from \te{SatBaseCons} and \te{SatBase}. These functions however are not complete, as they require information about the spatial discretization. For this we must initialize the solver class.
+
+\begin{lstlisting}
+from Source.Solvers.PdeSolver import PdeSolver
+solver = PdeSolver(diffeq,
+                   tm_method, dt, tf, t_init,
+                   q0, n_q0,
+                   p, spat_disc_type, nn, nelem, nen,
+                   isperiodic, xmin, xmax,
+                   bool_plot_sol = bool_plot_sol, 
+                   print_sol_norm = print_sol_norm)
+\end{lstlisting}
+
+The function \te{PdeSolver} simply returns an initialization of the \te{PdeSolverSbp} class with the relevant parameters. The first step of this initialization is to initialize an instance of the \te{MakeSbpOp} class under the attribute |self.sbp| within \te{solver}. This stores all information relevant for the spatial discretization on the reference element. Based on the degree \te{p}, and either the total number of nodes \te{nn} or number of elements \te{nelem} and number of nodes per element \te{nen}, the SBP operators are created and the remaining variables are assigned. Next the 1D mesh is created by an initialization of the \te{Disc/MakeMesh} class under |self.mesh| using the physical boundaries \te{xmin} and \te{xmax}, a flag \te{isperiodic} indicating periodicity, and the number of elements and nodal locations defined in the previous step. Because a simple linear mapping with equal size elements is employed, the mesh Jacobian is constant over the entire domain. This allows us to compute the mesh Jacobian, its inverse, and the determinant only once using the first element. Likewise, we then use these quantities to compute the physical element-wise operators only once by then calling |self.sbp.ref_2_phys_op|, as the physical operators are the same in each element. Note that this function as defined in \te{MakeSbpOp} has yet to be generalized for higher dimensions, and would also need to be called individually for each element should a more general mesh mapping be employed. Finally, a Kroncker product is applied for cases where $q$ is a vector (i.e. systems).
+
+The final step is to incorporate these quantities with the methods defined in the class instance \te{diffeq}. To do this, first \te{diffeq} is stored as an attribute within \te{solver} under the name |self.diffeq_in| (the reason for this name will become apparent soon). The mesh attributes and physical operators currently defined in \te{solver} are then passed to \te{solver.diffeq_in} to be stored as attributes there with the functions \te{solver.diffeq_in.set_mesh(...)} and \te{solver.diffeq_in.set_sbp_op(...)}. Without this step, as with any call to an instance of the \te{DiffEq} class, functions in  \te{solver.diffeq_in} will return errors as the instance is missing the required attributes. \te{solver.diffeq_in} now contains all the relevant functions to calculate the residual in a given physical element, however, crucially, it does not have the ability to compute the global residual. Therefore, an instance of the class \te{Diffeq4SbpSolver} (defined in file \te{PdeSolverSbp.py}) is now initiated as an attribute within \te{solver} under the name |self.diffeq|. Not to be confused with \te{solver.diffeq_in}, the initialization of \te{solver.diffeq} takes functions originally defined in \te{solver.diffeq_in}, such as \te{solver.diffeq_in.dqdt} and \te{solver.diffeq_in.calc_sat}, which calculate the residual for an individual element interior and SAT contributions at an individual element interface, and combines them into a global function \te{solver.diffeq.dqdt} that calculates the residual over the entire domain. The initialization of \te{solver.diffeq} takes global functions defined in \te{PdeSolverSbp} as arguments (ex. \te{dqdt_sbp(...)} for the example above) and sets them as methods that can be called directly in \te{solver.diffeq}. In this way, the class instance \te{solver} now contains all the information required to solve the PDE.
+
+The now semi-discrete system of ODEs (in time) can now be solved by simply calling
+\begin{lstlisting}
+solver.solve()
+\end{lstlisting}
+For cases with non-varying parameters, this reverts to the function \te{solve_main} defined in \te{Solvers/OdeSolver}. For problems that do not require first solving for a steady initial condition, this first sets the initial condition using |q0 = solver.diffeq.set_q0()|, defined in \te{PdeBase}. For other problems, see \ref{update_this}. The system of ODE's is then marched in time by
+\begin{lstlisting}
+tm_class = TimeMarching(self.diffeq, self.tm_method, keep_all_ts,
+                        bool_plot_sol = self.bool_plot_sol,
+                        bool_calc_obj = self.bool_calc_obj,
+                        print_sol_norm = self.print_sol_norm)
+self.q_sol =  tm_class.solve(q0, self.dt, self.n_ts)
+self.obj = tm_class.obj
+self.obj_all_iter = tm_class.obj_all_iter
+\end{lstlisting}
+Upon initialization of the class instance \te{tm_class}, the relevant functions from \te{solver.diffeq}, which are passed as argument, are extracted and the time marching method is set according to the string \te{tm_method} originally passed to \te{solver}. The boolean \te{keep_all_ts}, hard coded in \te{OdeSolver.solve_t_final} (a subroutine of \te{OdeSolver.solve_main}), determines whether to return the solution vector at each time step or to simply return the final solution vector when calling |tm_class.solve(...)|. Similarly, the boolean flags \te{bool_plot_sol} and \te{print_sol_norm} that were originally passed to \te{solver} now determine whether or not to plot the solution and print the $L_2$ solution norm at each time step. \te{bool_calc_obj} controls the calculation of objective functions. Back when \te{diffeq} was initialized, the string \te{obj_name=None} was set, indicating there is no objective function to calculate, and setting |solver.bool_calc_obj=False|. Finally, the time marching method is set according to the string \te{solver.tm_method}. These methods are defined in parent classes inherited by the main \te{TimeMarching} class.
+
+With all the required information to solve the residual and its derivatives stored in the passed class \te{solver.diffeq}, the problem is now marched in time by calling |tm_class.solve(...)| along with the initial condition, step size, and number of steps. The solution vector (at all time steps), and two empty variables corresponding to the non-existent objective function are finally passed back to \te{solver}.
+
+\section{Objective Functions} \label{objective}
+Upon initialization of \te{diffeq}, \te{obj_name} can be set to either a string or a tuple of strings, each labelling a particular objective function. The length of this tuple determines the parameter \te{diffeq.n_obj}. When \te{diffeq.n_obj} $>0$, the initialization now calls the function \te{DiffEqBase.init4obj()}. Once again we assume the case of nonvarying parameters, and set |self.all_para_set = True|. For the alternative case, see \ref{varying_para}. If the objective has been previously evaluated and saved locally within a text file, the path to this file is now stored as an attribute. Note that these paths must be specified in the |__init__| functions of the problem-specific \te{DiffEq} files, otherwise an Attribute Error will be raised. In addition there must be functions defined in the problem-specific \te{DiffEq} file responsible for calculating each objective function, with a general function |calc_obj()| serving to call the individual functions and return a single vector with all desired objectives.
+
+In the initialization of the solver class, the argument \te{bool_calc_obj} is passed as a boolean and stored as an attribute. This flag simply determines whether or not to evaluate the objective, and the default is set to |True| (unless \te{diffeq.n_obj} $=0$). An additional method \te{solver.calc_obj} is also defined, which simply calls the main solve routine with an optional intial condition, but only returns the objective and standard deviation. This could be useful in post-analysis if only the objective is of interest. We stress the difference between the functions |diffeq.calc_obj| (and similarly |solver.diffeq.calc_obj|) and |solver.calc_obj|. The former defines the actual routine to calculate the objective function, wheras the latter calls the |solve()| routine.
+
+When the time marching class is initiated, there is an option to manually overwrite the objective function by passing a new function as an argument. If using this option however, one must be careful that it take the three arguments (current solution vector, total number of time steps, time step size) and return |len{obj_name}| values. If this manual override option is not used, the objective function |self.fun_obj| is simply set as the default function from the given \te{diffeq} class instance, |solver.diffeq.calc_obj|. On each iteration of the time marching scheme, the function |self.fun_obj| is called within the |common(...)| routine of |solve(...)|, and the results are stored.
+
+At the end of the time marching (return to \te{OdeSolver/solve_main()}), three quantities are returned. The first is the solution vector, the second is an array that contains the objective functions at each iteration, and the third is the sum of the objectives over all time steps. The second and third quantities are stored as \te{solver.obj_all_iter} and \te{solver.obj}, respectively. A running average of the objective functions is then performed, and quantities such as the standard deviation, \te{solver.std_obj}, are also stored.
+
+
+\section{Time Marching}
+
+\newpage
+\section{Spatial Semi-Discretizations} 
+
+We use the following notation. We take a mapping from reference coordinates $\xi_i$ to physical coordinates $x_i$ of an element $\kappa$. The Jacobian matrix $\pder[x_i]{\xi_j}$ defines the mapping. We define the determinant of this matrix as the ``metric Jacobian'' 
+$$\fn{J}_\kappa \equiv \left\vert \pder[x_i]{\xi_j} \right\vert $$
+ Note that this determinant of course depends on $\bm{x}$. The volume metrics 
+ $$\text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa$$
+  are defined at element nodes, whereas the surface metrics 
+  $$ \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}$$
+   are defined on the `mortar' facet nodes between the two elements. We denote by the superscript $(\xi_l , b)$ the quantities associated with the $b$ facet along the $\xi_l$ direction, or the facet between elements $\kappa$ and $\nu_{\xi_l,b}$. The matrix $H^\bot$ is a $d-1$ dimension tensor product of the other $H^{(1D)}$ matrices. For example, if considering a facet in the $\xi_1$ direction in 3D (so a 2D face) we use $H^{\bot}_{\xi_1} = H^{(1D)}_{\xi_2} \otimes H^{(1D)}_{\xi_3}$. Due to the SBP property we also have
+ \begin{align*}
+Q_{\xi_l} + Q_{\xi_l}^T = E_{\xi,l} = E_{\xi_l,b} + E_{\xi_l,a} = \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l} \bm{t}_{\xi_l,b}^T - \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l,a}^T
+\end{align*}
+where for example in 2D, $\bm{t}_{\xi,b} = \bm{t}^{(1D)}_{b} \otimes I_\eta$, $\bm{t}_{\xi,a} = \bm{t}^{(1D)}_{a} \otimes I_\eta$ are the extrapolation operators to the boundary facets along the $\xi$ direction. Note that the use of $H^{(1D)}$ is because the extrapolation operators extract the $\xi$ boundary components, but leave the $\eta$ components as a vector, and hence we keep the line integral along $\eta$.
+
+\subsection{Divergence Form}
+
+By divergence form, we mean the discretization uses the `standard' straighforward discretization where the derivative operator acts directly on the flux. This is as opposed to the flux differencing Hadamard form. This does NOT refer to divergence form of the metrics. Skew-symmetric metrics terms are employed here as necessary to prove stability. We assume that $H$ is diagonal in order to prove energy stability.
+\begin{align*}
+\der[\bm{u}_\kappa]{t} &+ \sum_{m=1}^d D_{x_m} \fnb{F}_m \left( \bm{u}_\kappa \right) = H^{-1} \sum_{l = 1}^d \left[  \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l} \left(\bm{f}_{\xi_l,b} - \bm{f}^\star_{\xi_l,b} \right)  - \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l} \left(\bm{f}_{\xi_l,a} - \bm{f}^\star_{\xi_l,a}  \right) \right]
+\end{align*}
+where
+\begin{align*}
+\begin{gathered}
+D_{x_m} = \frac{1}{2} \left[ \text{diag}\left( \fn{J}_\kappa \right) \right]^{-1} \sum_{l=1}^d \left[ D_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa + \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa  D_{\xi_l} \right] \quad , \quad H = \text{diag} \left( \fn{J}_\kappa \right) H_\xi \\
+\bm{f}_{\xi_l,a} =  \sum_{m=1}^d \bm{t}^T_{\xi_l,a} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \fnb{F}_m \left( \bm{u}_\kappa \right) \quad , \quad \bm{f}_{\xi_l,b} = \sum_{m=1}^d \bm{t}^T_{\xi_l,b} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \fnb{F}_m \left( \bm{u}_\kappa \right)
+\end{gathered}
+\end{align*}
+and $\bm{f}^\star \left( \bm{u}_\kappa , \bm{u}_\nu \right) $ are some consistent numerical flux (and antisymmetric if we have boundary nodes or linear transformations). For example a local Lax-Friedrichs flux is given by
+\begin{align*}
+\bm{f}^\star_{\xi_l,a} &=  \sum_{m=1}^d \frac{1}{2} \left[ \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \bm{t}^T_{\xi_l,b} \fnb{F}_m \left( \bm{u}_{\nu_{\xi_l,a}} \right) + \bm{t}^T_{\xi_l,a} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}  \fnb{F}_m \left( \bm{u}_{\kappa} \right) \right] \\
+&\qquad - \frac{\sigma}{2} \left\vert \sum_{m=1}^d \max (\lambda_m) \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \right\vert \left( \bm{t}^T_{\xi_l,a} \bm{u}_\kappa - \bm{t}^T_{\xi_l,b} \bm{u}_{\nu_{\xi_l,a}}  \right) \\
+\bm{f}^\star_{\xi_l,b} &=  \sum_{m=1}^d \frac{1}{2} \left[ \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \bm{t}^T_{\xi_l,a} \fnb{F}_m \left( \bm{u}_{\nu_{\xi_l,b}} \right)+  \bm{t}^T_{\xi_l,b} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}  \fnb{F}_m \left( \bm{u}_{\kappa} \right) \right] \\
+&\qquad - \frac{\sigma}{2} \left\vert \sum_{m=1}^d \max (\lambda_m) \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \right\vert \left( \bm{t}^T_{\xi_l,a} \bm{u}_{\nu_{\xi_l,b}} - \bm{t}^T_{\xi_l,b} \bm{u}_\kappa   \right)
+\end{align*}
+where $\sigma = 1$ yields upwinding, and  $\sigma = 0$ returns the nondissipative SAT. $\max (\lambda_m)$ is the maximum eigenvalue of the flux jacobian $\pder[\fnb{F}]{\bm{u}}$ computed at an intermediate state between the facets. It is useful to recognize that the SAT term can also be written in the following form, 
+\begin{align*}
+&\frac{1}{2} H^{-1} \sum_{l,m = 1}^d \Bigg[ E_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa \fnb{F}_m ( \bm{u}_\kappa) + \sigma \left( \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l} \bm{f}^{\star , \text{diss}}_{\xi_l,b}  - \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l} \bm{f}^{\star , \text{diss}}_{\xi_l,a} \right)  \\
+&\qquad - \left( \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \bm{t}^T_{\xi_l,a}  \fnb{F}_m ( \bm{u}_{\nu_{\xi_l,b}} ) - \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \bm{t}_{\xi_l,b}^T  \fnb{F}_m ( \bm{u}_{\nu_{\xi_l,a}} ) \right) \Bigg]
+\end{align*} 
+
+\subsection{Numerical Surface Fluxes}
+
+Local Lax Friedrichs, Entropy Lax Friedrichs (SBP Notes / Crean), my attempt
+
+\subsection{Hadamard (Flux Differencing) Form}
+
+We can also construct schemes using a flux differencing Hadamard formulation.
+\begin{align*}
+\der[\bm{u}_\kappa]{t} + 2 \sum_{m=1}^d \left[ D_{x_m} \circ F_{x_m} \right] \bm{1}  
+&= H^{-1} \sum_{l=1}^d \Bigg[ E_{\xi_l} \circ \sum_{m=1}^d \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} F_{x_m} \\
+&  + \sum_{m=1}^d \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \bm{t}_{\xi_l, b}^T \circ  F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,a}}) \\
+& - \sum_{m=1}^d \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \bm{t}_{\xi_l, a}^T \circ F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,b}})
+\Bigg] \bm{1}
+\end{align*}
+where we use a symmetric and consistent volume flux $ [F_{x_m}]_{ij} = \fn{F}^\star_{x_m} (u_i, u_j)$ and a surface flux $ [F^s_{x_m} (\bm{u}, \bm{v} )]_{ij} = \fn{F}^\star_{x_m} (u_i, v_j) + \text{diss}_{ij}$. The metric terms can be approximated in different ways, but to ensure free-stream preservation, use optimized metrics for the volume and first SAT term, then pre-specified (ex. analytical) surface metrics for the last 2 SAT terms.
+
+
+\subsection{Two Point Conservative Fluxes}
+
+\subsection{Dissipative Terms}
+
+Only surface? Can it be done for Volume (entropy dissipative surface flux)?
+
+\subsection{GCL Constraints and Metric Term Optimization}
+
+For details see \cite{del_rey_fernandez_extension_2019}. We consider a straightforward discretization ($\alpha=1$, $\beta=0$ in the general form of the next section). The more general formulations have slightly different GCL constraints, though they are equally as easy to obtain. Also note that dissipative terms do not affect the GCL conditions because they vanish for constant flows. The $d$ free stream preservation constraints, one for each physical dimension $m$, can be obtained by plugging in a constant value solution and flux into the discretization. We find
+\begin{align*}
+ \left[ \text{diag}\left( \fn{J}_\kappa \right) \right]^{-1} \sum_{l=1}^d  D_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa \bm{1} &= H^{-1} \sum_{l=1}^d \Bigg[ E_{\xi_l} \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \bm{1} \\
+& \hspace{-4cm} - \left( \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \bm{t}_{\xi_l, a}^T - \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \bm{t}_{\xi_l, b}^T  \right) \bm{1} \Bigg]
+\end{align*}
+A more convenient form is obtained by multiplying by $-H$, then using the SBP property $Q_{\xi_l} = -Q_{\xi_l}^T + E_{\xi_l}$ to cancel the first term on the right hand side, leaving
+\begin{align*}
+ \sum_{l=1}^d Q_{\xi_l}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa \bm{1} &= \sum_{l = 1}^d  \left( \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \bm{t}^T_{\xi_l,a} - \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \bm{t}_{\xi_l,b}^T  \right) \bm{1} 
+\end{align*}
+For now take $d=3$. We can write this system in a global matrix form as
+\begin{align*}
+M \bm{a}_{\kappa , m} = \bm{c}_{\kappa , m} \quad , \quad M &= \begin{bmatrix}
+Q_{\xi_1}^T & Q_{\xi_2}^T & Q_{\xi_3}^T
+\end{bmatrix} \\
+\bm{a}_{\kappa , m} &= \begin{bmatrix}
+ \left( \fn{J} \pder[\xi_1]{x_m} \right)_\kappa &  \left( \fn{J} \pder[\xi_2]{x_m} \right)_\kappa & \left( \fn{J} \pder[\xi_3]{x_m} \right)_\kappa \end{bmatrix}^T \\
+ \bm{c}_{\kappa , m} &= \sum_{l = 1}^d \left[ \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} - \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \right]
+\end{align*}
+Note that $\bm{c}_{\kappa , m}$ includes only pre-specified metric terms (ex. analytical). We then find an optimal $\bm{a}_{\kappa , m}$ using a least squares error to the exact analytical metrics $\bm{a}_{\kappa , m}^\text{ex}$. The solution is given by
+\begin{align*}
+\bm{a}_{\kappa , m} = \bm{a}_{\kappa , m}^\text{ex} - M^\dagger \left( M \bm{a}_{\kappa , m}^\text{ex} - \bm{c}_{\kappa , m} \right)
+\end{align*}
+where $M^\dagger $ is the Moore-Penrose pseudoinverse of $M$. An additional necessary condition is that $\bm{1}^T \bm{c}_{\kappa, m} = 0$, the discrete equivalent to ensuring the volume integral of the metric terms vanish, or equivalently using Gauss' Theorem, that the metric terms vanish along line integrals of the boundary. See the following subsection for details on ensuring that this holds.
+
+\subsubsection{Additional Considerations for Computing Metrics}
+
+In 2D with explicit computations, we approximate
+\begin{align*}
+ \left( \fn{J} \pder[\xi]{x} \right)_\kappa = D_\nu \bm{y}_\kappa \quad &, \quad  \left( \fn{J} \pder[\xi]{y} \right)_\kappa = - D_\nu \bm{x}_\kappa \\
+  \left( \fn{J} \pder[\nu]{x} \right)_\kappa = - D_\xi \bm{y}_\kappa \quad &, \quad  \left( \fn{J} \pder[\nu]{y} \right)_\kappa = D_\xi \bm{x}_\kappa
+\end{align*}
+and therefore
+\begin{align*}
+ &\sum_{l=1}^d  D_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x} \right)_\kappa \bm{1} = D_\xi D_\nu \bm{y}_\kappa - D_\nu D_\xi \bm{y}_\kappa = 0 \\
+ & \sum_{l=1}^d  D_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{y} \right)_\kappa \bm{1} = D_\xi D_\nu \bm{x}_\kappa - D_\nu D_\xi \bm{x}_\kappa = 0 
+\end{align*}
+since derivative matrices commute for tensor product formulations. The same holds for metrics computed using the Thomas Lombard or Vinokur and Yee method in 3D. These relations hold in the code to accuracy $10^{-14}$. This error can be increased a few orders of magnitude when multiplied by the jacobian inverse. In these cases, the GCL constraints reduce to the SAT contribution.
+\begin{align*}
+0 &= \sum_{l=1}^d \Bigg[ \left( \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l} \bm{t}_{\xi_l,b}^T - \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l,a}^T \right) \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \bm{1} \\
+& \hspace{1cm} - \left( \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \bm{t}_{\xi_l, a}^T - \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \bm{t}_{\xi_l, b}^T  \right) \bm{1} \Bigg] \\
+&=  \sum_{l=1}^d \Bigg[  \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l}  \left(  \bm{t}_{\xi_l,b}^T  \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}  - \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \bm{t}_{\xi_l, a}^T \right) \\
+& \hspace{1cm} -  \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l}  \left(  \bm{t}_{\xi_l,a}^T  \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}  - \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \bm{t}_{\xi_l, b}^T \right) \Bigg] \bm{1}
+\end{align*}
+This is satisfied only when the extrapolated volume metrics are equal to the mortar element interface metrics. Even if we use extrapolation to calculate the interface metrics however, unless the metrics are polynomials of degree $\leq p$ (meaning the mapping is degree $<p$ for 2D and $< \left\lfloor \frac{p}{2} \right\rfloor$ for 3D\footnote{When I speak of a mapping being degree $p$, it is a polynomial of maximum degree $p$ \textit{in each direction}. The total degree may be higher.}), then since we use the average of the extrapolation on both sides, the resulting interface metric is not guaranteed to match the extrapolation of the volume metrics on either side. Therefore, the SAT contribution to free stream is in general not zero for non-polynomial or polynomial order $>p$ and $> \left\lfloor \frac{p}{2} \right\rfloor$ mappings. Hence we use the optimization procedure.
+
+\subsubsection{Ensuring Surface Integral Consistency}
+
+Recall the condition $\bm{1}^T \bm{c}_{\kappa,m} = 0$, here rewritten as
+\begin{align*}
+ \bm{1}^T \sum_{l = 1}^d \left[ H^{\bot}_{\xi_l}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} - H^{\bot}_{\xi_l}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \right] = 0
+\end{align*}
+This is clearly a discrete equivalent to the surface integral condition
+\begin{align*}
+\oint_{\Gamma_\kappa}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,n} \cdot \hat{n} \ d {\Gamma_\kappa} = 0 =  \int_{\Omega_\kappa}  \sum_{l = 1}^d \pder{\xi_l}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,n} d \Omega_\kappa
+\end{align*}
+where we have used the divergence theorem to again relate the surface metric condition to the volume GCL constraint, though this time for the interface metrics. This condition is necessary for the optimization procedure defined above so that the $\bm{c}_{\kappa,m}$ vector does not fall in the null space of $M$. Since $M$ is composed of the $Q_\xi$ matrices, it's null space is spanned by a single vector, the constant vector. Roughly speaking, we therefore want $\bm{c}_{\kappa,m}$ to be orthogonal to the constant vector (see \cite{del_rey_fernandez_entropy_2019} for details). Since we know this condition holds in the continuous setting, if the facet integration and metric terms are exact, this will also hold discretely. We have a few options. 
+\begin{enumerate}
+\item  Ensure the calculation and projection of the volume metrics is exact, so the mesh must be a polynomial of degree $ \leq p \ , \left\lfloor \frac{p}{2} \right\rfloor$ for 2D, 3D.
+\item Use the exact metrics on the interfaces, but then ensure that these can be integrated exactly, i.e. be polynomials of order $\leq 2p-1$ and $\leq 2p+1$ for LGL and LG, respectively. Therefore the mesh must be a polynomial of order $\leq 2p-1 , p-1 $ and $\leq 2p+1 , p$.
+\item Fit the mesh mapping to a polynomial of order $\leq 2p-1 , p-1 $ (2D, 3D) and $\leq 2p+1 , p$ (2D, 3D) for LGL and LG, respectively.
+\item Perform a preliminary optimization to force the interface metrics to satisfy this condition while being as close to the exact surface metrics as possible.
+\end{enumerate}
+The fourth option, unique to ESSBP, is as follows. Find an optimal $\bm{c}_{\kappa , m}$ by minimizing the least squares error to the exact metrics $\bm{c}_{\kappa , m}^\text{ex}$  subject to the constraint $\bm{1}^T \bm{c}_{\kappa , m} = 0$. \\
+
+For each physical direction $m$, define a global vector $\bm{b}_{l,m}^{i_x,i_y,i_z} =  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l}^{i_x,i_y,i_z}$, where $l$ determines the direction of the interface, and the indices $i_x$, $i_y$, $i_z$ denote the interface (similar to labelling elements, though $i_s$ range from $1$ to $N_e$ if $s \neq l$, and range to $N_e+ 1$ instead if $s=l$). The element-wise constraints $\bm{1}^T \bm{c}_{\kappa , m} = 0$ can now be rewritten in a global manner as $N_e^3$ individual constraints 
+\begin{align*}
+\bm{1}^T \left[ H^\bot_{x} \left( \bm{b}_{x,m}^{i_x+1,i_y,i_z} - \bm{b}_{x,m}^{i_x,i_y,i_z} \right) + H^\bot_{y} \left( \bm{b}_{y,m}^{i_x,i_y+1,i_z} - \bm{b}_{y,m}^{i_x,i_y,i_z} \right) + H^\bot_{z} \left( \bm{b}_{z,m}^{i_x,i_y,i_z+1} - \bm{b}_{z,m}^{i_x,i_y,i_z} \right) \right] = 0
+\end{align*}
+We want to find $\bm{b}_{l,m}^{i_x,i_y,i_z}$ as close as possible to the target values $\tilde{\bm{b}}_{l,m}^{i_x,i_y,i_z}$. For each $m$, define the Lagrangian
+\begin{align*}
+L_m &= \sum_{j=1}^{N_n} \sum_{i_x,i_y,i_z=1}^{N_e} \sum_{l=3}^d \frac{1}{2} \left( \tilde{b}_{l,m,j}^{i_x,i_y,i_z} - b^{i_x,i_y,i_z}_{l,m,j} \right)^2 -  \sum_{i_x,i_y,i_z=1}^{N_e} \lambda_{i_x,i_y,i_z} \sum_{j=1}^{N_n} \Big[ H^\bot_{x,j} \left( b_{x,m,j}^{i_x+1,i_y,i_z} - b_{x,m,j}^{i_x,i_y,i_z} \right) \\
+&\hspace{5cm} + H^\bot_{y,j} \left( b_{y,m,j}^{i_x,i_y+1,i_z} - b_{y,m,j}^{i_x,i_y,i_z} \right) + H^\bot_{z,j} \left( b_{z,m,j}^{i_x,i_y,i_z+1} - b_{z,m,j}^{i_x,i_y,i_z} \right) \Big]
+\end{align*}
+We now follow the KKT conditions by looking for a saddle point of the Lagrangian,
+\begin{align*}
+0 &= \pder[L_m]{b^{i_x,i_y,i_z}_{l,m,j}} = b_{l,m,j}^{i_x,i_y,i_z}  -  \tilde{b}^{i_x,i_y,i_z}_{l,m,j}  - \left( \lambda_{i_x-1,i_y,i_z} -  \lambda_{i_x,i_y,i_z} \right) H_{x , j}^\bot \\
+&\hspace{5cm} - \left( \lambda_{i_x,i_y-1,i_z}  -  \lambda_{i_x,i_y,i_z} \right) H_{y , j}^\bot - \left( \lambda_{i_x,i_y,i_z-1} -  \lambda_{i_x,i_y,i_z} \right) H_{z , j}^\bot 
+\end{align*}
+for the interior facets. The boundary facets $i_l =1$ and $i_l = N_e+1$ have
+\begin{align*}
+0 &= \pder[L_m]{b^{1,i_y,i_z}_{l,m,j}} = b_{l,m,j}^{1,i_y,i_z}  -  \tilde{b}^{1,i_y,i_z}_{l,m,j}  + \lambda_{1,i_y,i_z} H_{x , j}^\bot - \left( \lambda_{1,i_y-1,i_z}  -  \lambda_{1,i_y,i_z} \right) H_{y , j}^\bot - \left( \lambda_{1,i_y,i_z-1} -  \lambda_{1,i_y,i_z} \right) H_{z , j}^\bot  \\
+0 &= \pder[L_m]{b^{N_e+1,i_y,i_z}_{l,m,j}} = b_{l,m,j}^{N_e+1,i_y,i_z}  -  \tilde{b}^{N_e+1,i_y,i_z}_{l,m,j}  - \lambda_{N_e,i_y,i_z} H_{x , j}^\bot  
+\end{align*}
+ans similarly for the $y$ and $z$ facets. From this I conclude
+\begin{align*}
+b_{l,m,j}^{i_x,i_y,i_z}  &=  \tilde{b}^{i_x,i_y,i_z}_{l,m,j}  + \left( \lambda_{i_x-1,i_y,i_z} -  \lambda_{i_x,i_y,i_z} \right) H_{x , j}^\bot + \left( \lambda_{i_x,i_y-1,i_z}  -  \lambda_{i_x,i_y,i_z} \right) H_{y , j}^\bot + \left( \lambda_{i_x,i_y,i_z-1} -  \lambda_{i_x,i_y,i_z} \right) H_{z , j}^\bot \\
+b_{l,m,j}^{1,i_y,i_z}  &=  \tilde{b}^{1,i_y,i_z}_{l,m,j}  - \lambda_{1,i_y,i_z} H_{x , j}^\bot + \left( \lambda_{1,i_y-1,i_z}  -  \lambda_{1,i_y,i_z} \right) H_{y , j}^\bot + \left( \lambda_{1,i_y,i_z-1} -  \lambda_{1,i_y,i_z} \right) H_{z , j}^\bot \\
+b_{l,m,j}^{N_e+1,i_y,i_z}  &=  \tilde{b}^{N_e+1,i_y,i_z}_{l,m,j}  + \lambda_{N_e,i_y,i_z} H_{x , j}^\bot 
+\end{align*}
+where
+\begin{align*}
+0 = \pder[L_m]{\lambda_i} &= \sum_{j=1}^{N_n} \Big[ H^\bot_{x,j} \left( b_{x,m,j}^{i_x+1,i_y,i_z} - b_{x,m,j}^{i_x,i_y,i_z} \right) + H^\bot_{y,j} \left( b_{y,m,j}^{i_x,i_y+1,i_z} - b_{y,m,j}^{i_x,i_y,i_z} \right) + H^\bot_{z,j} \left( b_{z,m,j}^{i_x,i_y,i_z+1} - b_{z,m,j}^{i_x,i_y,i_z} \right) \Big]
+\end{align*}
+For simplicity in the following sections, we artificially set 
+\begin{align*}
+ \lambda_{0,i_y,i_z} =  \lambda_{i_x,0,i_z} =  \lambda_{i_x,i_y,0} =   \lambda_{N_e+1,i_y,i_z} =  \lambda_{i_x,N_e+1,i_z} =  \lambda_{i_x,i_y,N_e+1} = 0
+\end{align*}
+This recovers the boundary terms from the above general form without any additional work. Plugging these in, I find
+\begin{align*}
+0 &= \sum_{j=1}^{N_n} \Big[ H^\bot_{x,j} \left( b_{x,m,j}^{i_x+1,i_y,i_z} - b_{x,m,j}^{i_x,i_y,i_z} \right) + H^\bot_{y,j} \left( b_{y,m,j}^{i_x,i_y+1,i_z} - b_{y,m,j}^{i_x,i_y,i_z} \right) + H^\bot_{z,j} \left( b_{z,m,j}^{i_x,i_y,i_z+1} - b_{z,m,j}^{i_x,i_y,i_z} \right) \Big] \\
+&=  \sum_{j=1}^{N_n} \Big[ H^\bot_{x,j} \left( \tilde{b}_{x,m,j}^{i_x+1,i_y,i_z} - \tilde{b}_{x,m,j}^{i_x,i_y,i_z} \right) + H^\bot_{y,j} \left( \tilde{b}_{y,m,j}^{i_x,i_y+1,i_z} - \tilde{b}_{y,m,j}^{i_x,i_y,i_z} \right) + H^\bot_{z,j} \left( \tilde{b}_{z,m,j}^{i_x,i_y,i_z+1} - \tilde{b}_{z,m,j}^{i_x,i_y,i_z} \right) \\
+& \ + H^\bot_{x,j} \Big( 
+    H_{x , j}^\bot \left( -  \lambda_{i_x-1,i_y,i_z} + 2 \lambda_{i_x,i_y,i_z} -  \lambda_{i_x+1,i_y,i_z} \right) \\
+&\hspace{1.2 cm} + H_{y , j}^\bot \left(  - \lambda_{i_x,i_y-1,i_z}  +  \lambda_{i_x,i_y,i_z} + \lambda_{i_x+1,i_y-1,i_z}  -  \lambda_{i_x+1,i_y,i_z} \right) \\
+&\hspace{1.2 cm} + H_{z , j}^\bot \left(  - \lambda_{i_x,i_y,i_z-1} +  \lambda_{i_x,i_y,i_z} + \lambda_{i_x+1,i_y,i_z-1} -  \lambda_{i_x+1,i_y,i_z} \right)  
+\Big) \\
+& \ + H^\bot_{y,j} \Big(
+   H_{x , j}^\bot \left( -  \lambda_{i_x-1,i_y,i_z} +  \lambda_{i_x,i_y,i_z} + \lambda_{i_x-1,i_y+1,i_z} -  \lambda_{i_x,i_y+1,i_z} \right)  \\
+&\hspace{1.2 cm}  + H_{y , j}^\bot  \left( - \lambda_{i_x,i_y-1,i_z}  +  2 \lambda_{i_x,i_y,i_z}  -  \lambda_{i_x,i_y+1,i_z} \right)  \\
+&\hspace{1.2 cm} + H_{z , j}^\bot \left( - \lambda_{i_x,i_y,i_z-1} +  \lambda_{i_x,i_y,i_z} + \lambda_{i_x,i_y+1,i_z-1} -  \lambda_{i_x,i_y+1,i_z} \right) \Big)  \\
+& \ + H^\bot_{z,j} \Big(
+    H_{x , j}^\bot  \left(-  \lambda_{i_x-1,i_y,i_z} +  \lambda_{i_x,i_y,i_z} +  \lambda_{i_x-1,i_y,i_z+1} -  \lambda_{i_x,i_y,i_z+1} \right) \\
+&\hspace{1.2 cm} + H_{y , j}^\bot  \left( - \lambda_{i_x,i_y-1,i_z}  +  \lambda_{i_x,i_y,i_z} + \lambda_{i_x,i_y-1,i_z+1}  -  \lambda_{i_x,i_y,i_z+1} \right)  \\
+&\hspace{1.2 cm} + H_{z , j}^\bot  \left( - \lambda_{i_x,i_y,i_z-1} +  2 \lambda_{i_x,i_y,i_z} -  \lambda_{i_x,i_y,i_z+1} \right) 
+ \Big) \\
+ &=  \sum_{j=1}^{N_n} \Big[ H^\bot_{x,j} \left( \tilde{b}_{x,m,j}^{i_x+1,i_y,i_z} - \tilde{b}_{x,m,j}^{i_x,i_y,i_z} \right) + H^\bot_{y,j} \left( \tilde{b}_{y,m,j}^{i_x,i_y+1,i_z} - \tilde{b}_{y,m,j}^{i_x,i_y,i_z} \right) + H^\bot_{z,j} \left( \tilde{b}_{z,m,j}^{i_x,i_y,i_z+1} - \tilde{b}_{z,m,j}^{i_x,i_y,i_z} \right) \\
+& \ + H^\bot_{x,j}  H_{x , j}^\bot \left( -  \lambda_{i_x-1,i_y,i_z} + 2 \lambda_{i_x,i_y,i_z} -  \lambda_{i_x+1,i_y,i_z} \right) \\
+& \ + H^\bot_{x,j} H_{y , j}^\bot \left(  -  \lambda_{i_x-1,i_y,i_z} - \lambda_{i_x,i_y-1,i_z} + 2  \lambda_{i_x,i_y,i_z} + \lambda_{i_x-1,i_y+1,i_z} + \lambda_{i_x+1,i_y-1,i_z}  -  \lambda_{i_x,i_y+1,i_z}    -  \lambda_{i_x+1,i_y,i_z} \right) \\
+& \ + H^\bot_{x,j} H_{z , j}^\bot \left( -  \lambda_{i_x-1,i_y,i_z}   - \lambda_{i_x,i_y,i_z-1} + 2 \lambda_{i_x,i_y,i_z}  + \lambda_{i_x-1,i_y,i_z+1}  + \lambda_{i_x+1,i_y,i_z-1} -  \lambda_{i_x,i_y,i_z+1} -  \lambda_{i_x+1,i_y,i_z} \right)   \\
+& \ + H^\bot_{y,j}  H_{y , j}^\bot  \left( - \lambda_{i_x,i_y-1,i_z}  +  2 \lambda_{i_x,i_y,i_z}  -  \lambda_{i_x,i_y+1,i_z} \right)  \\
+& \ + H^\bot_{y,j} H_{z , j}^\bot \left(  - \lambda_{i_x,i_y-1,i_z}  - \lambda_{i_x,i_y,i_z-1} + 2 \lambda_{i_x,i_y,i_z} + \lambda_{i_x,i_y-1,i_z+1} + \lambda_{i_x,i_y+1,i_z-1} -  \lambda_{i_x,i_y+1,i_z} -  \lambda_{i_x,i_y,i_z+1}  \right) \\
+& \ + H^\bot_{z,j}  H_{z , j}^\bot  \left( - \lambda_{i_x,i_y,i_z-1} +  2 \lambda_{i_x,i_y,i_z} -  \lambda_{i_x,i_y,i_z+1} \right)  \Big]
+\end{align*}
+This looks like a finite difference discretization. I can rewrite it in the following way,
+\begin{align*}
+A^{i_x,i_y,i_z}_{j_x,j_y,j_z} \lambda_{j_x,j_y,j_z} = \sum_{j=1}^{N_n} \sum_{l=1}^d H^\bot_{l,j} B^{i_x,i_y,i_z}_{l,j_x,j_y,j_z} \tilde{b}_{l,m,j}^{j_x,j_y,j_z}
+\end{align*}
+where
+\begin{align*}
+B^{i_x,i_y,i_z}_{l,j_x,j_y,j_z} &= \delta^{i_l+1}_{j_l} - \delta^{i_l}_{j_l} \quad , \quad B^{i_x,i_y,i_z}_{l,j_x,j_y,j_z} \ : \ \mathds{R}^{N_e + 1 \times N_e + 1 \times N_e + 1} \otimes \mathds{R}^d \rightarrow \mathds{R}^{N_e \times N_e \times N_e} \otimes \mathds{R}^d \\
+A^{i_x,i_y,i_z}_{j_x,j_y,j_z} &= 
+\sum_{l=1}^d \sum_{s=l}^d \left( \sum_{j=1}^{N_n} H^\bot_{l,j} H^\bot_{s,j} \right) \left\lbrace \begin{array}{ll}
+ 2 \delta_{j}^{i} -  \delta_{j_l}^{i_l-1} - \delta_{j_l}^{i_l+1} -  \delta_{j_s}^{i_s-1} - \delta_{j_s}^{i_s+1} +  \delta_{j_l,j_s}^{i_l-1,i_s+1} + \delta_{j_l,j_s}^{i_l+1,i_s-1} & , \ l \neq s \\
+ 2 \delta_{j}^{i} -  \delta_{j_l}^{i_l-1} - \delta_{j_l}^{i_l+1} & , \ l=s
+\end{array} \right.
+\end{align*}
+where again the $\delta$ components $0$ and $N_e + 1$ are zero.
+
+\newpage
+
+\section{Stability and Equivalence Proofs}
+
+I begin by showing the equivalence of the divergence formulation and the Hadamard formulation. I then prove energy stability for the linear convection equation and entropy stability for a general Hadamard formulation, assuming entropy-stable volume fluxes.
+
+\subsection{Equivalence of Divergence and Hadamard Forms}
+
+We will begin with a very general Hadamard formulation,
+\begin{align*}
+\der[\bm{u}_\kappa]{t} + 2 \sum_{m=1}^d \left[ D_{x_m} \circ F_{x_m} \right] \bm{1}  
+&= H^{-1} \sum_{l=1}^d \Bigg[ \alpha E_{\xi_l} \circ \sum_{m=1}^d \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} F_{x_m} \\
+& + (1-\alpha) E_{\xi_l} \circ \sum_{m=1}^d \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} F_{x_m} \\
+& + \beta \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \circ \sum_{m=1}^d \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,a}}) \\
+&  -  \beta \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, b}^T \circ \sum_{m=1}^d \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,b}}) \\
+&  + (1- \beta) \sum_{m=1}^d \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a}^\text{ex} \bm{t}_{\xi_l, b}^T \circ  F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,a}}) \\
+& - (1- \beta)\sum_{m=1}^d \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T \circ F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,b}})
+\Bigg] \bm{1}
+\end{align*}
+and show that using a central volume flux composed of arithmetic means $ \fn{F}^\star_{x_m} (u_i, u_j) = \frac{1}{2}(f_i + f_j) $ and nondissipative surface fluxes, we recover a nondissipative divergence formulation. This choice of flux makes our lives easier, but note that the same steps can be followed using any numerical flux constructed through arithmetic means. We begin with the volume term.
+\begin{align*}
+2 \sum_{m=1}^d \left[ D_{x_m} \circ F_{x_m} \right] \bm{1} &= 2 \sum_{m=1}^d \sum_{j=1}^N [D_{x_m}]_{ij} [ F_{x_m} ]_{ij} = \sum_{m=1}^d \sum_{j=1}^N [D_{x_m}]_{ij} (f_i^\kappa + f_j^\kappa) \\
+& =  \sum_{m=1}^d \left( f_i^\kappa \sum_{j=1}^N [D_{x_m}]_{ij} + \sum_{j=1}^N [D_{x_m}]_{ij} f_j^\kappa \right)  \\
+& = \text{FS}^{\text{vol}} + \sum_{m=1}^d D_{x_m} \bm{f}^\kappa \quad , \quad \text{FS}^{\text{vol}} =  \text{diag}(\bm{f}^\kappa) \sum_{m=1}^d D_{x_m} \bm{1}
+\end{align*}
+where we recognize the volume term $\text{FS}^{\text{vol}}$ from the free-stream preservation (or GCL) condition in the $m$\up{th} direction,
+\begin{align*}
+\sum_{j=1}^N [D_{x_m}]_{ij} &= \frac{1}{2} \sum_{j=1}^N \left[ \frac{1}{\fn{J}_\kappa} \right]_i \sum_{l=1}^d \left[ [D_{\xi_l}]_{ij} \left[ \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa \right]_j + \left[ \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa \right]_i  [ D_{\xi_l} ]_{ij} \right] \\
+&= \frac{1}{2} \left[ \frac{1}{\fn{J}_\kappa} \right]_i \sum_{l=1}^d \left[ \sum_{j=1}^N [D_{\xi_l}]_{ij} \left[ \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa \right]_j + \left[ \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa \right]_i \cancelto{0}{\sum_{j=1}^N [ D_{\xi_l} ]_{ij}} \right] \\
+&= \frac{1}{2}  \left[ \text{diag}\left( \fn{J}_\kappa \right) \right]^{-1} \sum_{l=1}^d  D_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa \bm{1} 
+\end{align*}
+We will find that this free-stream term will cancel with contributions from the SAT, assuming the metrics are constructed in a way that respects free-stream conservation. We now consider the first term from the SAT.
+\begin{align*}
+\left[ E_{\xi_l} \circ \sum_{m=1}^d \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} F_{x_m}  \right] \bm{1} & = \sum_{m=1}^d \sum_{j=1}^N [E_{\xi_l}]_{ij} \left[ \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \right]_{j} [ F_{x_m} ]_{ij} \\
+& \hspace{-3cm} = \frac{1}{2} \sum_{m=1}^d \sum_{j=1}^N [E_{\xi_l}]_{ij} \left[ \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \right]_{j} (f_i + f_j) \\
+& \hspace{-3cm} = \frac{1}{2} \sum_{m=1}^d E_{\xi_l} \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \bm{f}_\kappa + \frac{1}{2} \text{diag} (\bm{f}_\kappa) \sum_{m=1}^d E_{\xi_l} \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \bm{1}
+\end{align*}
+The second term is identical. Let's consider now the third term from the SAT,
+\begin{align*}
+\left[ \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \circ \sum_{m=1}^d \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,a}}) \right] \bm{1} &\\
+& \hspace{-9cm} =   \sum_{m=1}^d  \sum_{j=1}^N \left[ \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \right]_{ij} \left[  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \right]_j \left[ F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,a}}) \right]_{ij} \\
+& \hspace{-9cm} =  \sum_{m=1}^d  \sum_{j=1}^N \left[ \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \right]_{ij} \left[  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \right]_j   \left( f_{\kappa,i} + f_{\nu_{\xi_l,a},j} \right) \\
+& \hspace{-9cm} =  \frac{1}{2} \sum_{m=1}^d  \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \bm{f}_{\nu_{\xi_l,a}} + \frac{1}{2} \text{diag} (\bm{f}_\kappa) \sum_{m=1}^d  \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \bm{1} \\
+\end{align*}
+Similarly, the fourth, fifth, and sixth SAT terms are
+\begin{align*}
+& \left[  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, b}^T \circ \sum_{m=1}^d \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,b}}) \right] \bm{1}  \\
+ & \qquad =  \frac{1}{2} \sum_{m=1}^d  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, b}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \bm{f}_{\nu_{\xi_l,b}} + \frac{1}{2} \text{diag} (\bm{f}_\kappa) \sum_{m=1}^d  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, b}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \bm{1} \\
+ & \left[  \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a}^\text{ex} \bm{t}_{\xi_l, b}^T \circ  F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,a}}) \right] \bm{1}  \\
+ &  \qquad =  \frac{1}{2}  \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a}^\text{ex} \bm{t}_{\xi_l, b}^T \bm{f}_{\nu_{\xi_l,a}} + \frac{1}{2} \text{diag} (\bm{f}_\kappa)  \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a}^\text{ex} \bm{t}_{\xi_l, b}^T \bm{1} \\
+& \left[ \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T \circ F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,b}}) \right] \bm{1}  \\
+ & \qquad =  \frac{1}{2} \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T \bm{f}_{\nu_{\xi_l,b}} + \frac{1}{2} \text{diag} (\bm{f}_\kappa) \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T \bm{1}
+\end{align*}
+We now group together various of the above terms, denoting
+\begin{align*}
+\text{FS}^{\text{surf}} &= \frac{1}{2} \text{diag} \left( \bm{f}_\kappa \right) \sum_{l,m=1}^d \Bigg[ \alpha E_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}  + (1-\alpha) E_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex}   \\
+& \qquad  - \beta \left(  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, b}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex}  - \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex}   \right) \\
+&  \qquad  - (1-\beta) \left( \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T - \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a}^\text{ex} \bm{t}_{\xi_l, b}^T  \right) \Bigg] \bm{1}
+\end{align*}
+Assuming that $\text{FS}^{\text{vol}} = \text{FS}^{\text{surf}}$, which as we show below comes from the free stream preservation (GCL) constraing, by adding everything together, we finally get
+\begin{align*}
+\der[\bm{u}_\kappa]{t} &+ \sum_{m=1}^d D_{x_m} \bm{f}^\kappa  =  \frac{1}{2} H^{-1} \sum_{l,m=1}^d \Bigg[ E_{\xi_l} \left[ \alpha \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} + (1-\alpha) \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \right] \bm{f}_{\kappa} \\
+& - \beta \left(  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, b}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \bm{f}_{\nu_{\xi_l,b}} -  \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \bm{f}_{\nu_{\xi_l,a}} \right) \\
+& - (1-\beta) \left( \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T \bm{f}_{\nu_{\xi_l,b}} - \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a}^\text{ex} \bm{t}_{\xi_l, b}^T \bm{f}_{\nu_{\xi_l,a}} \right) \Bigg]
+\end{align*}
+which is now in a divergence form. We recover the usual nondissipative divergence form with $\alpha = 1$ and $\beta=0$ such as in \cite{del_rey_fernandez_extension_2019}, although clearly several other forms can be obtained through various choices of $\alpha$ and $\beta$. The choice $\alpha = 2$ and $\beta = 0$ was made for the divergence form (linear convection) in \cite{nolasco_optimized_2019}, while the choices $\alpha = 1$ and $\beta = \frac{1}{2}$ was made for the hadamard form (Euler equations). The assumption that  $\text{FS}^{\text{vol}} = \text{FS}^{\text{surf}}$ comes from the following free stream preservation (GCL) constraints, one for each physical dimension $m$.
+\begin{align*}
+ \left[ \text{diag}\left( \fn{J}_\kappa \right) \right]^{-1} \sum_{l=1}^d  D_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa \bm{1} &= H^{-1} \sum_{l=1}^d \Bigg[ E_{\xi_l}  \left[ \alpha \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} + (1-\alpha) \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \right] \\
+& \hspace{-4cm} - \beta \left(  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, b}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} - \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \right) \\
+& \hspace{-4cm} - (1-\beta) \left( \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T - \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a}^\text{ex} \bm{t}_{\xi_l, b}^T \right) \Bigg] \bm{1}
+\end{align*}
+One must be careful therefore to modify the optimization procedure for the metric terms appropriately.
+
+\subsection{Weak Form}
+
+Here we prove that the Hadamard formulation can be recast in an equivalent weak form - convenient for DG formulations. We begin with a basic Hadamard formulation,
+\begin{align*}
+\der[\bm{u}_\kappa]{t} + 2 \sum_{m=1}^d \left[ D_{x_m} \circ F_{x_m} \right] \bm{1}  
+&= H^{-1} \sum_{l=1}^d \Bigg[ E_{\xi_l} \circ \sum_{m=1}^d \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} F_{x_m} \\
+&  + \sum_{m=1}^d \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \bm{t}_{\xi_l, b}^T \circ  F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,a}}) \\
+& - \sum_{m=1}^d \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \bm{t}_{\xi_l, a}^T \circ F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,b}})
+\Bigg] \bm{1}
+\end{align*}
+We take the inner product with a text function through contracting by $\bm{v}_\kappa^T H$. We obtain
+\begin{align*}
+\der[\bm{u}_\kappa]{t} + 2 \sum_{m=1}^d \left[ D_{x_m} \circ F_{x_m} \right] \bm{1}  
+&= H^{-1} \sum_{l=1}^d \Bigg[ E_{\xi_l} \circ \sum_{m=1}^d \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} F_{x_m} \\
+&  + \sum_{m=1}^d \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \bm{t}_{\xi_l, b}^T \circ  F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,a}}) \\
+& - \sum_{m=1}^d \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \bm{t}_{\xi_l, a}^T \circ F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,b}})
+\Bigg] \bm{1}
+\end{align*}
+
+\subsection{Energy Stability - Linear Convection}
+
+We use the divergence form as it is easier to work with for energy stability. We also make the assumption that $H$ is diagonal so that it can commute with the metric jacobian and metric terms, which will be crucial in the following steps. Take the following upwinding discretization of the linear convection equation,
+\begin{align*}
+\der[\bm{u}_\kappa]{t} &+ \sum_{m=1}^d D_{x_m} \left(  a_m \bm{u}_\kappa \right) = H^{-1} \sum_{l = 1}^d \left[  \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l} \left(\bm{f}_{\xi_l,b} - \bm{f}^\star_{\xi_l,b} \right)  - \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l} \left(\bm{f}_{\xi_l,a} - \bm{f}^\star_{\xi_l,a}  \right) \right]
+\end{align*}
+where
+\begin{align*}
+\begin{gathered}
+D_{x_m} = \frac{1}{2} \left[ \text{diag}\left( \fn{J}_\kappa \right) \right]^{-1} \sum_{l=1}^d \left[ D_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa + \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa  D_{\xi_l} \right] \quad , \quad H = \text{diag} \left( \fn{J}_\kappa \right) H_\xi \\
+\bm{f}_{\xi_l,a} =  \sum_{m=1}^d \bm{t}^T_{\xi_l,a} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \left( a_m \bm{u}_{\kappa} \right) \quad , \quad \bm{f}_{\xi_l,b} = \sum_{m=1}^d \bm{t}^T_{\xi_l,b} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \left( a_m \bm{u}_{\kappa} \right)
+\end{gathered}
+\end{align*} 
+\vspace{-3mm}
+\begin{align*}
+\bm{f}^\star_{\xi_l,a} &=  \sum_{m=1}^d a_m \frac{1}{2} \left[ \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \bm{t}^T_{\xi_l,b} \bm{u}_{\nu_{\xi_l,a}} + \bm{t}^T_{\xi_l,a} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \bm{u}_{\kappa} \right] \\
+&\qquad - \frac{\sigma}{2} \left\vert \sum_{m=1}^d a_m \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \right\vert \left( \bm{t}^T_{\xi_l,a} \bm{u}_\kappa - \bm{t}^T_{\xi_l,b} \bm{u}_{\nu_{\xi_l,a}}  \right) \\
+\bm{f}^\star_{\xi_l,b} &=  \sum_{m=1}^d a_m \frac{1}{2} \left[ \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \bm{t}^T_{\xi_l,a} \bm{u}_{\nu_{\xi_l,b}} +  \bm{t}^T_{\xi_l,b} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \bm{u}_{\kappa} \right] \\
+&\qquad - \frac{\sigma}{2} \left\vert \sum_{m=1}^d a_m \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \right\vert \left( \bm{t}^T_{\xi_l,a} \bm{u}_{\nu_{\xi_l,b}} - \bm{t}^T_{\xi_l,b} \bm{u}_\kappa   \right)
+\end{align*}
+We now prove stability using the energy method. Temporarily ignoring the SATs and considering only the volume terms, we find
+\begin{align*}
+\der{t} \norm{ \bm{u}_\kappa }^2_{H} &= \bm{u}^T_\kappa H  \der[\bm{u}_\kappa]{t} + \der[\bm{u}_\kappa^T]{t} H  \bm{u}_\kappa \\
+&= - \sum_{m=1}^d \bm{u}^T_\kappa H_\xi \frac{1}{2} \sum_{l=1}^d \left[ D_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa + \text{diag} \left( \fn{J} 
+ \pder[\xi_l]{x_m} \right)_\kappa  D_{\xi_l} \right] \left( a_m \bm{u}_\kappa \right) \\
+ & \quad - \sum_{m=1}^d \left( a_m \bm{u}_\kappa^T \right) \frac{1}{2} \sum_{l=1}^d \left[ D_{\xi_l}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa + \text{diag} \left( \fn{J}  \pder[\xi_l]{x_m} \right)_\kappa  D_{\xi_l}^T \right]  H_\xi  \bm{u}_\kappa \\
+ &= - \frac{1}{2} \sum_{m=1}^d a_m \bm{u}^T_\kappa \sum_{l=1}^d \left[ Q_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa + \text{diag} \left( \fn{J} 
+ \pder[\xi_l]{x_m} \right)_\kappa  Q_{\xi_l} \right]  \bm{u}_\kappa  \\
+ & \quad - \frac{1}{2} \sum_{m=1}^d a_m \bm{u}_\kappa^T \sum_{l=1}^d \left[ Q_{\xi_l}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa + \text{diag} \left( \fn{J}  \pder[\xi_l]{x_m} \right)_\kappa  Q_{\xi_l}^T \right]  \bm{u}_\kappa \\
+&= - \frac{1}{2} \bm{u}_\kappa^T \sum_{l,m=1}^d a_m \left[ \left( Q_{\xi_l} + Q_{\xi_l}^T \right) \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa + \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa \left( Q_{\xi_l} + Q_{\xi_l}^T \right) \right] \bm{u}_\kappa
+\end{align*}
+where we used the fact that $H$ is diagonal to commute with the metric terms and the metric jacobian. Now consider the terms that we get from the SAT. It is straightforward to see that the above exactly cancels the contribution from the $E_{\xi_l}$ term in the nondissipative SAT, leaving the coupling terms to cancel from either side of the interface. I will now show this explicitly. For simplicity we first consider the nondissipative case $\sigma = 0$, and then show the additional terms are dissipative.
+\begin{align*}
+\der{t} \norm{ \text{SAT} }^2_{H} &= \bm{u}^T_\kappa H  \text{SAT} + \text{SAT}^T H  \bm{u}_\kappa \\
+&= \bm{u}^T_\kappa \sum_{l = 1}^d \left[  \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l} \left(\bm{f}_{\xi_l,b} - \bm{f}^\star_{\xi_l,b} \right)  - \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l} \left(\bm{f}_{\xi_l,a} - \bm{f}^\star_{\xi_l,a}  \right) \right] \\
+& \quad  + \sum_{l = 1}^d \left[  \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l} \left(\bm{f}_{\xi_l,b} - \bm{f}^\star_{\xi_l,b} \right)  - \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l} \left(\bm{f}_{\xi_l,a} - \bm{f}^\star_{\xi_l,a}  \right) \right]^T  \bm{u} _\kappa
+\end{align*}
+Consider the term in square brackets (both lines are identical, simply the transpose of each other). Substituting in the nondissipative numerical flux, we get
+\begin{align*}
+& \   \sum_{l,m = 1}^d a_m \Bigg[  \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l} \left( \bm{t}^T_{\xi_l,b} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}  \bm{u}_{\kappa} -  \frac{1}{2} \left[ \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \bm{t}^T_{\xi_l,a} \bm{u}_{\nu_{\xi_l,b}} +  \bm{t}^T_{\xi_l,b} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \bm{u}_{\kappa} \right] \right)  \\
+&\qquad - \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l} \left( \bm{t}^T_{\xi_l,a} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}  \bm{u}_{\kappa}  -  \frac{1}{2} \left[ \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \bm{t}^T_{\xi_l,b} \bm{u}_{\nu_{\xi_l,a}} + \bm{t}^T_{\xi_l,a} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \bm{u}_{\kappa} \right]  \right) \Bigg] \\
+&=  \sum_{l,m = 1}^d a_m \frac{1}{2} \Bigg[ \left(  \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l} \bm{t}^T_{\xi_l,b} -  \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l} \bm{t}^T_{\xi_l,a} \right) \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}  \bm{u}_{\kappa}  \\
+&\qquad \qquad \quad -  \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \bm{t}^T_{\xi_l,a} \bm{u}_{\nu_{\xi_l,b}} + 
+ \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \bm{t}^T_{\xi_l,b} \bm{u}_{\nu_{\xi_l,a}}  \Bigg] \\
+ &=  \sum_{l,m = 1}^d a_m \frac{1}{2} \Bigg[ \left( Q_{\xi_l} + Q_{\xi_l}^T \right) \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}  \bm{u}_{\kappa}  \\
+&\qquad \qquad \quad -  \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \bm{t}^T_{\xi_l,a} \bm{u}_{\nu_{\xi_l,b}} + 
+ \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \bm{t}^T_{\xi_l,b} \bm{u}_{\nu_{\xi_l,a}}  \Bigg]
+\end{align*}
+Therefore by adding the transpose, we have the entire contribution from the SAT, 
+\begin{align*}
+\der{t} \norm{ \text{SAT} }^2_{H} &= \frac{1}{2} \bm{u_\kappa}^T
+\sum_{l,m = 1}^d a_m \Bigg[ \left( Q_{\xi_l} + Q_{\xi_l}^T \right) \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} +  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}  \left( Q_{\xi_l} + Q_{\xi_l}^T \right) \Bigg] \bm{u}_{\kappa}  \\
+& \ - \sum_{l,m = 1}^d a_m \left[  \bm{u}_\kappa^T \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \bm{t}^T_{\xi_l,a} \bm{u}_{\nu_{\xi_l,b}} - 
+ \bm{u}_\kappa^T \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \bm{t}^T_{\xi_l,b} \bm{u}_{\nu_{\xi_l,a}} \right] 
+\end{align*}
+The first term cancels exactly with the volume contribution, and the second term cancels with the contributions from either side of an element interface. Finally we show the contribution from the dissipative terms.
+\begin{align*}
+\der{t} \norm{ \text{SAT}_\text{diss}^\kappa }^2_{H} &=
+ \bm{u}^T_\kappa \sum_{l = 1}^d \left[  - \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l}  \bm{f}^\star_{\xi_l,b,\text{diss}} + \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l} \bm{f}^\star_{\xi_l,a,\text{diss}} \right] \\
+& \quad  + \sum_{l = 1}^d\left[  - \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l}  \bm{f}^\star_{\xi_l,b,\text{diss}} + \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l} \bm{f}^\star_{\xi_l,a,\text{diss}} \right]^T  \bm{u} _\kappa \\
+&= \frac{\sigma}{2} \sum_{l = 1}^d \Bigg[ \bm{u}^T_\kappa \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l} \left\vert \sum_{m=1}^d a_m \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \right\vert \left( \bm{t}^T_{\xi_l,a} \bm{u}_{\nu_{\xi_l,b}} - \bm{t}^T_{\xi_l,b} \bm{u}_\kappa   \right) \\
+&  \qquad \  \quad - \bm{u}^T_\kappa  \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l} \left\vert \sum_{m=1}^d a_m \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \right\vert \left( \bm{t}^T_{\xi_l,a} \bm{u}_\kappa - \bm{t}^T_{\xi_l,b} \bm{u}_{\nu_{\xi_l,a}}  \right)  \\
+&  \qquad \  \quad + \left(  \bm{u}_{\nu_{\xi_l,b}}^T \bm{t}_{\xi_l,a} -  \bm{u}_\kappa^T \bm{t}_{\xi_l,b}   \right) H^{\bot}_{\xi_l} \left\vert \sum_{m=1}^d a_m \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \right\vert  \bm{t}^T_{\xi_l,b} \bm{u}_\kappa  \\
+&  \qquad \  \quad - \left( \bm{u}_\kappa^T \bm{t}_{\xi_l,a}  - \bm{u}^T_{\nu_{\xi_l,a}}  \bm{t}_{\xi_l,b}  \right) H^{\bot}_{\xi_l} \left\vert \sum_{m=1}^d a_m \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \right\vert  \bm{t}^T_{\xi_l,a}  \bm{u}^T_\kappa \Bigg]
+\end{align*}
+where again we have used the fact that a diagonal $H$ commutes with the surface metric terms. Consider now only the contribution of the SAT corresponding to the $\xi,b$ facet,
+\begin{align*}
+\der{t} \norm{ \text{SAT}_{\xi,b,\text{diss}}^\kappa }^2_{H} &= 
+\frac{\sigma}{2} \Bigg[ \bm{u}^T_\kappa \bm{t}_{\xi,b} H^{\bot}_{\xi} \left\vert \sum_{m=1}^d a_m \text{diag} \left( \fn{J} \pder[\xi]{x_m} \right)_{\xi,b} \right\vert \left( \bm{t}^T_{\xi,a} \bm{u}_{\nu_{\xi,b}} - \bm{t}^T_{\xi,b} \bm{u}_\kappa   \right) \\
+&  \qquad \  + \left(  \bm{u}_{\nu_{\xi,b}}^T \bm{t}_{\xi,a} -  \bm{u}_\kappa^T \bm{t}_{\xi,b}   \right) H^{\bot}_{\xi} \left\vert \sum_{m=1}^d a_m \text{diag} \left( \fn{J} \pder[\xi]{x_m} \right)_{\xi,b} \right\vert  \bm{t}^T_{\xi,b} \bm{u}_\kappa  \Bigg]
+\end{align*}
+On the other side of this interface, we have a similar contribution to the $\nu_{\xi, b}$ element,
+\begin{align*}
+\der{t} \norm{ \text{SAT}_{\xi,a,\text{diss}}^{\nu_{\xi, b}} }^2_{H} &= 
+\frac{\sigma}{2} \Bigg[ - \bm{u}^T_{\nu_{\xi, b}} \bm{t}_{\xi,a} H^{\bot}_{\xi} \left\vert \sum_{m=1}^d a_m \text{diag} \left( \fn{J} \pder[\xi]{x_m} \right)_{\xi,a = \kappa,\xi,b} \right\vert \left( \bm{t}^T_{\xi,a} \bm{u}_{\nu_{\xi,b}} - \bm{t}^T_{\xi,b} \bm{u}_\kappa   \right) \\
+&  \qquad \  + \left(  \bm{u}_{\nu_{\xi,b}}^T \bm{t}_{\xi,a} -  \bm{u}_\kappa^T \bm{t}_{\xi,b}   \right) H^{\bot}_{\xi} \left\vert \sum_{m=1}^d a_m \text{diag} \left( \fn{J} \pder[\xi]{x_m} \right)_{\xi,a = \kappa,\xi,b} \right\vert  \bm{t}^T_{\xi,a} \bm{u}_{\nu_{\xi, b}}  \Bigg]
+\end{align*}
+Adding these together, we find
+\begin{align*}
+\der{t} \norm{ \text{SAT}_{\xi,b,\text{diss}} }^2_{H} &= 
+- \frac{\sigma}{2} \Bigg[ \left( \bm{t}^T_{\xi,a} \bm{u}_{\nu_{\xi,b}} - \bm{t}^T_{\xi,b} \bm{u}_\kappa   \right)^T H^{\bot}_{\xi} \left\vert \sum_{m=1}^d a_m \text{diag} \left( \fn{J} \pder[\xi]{x_m} \right)_{\xi,b} \right\vert \left( \bm{t}^T_{\xi,a} \bm{u}_{\nu_{\xi,b}} - \bm{t}^T_{\xi,b} \bm{u}_\kappa   \right) \\
+&  \qquad \  + \left(  \bm{u}_{\nu_{\xi,b}}^T \bm{t}_{\xi,a} -  \bm{u}_\kappa^T \bm{t}_{\xi,b}   \right)^T H^{\bot}_{\xi} \left\vert \sum_{m=1}^d a_m \text{diag} \left( \fn{J} \pder[\xi]{x_m} \right)_{\xi,b} \right\vert  \left(  \bm{u}_{\nu_{\xi,b}}^T \bm{t}_{\xi,a} -  \bm{u}_\kappa^T \bm{t}_{\xi,b}   \right)  \Bigg]
+\end{align*}
+which is clearly negative semidefinite, and hence dissipative.
+
+
+\subsection{Entropy Stability - Hadamard Form}
+
+We start with the following discretization,
+\begin{align*}
+\der[\bm{u}_\kappa]{t} + 2 \sum_{m=1}^d \left[ D_{x_m} \circ F_{x_m} \right] \bm{1}  
+&= H^{-1} \sum_{l=1}^d \Bigg[ E_{\xi_l} \circ \sum_{m=1}^d \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} F_{x_m} \\
+&  + \sum_{m=1}^d \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \bm{t}_{\xi_l, b}^T \circ  F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,a}}) \\
+& - \sum_{m=1}^d \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \bm{t}_{\xi_l, a}^T \circ F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,b}})
+\Bigg] \bm{1}
+\end{align*}
+and assume that an entropy-consistent two-point flux is used, i.e.
+\begin{align*}
+\jump{\bm{w}}^T \fnb{F}^\star = \jump{\psi}
+\end{align*}
+Recall the following definitions from entropy analysis,
+$$ \fn{S} \equiv \fn{U}_i \fn{W}_i - \varphi(\fnb{W}) \quad , \quad \fn{G}^{(k)} \equiv \fn{F}^{(k)}_i \fn{W}_i - \psi^{(k)}(\fnb{W}) \quad , \quad \pder[\fn{S}]{\fn{U}_i} A^{(k)}_{ij} \equiv \pder[\fn{S}]{\fn{U}_i} \pder[\fn{F}^{(k)}_i]{\fn{U}_j} = \pder[\fn{G}^{(k)}]{\fn{U}_j} $$
+where we define entropy variables $\fnb{W}$, entropy potential $\varphi$, and the entropy potential fluxes $\psi ^{(k)}$ as
+$$ \fn{W}_i = \pder[\fn{S}]{\fn{U}_i} \quad , \quad \pder[\varphi]{\fn{W}_i}=\fn{U}_i \quad , \quad \pder[\psi^{(k)}]{\fn{W}_i}=\fn{F}^{(k)}_i. $$
+In order to prove entropy stability, we take the inner product of our discretization with respect to entropy variables. Throughout we will assume a diagonal $H$ so that it commutes with metric terms. We begin with the volume term, 
+\begin{align*}
+\bm{w}^T H 2 \sum_{m=1}^d \left[ D_{x_m} \circ F_{x_m} \right] \bm{1}  &= \bm{w}^T  \sum_{l.m=1}^d \left[ \left( Q_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa + \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa  Q_{\xi_l} \right) \circ F_{x_m}  \right] \bm{1} \\
+&=  \sum_{l.m=1}^d \sum_{j=1}^N \bm{w}_i \left( \left[ Q_{\xi_l} \right]_{ij}  \left[ \left(\fn{J} \pder[\xi_l]{x_m} \right)_\kappa \right]_j + \left[ \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa  \right]_i \left[ Q_{\xi_l} \right]_{ij} \right) \left[ F_{x_m}  \right]_{ij} \\
+&=  \sum_{l.m=1}^d \sum_{j=1}^N \left( \left[ Q_{\xi_l} \right]_{ij}  \left[ \left(\fn{J} \pder[\xi_l]{x_m} \right)_\kappa \right]_j + \left[ \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa  \right]_i \left[ Q_{\xi_l} \right]_{ij} \right) \left( \bm{w}_i \fnb{F}^\star(u^\kappa_i , u^\kappa_j) \right) 
+\end{align*}
+
+\subsection{Conservation}
+
+We begin with a divergence form discretization,
+\begin{align*}
+\der[\bm{u}_\kappa]{t} &= - \sum_{m=1}^d \frac{1}{2} \left[ \text{diag}\left( \fn{J}_\kappa \right) \right]^{-1} \sum_{l=1}^d \left[ D_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa + \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa  D_{\xi_l} \right]  \fnb{F}_m \left( \bm{u}_\kappa \right) \\
+& \quad + \frac{1}{2} H^{-1} \sum_{l,m = 1}^d \Bigg[ E_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa \fnb{F}_m ( \bm{u}_\kappa) +  \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l} \bm{f}^{\star , \text{diss}}_{\xi_l,b}  - \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l} \bm{f}^{\star , \text{diss}}_{\xi_l,a}   \\
+& \quad - \left( \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \bm{t}^T_{\xi_l,a}  \fnb{F}_m ( \bm{u}_{\nu_{\xi_l,b}} ) - \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \bm{t}_{\xi_l,b}^T  \fnb{F}_m ( \bm{u}_{\nu_{\xi_l,a}} ) \right) \Bigg]
+\end{align*} 
+To show conservation we contract on the left with $\bm{1} H$. Considering first only the volume term, we have
+\begin{align*}
+& \frac{1}{2} \sum_{l,m=1}^d \bm{1}^T  \left[ Q_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa + \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa  Q_{\xi_l} \right] \fnb{F}_m \left( \bm{u}_\kappa \right) \\
+ = & \frac{1}{2} \sum_{l,m=1}^d \bm{1}^T  \left[ \left( E_{\xi_l} - Q_{\xi_l}^T \right) \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa + \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa  Q_{\xi_l} \right] \fnb{F}_m \left( \bm{u}_\kappa \right) 
+\end{align*}
+The first term cancels with the surface integral from the SAT. The second term cancels because $\bm{1}^T Q_{\xi_l}^T= 0$. The dissipative terms can also be assumed to be conservative across interfaces. Consider for example the local Lax-Friedrichs flux on the left interface,
+\begin{align*}
+- \bm{1}^T \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l} \bm{f}^{\star , \text{diss}}_{\xi_l,a} = - \sigma \bm{1}^T \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l} \left\vert \sum_{m=1}^d \max (\lambda_m) \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \right\vert \left( \bm{t}^T_{\xi_l,a} \bm{u}_\kappa - \bm{t}^T_{\xi_l,b} \bm{u}_{\nu_{\xi_l,a}}  \right)
+\end{align*}
+while the right side contribution from the left element is
+\begin{align*}
+\bm{1}^T \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l} \bm{f}^{\star , \text{diss}}_{\kappa} = \sigma \bm{1}^T \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l} \left\vert \sum_{m=1}^d \max (\lambda_m) \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \right\vert \left( \bm{t}^T_{\xi_l,a} \bm{u}_\kappa - \bm{t}^T_{\xi_l,b} \bm{u}_{\nu_{\xi_l,a}}  \right)
+\end{align*}
+These clearly cancel, as will be the case for any numerical flux function that is unique at the interfaces. This leaves us with
+\begin{align*}
+\bm{1}^T H \der[\bm{u}_\kappa]{t} &= - \frac{1}{2} \sum_{l,m=1}^d  \bm{1}^T \Bigg[ \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa Q_{\xi_l} \fnb{F}_m \left( \bm{u}_\kappa \right) \\
+& + \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \bm{t}^T_{\xi_l,a}  \fnb{F}_m ( \bm{u}_{\nu_{\xi_l,b}} ) - \bm{t}_{\xi_l,a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \bm{t}_{\xi_l,b}^T  \fnb{F}_m ( \bm{u}_{\nu_{\xi_l,a}} ) \Bigg]
+\end{align*} 
+We now take advantage of the fact that the above is a scalar to rewrite it as
+\begin{align*}
+\bm{1}^T H \der[\bm{u}_\kappa]{t} &= - \frac{1}{2} \sum_{l,m=1}^d \Bigg[ \fnb{F}_m \left( \bm{u}_\kappa \right) ^T Q_{\xi_l}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa  \\
+& +  \fnb{F}_m ( \bm{u}_{\nu_{\xi_l,b}} )^T \bm{t}_{\xi_l,a}  H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \bm{t}_{\xi_l,b}^T
+-  \fnb{F}_m ( \bm{u}_{\nu_{\xi_l,a}} )^T \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a}  \bm{t}_{\xi_l,a}^T   
+   \Bigg] \bm{1}
+\end{align*}
+where we again used the fact that $H$ is diagonal. The final step is to consider the telescoping property. That is, we consider contributions from neighbouring elements. The element to the left (in the $\xi_l$ direction) will contribute terms 
+\begin{align*}
+ \fnb{F}_m ( \bm{u}_{\kappa} )^T \bm{t}_{\xi_l,a}  H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a}^\kappa \bm{t}_{\xi_l,b}^T
+\end{align*}
+along its right boundary, whereas the element to the right will contribute terms
+\begin{align*}
+- \fnb{F}_m ( \bm{u}_\kappa )^T \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\kappa  \bm{t}_{\xi_l,a}^T   
+\end{align*}
+along its left boundary. We can combine this with the volume contribution from the $\kappa$ element to obtain
+\begin{align*}
+ &- \frac{1}{2}  \fnb{F}_m \left( \bm{u}_\kappa \right) ^T \sum_{l,m=1}^d \Bigg[ Q_{\xi_l}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa  \\
+& \qquad \qquad \qquad \qquad - \left(  \bm{t}_{\xi_l,b} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a}  \bm{t}_{\xi_l,a}^T   -
+ \bm{t}_{\xi_l,a}  H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \bm{t}_{\xi_l,b}^T
+  \right) \Bigg] \bm{1}
+\end{align*}
+which is exactly the condition we used for free stream preservation. We conclude therefore that assuming proper treatment of boundary interfaces, if free stream is preserved then the discretization is conservative.
+
+
+\newpage
+\bibliographystyle{plain}
+\bibliography{Library}
+
+\end{document}

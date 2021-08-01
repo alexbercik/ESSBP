@@ -10,9 +10,414 @@ import Source.Methods.Functions as fn
 #from Source.DiffEq.Quasi1DEulerA import build_F_vol, build_F_int
 
 class SatDer1:
+    
+    ##########################################################################
+    ''' CENTRAL FLUXES '''
+    ##########################################################################
+    
+    def central_div_1d(self, q, E, q_bdyL=None, q_bdyR=None):
+        '''
+        A non-dissipative central flux in 1D
+        '''
+        if q_bdyL is None: # periodic
+            EL = fn.shift_right(E)
+            ER = fn.shift_left(E)
+        else:
+            raise Exception('TODO: adding boundary condition.')
+        
+        Ephys = self.metrics * E
+        EphysL = self.tLT @ Ephys
+        EphysR = self.tRT @ Ephys
+        
+        EnumL = 0.5*(self.bdy_metrics[:,0,:] * (self.tRT @ EL) + EphysL)
+        EnumR = 0.5*(self.bdy_metrics[:,1,:] * (self.tLT @ ER) + EphysR)
+        
+        sat = self.tR @ (EphysR - EnumR) - self.tL @ (EphysL - EnumL)
+        return sat
+    
+    def central_div_2d(self, q, Ex, Ey, idx, q_bdyL=None, q_bdyR=None):
+        '''
+        A non-dissipative central flux in 2D. 
+        '''
+        metrics, bdy_metrics = self.set_metrics(idx)
+        
+        if q_bdyL is None: # periodic
+            ExL = fn.shift_right(Ex)
+            ExR = fn.shift_left(Ex)
+            EyL = fn.shift_right(Ey)
+            EyR = fn.shift_left(Ey)
+        else:
+            raise Exception('TODO: adding boundary condition.')
+        
+        Ephys = metrics[:,0,:] * Ex + metrics[:,1,:] * Ey
+        EphysL = self.tLT @ Ephys
+        EphysR = self.tRT @ Ephys
+        
+        EnumL = 0.5*(bdy_metrics[:,0,0,:] * (self.tRT @ ExL) \
+                   + bdy_metrics[:,0,1,:] * (self.tRT @ EyL) + EphysL)
+        EnumR = 0.5*(bdy_metrics[:,1,0,:] * (self.tLT @ ExR) \
+                   + bdy_metrics[:,1,1,:] * (self.tLT @ EyR) + EphysR)
+        
+        sat = self.tR @ (self.Hperp * (EphysR - EnumR)) - self.tL @ (self.Hperp * (EphysL - EnumL))
+        return sat
+    
+    def central_div_2d_alt(self, q, Ex, Ey, idx, q_bdyL=None, q_bdyR=None):
+        '''
+        A non-dissipative central flux in 2D written in alternative form. 
+        '''
+        metrics, bdy_metrics = self.set_metrics(idx)
+        
+        if q_bdyL is None: # periodic
+            ExL = fn.shift_right(Ex)
+            ExR = fn.shift_left(Ex)
+            EyL = fn.shift_right(Ey)
+            EyR = fn.shift_left(Ey)
+        else:
+            raise Exception('TODO: adding boundary condition.')
+        
+        # TODO: Save Esurf in self?
+        Esurf = self.tR @ np.diag(self.Hperp[:,0]) @ self.tRT - self.tL @ np.diag(self.Hperp[:,0]) @ self.tLT
+        Ephys = metrics[:,0,:] * Ex + metrics[:,1,:] * Ey
+        
+        ExphysL = bdy_metrics[:,0,0,:] * (self.tRT @ ExL)
+        ExphysR = bdy_metrics[:,1,0,:] * (self.tLT @ ExR)
+        EyphysL = bdy_metrics[:,0,1,:] * (self.tRT @ EyL)
+        EyphysR = bdy_metrics[:,1,1,:] * (self.tLT @ EyR)
+        
+        sat = 0.5*(Esurf @ Ephys - (self.tR @ (self.Hperp * (ExphysR + EyphysR)) - self.tL @ (self.Hperp * (ExphysL + EyphysL))))
+        return sat
+    
+    def central_div_3d(self, q, Ex, Ey, Ez, idx, q_bdyL=None, q_bdyR=None):
+        '''
+        A non-dissipative central flux in 3D. 
+        '''
+        metrics, bdy_metrics = self.set_metrics(idx)
+        
+        if q_bdyL is None: # periodic
+            ExL = fn.shift_right(Ex)
+            ExR = fn.shift_left(Ex)
+            EyL = fn.shift_right(Ey)
+            EyR = fn.shift_left(Ey)
+            EzL = fn.shift_right(Ez)
+            EzR = fn.shift_left(Ez)
+        else:
+            raise Exception('TODO: adding boundary condition.')
+        
+        Ephys = metrics[:,0,:] * Ex + metrics[:,1,:] * Ey + metrics[:,2,:] * Ez
+        EphysL = self.tLT @ Ephys
+        EphysR = self.tRT @ Ephys
+        
+        EnumL = 0.5*(bdy_metrics[:,0,0,:] * (self.tRT @ ExL) \
+                   + bdy_metrics[:,0,1,:] * (self.tRT @ EyL) \
+                   + bdy_metrics[:,0,2,:] * (self.tRT @ EzL) + EphysL)
+        EnumR = 0.5*(bdy_metrics[:,1,0,:] * (self.tLT @ ExR) \
+                   + bdy_metrics[:,1,1,:] * (self.tLT @ EyR) \
+                   + bdy_metrics[:,1,2,:] * (self.tLT @ EzR) + EphysR)
+        
+        sat = self.tR @ (self.Hperp * (EphysR - EnumR)) - self.tL @ (self.Hperp * (EphysL - EnumL))
+        return sat
+    
+    ##########################################################################
+    ''' LAX-FRIEDRICHS FLUXES '''
+    ##########################################################################
+    
+    def llf_div_1d(self, q, E, q_bdyL=None, q_bdyR=None, sigma=1, avg='simple'):
+        '''
+        A Local Lax-Fridriechs dissipative flux in 1D. sigma=0 turns off dissipation.
+        '''
+        q_a = self.tLT @ q
+        q_b = self.tRT @ q
+        # Here we work in terms of facets, starting from the left-most facet.
+        # This is NOT the same as elements. i.e. qR is to the right of the
+        # facet and qL is to the left of the facet, opposite of element-wise.
+        if q_bdyL is None:
+            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
+            qf_R = fn.pad_1dR(q_a, q_a[:,0])
+            EL = fn.shift_right(E)
+            ER = fn.shift_left(E)
+        else:
+            qf_L = fn.pad_1dL(q_b, q_bdyL)
+            qf_R = fn.pad_1dR(q_a, q_bdyR)
+            raise Exception('TODO: adding boundary condition.')
+        qf_jump = qf_R - qf_L
+        
+        if avg=='simple': # Alternatively, a Roe average can be used
+            qf_avg = (qf_L + qf_R)/2
+        elif avg=='roe':
+            raise Exception('Roe Average not coded up yet')
+        else:
+            raise Exception('Averaging method not understood.')
+        
+        Ephys = self.metrics * E
+        EphysL = self.tLT @ Ephys
+        EphysR = self.tRT @ Ephys
+        
+        maxeigs = self.maxeig_dEdq(qf_avg)
+        dissL = np.abs(maxeigs[:,:-1] * self.bdy_metrics[:,0,:])
+        dissR = np.abs(maxeigs[:,1:] * self.bdy_metrics[:,1,:])
+        
+        EnumL = 0.5*((self.bdy_metrics[:,0,:] * (self.tRT @ EL) + EphysL) \
+                     - sigma*dissL*qf_jump[:,:-1])
+        EnumR = 0.5*((self.bdy_metrics[:,1,:] * (self.tLT @ ER) + EphysR) \
+                     - sigma*dissR*qf_jump[:,1:])
+        
+        sat = self.tR @ (EphysR - EnumR) - self.tL @ (EphysL - EnumL)
+        return sat
+    
+    def llf_div_2d(self, q, Ex, Ey, idx, q_bdyL=None, q_bdyR=None, sigma=1, avg='simple'):
+        '''
+        A Local Lax-Fridriechs dissipative flux in 2D. sigma=0 turns off dissipation.
+        '''
+        metrics, bdy_metrics = self.set_metrics(idx)
+        
+        q_a = self.tLT @ q
+        q_b = self.tRT @ q
+        # Here we work in terms of facets, starting from the left-most facet.
+        # This is NOT the same as elements. i.e. qR is to the right of the
+        # facet and qL is to the left of the facet, opposite of element-wise.
+        if q_bdyL is None:
+            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
+            qf_R = fn.pad_1dR(q_a, q_a[:,0])
+            ExL = fn.shift_right(Ex)
+            ExR = fn.shift_left(Ex)
+            EyL = fn.shift_right(Ey)
+            EyR = fn.shift_left(Ey)
+        else:
+            qf_L = fn.pad_1dL(q_b, q_bdyL)
+            qf_R = fn.pad_1dR(q_a, q_bdyR)
+            raise Exception('TODO: adding boundary condition.')
+        qf_jump = qf_R - qf_L
+        
+        if avg=='simple': # Alternatively, a Roe average can be used
+            qf_avg = (qf_L + qf_R)/2
+        elif avg=='roe':
+            raise Exception('Roe Average not coded up yet')
+        else:
+            raise Exception('Averaging method not understood.')
+        
+        Ephys = metrics[:,0,:] * Ex + metrics[:,1,:] * Ey
+        EphysL = self.tLT @ Ephys
+        EphysR = self.tRT @ Ephys
+        
+        maxeigsx = self.maxeig_dExdq(qf_avg)
+        maxeigsy = self.maxeig_dEydq(qf_avg)
+        dissL = np.abs(maxeigsx[:,:-1] * bdy_metrics[:,0,0,:]) \
+              + np.abs(maxeigsy[:,:-1] * bdy_metrics[:,0,1,:])
+        dissR = np.abs(maxeigsx[:,1:] * bdy_metrics[:,1,0,:]) \
+              + np.abs(maxeigsy[:,1:] * bdy_metrics[:,1,1,:])
+        
+        EnumL = 0.5*(bdy_metrics[:,0,0,:] * (self.tRT @ ExL) \
+                   + bdy_metrics[:,0,1,:] * (self.tRT @ EyL) + EphysL \
+                   - sigma*dissL*qf_jump[:,:-1])
+        EnumR = 0.5*(bdy_metrics[:,1,0,:] * (self.tLT @ ExR) \
+                   + bdy_metrics[:,1,1,:] * (self.tLT @ EyR) + EphysR \
+                   - sigma*dissR*qf_jump[:,1:])
+        
+        sat = self.tR @ (self.Hperp * (EphysR - EnumR)) - self.tL @ (self.Hperp * (EphysL - EnumL))
+        return sat
+    
+    def llf_div_3d(self, q, Ex, Ey, Ez, idx, q_bdyL=None, q_bdyR=None, sigma=1, avg='simple'):
+        '''
+        A Local Lax-Fridriechs dissipative flux in 3D. sigma=0 turns off dissipation.
+        '''
+        metrics, bdy_metrics = self.set_metrics(idx)
+        
+        q_a = self.tLT @ q
+        q_b = self.tRT @ q
+        # Here we work in terms of facets, starting from the left-most facet.
+        # This is NOT the same as elements. i.e. qR is to the right of the
+        # facet and qL is to the left of the facet, opposite of element-wise.
+        if q_bdyL is None:
+            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
+            qf_R = fn.pad_1dR(q_a, q_a[:,0])
+            ExL = fn.shift_right(Ex)
+            ExR = fn.shift_left(Ex)
+            EyL = fn.shift_right(Ey)
+            EyR = fn.shift_left(Ey)
+            EzL = fn.shift_right(Ez)
+            EzR = fn.shift_left(Ez)
+        else:
+            qf_L = fn.pad_1dL(q_b, q_bdyL)
+            qf_R = fn.pad_1dR(q_a, q_bdyR)
+            raise Exception('TODO: adding boundary condition.')
+        qf_jump = qf_R - qf_L
+        
+        if avg=='simple': # Alternatively, a Roe average can be used
+            qf_avg = (qf_L + qf_R)/2
+        elif avg=='roe':
+            raise Exception('Roe Average not coded up yet')
+        else:
+            raise Exception('Averaging method not understood.')
+        
+        Ephys = metrics[:,0,:] * Ex + metrics[:,1,:] * Ey +  metrics[:,2,:] * Ez
+        EphysL = self.tLT @ Ephys
+        EphysR = self.tRT @ Ephys
+        
+        maxeigsx = self.maxeig_dExdq(qf_avg)
+        maxeigsy = self.maxeig_dEydq(qf_avg)
+        maxeigsz = self.maxeig_dEzdq(qf_avg)
+        dissL = np.abs(maxeigsx[:,:-1] * bdy_metrics[:,0,0,:]) \
+              + np.abs(maxeigsy[:,:-1] * bdy_metrics[:,0,1,:]) \
+              + np.abs(maxeigsz[:,:-1] * bdy_metrics[:,0,2,:])
+        dissR = np.abs(maxeigsx[:,1:] * bdy_metrics[:,1,0,:]) \
+              + np.abs(maxeigsy[:,1:] * bdy_metrics[:,1,1,:]) \
+              + np.abs(maxeigsz[:,1:] * bdy_metrics[:,1,2,:])
+        
+        EnumL = 0.5*(bdy_metrics[:,0,0,:] * (self.tRT @ ExL) \
+                   + bdy_metrics[:,0,1,:] * (self.tRT @ EyL) \
+                   + bdy_metrics[:,0,2,:] * (self.tRT @ EzL) + EphysL \
+                   - sigma*dissL*qf_jump[:,:-1])
+        EnumR = 0.5*(bdy_metrics[:,1,0,:] * (self.tLT @ ExR) \
+                   + bdy_metrics[:,1,1,:] * (self.tLT @ EyR) \
+                   + bdy_metrics[:,1,2,:] * (self.tLT @ EzR) + EphysR \
+                   - sigma*dissR*qf_jump[:,1:])
+        
+        sat = self.tR @ (self.Hperp * (EphysR - EnumR)) - self.tL @ (self.Hperp * (EphysL - EnumL))
+        return sat
+
+    ##########################################################################
+    ''' UPWIND FLUXES ''' # note: the same as llf for scalar case
+    ##########################################################################
+    
+    def upwind_div_1d(self, q, E, q_bdyL=None, q_bdyR=None, sigma=1, avg='simple'):
+        '''
+        An upwind dissipative flux in 1D. sigma=0 turns off dissipation.
+        '''
+        q_a = self.tLT @ q
+        q_b = self.tRT @ q
+        # Here we work in terms of facets, starting from the left-most facet.
+        # This is NOT the same as elements. i.e. qR is to the right of the
+        # facet and qL is to the left of the facet, opposite of element-wise.
+        if q_bdyL is None:
+            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
+            qf_R = fn.pad_1dR(q_a, q_a[:,0])
+        else:
+            qf_L = fn.pad_1dL(q_b, q_bdyL)
+            qf_R = fn.pad_1dR(q_a, q_bdyR)
+            raise Exception('TODO: adding boundary condition.')
+        qf_jump = -(qf_R - qf_L)
+        bdy_metrics = fn.pad_1dR(self.bdy_metrics[:,0,:], self.bdy_metrics[:,1,-1])
+        
+        if avg=='simple': # Alternatively, a Roe average can be used
+            qf_avg = (qf_L + qf_R)/2
+        elif avg=='roe':
+            raise Exception('Roe Average not coded up yet')
+        else:
+            raise Exception('Averaging method not understood.')
+        
+        A = self.dEdq(qf_avg)            
+        A_abs = self.dEdq_eig_abs(A)
+        
+        # Upwinding flux
+        A_upwind = (A + sigma*A_abs)/2 * bdy_metrics
+        A_downwind = (A - sigma*A_abs)/2 * bdy_metrics
+        
+        sat = self.tR @ fn.gm_gv(A_downwind, qf_jump)[:,1:] \
+            + self.tL @ fn.gm_gv(A_upwind, qf_jump)[:,:-1]
+        return sat
+
+    
+    def upwind_div_2d(self, q, Ex, Ey, idx, q_bdyL=None, q_bdyR=None, sigma=1, avg='simple'):
+        '''
+        An upwind dissipative flux in 2D. sigma=0 turns off dissipation.
+        '''
+        metrics, bdy_metrics = self.set_metrics(idx)
+        
+        q_a = self.tLT @ q
+        q_b = self.tRT @ q
+        # Here we work in terms of facets, starting from the left-most facet.
+        # This is NOT the same as elements. i.e. qR is to the right of the
+        # facet and qL is to the left of the facet, opposite of element-wise.
+        if q_bdyL is None:
+            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
+            qf_R = fn.pad_1dR(q_a, q_a[:,0])
+        else:
+            qf_L = fn.pad_1dL(q_b, q_bdyL)
+            qf_R = fn.pad_1dR(q_a, q_bdyR)
+            raise Exception('TODO: adding boundary condition.')
+        qf_jump = -(qf_R - qf_L)
+        bdy_metricsx = fn.pad_1dR(bdy_metrics[:,0,0,:], bdy_metrics[:,1,0,-1])
+        bdy_metricsy = fn.pad_1dR(bdy_metrics[:,0,1,:], bdy_metrics[:,1,1,-1])
+        
+        if avg=='simple': # Alternatively, a Roe average can be used
+            qf_avg = (qf_L + qf_R)/2
+        elif avg=='roe':
+            raise Exception('Roe Average not coded up yet')
+        else:
+            raise Exception('Averaging method not understood.')
+        
+        Ax = self.dExdq(qf_avg)            
+        Ax_abs = self.dExdq_eig_abs(Ax)
+        Ay = self.dExdq(qf_avg)            
+        Ay_abs = self.dEydq_eig_abs(Ay)
+        
+        # Upwinding flux
+        A_upwind = (Ax + sigma*Ax_abs)/2 * bdy_metricsx + (Ay + sigma*Ay_abs)/2 * bdy_metricsy
+        A_downwind = (Ax - sigma*Ax_abs)/2 * bdy_metricsx + (Ay - sigma*Ay_abs)/2 * bdy_metricsy
+        
+        sat = self.tR @ (self.Hperp * fn.gm_gv(A_downwind, qf_jump)[:,1:]) \
+            + self.tL @ (self.Hperp * fn.gm_gv(A_upwind, qf_jump)[:,:-1])
+        return sat
+    
+    def upwind_div_3d(self, q, Ex, Ey, Ez, idx, q_bdyL=None, q_bdyR=None, sigma=1, avg='simple'):
+        '''
+        An upwind dissipative flux in 3D. sigma=0 turns off dissipation.
+        '''
+        metrics, bdy_metrics = self.set_metrics(idx)
+        
+        q_a = self.tLT @ q
+        q_b = self.tRT @ q
+        # Here we work in terms of facets, starting from the left-most facet.
+        # This is NOT the same as elements. i.e. qR is to the right of the
+        # facet and qL is to the left of the facet, opposite of element-wise.
+        if q_bdyL is None:
+            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
+            qf_R = fn.pad_1dR(q_a, q_a[:,0])
+        else:
+            qf_L = fn.pad_1dL(q_b, q_bdyL)
+            qf_R = fn.pad_1dR(q_a, q_bdyR)
+            raise Exception('TODO: adding boundary condition.')
+        qf_jump = -(qf_R - qf_L)
+        bdy_metricsx = fn.pad_1dR(bdy_metrics[:,0,0,:], bdy_metrics[:,1,0,-1])
+        bdy_metricsy = fn.pad_1dR(bdy_metrics[:,0,1,:], bdy_metrics[:,1,1,-1])
+        bdy_metricsz = fn.pad_1dR(bdy_metrics[:,0,2,:], bdy_metrics[:,1,2,-1])
+        
+        if avg=='simple': # Alternatively, a Roe average can be used
+            qf_avg = (qf_L + qf_R)/2
+        elif avg=='roe':
+            raise Exception('Roe Average not coded up yet')
+        else:
+            raise Exception('Averaging method not understood.')
+        
+        Ax = self.dExdq(qf_avg)            
+        Ax_abs = self.dExdq_eig_abs(Ax)
+        Ay = self.dEydq(qf_avg)            
+        Ay_abs = self.dEydq_eig_abs(Ay)
+        Az = self.dEzdq(qf_avg)            
+        Az_abs = self.dEzdq_eig_abs(Az)
+        
+        # Upwinding flux
+        A_upwind = (Ax + sigma*Ax_abs)/2 * bdy_metricsx \
+                 + (Ay + sigma*Ay_abs)/2 * bdy_metricsy \
+                 + (Az + sigma*Az_abs)/2 * bdy_metricsz
+        A_downwind = (Ax - sigma*Ax_abs)/2 * bdy_metricsx \
+                   + (Ay - sigma*Ay_abs)/2 * bdy_metricsy \
+                   + (Az - sigma*Az_abs)/2 * bdy_metricsz
+        
+        sat = self.tR @ (self.Hperp * fn.gm_gv(A_downwind, qf_jump)[:,1:]) \
+            + self.tL @ (self.Hperp * fn.gm_gv(A_upwind, qf_jump)[:,:-1])
+        return sat
 
 
-    def sat_der1_upwind(self, q_L, q_R, sigma=1, avg='simple'):
+
+
+
+
+    ##########################################################################
+    ''' OLD STUFF ''' 
+    ##########################################################################
+
+    def der1_upwind(self, q_L, q_R, sigma=1, avg='simple'):
         '''
         Purpose
         ----------
@@ -24,6 +429,8 @@ class SatDer1:
             The extrapolated solution of the left element(s) to the facet(s).
         q_fR : np array, shape (neq_node,nelem)
             The extrapolated solution of the left element(s) to the facet(s).
+        xy : str, 'x' or 'y'
+            Determines whether to use SAT in x or y direction
         sigma: float (default=1)
             if sigma=1, creates upwinding SAT
             if sigma=0, creates symmetric SAT
@@ -47,19 +454,19 @@ class SatDer1:
             
         qf_diff = q_fL - q_fR
 
-        A = self.diffeq.dEdq(qfacet)
-        A_abs = self.diffeq.dEdq_eig_abs(A)
-
+        A = self.dEdq(qfacet)            
+        A_abs = self.dEdq_eig_abs(A)
+        
         # Upwinding flux
         A_upwind = (A + sigma*A_abs)/2
         A_downwind = (A - sigma*A_abs)/2
 
-        satL = self.rrR @ fn.gm_gv(A_downwind, qf_diff)  # SAT for the left of the interface
-        satR = self.rrL @ fn.gm_gv(A_upwind, qf_diff)    # SAT for the right of the interface
+        satL = self.tR @ fn.gm_gv(A_downwind, qf_diff)  # SAT for the left of the interface
+        satR = self.tL @ fn.gm_gv(A_upwind, qf_diff)    # SAT for the right of the interface
 
         return satL, satR
     
-    def dfdq_sat_der1_upwind_scalar(self, q_L, q_R, sigma=1, avg='simple'):
+    def dfdq_der1_upwind_scalar(self, q_L, q_R, xy, sigma=1, avg='simple'):
         '''
         Purpose
         ----------
@@ -71,6 +478,8 @@ class SatDer1:
             The extrapolated solution of the left element(s) to the facet(s).
         q_fR : np array, shape (1,nelem)
             The extrapolated solution of the left element(s) to the facet(s).
+        xy : str, 'x' or 'y'
+            Determines whether to use SAT in x or y direction
         sigma: float (default=1)
             if sigma=1, creates upwinding SAT
             if sigma=0, creates symmetric SAT
@@ -89,8 +498,8 @@ class SatDer1:
         if avg=='simple':
             qfacet = (q_fL + q_fR)/2 # Alternatively, a Roe average can be used
             # derivative of qfacet wrt qL and qR
-            dqfacetdqL = self.rrR.T / 2
-            dqfacetdqR = self.rrL.T / 2
+            dqfacetdqL = self.tRT / 2
+            dqfacetdqR = self.tLT / 2
         elif avg=='roe':
             raise Exception('Roe Average not coded up yet')
         else:
@@ -100,17 +509,18 @@ class SatDer1:
         qf_diff = q_fL - q_fR
 
         # First derivative of the flux wrt q
-        A = self.diffeq.dEdq(qfacet)
+        A = self.dEdq(qfacet)
+        # second derivative of the flux wrt q
+        dAdq = self.d2Edq2(qfacet)
+
         #A_abs = self.diffeq.dEdq_eig_abs(A) # actually just absolute value (scalar in 3d format)
         A_abs = abs(A)
         sign_A = np.sign(A)
         
-        # second derivative of the flux wrt q
-        dAdq = self.diffeq.d2Edq2(qfacet)
         
         # derivative of q_diff wrt qL and qR
-        dqf_diffdqL = self.rrR.T
-        dqf_diffdqR = - self.rrL.T
+        dqf_diffdqL = self.tRT
+        dqf_diffdqR = - self.tLT
         
         factor_qL = fn.gm_lm(dAdq,dqfacetdqL)*qf_diff
         factor_qR = fn.gm_lm(dAdq,dqfacetdqR)*qf_diff
@@ -122,18 +532,18 @@ class SatDer1:
         AmsigmaA_abs = A - sigmaA_abs
         # these do the same thing, but the second is a bit quicker (order of gm_lm needs to be fixed)
         # for derivation of below, see personal notes
-        #dSatRdqL = 0.5*fn.lm_gm(self.rrL, factor_qL + fn.gm_lm(A, dqf_diffdqL) + sigma*(sign_A*factor_qL + fn.gm_lm(A_abs, dqf_diffdqL)))
-        #dSatRdqR = 0.5*fn.lm_gm(self.rrL, factor_qR + fn.gm_lm(A, dqf_diffdqR) + sigma*(sign_A*factor_qR + fn.gm_lm(A_abs, dqf_diffdqR)))
-        #dSatLdqL = 0.5*fn.lm_gm(self.rrR, factor_qL + fn.gm_lm(A, dqf_diffdqL) - sigma*(sign_A*factor_qL + fn.gm_lm(A_abs, dqf_diffdqL)))
-        #dSatLdqR = 0.5*fn.lm_gm(self.rrR, factor_qR + fn.gm_lm(A, dqf_diffdqR) - sigma*(sign_A*factor_qR + fn.gm_lm(A_abs, dqf_diffdqR)))       
-        dSatRdqL = 0.5*fn.lm_gm(self.rrL,psigsignA*factor_qL + fn.gm_lm(ApsigmaA_abs, dqf_diffdqL))
-        dSatRdqR = 0.5*fn.lm_gm(self.rrL,psigsignA*factor_qR + fn.gm_lm(ApsigmaA_abs,dqf_diffdqR))
-        dSatLdqL = 0.5*fn.lm_gm(self.rrR,msigsignA*factor_qL + fn.gm_lm(AmsigmaA_abs, dqf_diffdqL))
-        dSatLdqR = 0.5*fn.lm_gm(self.rrR,msigsignA*factor_qR + fn.gm_lm(AmsigmaA_abs, dqf_diffdqR))
+        #dSatRdqL = 0.5*fn.lm_gm(self.tL, factor_qL + fn.gm_lm(A, dqf_diffdqL) + sigma*(sign_A*factor_qL + fn.gm_lm(A_abs, dqf_diffdqL)))
+        #dSatRdqR = 0.5*fn.lm_gm(self.tL, factor_qR + fn.gm_lm(A, dqf_diffdqR) + sigma*(sign_A*factor_qR + fn.gm_lm(A_abs, dqf_diffdqR)))
+        #dSatLdqL = 0.5*fn.lm_gm(self.tR, factor_qL + fn.gm_lm(A, dqf_diffdqL) - sigma*(sign_A*factor_qL + fn.gm_lm(A_abs, dqf_diffdqL)))
+        #dSatLdqR = 0.5*fn.lm_gm(self.tR, factor_qR + fn.gm_lm(A, dqf_diffdqR) - sigma*(sign_A*factor_qR + fn.gm_lm(A_abs, dqf_diffdqR)))       
+        dSatRdqL = 0.5*fn.lm_gm(self.tL,psigsignA*factor_qL + fn.gm_lm(ApsigmaA_abs, dqf_diffdqL))
+        dSatRdqR = 0.5*fn.lm_gm(self.tL,psigsignA*factor_qR + fn.gm_lm(ApsigmaA_abs,dqf_diffdqR))
+        dSatLdqL = 0.5*fn.lm_gm(self.tR,msigsignA*factor_qL + fn.gm_lm(AmsigmaA_abs, dqf_diffdqL))
+        dSatLdqR = 0.5*fn.lm_gm(self.tR,msigsignA*factor_qR + fn.gm_lm(AmsigmaA_abs, dqf_diffdqR))
 
         return dSatLdqL, dSatLdqR, dSatRdqL, dSatRdqR
 
-    def dfdq_sat_der1_complexstep(self, q_L, q_R, eps_imag=1e-30):
+    def dfdq_der1_complexstep(self, q_L, q_R, xy, eps_imag=1e-30):
         '''
         Purpose
         ----------
@@ -148,6 +558,8 @@ class SatDer1:
             The extrapolated solution of the left element to the facet.
         q_fR : np array, shape (neq_node,nelem)
             The extrapolated solution of the left element to the facet.
+        xy : str, 'x' or 'y'
+            Determines whether to use SAT in x or y direction
         eps_imag : float, optional
             Size of the complex step
         Returns
@@ -167,17 +579,17 @@ class SatDer1:
         for neq in range(neq_node):
             pert = np.zeros((self.neq_node,nelem),dtype=complex)
             pert[neq,:] = eps_imag * 1j
-            satL_pert_qL[:,neq,:], satR_pert_qL[:,neq,:] = self.sat_der1(q_fL + pert, q_fR)
-            satL_pert_qR[:,neq,:], satR_pert_qR[:,neq,:] = self.sat_der1(q_fL, q_fR + pert)
+            satL_pert_qL[:,neq,:], satR_pert_qL[:,neq,:] = self.calc(q_fL + pert, q_fR, xy)
+            satL_pert_qR[:,neq,:], satR_pert_qR[:,neq,:] = self.calc(q_fL, q_fR + pert, xy)
         
-        dSatLdqL = fn.gm_lm(np.imag(satL_pert_qL) / eps_imag , self.rrR.T)
-        dSatLdqR = fn.gm_lm(np.imag(satL_pert_qR) / eps_imag , self.rrL.T)
-        dSatRdqL = fn.gm_lm(np.imag(satR_pert_qL) / eps_imag , self.rrR.T)
-        dSatRdqR = fn.gm_lm(np.imag(satR_pert_qR) / eps_imag , self.rrL.T)
+        dSatLdqL = fn.gm_lm(np.imag(satL_pert_qL) / eps_imag , self.tRT)
+        dSatLdqR = fn.gm_lm(np.imag(satL_pert_qR) / eps_imag , self.tLT)
+        dSatRdqL = fn.gm_lm(np.imag(satR_pert_qL) / eps_imag , self.tRT)
+        dSatRdqR = fn.gm_lm(np.imag(satR_pert_qR) / eps_imag , self.tLT)
 
         return dSatLdqL, dSatLdqR, dSatRdqL, dSatRdqR
 
-    def sat_der1_burgers_ec(self, q_L, q_R):
+    def der1_burgers_ec(self, q_L, q_R, xy):
         '''
         Purpose
         ----------
@@ -205,12 +617,12 @@ class SatDer1:
         qL2 = q_fL**2
         qR2 = q_fR**2
 
-        satL = self.rrR @ (qL2/3 - qLqR/6 - qR2/6)    # SAT for the left of the interface
-        satR = self.rrL @ (-qR2/3 + qLqR/6 + qL2/6)    # SAT for the right of the interface
+        satL = self.tR @ (qL2/3 - qLqR/6 - qR2/6)    # SAT for the left of the interface
+        satR = self.tL @ (-qR2/3 + qLqR/6 + qL2/6)    # SAT for the right of the interface
 
         return satL, satR
 
-    def dfdq_sat_der1_burgers_ec(self, q_L, q_R):
+    def dfdq_der1_burgers_ec(self, q_L, q_R, xy):
         '''
         Purpose
         ----------
@@ -234,14 +646,14 @@ class SatDer1:
         '''
         q_fL, q_fR = self.get_interface_sol(q_L, q_R)
 
-        dSatLdqL = fn.gs_lm((4*q_fL - q_fR)/6, self.rrR @ self.rrR.T)
-        dSatLdqR = fn.gs_lm(-(q_fL + 2*q_fR)/6, self.rrR @ self.rrL.T)
-        dSatRdqL = fn.gs_lm((q_fR + 2*q_fL)/6, self.rrL @ self.rrR.T)
-        dSatRdqR = fn.gs_lm((q_fL - 4*q_fR)/6, self.rrL @ self.rrL.T)
+        dSatLdqL = fn.gs_lm((4*q_fL - q_fR)/6, self.tR @ self.tRT)
+        dSatLdqR = fn.gs_lm(-(q_fL + 2*q_fR)/6, self.tR @ self.tLT)
+        dSatRdqL = fn.gs_lm((q_fR + 2*q_fL)/6, self.tL @ self.tRT)
+        dSatRdqR = fn.gs_lm((q_fL - 4*q_fR)/6, self.tL @ self.tLT)
 
         return dSatLdqL, dSatLdqR, dSatRdqL, dSatRdqR
 
-    def sat_der1_crean_ec(self, q_L, q_R):
+    def der1_crean_ec(self, q_L, q_R):
         '''
         Purpose
         ----------
@@ -271,10 +683,10 @@ class SatDer1:
         neq,nelem = q_fL.shape
         numflux = np.zeros((neq,nelem))
         for e in range(nelem):
-            numflux[:,e] = self.diffeq.ec_flux(q_fL[:,e], q_fR[:,e])
+            numflux[:,e] = self.ec_flux(q_fL[:,e], q_fR[:,e])
         
-        satL = self.rrR @ ( self.diffeq.calcE(q_fL) - numflux )
-        satR = self.rrL @ ( numflux - self.diffeq.calcE(q_fR) )
+        satL = self.tR @ ( self.calcE(q_fL) - numflux )
+        satR = self.tR @ ( numflux - self.calcE(q_fR) )
         
         #F_vol = build_F_vol(q, self.neq_node, self.diffeq.ec_flux)
         #build_F_int(q1, q2, neq, ec_flux)
@@ -282,7 +694,7 @@ class SatDer1:
 
         return satL, satR   
     
-    def sat_der1_crean_es(self, qL, qR):
+    def der1_crean_es(self, qL, qR):
         '''
         Purpose
         ----------
@@ -312,10 +724,11 @@ class SatDer1:
         neq,nelem = q_fL.shape
         numflux = np.zeros((neq,nelem))
         for e in range(nelem):
-            numflux[:,e] = self.diffeq.ec_flux(q_fL[:,e], q_fR[:,e])
+            numflux[:,e] = self.ec_flux(q_fL[:,e], q_fR[:,e])
         
         qfacet = (q_fL + q_fR)/2 # Assumes simple averaging, can generalize
         # TODO: This will get all fucked up by svec
+        # TODO: Move all of these smaller things to diffeq?
         rhoL, rhouL, eL = self.diffeq.decompose_q(qL)
         uL = rhouL / rhoL
         pL = (self.diffeq.g-1)*(eL - (rhoL * uL**2)/2)
@@ -327,10 +740,10 @@ class SatDer1:
         LF_const = np.max([np.abs(uL)+aL,np.abs(uR)+aR],axis=(0,1))
         Lambda = self.diffeq.dqdw(qfacet)*LF_const
         
-        w_fL= self.rrR.T @ self.diffeq.entropy_var(qL)
-        w_fR= self.rrL.T @ self.diffeq.entropy_var(qR)
+        w_fL= self.tRT @ self.diffeq.entropy_var(qL) 
+        w_fR= self.tLT @ self.diffeq.entropy_var(qR)
         
-        satL = self.rrR @ ( self.diffeq.calcE(q_fL) - numflux - fn.gm_gv(Lambda, w_fL - w_fR))
-        satR = self.rrL @ ( numflux - self.diffeq.calcE(q_fR) - fn.gm_gv(Lambda, w_fR - w_fL))
+        satL = self.tR @ ( self.diffeq.calcE(q_fL) - numflux - fn.gm_gv(Lambda, w_fL - w_fR))
+        satR = self.tR @ ( numflux - self.diffeq.calcE(q_fR) - fn.gm_gv(Lambda, w_fR - w_fL))
 
         return satL, satR 

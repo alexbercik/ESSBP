@@ -3,7 +3,7 @@
 """
 Created in Sep 2019
 
-@author: andremarchildon
+@author: bercik
 """
 
 
@@ -21,33 +21,28 @@ from scipy.linalg import null_space
 
 from Source.Disc.BasisFun import BasisFun
 from Source.Disc.SbpQuadRule import SbpQuadRule
-from Source.Disc.RefSimplexElem import RefSimplexElem
-from Source.Disc.SimplexSymmetry import SimplexSymmetry
 from Source.Disc.CSbpOp import CSbpOp
+import Source.Methods.Functions as fn
 
 
 class MakeSbpOp:
 
     tol = 1e-8
-    dim = 1 # note this restriction is not necessary for this module, but
-    # simplifies things because the rest of the code works exclusively in 1d
+    # Note this only produces one dimensional operators for use in tensor-product
 
     def __init__(self, p, sbp_type='lgl', nn=0, basis_type='legendre'):
 
         '''
         Parameters
         ----------
-        quad : class
-            Holds the nodal locations, weights and degrees for both the
-            element and facet quad rules.
-        p : int
+        p : int or (int,int)
             Degree of the SBP operator.
         sbp_type : string, optional
             The type of SBP family for the operator.
             The families are 'lgl' (legendre-gauss-lobatto), 'lg' (lobatto-gauss),
             'nc' (closed-form newton cotes), and 'csbp' (classical sbp).
             The default is 'lgl'.
-        nn : int
+        nn : int or (int,int)
             The number of nodes to use
             The default is 0, in which case nn is set automatically
         basis_type : string, optional
@@ -61,109 +56,76 @@ class MakeSbpOp:
         None.
 
         '''
-
+        print('... Building reference operators')
+        
         ''' Add inputs to the class '''
-
-        self.p = p
         self.sbp_type = sbp_type
         self.basis_type = basis_type
+        assert isinstance(p, int), 'p must be an integer'
+        assert isinstance(nn, int), 'nn must be an integer'
+        self.p = p
         self.nn = nn
-
-        ''' Check all inputs, beginning with quadrature '''
-
+       
         if sbp_type.lower()=='csbp':
+            ''' Build Classical SBP Operators '''
+            
             self.sbp_fam = 'csbp'
             self.quad = None # if CSBP, it is meaningless to talk about quadrature
             assert self.nn > 1 , "Please specify number of nodes nn > 1"
 
             # Do things manually (operator is built later)
-            self.xy = np.reshape(np.linspace(0,1,self.nn), (self.nn, 1))
-            self.xqf = np.array([[0.]])
-            self.bb = np.array([[1.]])
+            self.x = np.linspace(0, 1,self.nn)
+            self.H, self.D, self.Q, self.S = CSbpOp(self.p,self.nn)
+            self.E = np.zeros((self.nn,self.nn))
+            self.E[0,0], self.E[-1,-1] = -1 , 1
+            self.tL, self.tR = np.zeros(self.nn), np.zeros(self.nn)
+            self.tL[0] , self.tR[-1] = 1 , 1
 
         else:
-            if sbp_type=='lgl':
+            ''' Build Element-type SBP Operators '''
+            
+            if self.sbp_type == 'lgl':
                 self.sbp_fam = 'R0'
-                self.quad = SbpQuadRule(1, p, sbp_fam='R0', nn=self.nn, quad_rule='lgl')
-            elif sbp_type=='lg':
+                self.quad = SbpQuadRule(p, sbp_fam='R0', nn=self.nn, quad_rule='lgl')
+            elif self.sbp_type == 'lg':
                 self.sbp_fam = 'Rd'
-                self.quad = SbpQuadRule(1, p, sbp_fam='Rd', nn=self.nn, quad_rule='lg')
-            elif sbp_type=='nc':
+                self.quad = SbpQuadRule(p, sbp_fam='Rd', nn=self.nn, quad_rule='lg')
+            elif self.sbp_type == 'nc':
                 self.sbp_fam = 'R0'
-                self.quad = SbpQuadRule(1, p, sbp_fam='R0', nn=self.nn, quad_rule='nc')
+                self.quad = SbpQuadRule(p, sbp_fam='R0', nn=self.nn, quad_rule='nc')
             else:
                 raise Exception('Misunderstood SBP type.')
+                
+            self.x = self.quad.xq[:,0]
+            self.H = np.diag(self.quad.wq)
+                
+            if ((self.nn != len(self.x)) and (self.nn>0)):
+                print('WARNING: Overwriting given nn, {0}, with size of given quadrature, {1}.'.format(nn,len(self.x)))
+            self.nn = len(self.x)
+        
+            # Get the Vandermonde matrix at the element nodes
+            elem_basis = BasisFun(self.quad.xq, self.p, self.basis_type)
+            self.van = elem_basis.van
+            self.van_der = elem_basis.van_der[0]
+            self.tL = self.construct_tL(self.nn,self.van,self.p)   # interpolation vector for left node
+            self.tR = np.flip(self.tL)                             # interpolation vector for right node
+            self.E = np.outer(self.tR, self.tR) - np.outer(self.tL, self.tL) # surface integral
+            self.D, self.Q, self.S = self.construct_op(self.p, self.nn, self.van, self.van_der, self.E, self.H)
 
-            ''' Extract required parameters '''
+        ''' Test the operators '''
+        self.check_diagH(self.x, self.H)
+        self.check_accuracy(self.D, self.x)
+        self.check_compatibility(self.x,self.H,self.E)
+        self.check_interpolation(self.tL, self.tR, self.x)
+        self.check_decomposition(self.E, self.S, self.Q, self.D, self.H)
 
-            # Element quad
-            self.xy = self.quad.xq
-            self.hh = np.diag(self.quad.wq)
 
-            # Facet quad
-            self.xqf = self.quad.xqf
-            self.bb = np.diag(self.quad.wqf)
-
-        # Common
-        if ((self.nn != np.shape(self.xy)[0]) and (self.nn>0)):
-            print('WARNING: Overwriting given nn, {0}, with size of given quadrature, {1}.'.format(nn,np.shape(self.xy)[0]))
-        self.nn = np.shape(self.xy)[0]
-        self.nnf = self.xqf.shape[0]
-        self.n_facet = self.dim + 1
-
-        ''' Construct SBP operators '''
-
-        # Reference element
-        ref_elem = RefSimplexElem(self.dim)
-        self.vert = ref_elem.vert
-        self.normal = ref_elem.normal
-        self.f2v = ref_elem.f2v
-
-        # Permutation information for elem and facet nodes
-        self.perm = SimplexSymmetry(self.xy)
-        self.perm_xqf = SimplexSymmetry(self.xqf)
-
-        # Get the Vandermonde matrix at the element nodes
-        elem_basis = BasisFun(self.xy, self.p, self.basis_type)
-        self.van = elem_basis.van
-        self.van_der = elem_basis.van_der
-        self.n_p = elem_basis.n_p  # Cardinality
-        self.idx_basis_dn1 = elem_basis.idx_basis_dn1 # Used for the Rdn1 family
-
-        # Evaluate the facet nodes on the element facets
-        [self.xfe, self.van_f, self.van_f_der] = BasisFun.facet_vandermonde(self.xqf, self.p, False, self.basis_type)
-
-        # Calculate the interpolation/extrapolation operator
-        self.rr = self.construct_rr()   # rr for facet 0
-        self.rr_all = self.permute_rr() # rr for all facets
-
-        # Calculate the directional surface integral operator
-        ee_x = self.construct_dir_surf_int()
-
-        # Calculate the operators for the derivative
-        if self.sbp_fam=='csbp':
-            self.hh, dd_x, qq_x, ss_x = CSbpOp(p,nn)
-        else:
-            dd_x, qq_x, ss_x = self.construct_ss(ee_x)
-
-        # Permute all of the directional operators
-        self.ee = self.permute_dir_op(ee_x)
-        self.ss = self.permute_dir_op(ss_x)
-        self.qq = self.permute_dir_op(qq_x)
-        self.dd = self.permute_dir_op(dd_x)
-
-        # Test the operators
-        self.sbp_test_cub_rule(self.xy, self.hh, 2 * self.p - 1)
-        self.sbp_test_acc_rr(self.rr, self.xy, self.xqf, self.p)
-        self.sbp_test_derivative(self.dd, self.xy, p)
-        self.sbp_test_decomposition(self.ee, self.ss, self.qq, self.dd, self.hh)
-
-    def construct_rr(self):
+    def construct_tL(self,nn,van,p):
         '''
         Returns
         -------
-        rr : numpy array
-            This is the int/ext operator R.
+        tL : numpy array
+            This is the left int/ext operator tL.
         '''
 
         # Refer to Section 2.3 of André Marchildon's SBP thesis for more
@@ -171,136 +133,19 @@ class MakeSbpOp:
         # symmetrical contributions across symmetry lines or planes. Also
         # refer to Appendix C for the required equations.
 
-        rr = np.zeros((self.nnf, self.nn))
+        if self.sbp_fam != 'Rd': 
+            tL = np.zeros(nn)
+            tL[0] = 1
 
-        # Rdn1 for 1D is the same as R0
-        if self.sbp_fam == 'R0' or (self.sbp_fam == 'Rdn1' and self.dim == 1) or self.sbp_fam == 'csbp':
-
-            xy = self.xy
-            xfe = self.xfe
-
-            for i_e in range(self.nn):
-                for i_f in range(self.nnf):
-                    if np.max(np.abs(xy[i_e, :] - xfe[i_f, :])) < self.tol:
-                        rr[i_f, i_e] = 1
-
-            return rr
         else:
-            # For sbp_fam Rd and Rdn1 there are two steps to solving for rr:
-            #   1) Solve for the contribution to one facet node per sym group
-            #   2) Use perm matrices to get the solution at the other facet
-            #      nodes. This ensures the contribution from rr is symmetric
+            # This is simplified code from Andre assuming everything 1D, facet 0D
+            van_f = BasisFun.facet_vandermonde(np.array([[0.]]), p, False, self.basis_type)[1].flatten()
+            tL = np.linalg.lstsq(van.T, van_f.T, rcond=None)[0]
 
-            # Step 1: Solve for rr for one facet node per sym group
-            van = self.van
-            f_nodes = self.perm_xqf.sym_g_mat[:, 0] # First facet node in each sym group
-            van_f = self.van_f[f_nodes, :]
+        return tL
 
-            # Find a solution for the operator rr
-            if self.sbp_fam == 'Rd':
-                rr[f_nodes, :] = np.linalg.lstsq(van.T, van_f.T, rcond=None)[0].T
-
-            elif self.sbp_fam == 'Rdn1':
-                # Consider only elem nodes on the facet
-                elem_nodes = self.perm.node_on_facet0
-                van = van[elem_nodes, :]
-                van = van[:, self.idx_basis_dn1]
-
-                # Since all the elem nodes used for int/ext are on a facet
-                # not all basis functions are independent
-                van_f = van_f[:, self.idx_basis_dn1]
-
-                rr_temp = np.zeros((len(f_nodes), self.nn))
-                rr_temp[:, elem_nodes] = np.linalg.lstsq(van.T, van_f.T, rcond=None)[0].T
-                rr[f_nodes, :] = rr_temp
-
-            else:
-                raise Exception('Unknown family of SBP operators')
-
-            # Step 2: Make the contributions from the operator rr symmetric
-            if self.dim == 2:
-                # Facet node symmetry groups
-                sym_g_id = self.perm_xqf.sym_g_id
-                sym_g_mat = self.perm_xqf.sym_g_mat
-
-                # Element node permutation matrices
-                I = np.eye(self.nn)
-                perm_x2y = self.perm.perm_mat_dir[1,:,:]
-
-                n_groups = sym_g_id.shape[0]
-
-                for i in range(n_groups):
-                    if sym_g_id[i] == 0:
-                        node_idx = sym_g_mat[i, 0]
-                        rr[node_idx, :] = 0.5 * (rr[node_idx, :] @ (I + perm_x2y))
-                    elif sym_g_id[i] == 1:
-                        sym_g_mat_i = sym_g_mat[i,:]
-                        rr[sym_g_mat_i[1], :] = rr[sym_g_mat_i[0], :] @ perm_x2y
-                    else:
-                        raise Exception('Unknown symmetry group for 1D facet')
-            elif self.dim == 3:
-                # Facet node symmetry groups
-                sym_g_id = self.perm_xqf.sym_g_id
-                sym_g_mat = self.perm_xqf.sym_g_mat
-
-                # Element node permutation matrices
-                I = np.eye(self.nn)
-                perm_x2y = self.perm.perm_mat_dir[1,:,:]
-                perm_x2z = self.perm.perm_mat_dir[2,:,:]
-                perm_y2z = self.perm.perm_mat_dir[3,:,:]
-
-                n_groups = sym_g_id.shape[0]
-
-                for i in range(n_groups):
-                    sym_g_mat_i = sym_g_mat[i,:]
-                    if sym_g_id[i] == 0:
-                        node_idx = sym_g_mat[i, 0]
-                        perm = (I + perm_x2y + perm_x2z @ (I+perm_x2y) + perm_y2z @ (I+perm_x2y)) / 6
-                        rr[node_idx, :] = rr[node_idx, :] @ perm
-                    elif sym_g_id[i] == 1:
-                        rr[sym_g_mat_i[1], :] = rr[sym_g_mat_i[0], :] @ perm_x2y
-                        rr[sym_g_mat_i[2], :] = rr[sym_g_mat_i[0], :] @ perm_x2z
-                    elif  sym_g_id[i] == 2:
-                        rr[sym_g_mat_i[1], :] = rr[sym_g_mat_i[0], :] @ perm_y2z @ perm_x2y
-                        rr[sym_g_mat_i[2], :] = rr[sym_g_mat_i[0], :] @ perm_x2z @ perm_x2y
-                        rr[sym_g_mat_i[3], :] = rr[sym_g_mat_i[0], :] @ perm_x2y
-                        rr[sym_g_mat_i[4], :] = rr[sym_g_mat_i[0], :] @ perm_x2y
-                        rr[sym_g_mat_i[5], :] = rr[sym_g_mat_i[0], :] @ perm_x2y
-
-            return rr
-
-    def permute_rr(self):
-
-        nfacet = self.dim + 1
-        rr_all = np.zeros((nfacet, self.nnf, self.nn))
-
-        for i in range(nfacet):
-            rr_all[i,:,:] = self.rr @ self.perm.perm_mat_r[i,:,:]
-
-        return rr_all
-
-    def construct_dir_surf_int(self):
-        '''
-        Returns
-        -------
-        ee : numpy array
-            This operator calculate the directional surface integral for the
-            0-th facet.
-        '''
-
-        # See Sections 1.3.4 and 2.3 in André Marchildon's SBP thesis for
-        # construction of the operator ee
-
-        ee = np.zeros((self.nn, self.nn))
-        aa = self.rr.T @ self.bb @ self.rr
-
-        for i in range(0, self.n_facet):
-            perm_r = self.perm.perm_mat_r[i,:,:]
-            ee = ee + self.normal[i, 0] * (perm_r.T @ aa @ perm_r)
-
-        return ee
-
-    def construct_ss(self, ee_x):
+    @staticmethod
+    def construct_op(p, nn, van, van_der, E, H):
         '''
         Returns
         -------
@@ -316,18 +161,17 @@ class MakeSbpOp:
         # For more information on this method refer to Section 4.6 and
         # Appendix D in the thesis. The other method is the one presented in
         # the original multidimensional SBP paper.
-        use_optz_method = True
+        use_optz_method = False
+        # Slightly more accurate to set as False for 1D operators 
+        # (roundoff error, the actual operators are the same really)
+        
+        n_p = p + 1 # for 1D
 
         if use_optz_method:
-            n_p = self.n_p
-            nn = self.nn
-            van = self.van
-            van_der = self.van_der[0,:,:] # Derivative wrt x
-
             n_dof = int(np.round(nn*(nn-1)/2))
             n_ind_eq = int(np.round(n_p * (n_p-1)/2 + n_p*(nn-n_p)))
 
-            rhs1 = 0.5*(van.T @ self.hh @ van_der - van_der.T @ self.hh @ van)
+            rhs1 = 0.5*(van.T @ H @ van_der - van_der.T @ H @ van)
 
             A = np.zeros((n_ind_eq, n_dof))
             bvec = np.zeros(n_ind_eq)
@@ -344,7 +188,7 @@ class MakeSbpOp:
 
             if nn > n_p:
                 ww = null_space(van.T)
-                rhs2 = ww.T @ (self.hh @ van_der - 0.5*ee_x @ van)
+                rhs2 = ww.T @ (H @ van_der - 0.5*E @ van)
                 for a in range(nn-n_p):
                     for b in range(n_p):
                         m = int(np.round(a*n_p + b + n_p * (n_p-1)/2))
@@ -369,26 +213,22 @@ class MakeSbpOp:
                     ss[i,j] = svec[idx]
                     ss[j,i] = -svec[idx]
 
-            qq = ss + 0.5*ee_x
-            dd = np.linalg.solve(self.hh, qq)
+            qq = ss + 0.5*E
+            dd = np.linalg.solve(H, qq)
 
         else:
-            # Refer to the original multidimensional SBP paper for this method
-            van_der = self.van_der[0,:,:] # Derivative wrt x
-            # ee_x = self.ee[0,:,:]
-
-            num_w_col = self.nn - self.n_p
+            num_w_col = nn - n_p
 
             if num_w_col > 0:
                 # Create square invertible matrix by appending self.van with its nullspace
-                ww = null_space(self.van.T)
-                van_tilda = np.concatenate((self.van, ww), axis=1)
+                ww = null_space(van.T)
+                van_tilda = np.concatenate((van, ww), axis=1)
 
                 # Solve for wx
-                mat_1 = van_tilda.T @ self.hh
+                mat_1 = van_tilda.T @ H
 
-                mat_2a = 0.5 * van_tilda.T @ ee_x @ ww
-                mat_2b = (-van_der.T @ self.hh + 0.5 * self.van.T @ ee_x) @ ww
+                mat_2a = 0.5 * van_tilda.T @ E @ ww
+                mat_2b = (-van_der.T @ H + 0.5 * van.T @ E) @ ww
                 mat_zero = np.zeros((num_w_col, num_w_col))
                 mat_2b = np.concatenate((mat_2b, mat_zero), axis=0)
                 mat_2 = mat_2a + mat_2b
@@ -399,150 +239,174 @@ class MakeSbpOp:
                 # Solve for the derivative operator
                 dd = np.linalg.solve(van_tilda.T, van_x_tilda.T).T
             else:
-                dd = np.linalg.solve(self.van.T, van_der.T).T
+                dd = np.linalg.solve(van.T, van_der.T).T
 
-            qq = self.hh @ dd
+            qq = H @ dd
             ss = 0.5 * (qq - qq.T)
 
         return dd, qq, ss
 
-    def permute_dir_op(self, op_dir0):
-        '''
-         Purpose
-        -------
-        Calculates the directional operators for each direction using the
-        directional operators for the 0-th direction and the required
-        permutation matrices.
-        See section 2.2 of André Marchildon's thesis on SBP operators for more
-        information.
 
-        Parameters
-        ----------
-        op_dir0 : numpy array
-            Directional operator for the zero-th (x) direction
-        '''
 
-        op_dir_all = np.zeros((self.dim, self.nn, self.nn))
-
-        for d in range(self.dim):
-            perm_mat_dir = self.perm.perm_mat_dir[d,:,:]
-            op_dir_all[d,:,:] = perm_mat_dir @ op_dir0 @ perm_mat_dir
-
-        return op_dir_all
-
-    def ref_2_phys_op(self, det_jac, inv_jac):
+    def ref_2_phys(self, mesh):
         '''
         Parameters
         ----------
-        det_jac : numpy array
-            Determinant of the mesh Jacobian.
-        inv_jac : numpy array
-            Inverse of the mesh Jacobian matrix.
+        mesh : class instance of MakeMesh.py defining mesh
 
         Returns
         -------
-        hh : numpy array
-            diagonal weight matrix.
-        qq : numpy array
-            SBP operator for the weak derivative.
-        dd : numpy array
-            SBP derivative operator.
+        H_phys : numpy array 
+            Quadrature matrix. Note although this should be a (nen,nen,nelem)
+            or (nen^2,nen^2,nelem) matrix, it is actually stored as a (nen,nelem)
+            or (nen^2,nelem) to save memory because it is diagonal.
+        D_phys : numpy array
+            SBP physical derivative operator, size (nen,nen,nelem) or (nen^2,nen^2,nelem).
         '''
+        print('... Creating physical operators')
+        
+        form = 'skew-sym' # 'skew-sym' or 'strong'
+        
+        assert fn.isDiag(self.H), 'H matrix is not diagonal!'
 
-        hh_phys =  det_jac @ self.hh
+        if mesh.dim == 1:
+            
+            H_phys = np.diag(self.H)[:,None] * mesh.det_jac
+            D_phys = fn.gdiag_lm(mesh.det_jac_inv, self.D)
+            
+            return H_phys, D_phys
+        
+        elif mesh.dim == 2:
+            
+            eye = np.eye(mesh.nen)
+            H_phys = np.diag(np.kron(self.H,self.H))[:,None] * mesh.det_jac
+            
+            Dx = np.kron(self.D, eye) # shape (nen^2,nen^2)
+            Dy = np.kron(eye, self.D)
 
-        if self.dim == 1:
+            if form == 'skew-sym':
+                Dx_phys = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,0,:]) + fn.gdiag_lm(mesh.metrics[:,0,:],Dx) 
+                                                          + fn.lm_gdiag(Dy,mesh.metrics[:,2,:]) + fn.gdiag_lm(mesh.metrics[:,2,:],Dy)))
+                Dy_phys = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,1,:]) + fn.gdiag_lm(mesh.metrics[:,1,:],Dx) 
+                                                          + fn.lm_gdiag(Dy,mesh.metrics[:,3,:]) + fn.gdiag_lm(mesh.metrics[:,3,:],Dy)))
+            elif form == 'strong': # not provably stable
+                Dx_phys = fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,0,:]) + fn.lm_gdiag(Dy,mesh.metrics[:,2,:])))
+                Dy_phys = fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,1,:]) + fn.lm_gdiag(Dy,mesh.metrics[:,3,:])))
+            else:
+                raise Exception('Physical operator form not understood.')
 
-            lambda_xi_x = det_jac @ np.diag(inv_jac[:,0,0])
-            qqx = self.qq[0,:,:]
+            return H_phys, Dx_phys, Dy_phys
+        
+        elif mesh.dim == 3:
+            
+            eye = np.eye(mesh.nen)
+            H_phys = np.diag(np.kron(np.kron(self.H,self.H),self.H))[:,None] * mesh.det_jac
+            
+            Dx = np.kron(np.kron(self.D, eye),eye) # shape (nen^3,nen^3)
+            Dy = np.kron(np.kron(eye, self.D), eye)
+            Dz = np.kron(np.kron(eye, eye), self.D)
 
-            qq_phys = lambda_xi_x @ qqx
-            dd_phys = np.linalg.solve(hh_phys, qq_phys)
+            if form == 'skew-sym':
+                Dx_phys = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,0,:]) + fn.gdiag_lm(mesh.metrics[:,0,:],Dx) 
+                                                          + fn.lm_gdiag(Dy,mesh.metrics[:,3,:]) + fn.gdiag_lm(mesh.metrics[:,3,:],Dy)
+                                                          + fn.lm_gdiag(Dz,mesh.metrics[:,6,:]) + fn.gdiag_lm(mesh.metrics[:,6,:],Dz)))
+                Dy_phys = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,1,:]) + fn.gdiag_lm(mesh.metrics[:,1,:],Dx) 
+                                                          + fn.lm_gdiag(Dy,mesh.metrics[:,4,:]) + fn.gdiag_lm(mesh.metrics[:,4,:],Dy)
+                                                          + fn.lm_gdiag(Dz,mesh.metrics[:,7,:]) + fn.gdiag_lm(mesh.metrics[:,7,:],Dz)))
+                Dz_phys = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,2,:]) + fn.gdiag_lm(mesh.metrics[:,2,:],Dx) 
+                                                          + fn.lm_gdiag(Dy,mesh.metrics[:,5,:]) + fn.gdiag_lm(mesh.metrics[:,5,:],Dy)
+                                                          + fn.lm_gdiag(Dz,mesh.metrics[:,8,:]) + fn.gdiag_lm(mesh.metrics[:,8,:],Dz)))
+            elif form == 'strong': # not provably stable
+                Dx_phys = fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,0,:]) + fn.lm_gdiag(Dy,mesh.metrics[:,3,:])
+                                                         + fn.lm_gdiag(Dz,mesh.metrics[:,6,:])))
+                Dy_phys = fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,1,:]) + fn.lm_gdiag(Dy,mesh.metrics[:,4,:])
+                                                         + fn.lm_gdiag(Dz,mesh.metrics[:,7,:])))
+                Dz_phys = fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,2,:]) + fn.lm_gdiag(Dy,mesh.metrics[:,5,:])
+                                                         + fn.lm_gdiag(Dz,mesh.metrics[:,8,:])))
+            else:
+                raise Exception('Physical operator form not understood.')
 
+            return H_phys, Dx_phys, Dy_phys, Dz_phys
+
+
+    @staticmethod
+    def check_diagH(x,H,tol=1e-10):
+        ''' tests order of quadrature for H, (j+1)*H*x^j = b^(j+1)-a(j+1). 
+        Based on reference element [0,1] '''
+        p=0
+        er=0
+        while er<tol:
+            p+=1
+            er = abs((p+1)*(np.diag(H) @ x**p) - 1)
+        print('Test: Quadrature H is order {0}.'.format(p-1))
+        
+    @staticmethod
+    def check_compatibility(x,H,E,tol=1e-10):
+        ''' tests order of compatibility equations x^i@E@x^j = j*x^i@H@x^(j-1) + i*x^j@H@x^(i-1) . 
+        Based on reference element [0,1] '''
+        p=0
+        er=0
+        while er<tol:
+            p+=1
+            mesh = np.array(np.meshgrid(np.arange(p+1),np.arange(p+1))).T.reshape(-1, 2)
+            exs = [list(e) for e in set(frozenset(d) for d in mesh)]
+            for i in range(len(exs)):
+                if len(exs[i]) ==1: exs[i] = [exs[i][0],exs[i][0]]  
+            exs.sort()
+            er = 0
+            for ex in exs:
+                i , j = ex[0] , ex[1]
+                if i+j == 0: ans = 0
+                elif i ==0: ans = j*((x**i)@H@(x**(j-1)))
+                elif j ==0: ans = i*((x**j)@H@(x**(i-1)))
+                else: ans = j*((x**i)@H@(x**(j-1))) + i*((x**j)@H@(x**(i-1)))
+                er += abs(x**i @ E @ x**j - ans)
+        print('Test: Compatibility equations hold to order {0}'.format(p-1))        
+
+    @staticmethod
+    def check_interpolation(tL, tR, x, tol=1e-10):
+        ''' tests the accuracy of the interpolation tL. Based on reference element [0,1] '''
+        if abs(tL[0]-1)<tol and abs(np.sum(tL) - 1)<tol:
+            print('Test: The interpolation tL/tR is exact, i.e. there are boundary nodes.')
         else:
-            raise Exception('Curvilinear transformation only currently available in 1D')
-
-        return hh_phys, qq_phys, dd_phys
-
-    @staticmethod
-    def sbp_test_cub_rule(xy, hh, pquad, tol=1e-6):
-
-        dim = xy.shape[1]
-
-        # Get the Vandermonde matrix for xy
-        xy_basis = BasisFun(xy, pquad)
-        xy_van = xy_basis.van
-
-        # Get cubature rule of higher degree than pcub to compare the integration
-        xquad, wquad, _ = SbpQuadRule.quad_lg(dim, pquad+2)
-        wquad = np.diag(wquad)
-
-        # Get the Vandermonde matrix for the higher degree cub rule
-        cub_basis = BasisFun(xquad, pquad)
-        xcub_van = cub_basis.van
-
-        # Complete the integration for both
-        xy_int = np.sum(hh @ xy_van, axis=0)       # Int. with xy and H
-        cub_int = np.sum(wquad @ xcub_van, axis=0) # Int. with higher order cub rule
-
-        # Compare the two integrations
-        diff_int = np.max(np.abs(xy_int - cub_int))
-        assert diff_int < tol, 'The cub rule is not exact to the required degree'
+            p=0
+            er=0
+            while er<tol:
+                p+=1
+                er = abs(tL@x**p) + abs(tR@(2*x)**p - 2**p)
+            print('Test: The interpolation tL/tR is order {0}.'.format(p-1))
 
     @staticmethod
-    def sbp_test_acc_rr(rr, xy, xqf, p, tol=1e-6):
+    def check_decomposition(E, S, Q, D, H, tol=1e-10):
 
-        # Get the Vandermonde matrix for the element nodes
-        elem_basis = BasisFun(xy, p)
-        van = elem_basis.van
+        # Test that the matrix E is symmetric
+        assert np.max(np.abs(E - E.T)) < tol, 'The matrix E is not symmetric'
 
-        # Get the Vandermonde matrix for the facet quadrature nodes on facet 1
-        van_f = BasisFun.facet_vandermonde(xqf, p, False)[1]
+        # Test that the matrix S is skew-symmetric
+        assert np.max(np.abs(S + S.T)) < tol, 'The matrix S is not skew-symmetric'
+        assert np.max(np.diag(S)) < tol, 'The matrix S is not skew-symmetric'
 
-        test = rr @ van - van_f
-        max_err = np.max(np.abs(test))
+        # Test that the matrix Q decomposes into E and S
+        test_Q = np.max(np.abs(Q - (S + 0.5*E)))
+        assert test_Q < tol, 'The matrix Q does not decompose properly into S and E'
 
-        assert max_err < tol, 'The int/ext op R is not sufficiently accurate'
-
-    @staticmethod
-    def sbp_test_decomposition(ee, ss, qq, dd, hh, tol=1e-6):
-
-        dim = ee.shape[0]
-
-        for d in range(dim):
-            # Extract the operators for direction d
-            ee_d = ee[d,:,:]
-            ss_d = ss[d,:,:]
-            qq_d = qq[d,:,:]
-            dd_d = dd[d,:,:]
-
-            # Test that the matrix E is symmetric
-            test_ee = np.max(np.abs(ee_d - ee_d.T))
-            assert test_ee < tol, 'The matrix E is not symmetric'
-
-            # Test that the matrix S is skew-symmetric
-            test_ss = np.max(np.abs(ss_d + ss_d.T))
-            assert test_ss < tol, 'The matrix S is not skew-symmetric'
-
-            # Test that the matrix Q decomposes into E and S
-            test_qq = np.max(np.abs(qq_d - (ss_d + 0.5*ee_d)))
-            assert test_qq < tol, 'The matrix Q does not decompose properly into S and E'
-
-            # Test that the matrix D decomposes into H and Q
-            test_dd = np.max(np.abs(hh @ dd_d - qq_d))
-            assert test_dd < tol, 'The matrix D does not decompose properly into Q and H'
+        # Test that the matrix D decomposes into H and Q
+        test_D = np.max(np.abs(H @ D - Q))
+        assert test_D < tol, 'The matrix D does not decompose properly into Q and H'
+        
+        # Test that the matrix E decomposes into Q and Q.T
+        test_E = np.max(np.abs(E - Q - Q.T))
+        assert test_E < tol, 'The matrix E does not decompose properly into Q and Q.T'
+        
+        print('Test: The operator succesfully passed all decomposition tests.')
 
     @staticmethod
-    def sbp_test_derivative(dd, xy, p, tol=1e-6):
-
-        # Get the Vandermonde matrix and its derivative for the element nodes
-        elem_basis = BasisFun(xy, p)
-        van = elem_basis.van
-        van_der = elem_basis.van_der
-
-        dim = xy.shape[1]
-
-        for d in range(0, dim):
-            test_dd = dd[d,:,:] @ van - van_der[d,:,:]
-            max_err = np.max(np.abs(test_dd))
-            assert max_err < tol, 'The derivative is not exact'
+    def check_accuracy(D, x, tol=1e-10):
+        ''' tests order of derivative D, D@x^j = j*x^(j-1) 
+        Based on reference element [0,1] '''
+        p=1
+        er=0
+        while er<tol:
+            p+=1
+            er = np.sum(abs(D @ x**p - p*x**(p-1)))
+        print('Test: Derivative D is order {0}.'.format(p-1))
