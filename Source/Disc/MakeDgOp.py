@@ -70,11 +70,12 @@ class MakeDgOp:
         
         ############################ FACET NODES #############################
         # Define facet nodes. Once again, collocate for DGSEM
-        ref_elem = RefSimplexElem(self.dim)
+        # TODO: temporarily adding this in
+        #ref_elem = RefSimplexElem(self.dim)
         # vert: each row is the cartesian coordinate for one vertex
-        self.vert = ref_elem.vert
+        self.vert = np.array([[0],[1]]) #ref_elem.vert
         # normal: each row gives an outward (not unit) normal vector for a facet
-        self.normal = ref_elem.normal
+        self.normal = np.array([[-1],[1]]) #ref_elem.normal
         
         
         ############################# CONSTANTS ##############################

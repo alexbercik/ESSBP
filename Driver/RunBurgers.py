@@ -35,7 +35,7 @@ tm_method = 'rk4' # explicit_euler, rk4
 dt = 0.0001
 dt_init = dt
 t_init = 0
-tf = 0.10
+tf = 2
 
 # Domain
 xmin = -1
@@ -48,12 +48,12 @@ nn = 60
 nelem = 10 # optional, number of elements
 nen = 0 # optional, number of nodes per element
 p = 3
-use_split_form = False
-sat_flux_type = 'central'
+use_split_form = True
+sat_flux_type = 'ec'
 
 # Initial solution
 q0 = None
-q0_type = 'GassnerSinWave_cont' # 'GassnerSinWave', '..._cont', '..._coarse' 'GaussWave', 'SinWave'
+q0_type = 'GassnerSinWave_coarse' # 'GassnerSinWave', '..._cont', '..._coarse' 'GaussWave', 'SinWave'
 
 # Other
 bool_plot_sol = False
@@ -84,8 +84,8 @@ solver = c_solver(diffeq,                              # Diffeq
                   bool_plot_sol, print_sol_norm)
 
 #solver.weakform = True
-solver.force_steady_solution()
-solver.perturb_q0()
+#solver.force_steady_solution()
+#solver.perturb_q0()
 A = solver.check_eigs(plt_save_name=savefile+'_eigs',returnA=True,title='Eigenvalues: ' + title,exact_dfdq=True)
 eigs = np.linalg.eigvals(A)
 max_eig = max(eigs.real)
@@ -99,6 +99,6 @@ diffeq.plt_style_sol[0] = {'color':'b','linestyle':'-','marker':'','linewidth':3
 #from Methods.Analysis import animate
 #animate(solver, plotargs={'display_time':True},skipsteps=100)
 
-#solver.solve()
-#solver.plot_sol()
-#solver.plot_cons_obj()
+solver.solve()
+solver.plot_sol()
+solver.plot_cons_obj()

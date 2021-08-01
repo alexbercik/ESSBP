@@ -11,6 +11,7 @@ import numpy as np
 from Source.TimeMarch.TimeMarchingRk import TimeMarchingRk
 from Source.TimeMarch.TimeMarchingLms import TimeMarchingLms
 from Source.TimeMarch.TimeMarchingOneStep import TimeMarchingOneStep
+import time as tm
 
 
 class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
@@ -181,6 +182,26 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
 
         if self.bool_calc_cons_obj:
             self.cons_obj[:, t_idx] = self.fun_calc_cons_obj(q)
+            
+        if t_idx == 10:
+            sim_time = tm.time() - self.start_time
+            rem_time = sim_time/10*(n_ts-10)
+            print('... Estimating {0}:{1:02d}:{2:02d} remaining.'.format(int(rem_time//3600),
+                                                        int((rem_time//60)%60),int(rem_time%60)))         
+            
+        if (t_idx*5/n_ts).is_integer():
+            if t_idx == 0:
+                print('--- Beginning Simulation ---')
+                self.start_time = tm.time()
+            elif t_idx == n_ts:
+                sim_time = tm.time() - self.start_time
+                print('... 100% Done. Took {0}:{1:02d}:{2:02d} to run.'.format(int(sim_time//3600),
+                                                int((sim_time//60)%60),int(sim_time%60)))
+            else:
+                sim_time = tm.time() - self.start_time
+                rem_time = sim_time/t_idx*(n_ts-t_idx)
+                print('... {0}% Done. Estimating {1}:{2:02d}:{3:02d} remaining.'.format(int(t_idx/n_ts*100),
+                                                int(rem_time//3600),int((rem_time//60)%60),int(rem_time%60)))
 
         #TODO: Add convergence tests to stop time marching if solution is 
         # sufficiently converged (rhs=0) or blown up.

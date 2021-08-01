@@ -18,7 +18,8 @@ rc('text', usetex=True)
 
 
 import numpy as np
-import scipy.sparse as sp
+from os import path
+
 
 from Source.Disc.FiniteDiff import FiniteDiff
 from Source.Disc.MakeDgOp import MakeDgOp
@@ -63,29 +64,30 @@ The PDEs are solved in this form:
 class PdeBase:
 
     # Diffeq info
-    xy = None               # Initiate nodal coordinates
+    x = None                # Initiate 1D nodal coordinates
+    xy = None               # Initiate 2D nodal coordinates
     dim = None              # No. of dimensions
-    npar = None             # No. of design parameters
-    para_names = None       # Names of all the parameters
     has_exa_sol = False     # True if there is an exact solution for the DiffEq
-    steady_sol = None       # If array, this is the steady solution for the DiffEq
     nn = None               # No. of nodes for the spatial discretization
     nen = None              # No. of nodes per element
     nelem = None            # No. of elements
     neq_node = None         # No. of equations per node
 
     # Ploting options
-    plt_fig_size = (8,6)
-    plt_style_exa_sol = {'color':'r','linestyle':'','marker':'+'}
-    plt_style_sol = [{'color':'b','linestyle':'','marker':'s'},
-                     {'color':'k','linestyle':'','marker':'o'},
-                     {'color':'r','linestyle':'','marker':'X'},
-                     {'color':'g','linestyle':'','marker':'D'}]
+    plt_fig_size = (6,4)
+    plt_style_exa_sol = {'color':'r','linestyle':'-','linewidth':2,'marker':''}
+    plt_style_sol = [{'color':'b','linestyle':'-','linewidth':2,'marker':''},
+                     {'color':'k','linestyle':'','linewidth':2,'marker':''},
+                     {'color':'r','linestyle':'','linewidth':2,'marker':''},
+                     {'color':'g','linestyle':'','linewidth':2,'marker':''}]
     plt_label_font_size = 15
     plt_var2plot_name = None
-    plt_t_pause = 0.05
-    plt_ymin = -2
-    plt_ymax = 2
+    plt_mesh_settings = {'label lines': True,   # if True, x and y ticks are based on grid lines
+                         'plot nodes': True,    # whether or not to display the nodes
+                         'node size': 4,        # markersize used on nodes
+                         'node color': 'black'} # marker colour used for nodes
+    plt_contour_settings = {'levels': 100,          # number of distinct contours
+                            'cmap': 'jet'}          # colourmap
 
     # Parameters for the initial solution
     q0_max_q = 1.2                  # Max value in the vector q0
@@ -132,86 +134,11 @@ class PdeBase:
                 self.obj_name = obj_name
             else:
                 raise Exception('The variable obj_name has to be either a string or a tuple of strings')
-
-
-    def dqdt(self, *argv):
-        raise Exception('This base method should not be called')
-
-    def calc_ff(self, *argv):
-        raise Exception('This base method should not be called')
-
-    def dfdq(self, *argv):
-        raise Exception('This base method should not be called')
-
-    def dfds(self, *argv):
-        raise Exception('This base method should not be called')
-
-    def calc_rr(self, *argv):
-        raise Exception('This base method should not be called')
-
-    def drdq(self, *argv):
-        raise Exception('This base method should not be called')
-
-    def drds(self, *argv):
-        raise Exception('This base method should not be called')
-
-    def calcE(self, q):
-        raise Exception('This base method should not be called')
-
-    def dEdq_eig_abs(self, *argv):
-        raise Exception('This base method should not be called')
-
-    def calc_obj(self, *argv):
-        raise Exception('This base method should not be called')
-
-    def djdq(self, *argv):
-        raise Exception('This base method should not be called')
-
-    def djds(self, *argv):
-        raise Exception('This base method should not be called')
-
-    def set_sbp_op(self, *argv):
-        raise Exception('This base method should not be called')
-
-    def set_fd_op(self, *argv):
-        raise Exception('This base method should not be called')
-
-    def calc_sat(self, *argv):
-        raise Exception('This base method should not be called')
-
-    def dfdq_sat(self, *argv):
-        raise Exception('This base method should not be called')
-
-    def dfds_sat(self, *argv):
-        raise Exception('This base method should not be called')
+            
         
-    def var2plot(self):
-         raise Exception('This base method should not be called')
-        
-    def calc_LF_const(self,q=None,use_local=False):
-        ''' Calculate the constant for the Lax-Friedrichs flux, also useful
-        to set the CFL number. Equal to max(dEdq). See Hesthaven pg. 33. 
-        If q is given, use that. If not, use the initial condition.
-        If use_local=True, uses a local lax-friedrichs flux constant, which is 
-        less dissipative, and returns a vector of shape (1,nelem). Otherwise 
-        it uses a global lax-friedrichs flux constant, and returns a float.'''
-        if q==None:
-            q = self.set_q0()
-        if self.neq_node == 1: # scalar
-            if use_local:
-                return np.max(np.abs(self.dEdq(q)),axis=(0,1))
-            else:
-                return np.max(np.abs(self.dEdq(q)))
-        else: # system
-            # TODO: Could save a variable containing dEdq, eigenvalues, eigenvectors
-            # so that I don't have to compute it multiple times for different
-            # parts of the code
-            dEdq_mod = np.transpose(self.dEdq(q),axes=(2,0,1))
-            eig_val = np.linalg.eigvals(dEdq_mod)
-            if use_local:
-                return np.max(np.abs(eig_val),axis=1)
-            else:
-                return np.max(np.abs(eig_val))
+    def var2plot(self,q):
+        ''' base method, only important for systems where this is redefined '''
+        return q
 
     def set_mesh(self, mesh):
         '''
@@ -223,22 +150,30 @@ class PdeBase:
         self.mesh = mesh
 
         ''' Extract other parameters '''
-
-        self.xy = self.mesh.xy
-        self.xy_elem = self.mesh.xy_elem
-        self.xy_ref = self.mesh.xy_op
-        self.dx = self.mesh.dx
+        assert self.dim == self.mesh.dim,'Dimensions of DiffEq and Solver do not match.'
+        if self.dim == 1:
+            self.x = self.mesh.x
+            self.x_elem = self.mesh.x_elem
+        elif self.dim == 2:
+            self.xy = self.mesh.xy
+            self.xy_elem = self.mesh.xy_elem
+        elif self.dim == 3:
+            self.xyz = self.mesh.xyz
+            self.xyz_elem = self.mesh.xyz_elem
+        self.x_ref = self.mesh.x_op
+        #self.dx = self.mesh.dx
         self.xmin = self.mesh.xmin
         self.xmax = self.mesh.xmax
-        self.isperiodic = self.mesh.isperiodic
-
-        self.dom_len = self.xmax - self.xmin
+        self.dom_len = self.mesh.dom_len
         self.nn = self.mesh.nn
         self.nelem = self.mesh.nelem
         self.nen = self.mesh.nen
-        self.qshape = (self.nen*self.neq_node,self.nelem)
-
-        self.len_q = self.nn * self.neq_node # Length of the sol vector q
+        if self.dim == 1:
+            self.qshape = (self.nen*self.neq_node,self.nelem)
+        elif self.dim == 2:
+            self.qshape = ((self.nen**2)*self.neq_node,self.nelem[0]*self.nelem[1])
+        elif self.dim == 3:
+            self.qshape = ((self.nen**3)*self.neq_node,self.nelem[0]*self.nelem[1]*self.nelem[2])
 
     def set_q0(self, q0_type=None, xy=None):
         '''
@@ -249,7 +184,7 @@ class PdeBase:
             The default is None, in which case the default q0_type for the
             DiffEq is used.
         xy : np array, optional
-            If not provided then the xy provided from set_mesh is used. One
+            If not provided then the xy provided from self.mesh is used. One
             reason to provide the input xy is to calculate the exact solution
             at a later time, this is done for the linear convection eq.
             The default is None.
@@ -257,40 +192,94 @@ class PdeBase:
         -------
         q0 : np array of floats
             The initial solution at the nodes xy.
+        NOTE: These options here only return scalar initial solutions.
         '''
-
-        assert self.dim==1, 'set_q0 only setup for 1D'
 
         if q0_type is None:
             q0_type = self.q0_type
 
         if xy is None:
-            xy = self.xy
-
-        xy_shape = xy.shape
-        if xy.ndim == 2:
-            #xy = xy[:,0]
-            xy = xy.flatten(order='F')
+            qshape = self.qshape
+            if self.dim == 1:
+                xy = self.x_elem # shape (self.nen, self.nelem)
+            elif self.dim == 2:
+                xy = self.xy_elem # shape (self.nen**2, 2, self.nelem[0]*self.nelem[1])
+            elif self.dim == 3:
+                xy = self.xyz_elem
+        else:
+            shape = xy.shape
+            if self.dim == 1:
+                assert xy.ndim == self.x_elem.ndim, 'Provided xy has wrong dimensions. Given shape {0} while default is {1}'.format(shape,self.x_elem.shape)
+                qshape = xy.shape
+            elif self.dim == 2:
+                assert xy.ndim == self.xy_elem.ndim, 'Provided xy has wrong dimensions. Given shape {0} while default is {1}'.format(shape,self.xy_elem.shape)
+                qshape = (shape[0],shape[2])
+            elif self.dim == 3:
+                assert xy.ndim == self.xyz_elem.ndim, 'Provided xy has wrong dimensions. Given shape {0} while default is {1}'.format(shape,self.xyz_elem.shape)
+                qshape = (shape[0],shape[2])
 
         if q0_type == 'GaussWave':
-            # The initial condition is a Gauss-like wave
-            k = np.abs(np.log(self.q0_gauss_wave_val_bc) / 0.5**2) # 0.5 since this is the max val of xy_mod
-
-            mid_point = 0.5*(self.xmax + self.xmin)
-            xy_mod = (xy - mid_point) / self.dom_len
-            exp = -k * xy_mod**2
-            q0 = np.exp(exp) * self.q0_max_q
-        elif q0_type == 'SinWave':
-            xy_scaled = (xy + self.xmin) / self.dom_len
-            q0 = np.sin(2*np.pi * xy_scaled) * self.q0_max_q
+            k = (8*np.log(self.q0_gauss_wave_val_bc/self.q0_max_q))
+            if self.dim == 1:
+                mid_point = 0.5*(self.xmax + self.xmin) # mean
+                stdev2 = abs(self.dom_len**2/k) # standard deviation squared
+                exp = -0.5*(xy-mid_point)**2/stdev2
+                q0 = self.q0_max_q * np.exp(exp)
+            elif self.dim == 2:
+                mid_pointx = 0.5*(self.xmax[0] + self.xmin[0]) # mean
+                mid_pointy = 0.5*(self.xmax[1] + self.xmin[1])
+                stdev2x = abs(self.dom_len[0]**2/k) # standard deviation squared
+                stdev2y = abs(self.dom_len[1]**2/k)
+                exp = -0.5*((xy[:,0,:]-mid_pointx)**2/stdev2x + (xy[:,1,:]-mid_pointy)**2/stdev2y)
+                q0 = self.q0_max_q * np.exp(exp)
+            elif self.dim == 3:
+                mid_pointx = 0.5*(self.xmax[0] + self.xmin[0]) # mean
+                mid_pointy = 0.5*(self.xmax[1] + self.xmin[1])
+                mid_pointz = 0.5*(self.xmax[2] + self.xmin[2])
+                stdev2x = abs(self.dom_len[0]**2/k) # standard deviation squared
+                stdev2y = abs(self.dom_len[1]**2/k)
+                stdev2z = abs(self.dom_len[2]**2/k)
+                exp = -0.5*((xy[:,0,:]-mid_pointx)**2/stdev2x + (xy[:,1,:]-mid_pointy)**2/stdev2y + (xy[:,2,:]-mid_pointz)**2/stdev2z)
+                q0 = self.q0_max_q * np.exp(exp) 
+        elif 'GaussWave_debug' in q0_type:
+            if 'y' in q0_type: xyz = 1
+            elif 'z' in q0_type: xyz = 2
+            else: xyz = 0
+            assert self.dim!=1,'This is meant to be used in 2D or 3D to mimic a 1D problem in x, y, or z.'
+            k = (8*np.log(self.q0_gauss_wave_val_bc/self.q0_max_q))
+            mid_pointx = 0.5*(self.xmax[xyz] + self.xmin[xyz]) # mean
+            stdev2 = abs(self.dom_len[xyz]**2/k) # standard deviation squared
+            exp = -0.5*((xy[:,xyz,:]-mid_pointx)**2/stdev2)
+            q0 = self.q0_max_q * np.exp(exp)    
+        elif 'SinWave' in q0_type:
+            if self.dim == 1:
+                x_scaled = (xy + self.xmin) / self.dom_len
+                q0 = np.sin(2*np.pi * x_scaled) * self.q0_max_q
+            elif self.dim == 2:
+                x_scaled = (xy[:,0,:] + self.xmin[0]) / self.dom_len[0]
+                y_scaled = (xy[:,1,:] + self.xmin[1]) / self.dom_len[1]
+                if q0_type == 'SinWave':
+                    q0 = self.q0_max_q * np.sin(2*np.pi * x_scaled) * np.sin(2*np.pi * y_scaled)  
+                elif q0_type == 'SinWave2' or q0_type == 'SinWavesum' or q0_type == 'SinWave_sum':
+                    q0 = self.q0_max_q * ( np.sin(2*np.pi * x_scaled) + np.sin(2*np.pi * y_scaled) )
+            elif self.dim == 3:
+                x_scaled = (xy[:,0,:] + self.xmin[0]) / self.dom_len[0]
+                y_scaled = (xy[:,1,:] + self.xmin[1]) / self.dom_len[1]
+                z_scaled = (xy[:,2,:] + self.xmin[2]) / self.dom_len[2]
+                if q0_type == 'SinWave':
+                    q0 = self.q0_max_q * np.sin(2*np.pi * x_scaled) * np.sin(2*np.pi * y_scaled) * np.sin(2*np.pi * z_scaled) 
+                elif q0_type == 'SinWave2' or q0_type == 'SinWavesum' or q0_type == 'SinWave_sum':
+                    q0 = self.q0_max_q * ( np.sin(2*np.pi * x_scaled) + np.sin(2*np.pi * y_scaled) + np.sin(2*np.pi * z_scaled) )
         elif q0_type == 'Random':
             # Random numbers between -0.5 and 0.5
-            q0 = np.random.rand(xy.size) -0.5
+            q0 = np.random.rand(*qshape) -0.5
         elif q0_type == 'Constant':
-            q0 = np.ones(xy.size)
+            q0 = np.ones(qshape)
         elif q0_type == 'GassnerSinWave_cont': # continuous
+            assert self.dim == 1,'Chosen q0 shape only works for dim = 1.'
             q0 = np.sin(np.pi * xy - 0.7) + 2 # note in the paper it is incorrectly written (np.pi * (xy - 0.7))
         elif q0_type in ('GassnerSinWave','GassnerSinWave_coarse'): # discontinuous  
+            assert self.dim == 1,'Chosen q0 shape only works for dim = 1.'
             if q0_type == 'GassnerSinWave_coarse':
                 xy_LG = qp.c1.gauss_legendre(2).points # coarse LG nodes
             else:
@@ -308,174 +297,380 @@ class PdeBase:
             print(f'q0_type = {q0_type}')
             raise Exception('Unknown q0_type for initial solution')
         
-        # restructure in shape (nen,nelem), i.e. columns are each element
-        if xy.size == self.nn:
-            return np.reshape(q0,(self.nen*self.neq_node,self.nelem),'F')
-        else:
-            return np.reshape(q0,xy_shape,'F')
+        return q0
+    
 
-
-    def plot_sol(self, q, time=None, fig_no=1, plot_exa=True, plt_save_name=None,
-                 show_fig=True, ymin=None, ymax=None, display_time=False, title=None):
+    # TODO: Make a separate function for interactive plots? is this even possible using free packages?
+    def plot_sol(self, q, time=None, plot_exa=True, plt_save_name=None,
+                 show_fig=True, solmin=None, solmax=None, display_time=False, 
+                 title=None, plot_mesh=False, save_format='png', dpi=1000,
+                 plot_only_exa=False):
         '''
         Purpose
         ----------
-        Used to plot the solution in the time marching class
+        Used to plot the solution
+        
         '''
-        assert self.dim == 1, 'This function is only setup for 1D PDEs'
+        
+        if self.dim == 1:
+            num_sol = self.var2plot(q).flatten('F')
+            
+            fig = plt.figure(figsize=self.plt_fig_size)
+            ax = plt.axes() 
 
-        if plt.fignum_exists(fig_no):
-            plt.clf()
-        else:
-            plt.figure(fig_no)
-
-        if self.plt_var2plot_name is None:
-            num_sol = q.flatten('F')
-        else:
-            num_sol = self.var2plot(q.flatten('F'))
-
-        plt.plot(self.xy, num_sol, **self.plt_style_sol[0], label='Numerical')
-
-        if plot_exa and self.has_exa_sol:
-            q_exa = self.exact_sol(time)
-
+            if plot_exa and self.has_exa_sol:
+                exa_sol = self.var2plot(self.exact_sol(time)).flatten('F')
+                ax.plot(self.x, exa_sol, **self.plt_style_exa_sol, label='Exact')
+                
+            ax.plot(self.x, num_sol, **self.plt_style_sol[0], label='Numerical')
+        
+            ax.set_ylim(solmin,solmax)
+            plt.xlabel(r'$x$',fontsize=self.plt_label_font_size)
             if self.plt_var2plot_name is None:
-                exa_sol = q_exa.flatten('F')
+                plt.ylabel(r'$u$',fontsize=self.plt_label_font_size,rotation=0,labelpad=15)
             else:
-                exa_sol = self.var2plot(q_exa.flatten('F'))
-
-            plt.plot(self.xy, exa_sol, **self.plt_style_exa_sol, label='Exact')
+                plt.ylabel(self.plt_var2plot_name,fontsize=self.plt_label_font_size)
+        
+        
+        elif self.dim == 2:            
+            fig = plt.figure(figsize=(6,5.5*self.dom_len[1]/self.dom_len[0])) # scale figure properly
+            ax = plt.axes()
             
-        plt.xlabel(r'$x$',fontsize=self.plt_label_font_size)
-
-        if self.plt_var2plot_name is None: 
-            plt.ylabel(r'$u$',fontsize=self.plt_label_font_size,rotation=0,
-                       labelpad=15)
-        else:
-            ax = plt.gca()
-            ax.set_ylabel(self.plt_var2plot_name, fontsize=self.plt_label_font_size)
+            if plot_mesh:
+                ax = plt.axes(frameon=False) # turn off the frame
+                
+                ax.set_xlim(self.xmin[0]-self.dom_len[0]/100,self.xmax[0]+self.dom_len[0]/100)
+                ax.set_ylim(self.xmin[1]-self.dom_len[1]/100,self.xmax[1]+self.dom_len[1]/100)
+                
+                if self.plt_mesh_settings['plot nodes']:
+                    ax.scatter(self.xy[:,0],self.xy[:,1],marker='o',
+                               c=self.plt_mesh_settings['node color'],
+                               s=self.plt_mesh_settings['node size'])
+        
+                for line in self.mesh.grid_lines:
+                    ax.plot(line[0],line[1],color='black',lw=1)
+                if self.plt_mesh_settings['label lines']:
+                    ax.tick_params(axis='both',length=0,labelsize=self.plt_label_font_size) # hide ticks
+                    edge_verticesx = np.linspace(self.xmin[0],self.xmax[0],self.nelem[0]+1)
+                    edge_verticesy = np.linspace(self.xmin[1],self.xmax[1],self.nelem[1]+1)
+                    ax.set_xticks(edge_verticesx) # label element boundaries
+                    ax.set_yticks(edge_verticesy)
             
+            x = fn.reshape_to_meshgrid(self.xy_elem[:,0,:],self.nen,self.nelem[0],self.nelem[1])
+            y = fn.reshape_to_meshgrid(self.xy_elem[:,1,:],self.nen,self.nelem[0],self.nelem[1])
+            num_sol = fn.reshape_to_meshgrid(self.var2plot(q),self.nen,self.nelem[0],self.nelem[1])
+            
+            CS = ax.contourf(x,y,num_sol,levels=self.plt_contour_settings['levels'],
+                                 vmin=solmin, vmax=solmax,
+                                 cmap=self.plt_contour_settings['cmap'])
+            
+            cbar = fig.colorbar(CS)
+            if self.plt_var2plot_name is not None:
+                cbar.ax.set_ylabel(self.plt_var2plot_name)                    
+                
+            plt.xlabel(r'$x$',fontsize=self.plt_label_font_size)
+            plt.ylabel(r'$y$',fontsize=self.plt_label_font_size,rotation=0,labelpad=15)
+        
+        elif self.dim == 3:
+            # TODO: add option for plotting cross sections?
+            raise Exception('Plotting is not currently supported for dim>2.')
         
         if display_time and (time is not None):
-            ax = plt.gca()
             # define matplotlib.patch.Patch properties
-            props = dict(boxstyle='round', facecolor='white')
+            # TODO: Add a check to see whether to set alpha or not
+            props = dict(boxstyle='round', facecolor='white', alpha=0.5)
             ax.text(0.05, 0.95, r'$t=$ '+str(round(time,2))+' s', transform=ax.transAxes, 
                     fontsize=self.plt_label_font_size, verticalalignment='top', bbox=props)
-
-        plt.ylim(ymin,ymax)
-        plt.tight_layout()
+        
+        fig.tight_layout()
         
         if plt.title is not None:
             plt.title(title,fontsize=self.plt_label_font_size+1)
-            plt.legend(loc='best',fontsize=self.plt_label_font_size-1)
+            if self.dim == 1:
+                plt.legend(loc='best',fontsize=self.plt_label_font_size-1)
         
         if plt_save_name is not None:
-            plt.savefig(plt_save_name+'.eps', format='eps')
+            filename = plt_save_name+'.'+save_format
+            if path.exists(filename):
+                print('WARNING: File name already exists. Using a temporary name instead.')
+                plt.savefig(filename+'_RENAMEME', format=save_format, dpi=dpi)
+            else: 
+                plt.savefig(filename, format=save_format, dpi=dpi)
             
         if show_fig:
             plt.show()
-            plt.pause(self.plt_t_pause)
-            
+        plt.close()
+        
+        if self.dim == 2 and plot_exa and not plot_only_exa:
+            if plt_save_name is not None:
+                plt_save_name = plt_save_name + '_exa'
+            if title is not None:
+                title = 'Exact Solution'
+            exa_sol = self.var2plot(self.exact_sol(time))
+            self.plot_sol(exa_sol, time=time, plot_exa=True, plt_save_name=plt_save_name,
+                 show_fig=show_fig, solmin=solmin, solmax=solmax, display_time=display_time, 
+                 title=title, plot_mesh=plot_mesh, save_format=save_format, dpi=dpi,
+                 plot_only_exa=True)
             
 
     ''' Terms for the first derivative: E '''
-
-    def dEdx(self, q):
-
-        E = self.calcE(q)
-        dEdx = self.der1 @ E
+    
+    def maxeig_dEdq(self,q):
+        ''' Calculate the constant for the Lax-Friedrichs flux, useful to set 
+        the CFL number but should not be used for computations in the code
+        since this is slow. Equal to max(abs(eigval(dEdq))). See Hesthaven pg. 33. 
+        If q is given, use that. If not, use the initial condition.'''
+        print('WARNING: Using default maxeig_dEdq. Should not be used for main code.')
+        if self.neq_node == 1: # scalar
+            return np.max(np.abs(self.dEdq(q)),axis=(0,1))
+        else: # system
+            dEdq_mod = np.transpose(self.dEdq(q),axes=(2,0,1))
+            eig_val = np.linalg.eigvals(dEdq_mod)
+            return np.max(np.abs(eig_val),axis=1)
+        
+    def maxeig_dExdq(self,q):
+        print('WARNING: Using default maxeig_dExdq. Should not be used for main code.')
+        if self.neq_node == 1: # scalar, so diagonal dEdq matrix
+            return np.max(np.abs(self.dExdq(q)),axis=(0,1))
+        else: # system
+            dEdq_mod = np.transpose(self.dExdq(q),axes=(2,0,1))
+            eig_val = np.linalg.eigvals(dEdq_mod)
+            return np.max(np.abs(eig_val),axis=1)
+        
+    def maxeig_dEydq(self,q):
+        print('WARNING: Using default maxeig_dEydq. Should not be used for main code.')
+        if self.neq_node == 1: # scalar, so diagonal dEdq matrix
+            return np.max(np.abs(self.dEydq(q)),axis=(0,1))
+        else: # system
+            dEdq_mod = np.transpose(self.dEydq(q),axes=(2,0,1))
+            eig_val = np.linalg.eigvals(dEdq_mod)
+            return np.max(np.abs(eig_val),axis=1)
+        
+    def maxeig_dEzdq(self,q):
+        print('WARNING: Using default maxeig_dEzdq. Should not be used for main code.')
+        if self.neq_node == 1: # scalar, so diagonal dEdq matrix
+            return np.max(np.abs(self.dEzdq(q)),axis=(0,1))
+        else: # system
+            dEdq_mod = np.transpose(self.dEzdq(q),axes=(2,0,1))
+            eig_val = np.linalg.eigvals(dEdq_mod)
+            return np.max(np.abs(eig_val),axis=1)
+        
+    # TODO: I dont think I need these
+    
+    def dExdx_div(self, q):
+        E = self.calcEx(q)
+        dEdx = fn.gm_gv(self.Dx, E)
         return dEdx
+    
+    def dEydy_div(self,q):
+        E = self.calcEy(q)
+        dEdx = fn.gm_gv(self.Dy, E)
+        return dEdx  
+
+    def dEzdz_div(self,q):
+        E = self.calcEz(q)
+        dEdx = fn.gm_gv(self.Dz, E)
+        return dEdx 
+
+    def dExdx_had(self, q):
+        F = self.Fx_mat(q) 
+        dEdx = 2*np.sum(fn.lm_gm_hadamard(self.Dx, F),axis=1)
+        return dEdx
+    
+    def dEydy_had(self,q):
+        F = self.Fx_mat(q) 
+        dEdx = 2*np.sum(fn.lm_gm_hadamard(self.Dy, F),axis=1)
+        return dEdx  
+
+    def dEzdz_had(self,q):
+        F = self.Fx_mat(q) 
+        dEdx = 2*np.sum(fn.lm_gm_hadamard(self.Dz, F),axis=1)
+        return dEdx 
+            
 
     ''' Source term '''
 
     def calcG(self, q):
-        return np.zeros(q.shape)
+        return 0
 
     def dGdq(self, q):
-        return np.zeros(q.shape)
+        return 0
+    
+    ''' functions setting up operators '''
+    # TODO: Do I need these?
+    
+    def set_sbp_op(self, H_inv, Dx, Dy=None, Dz=None):
+        self.Dx = Dx
+        self.Dy = Dy
+        self.Dz = Dz
+        self.H_inv = H_inv
+    
+    def set_dg_strong_op(self, dd_phys):
+        #TODO
+        
+        self.der1 = dd_phys
+
+    def set_fd_op(self, p, use_sparse=False):
+        #TODO
+
+        self.p = p
+
+        # Construct the finite difference operator
+# =============================================================================
+#         der1, der1_bcL, der1_bcR = FiniteDiff.der1(self.p, self.nn, self.dx, self.isperiodic)
+#         eye = sp.eye(self.neq_node, format="csr")
+#         if der1_bcL is None: der1_bcL = 0
+#         if der1_bcR is None: der1_bcR = 0
+#         self.der1 = np.array(sp.kron(der1, eye).todense())
+#         self.der1_bcL = np.array(sp.kron(der1_bcL, eye).todense())
+#         self.der1_bcR = np.array(sp.kron(der1_bcR, eye).todense())
+# =============================================================================
 
 
+# TODO: I dont think I need this
 class PdeBaseCons(PdeBase):
+    
+    def __init__(self, para=None, obj_name=None, q0_type='SinWave'):
 
-    ''' This base class is for PDEs of the form dqdt + dEdx = G '''
+        super().__init__(para, obj_name, q0_type)
+        if self.dim == 1:
+            if not hasattr(self, 'dqdt'):
+                print('Using default 1D dqdt')
+                self.dqdt = self.dqdt_1D
+            else:
+                print('Using dqdt defined in specific DiffEq file.')
+            if not hasattr(self, 'dfdq'):
+                if self.use_hadamard:
+                    print('Using default 1D hadamard form dfdq')
+                    self.dfdq = self.dfdq_1D_had
+                else:
+                    print('Using default 1D divergence form dfdq')
+                    self.dfdq = self.dfdq_1D_div
+            else:
+                print('Using dfdq defined in specific DiffEq file.')
+        elif self.dim == 2:
+            if not hasattr(self, 'dqdt'):
+                print('Using default 2D dqdt')
+                self.dqdt = self.dqdt_2D
+            else:
+                print('Using dqdt defined in specific DiffEq file.')
+            if not hasattr(self, 'dfdq'):
+                if self.use_hadamard:
+                    print('Using default 2D hadamard form dfdq')
+                    self.dfdq = self.dfdq_2D_had
+                else:
+                    print('Using default 2D divergence form dfdq')
+                    self.dfdq = self.dfdq_2D_div
+            else:
+                print('Using dfdq defined in specific DiffEq file.')
+        elif self.dim == 3:
+            if not hasattr(self, 'dqdt'):
+                print('Using default 3D dqdt')
+                self.dqdt = self.dqdt_3D
+            else:
+                print('Using dqdt defined in specific DiffEq file.')
+            if not hasattr(self, 'dfdq'):
+                if self.use_hadamard:
+                    print('Using default 3D hadamard form dfdq')
+                    self.dfdq = self.dfdq_3D_had
+                else:
+                    print('Using default 3D divergence form dfdq')
+                    self.dfdq = self.dfdq_3D_div
+            else:
+                print('Using dfdq defined in specific DiffEq file.')
 
-    def dqdt(self, q):
+    ''' This base class is for PDEs of the form dqdt + dE_idx_i = G '''
 
-        dEdx = self.dEdx(q)
+    def dqdt_1D(self, q):
+
+        dEdx = self.dExdx(q)
         G = self.calcG(q)
 
         dqdt = -dEdx + G
         return dqdt
 
-    def dfdq(self, q):
-        # WARNING: Does not apply for split forms
+    def dfdq_1D_div(self, q):
+        # WARNING: Does not apply for explicit split forms
 
-        A = self.dEdq(q)
+        A = self.dExdq(q)
         dGdq = self.dGdq(q)
 
-        dfdq = - fn.lm_gm(self.der1, A) + dGdq
+        dfdq = - fn.gm_gm(self.Dx, A) + dGdq
         return dfdq
     
-    def set_sbp_op(self, dd_phys, qq_phys, hh_inv_phys, rrL, rrR):
+    def dfdq_1D_had(self, q):
 
-        self.der1 = dd_phys
-        self.qq = qq_phys
-        self.hh_inv = hh_inv_phys
-        self.rrL = rrL
-        self.rrR = rrR
-        self.nn_elem = self.hh_inv.shape[0]  # No. of nodes per element
+        A = self.Ax_tens(q) 
+        dGdq = self.dGdq(q)
+
+        dfdq = - 2*np.sum(fn.lm_gt_hadamard(self.Dx, A),axis=1) + dGdq
+        return dfdq
     
-    def set_dg_strong_op(self, dd_phys):
-        
-        self.der1 = dd_phys
+    def dqdt_2D(self, q):
 
-    def set_fd_op(self, p, use_sparse=False):
+        dExdx = self.dExdx(q)
+        dEydy = self.dEydy(q)
+        G = self.calcG(q)
 
-        self.p = p
+        dqdt = -dExdx -dEydy + G
+        return dqdt
 
-        # Construct the finite difference operator
-        der1, der1_bcL, der1_bcR = FiniteDiff.der1(self.p, self.nn, self.dx, self.isperiodic)
-        eye = sp.eye(self.neq_node, format="csr")
-        if der1_bcL is None: der1_bcL = 0
-        if der1_bcR is None: der1_bcR = 0
-        self.der1 = np.array(sp.kron(der1, eye).todense())
-        self.der1_bcL = np.array(sp.kron(der1_bcL, eye).todense())
-        self.der1_bcR = np.array(sp.kron(der1_bcR, eye).todense())
-        
-class PdeBasePar(PdeBase):
+    def dfdq_2D_div(self, q):
+        # WARNING: Does not apply for explicit split forms
+
+        Ax = self.dExdq(q)
+        Ay = self.dEydq(q)
+        dGdq = self.dGdq(q)
+
+        dfdq = - fn.gm_gm(self.Dx, Ax) - fn.gm_gm(self.Dy, Ay) + dGdq
+        return dfdq
     
-    ''' This base class is for mixed hyperbolic-parabolic PDEs of the form 
-    dqdt + dEdx = G + d^2EVdx^2 '''
+    def dfdq_2D_had(self, q):
 
-    def set_sbp_op(self, dd_phys, qq_phys, hh_inv_phys, rrL, rrR):
+        Ax = self.Ax_tens(q) 
+        Ay = self.Ay_tens(q) 
+        dGdq = self.dGdq(q)
 
-        self.der1 = dd_phys
-        self.der2 = self.der1 @ self.der1
-        self.qq = qq_phys
-        self.hh_inv = hh_inv_phys
-        self.rrL = rrL
-        self.rrR = rrR
+        dfdq = - 2*np.sum(fn.lm_gt_hadamard(self.Dx, Ax),axis=1) \
+               - 2*np.sum(fn.lm_gt_hadamard(self.Dx, Ay),axis=1) + dGdq
+        return dfdq
+    
+    def dqdt_3D(self, q):
 
-    def set_fd_op(self, p):
+        dExdx = self.dExdx(q)
+        dEydy = self.dEydy(q)
+        dEzdy = self.dEydy(q)
+        G = self.calcG(q)
 
-        self.p = p
+        dqdt = -dExdx -dEydy -dEzdy + G
+        return dqdt
 
-        # Construct the finite difference operator
-        der1, der1_bcL, der1_bcR = FiniteDiff.der1(self.p, self.nn, self.dx, self.isperiodic)
-        der2, der2_bcL, der2_bcR = FiniteDiff.der2(self.p, self.nn, self.dx, self.isperiodic)
-        eye = sp.eye(self.neq_node, format="csr")
-        if der1_bcL is None: der1_bcL = 0
-        if der1_bcR is None: der1_bcR = 0
-        if der2_bcL is None: der1_bcL = 0
-        if der2_bcR is None: der1_bcR = 0
-        self.der1 = np.array(sp.kron(der1, eye).todense())
-        self.der2 = np.array(sp.kron(der2, eye).todense())
-        # Need to know what the coefficient is in front of the derivative term
-        # der_bcL = der1_bcL + der2_bcL
-        # der_bcR = der1_bcR + der2_bcR
-        self.der_bcL = np.array(sp.kron(der_bcL, eye).todense())
-        self.der_bcR = np.array(sp.kron(der_bcR, eye).todense())
+    def dfdq_3D_div(self, q):
+        # WARNING: Does not apply for explicit split forms
+
+        Ax = self.dExdq(q)
+        Ay = self.dEydq(q)
+        Az = self.dEzdq(q)
+        dGdq = self.dGdq(q)
+
+        dfdq = - fn.gm_gm(self.Dx, Ax) - fn.gm_gm(self.Dy, Ay) - fn.gm_gm(self.Dz, Az) + dGdq
+        return dfdq
+    
+    def dfdq_3D_had(self, q):
+
+        Ax = self.Ax_tens(q) 
+        Ay = self.Ay_tens(q) 
+        Az = self.Az_tens(q) 
+        dGdq = self.dGdq(q)
+
+        dfdq = - 2*np.sum(fn.lm_gt_hadamard(self.Dx, Ax),axis=1) \
+               - 2*np.sum(fn.lm_gt_hadamard(self.Dx, Ay),axis=1) \
+               - 2*np.sum(fn.lm_gt_hadamard(self.Dz, Az),axis=1) + dGdq
+        return dfdq
+    
+
+        
+
             
 class DiffEqOverwrite:
 # Allows you to overwrite the methods in the Diffeq class
@@ -497,6 +692,5 @@ class DiffEqOverwrite:
         self.calc_obj = diffeq_in.calc_obj
         self.calc_cons_obj = f_cons_obj
 
-        self.len_q = diffeq_in.len_q
         self.n_obj = diffeq_in.n_obj
         self.n_cons_obj = n_cons_obj

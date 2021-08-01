@@ -16,11 +16,15 @@ else:
     import quadpy as qp
 
 from Source.Disc.BasisFun import BasisFun
-
+from Source.Disc.Quadratures.LGL import LGL_set
+from Source.Disc.Quadratures.LG import LG_set
+from Source.Disc.Quadratures.NC import NC_set
 
 class SbpQuadRule:
+    
+    dim = 1 # We only use Tensor-product in this code, although functionality exists for simplices
 
-    def __init__(self, dim, p, sbp_fam='Rd',nn=0,quad_rule=None):
+    def __init__(self, p, sbp_fam='Rd',nn=0,quad_rule=None):
         '''
         Parameters
         ----------
@@ -62,7 +66,6 @@ class SbpQuadRule:
         '''
 
         ''' Add inputs to the class '''
-        self.dim = dim
         self.p = p
         self.sbp_fam = sbp_fam
         self.nn = nn
@@ -80,15 +83,15 @@ class SbpQuadRule:
         # Rd and Rdn1 classes use LG or LG like quad rules for the facets
         if sbp_fam == 'Rd':
             if self.quad_rule == None: self.quad_rule = 'lg'
-            if dim == 1:
+            if self.dim == 1:
                 if self.quad_rule.lower() == 'lg':
                     self.xq, self.wq, self.pquad = self.quad_rule_1D(pquad_min, 'lg', self.nmin, self.nn)
                     self.xqf, self.wqf, self.pfquad = self.quad_rule_0D()
                 else: raise Exception('Invalid choice for quad_rule in Rd family')
-            elif dim == 2:
+            elif self.dim == 2:
                 self.xq, self.wq,self.pquad = self.quad_rule_2d_Rd(self.p)
                 self.xqf, self.wqf, self.pfquad = self.quad_rule_1D(pfquad_min, 'lg')
-            elif dim == 3:
+            elif self.dim == 3:
                 self.xq, self.wq,self.pquad = self.quad_rule_3d_Rd(self.p)
                 self.xqf, self.wqf, self.pfquad = self.quad_rule_2D_lg(pfquad_min)
             else:
@@ -96,16 +99,16 @@ class SbpQuadRule:
 
         elif sbp_fam == 'Rdn1':
             if self.quad_rule == None: self.quad_rule = 'lgl'
-            if dim == 1:
+            if self.dim == 1:
                 print('** Rdn1 and Rd0 operators are identical in 1D **')
                 if self.quad_rule.lower() == 'lgl':
                     self.xq, self.wq, self.pquad = self.quad_rule_1D(pquad_min, 'lgl', self.nmin, self.nn)
                     self.xqf, self.wqf, self.pfquad = self.quad_rule_0D()
                 else: raise Exception('Invalid choice for quad_rule in Rdn1 family')
-            elif dim == 2:
+            elif self.dim == 2:
                 self.xq, self.wq, self.pquad = self.quad_rule_2d_Rdn1(self.p)
                 self.xqf, self.wqf, self.pfquad = self.quad_rule_1D(pfquad_min, 'lg')
-            elif dim == 3:
+            elif self.dim == 3:
                 self.xq, self.wq, self.pquad = self.quad_rule_3d_Rdn1(self.p)
                 self.xqf, self.wqf, self.pfquad = self.quad_rule_2D_lg(pfquad_min)
             else:
@@ -113,7 +116,7 @@ class SbpQuadRule:
 
         elif sbp_fam == 'R0':
             if self.quad_rule == None: self.quad_rule = 'lgl'
-            if dim == 1:
+            if self.dim == 1:
                 if self.quad_rule.lower() == 'lgl':
                     self.xq, self.wq, self.pquad = self.quad_rule_1D(pquad_min, 'lgl', self.nmin, self.nn)
                     self.xqf, self.wqf, self.pfquad = self.quad_rule_0D()
@@ -121,9 +124,9 @@ class SbpQuadRule:
                     self.xq, self.wq, self.pquad = self.quad_rule_1D(pquad_min, 'nc', self.nmin, self.nn)
                     self.xqf, self.wqf, self.pfquad = self.quad_rule_0D()
                 else: raise Exception('Invalid choice for quad_rule in R0 family')
-            elif dim == 2:
+            elif self.dim == 2:
                 self.xq, self.wq, self.pquad, self.xqf, self.wqf, self.pquadf = self.quad_rule_2d_R0(self.p)
-            elif dim == 3:
+            elif self.dim == 3:
                 self.xq, self.wq, self.pquad, self.xqf, self.wqf, self.pquadf = self.quad_rule_3d_R0(self.p)
             else:
                 raise Exception('Only 1, 2 and 3D operators available for R0')
@@ -186,7 +189,7 @@ class SbpQuadRule:
         return xq, wq, pquad
 
     @staticmethod
-    def quad_rule_1D(pquad, quad_name, nmin=0, nn=0):
+    def quad_rule_1D(pquad, quad_name, nmin=0, nni=0):
         '''
         Parameters
         ----------
@@ -196,7 +199,7 @@ class SbpQuadRule:
             Indicates the type of 1D quad rule, either LG or LGL.
         nmin : int, optional
             Min number of nodes in the quad rule. The default is 0.
-        nn : int, optional
+        nni : int, optional
             number of nodes in the quad rule. The default is None.
 
         Returns
@@ -208,27 +211,36 @@ class SbpQuadRule:
         pquad : numpy array
             Degree of the quadrature rule.
         '''
+        # NOTE: Slightly more accurate to use set values than quadpy (commented out)
 
         if quad_name.lower() == 'lg':
             n_calc_p = int(np.ceil(0.5*(pquad+1)))
-            nn = np.max((nmin, n_calc_p, nn))
-            qp_class = qp.c1.gauss_legendre(nn)
+            nn = np.max((nmin, n_calc_p, nni))
+            #qp_class = qp.c1.gauss_legendre(nn)
+            xq , wq, pquad = LG_set(nn)
         elif quad_name.lower() == 'lgl':
             n_calc_p = int(np.ceil(0.5*(pquad+3)))
-            nn = np.max((nmin, n_calc_p, nn))
-            qp_class = qp.c1.gauss_lobatto(nn)
+            nn = np.max((nmin, n_calc_p, nni))
+            #qp_class = qp.c1.gauss_lobatto(nn)
+            xq , wq, pquad = LGL_set(nn)
         elif quad_name.lower() == 'nc':
             n_calc_p = int(2*np.floor(pquad/2)+1)
-            nn = np.max((nmin, n_calc_p, nn))
-            qp_class = qp.c1.newton_cotes_closed(nn-1)
+            nn = np.max((nmin, n_calc_p, nni))
+            #qp_class = qp.c1.newton_cotes_closed(nn-1)
             # note that quadpy numbers newton cotes differently, so use nn-1
+            xq , wq, pquad = NC_set(nn)
         else:
             raise Exception('Requested 1D quad is not available')
+            
+        if nni > max(n_calc_p, nmin):
+            print('WARNING: Using more nodes than required for degree order.')
 
         # Convert from domain [-1,1] to [0,1]
-        xq = 0.5*(qp_class.points[:, None] + 1) # Convert from 1D to 2D array
-        wq = 0.5 * qp_class.weights
-        pquad = qp_class.degree
+        #xq = 0.5*(qp_class.points[:, None] + 1) # Convert from 1D to 2D array
+        #wq = 0.5 * qp_class.weights
+        #pquad = qp_class.degree
+        xq = 0.5*(xq[:, None] + 1) # Convert from 1D to 2D array
+        wq = 0.5 * wq
 
         if np.any(wq<0):
             xq, wq, pquad = None, None, None
