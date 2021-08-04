@@ -62,11 +62,11 @@ print_sol_norm = False
 obj_name = None
 cons_obj_name = ('Energy','Conservation') # 'Energy', 'Conservation', 'None'
 
-settings = {'warp_factor':1,               # Warps / stretches mesh.
-            'warp_type': 'quad',         # Options: 'defualt', 'papers', 'quad'
-            'metric_method':'calculate',   # Options: 'calculate', 'exact'
-            'bdy_metric_method':'extrapolate',   # Options: 'calculate', 'exact', 'extrapolate'
-            'use_optz_metrics':False,        # Uses optimized metrics for free stream preservation.
+settings = {'warp_factor':0.2,               # Warps / stretches mesh.
+            'warp_type': 'default',         # Options: 'defualt', 'papers', 'quad'
+            'metric_method':'exact',   # Options: 'calculate', 'exact'
+            'bdy_metric_method':'exact',   # Options: 'calculate', 'exact', 'extrapolate'
+            'use_optz_metrics':True,        # Uses optimized metrics for free stream preservation.
             'calc_exact_metrics':True,      # Calculates the exact metrics (useless if metric_method=exact).
             'metric_optz_method':'default'} # Define the optimization procedure.}
 

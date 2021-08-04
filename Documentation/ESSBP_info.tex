@@ -271,7 +271,7 @@ where we have used the divergence theorem to again relate the surface metric con
 \end{enumerate}
 The fourth option, unique to ESSBP, is as follows. Find an optimal $\bm{c}_{\kappa , m}$ by minimizing the least squares error to the exact metrics $\bm{c}_{\kappa , m}^\text{ex}$  subject to the constraint $\bm{1}^T \bm{c}_{\kappa , m} = 0$. \\
 
-For each physical direction $m$, define a global vector $\bm{b}_{l,m}^{i_x,i_y,i_z} =  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l}^{i_x,i_y,i_z}$, where $l$ determines the direction of the interface, and the indices $i_x$, $i_y$, $i_z$ denote the interface (similar to labelling elements, though $i_s$ range from $1$ to $N_e$ if $s \neq l$, and range to $N_e+ 1$ instead if $s=l$). The element-wise constraints $\bm{1}^T \bm{c}_{\kappa , m} = 0$ can now be rewritten in a global manner as $N_e^3$ individual constraints 
+For each physical direction $m$, define a global vector $\bm{b}_{l,m}^{i_x,i_y,i_z} =  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l}^{i_x,i_y,i_z}$, where $l$ determines the direction of the interface, and the indices $i_x$, $i_y$, $i_z$ denote the interface (similar to labelling elements, though $i_s$ range from $1$ to $N_{e_s}$ if $s \neq l$, and range to $N_{e_s}+ 1$ instead if $s=l$). The element-wise constraints $\bm{1}^T \bm{c}_{\kappa , m} = 0$ can now be rewritten in a global manner as $N_{e_x} \times N_{e_y} \times N_{e_z}$ individual constraints 
 \begin{align*}
 \bm{1}^T \left[ H^\bot_{x} \left( \bm{b}_{x,m}^{i_x+1,i_y,i_z} - \bm{b}_{x,m}^{i_x,i_y,i_z} \right) + H^\bot_{y} \left( \bm{b}_{y,m}^{i_x,i_y+1,i_z} - \bm{b}_{y,m}^{i_x,i_y,i_z} \right) + H^\bot_{z} \left( \bm{b}_{z,m}^{i_x,i_y,i_z+1} - \bm{b}_{z,m}^{i_x,i_y,i_z} \right) \right] = 0
 \end{align*}
@@ -282,18 +282,18 @@ L_m &= \sum_{j=1}^{N_n} \sum_{i_x,i_y,i_z=1}^{N_e} \sum_{l=3}^d \frac{1}{2} \lef
 \end{align*}
 We now follow the KKT conditions by looking for a saddle point of the Lagrangian,
 \begin{align*}
-0 &= \pder[L_m]{b^{i_x,i_y,i_z}_{l,m,j}} = b_{l,m,j}^{i_x,i_y,i_z}  -  \tilde{b}^{i_x,i_y,i_z}_{l,m,j}  - \left( \lambda_{i_x-1,i_y,i_z} -  \lambda_{i_x,i_y,i_z} \right) H_{x , j}^\bot \\
-&\hspace{5cm} - \left( \lambda_{i_x,i_y-1,i_z}  -  \lambda_{i_x,i_y,i_z} \right) H_{y , j}^\bot - \left( \lambda_{i_x,i_y,i_z-1} -  \lambda_{i_x,i_y,i_z} \right) H_{z , j}^\bot 
+0 &= \pder[L_m]{b^{i_x,i_y,i_z}_{l,m,j}} = b_{l,m,j}^{i_x,i_y,i_z}  -  \tilde{b}^{i_x,i_y,i_z}_{l,m,j}  - \left( \lambda_{i_l-1,i_{s_1},i_{s_2}} -  \lambda_{i_l,i_{s_1},i_{s_2}} \right) H_{l, j}^\bot
 \end{align*}
-for the interior facets. The boundary facets $i_l =1$ and $i_l = N_e+1$ have
+for the interior facets. The boundary facets $i_x =1$ and $i_x = N_e+1$ have
 \begin{align*}
-0 &= \pder[L_m]{b^{1,i_y,i_z}_{l,m,j}} = b_{l,m,j}^{1,i_y,i_z}  -  \tilde{b}^{1,i_y,i_z}_{l,m,j}  + \lambda_{1,i_y,i_z} H_{x , j}^\bot - \left( \lambda_{1,i_y-1,i_z}  -  \lambda_{1,i_y,i_z} \right) H_{y , j}^\bot - \left( \lambda_{1,i_y,i_z-1} -  \lambda_{1,i_y,i_z} \right) H_{z , j}^\bot  \\
-0 &= \pder[L_m]{b^{N_e+1,i_y,i_z}_{l,m,j}} = b_{l,m,j}^{N_e+1,i_y,i_z}  -  \tilde{b}^{N_e+1,i_y,i_z}_{l,m,j}  - \lambda_{N_e,i_y,i_z} H_{x , j}^\bot  
+0 &= \pder[L_m]{b^{1,i_y,i_z}_{x,m,j}} = b_{x,m,j}^{1,i_y,i_z}  -  \tilde{b}^{1,i_y,i_z}_{x,m,j}  + \lambda_{1,i_y,i_z} H_{x , j}^\bot  \\
+0 &= \pder[L_m]{b^{1,i_y,i_z}_{y,m,j}} = b_{y,m,j}^{1,i_y,i_z}  -  \tilde{b}^{1,i_y,i_z}_{y,m,j}  - \left( \lambda_{1,i_y+1,i_z} - \lambda_{1,i_y,i_z}  \right)H_{y , j}^\bot  \\
+0 &= \pder[L_m]{b^{N_e+1,i_y,i_z}_{x,m,j}} = b_{x,m,j}^{N_e+1,i_y,i_z}  -  \tilde{b}^{N_e+1,i_y,i_z}_{x,m,j}  - \lambda_{N_e,i_y,i_z} H_{x , j}^\bot  
 \end{align*}
 ans similarly for the $y$ and $z$ facets. From this I conclude
 \begin{align*}
-b_{l,m,j}^{i_x,i_y,i_z}  &=  \tilde{b}^{i_x,i_y,i_z}_{l,m,j}  + \left( \lambda_{i_x-1,i_y,i_z} -  \lambda_{i_x,i_y,i_z} \right) H_{x , j}^\bot + \left( \lambda_{i_x,i_y-1,i_z}  -  \lambda_{i_x,i_y,i_z} \right) H_{y , j}^\bot + \left( \lambda_{i_x,i_y,i_z-1} -  \lambda_{i_x,i_y,i_z} \right) H_{z , j}^\bot \\
-b_{l,m,j}^{1,i_y,i_z}  &=  \tilde{b}^{1,i_y,i_z}_{l,m,j}  - \lambda_{1,i_y,i_z} H_{x , j}^\bot + \left( \lambda_{1,i_y-1,i_z}  -  \lambda_{1,i_y,i_z} \right) H_{y , j}^\bot + \left( \lambda_{1,i_y,i_z-1} -  \lambda_{1,i_y,i_z} \right) H_{z , j}^\bot \\
+b_{l,m,j}^{i_x,i_y,i_z}  &=  \tilde{b}^{i_x,i_y,i_z}_{l,m,j}  + \left( \lambda_{i_l-1,i_{s_1},i_{s_2}} -  \lambda_{i_l,i_{s_1},i_{s_2}} \right) H_{l , j}^\bot  \\
+b_{l,m,j}^{1,i_y,i_z}  &=  \tilde{b}^{1,i_y,i_z}_{l,m,j}  - \lambda_{1,i_y,i_z} H_{x , j}^\bot  \\
 b_{l,m,j}^{N_e+1,i_y,i_z}  &=  \tilde{b}^{N_e+1,i_y,i_z}_{l,m,j}  + \lambda_{N_e,i_y,i_z} H_{x , j}^\bot 
 \end{align*}
 where
@@ -308,42 +308,30 @@ This recovers the boundary terms from the above general form without any additio
 \begin{align*}
 0 &= \sum_{j=1}^{N_n} \Big[ H^\bot_{x,j} \left( b_{x,m,j}^{i_x+1,i_y,i_z} - b_{x,m,j}^{i_x,i_y,i_z} \right) + H^\bot_{y,j} \left( b_{y,m,j}^{i_x,i_y+1,i_z} - b_{y,m,j}^{i_x,i_y,i_z} \right) + H^\bot_{z,j} \left( b_{z,m,j}^{i_x,i_y,i_z+1} - b_{z,m,j}^{i_x,i_y,i_z} \right) \Big] \\
 &=  \sum_{j=1}^{N_n} \Big[ H^\bot_{x,j} \left( \tilde{b}_{x,m,j}^{i_x+1,i_y,i_z} - \tilde{b}_{x,m,j}^{i_x,i_y,i_z} \right) + H^\bot_{y,j} \left( \tilde{b}_{y,m,j}^{i_x,i_y+1,i_z} - \tilde{b}_{y,m,j}^{i_x,i_y,i_z} \right) + H^\bot_{z,j} \left( \tilde{b}_{z,m,j}^{i_x,i_y,i_z+1} - \tilde{b}_{z,m,j}^{i_x,i_y,i_z} \right) \\
-& \ + H^\bot_{x,j} \Big( 
-    H_{x , j}^\bot \left( -  \lambda_{i_x-1,i_y,i_z} + 2 \lambda_{i_x,i_y,i_z} -  \lambda_{i_x+1,i_y,i_z} \right) \\
-&\hspace{1.2 cm} + H_{y , j}^\bot \left(  - \lambda_{i_x,i_y-1,i_z}  +  \lambda_{i_x,i_y,i_z} + \lambda_{i_x+1,i_y-1,i_z}  -  \lambda_{i_x+1,i_y,i_z} \right) \\
-&\hspace{1.2 cm} + H_{z , j}^\bot \left(  - \lambda_{i_x,i_y,i_z-1} +  \lambda_{i_x,i_y,i_z} + \lambda_{i_x+1,i_y,i_z-1} -  \lambda_{i_x+1,i_y,i_z} \right)  
-\Big) \\
-& \ + H^\bot_{y,j} \Big(
-   H_{x , j}^\bot \left( -  \lambda_{i_x-1,i_y,i_z} +  \lambda_{i_x,i_y,i_z} + \lambda_{i_x-1,i_y+1,i_z} -  \lambda_{i_x,i_y+1,i_z} \right)  \\
-&\hspace{1.2 cm}  + H_{y , j}^\bot  \left( - \lambda_{i_x,i_y-1,i_z}  +  2 \lambda_{i_x,i_y,i_z}  -  \lambda_{i_x,i_y+1,i_z} \right)  \\
-&\hspace{1.2 cm} + H_{z , j}^\bot \left( - \lambda_{i_x,i_y,i_z-1} +  \lambda_{i_x,i_y,i_z} + \lambda_{i_x,i_y+1,i_z-1} -  \lambda_{i_x,i_y+1,i_z} \right) \Big)  \\
-& \ + H^\bot_{z,j} \Big(
-    H_{x , j}^\bot  \left(-  \lambda_{i_x-1,i_y,i_z} +  \lambda_{i_x,i_y,i_z} +  \lambda_{i_x-1,i_y,i_z+1} -  \lambda_{i_x,i_y,i_z+1} \right) \\
-&\hspace{1.2 cm} + H_{y , j}^\bot  \left( - \lambda_{i_x,i_y-1,i_z}  +  \lambda_{i_x,i_y,i_z} + \lambda_{i_x,i_y-1,i_z+1}  -  \lambda_{i_x,i_y,i_z+1} \right)  \\
-&\hspace{1.2 cm} + H_{z , j}^\bot  \left( - \lambda_{i_x,i_y,i_z-1} +  2 \lambda_{i_x,i_y,i_z} -  \lambda_{i_x,i_y,i_z+1} \right) 
- \Big) \\
- &=  \sum_{j=1}^{N_n} \Big[ H^\bot_{x,j} \left( \tilde{b}_{x,m,j}^{i_x+1,i_y,i_z} - \tilde{b}_{x,m,j}^{i_x,i_y,i_z} \right) + H^\bot_{y,j} \left( \tilde{b}_{y,m,j}^{i_x,i_y+1,i_z} - \tilde{b}_{y,m,j}^{i_x,i_y,i_z} \right) + H^\bot_{z,j} \left( \tilde{b}_{z,m,j}^{i_x,i_y,i_z+1} - \tilde{b}_{z,m,j}^{i_x,i_y,i_z} \right) \\
-& \ + H^\bot_{x,j}  H_{x , j}^\bot \left( -  \lambda_{i_x-1,i_y,i_z} + 2 \lambda_{i_x,i_y,i_z} -  \lambda_{i_x+1,i_y,i_z} \right) \\
-& \ + H^\bot_{x,j} H_{y , j}^\bot \left(  -  \lambda_{i_x-1,i_y,i_z} - \lambda_{i_x,i_y-1,i_z} + 2  \lambda_{i_x,i_y,i_z} + \lambda_{i_x-1,i_y+1,i_z} + \lambda_{i_x+1,i_y-1,i_z}  -  \lambda_{i_x,i_y+1,i_z}    -  \lambda_{i_x+1,i_y,i_z} \right) \\
-& \ + H^\bot_{x,j} H_{z , j}^\bot \left( -  \lambda_{i_x-1,i_y,i_z}   - \lambda_{i_x,i_y,i_z-1} + 2 \lambda_{i_x,i_y,i_z}  + \lambda_{i_x-1,i_y,i_z+1}  + \lambda_{i_x+1,i_y,i_z-1} -  \lambda_{i_x,i_y,i_z+1} -  \lambda_{i_x+1,i_y,i_z} \right)   \\
-& \ + H^\bot_{y,j}  H_{y , j}^\bot  \left( - \lambda_{i_x,i_y-1,i_z}  +  2 \lambda_{i_x,i_y,i_z}  -  \lambda_{i_x,i_y+1,i_z} \right)  \\
-& \ + H^\bot_{y,j} H_{z , j}^\bot \left(  - \lambda_{i_x,i_y-1,i_z}  - \lambda_{i_x,i_y,i_z-1} + 2 \lambda_{i_x,i_y,i_z} + \lambda_{i_x,i_y-1,i_z+1} + \lambda_{i_x,i_y+1,i_z-1} -  \lambda_{i_x,i_y+1,i_z} -  \lambda_{i_x,i_y,i_z+1}  \right) \\
-& \ + H^\bot_{z,j}  H_{z , j}^\bot  \left( - \lambda_{i_x,i_y,i_z-1} +  2 \lambda_{i_x,i_y,i_z} -  \lambda_{i_x,i_y,i_z+1} \right)  \Big]
+& \quad + \left( H^\bot_{x,j} \right)^2 \left(
+ -  \lambda_{i_x-1,i_y,i_z} + 2 \lambda_{i_x,i_y,i_z}  -  \lambda_{i_x+1,i_y,i_z}  \right)  + \left( H^\bot_{y,j} \right)^2 \left(
+ -  \lambda_{i_x,i_y-1,i_z} + 2 \lambda_{i_x,i_y,i_z}  -  \lambda_{i_x,i_y+1,i_z}  \right) \\
+ & \quad + \left( H^\bot_{z,j} \right)^2 \left(
+ -  \lambda_{i_x,i_y,i_z-1} + 2 \lambda_{i_x,i_y,i_z}  -  \lambda_{i_x,i_y,i_z+1}  \right) \Big]
 \end{align*}
-This looks like a finite difference discretization. I can rewrite it in the following way,
+Note that in the case that the $H^\bot$ matrices are identical in each element (as in ESSBP), we can simplify the above to
 \begin{align*}
-A^{i_x,i_y,i_z}_{j_x,j_y,j_z} \lambda_{j_x,j_y,j_z} = \sum_{j=1}^{N_n} \sum_{l=1}^d H^\bot_{l,j} B^{i_x,i_y,i_z}_{l,j_x,j_y,j_z} \tilde{b}_{l,m,j}^{j_x,j_y,j_z}
+0 &=  \sum_{j=1}^{N_n} H^\bot_{j} \Big[  \left( \tilde{b}_{x,m,j}^{i_x+1,i_y,i_z} - \tilde{b}_{x,m,j}^{i_x,i_y,i_z} \right) + \left( \tilde{b}_{y,m,j}^{i_x,i_y+1,i_z} - \tilde{b}_{y,m,j}^{i_x,i_y,i_z} \right) + \left( \tilde{b}_{z,m,j}^{i_x,i_y,i_z+1} - \tilde{b}_{z,m,j}^{i_x,i_y,i_z} \right) \\
+& \ + \left( H^\bot_{j}  \right)^2 \left( - \lambda_{i_x-1,i_y,i_z}  - \lambda_{i_x,i_y-1,i_z} - \lambda_{i_x,i_y,i_z-1} + 6 \lambda_{i_x,i_y,i_z} -  \lambda_{i_x+1,i_y,i_z} - \lambda_{i_x,i_y+1,i_z} - \lambda_{i_x,i_y,i_z+1} \right) \Big]
+\end{align*}
+In order to solve for $\bm{\lambda}$ we can rewrite it in the following way,
+\begin{align*}
+A^{i_x,i_y,i_z}_{j_x,j_y,j_z} \lambda_{j_x,j_y,j_z} =  \sum_{j=1}^{N_n} \sum_{l=1}^d H^\bot_{l,j} B^{i_x,i_y,i_z}_{l,j_x,j_y,j_z} \tilde{b}_{l,m,j}^{j_x,j_y,j_z}
 \end{align*}
 where
 \begin{align*}
-B^{i_x,i_y,i_z}_{l,j_x,j_y,j_z} &= \delta^{i_l+1}_{j_l} - \delta^{i_l}_{j_l} \quad , \quad B^{i_x,i_y,i_z}_{l,j_x,j_y,j_z} \ : \ \mathds{R}^{N_e + 1 \times N_e + 1 \times N_e + 1} \otimes \mathds{R}^d \rightarrow \mathds{R}^{N_e \times N_e \times N_e} \otimes \mathds{R}^d \\
+B^{i_x,i_y,i_z}_{l,j_x,j_y,j_z} &= \delta^{i_l}_{j_l} - \delta^{i_l+1}_{j_l} \quad , \quad 
+H^\bot B \ : \ \mathds{R}^{d \times N_n} \otimes \mathds{R}^{(N_{e_x} + 1)N_{e_y} N_{e_z} + N_{e_x} (N_{e_y}+1) N_{e_z} + N_{e_x} N_{e_y} (N_{e_z}+1)}  \rightarrow \mathds{R}^{N_{e_x} \times N_{e_y} \times N_{e_z}}  \\
 A^{i_x,i_y,i_z}_{j_x,j_y,j_z} &= 
-\sum_{l=1}^d \sum_{s=l}^d \left( \sum_{j=1}^{N_n} H^\bot_{l,j} H^\bot_{s,j} \right) \left\lbrace \begin{array}{ll}
- 2 \delta_{j}^{i} -  \delta_{j_l}^{i_l-1} - \delta_{j_l}^{i_l+1} -  \delta_{j_s}^{i_s-1} - \delta_{j_s}^{i_s+1} +  \delta_{j_l,j_s}^{i_l-1,i_s+1} + \delta_{j_l,j_s}^{i_l+1,i_s-1} & , \ l \neq s \\
- 2 \delta_{j}^{i} -  \delta_{j_l}^{i_l-1} - \delta_{j_l}^{i_l+1} & , \ l=s
-\end{array} \right.
+\sum_{l=1}^d \left( \sum_{j=1}^{N_n} \left( H^\bot_{l,j} \right)^2 \right) \left(
+  -  \delta_{j_l}^{i_l-1} + 2 \delta_{j}^{i} - \delta_{j_l}^{i_l+1} \right)
 \end{align*}
-where again the $\delta$ components $0$ and $N_e + 1$ are zero.
+where because of our introduced notation, whenever the $i_l$ or $j_l$ components become $0$ and $N_e + 1$, the corresponding $\delta$ are zero. This can be flattened to a simple matrix-vector linear system, from which the $\bm{\lambda}$ can be obtained, in turn giving the optimum surface metrics $\bm{b}$.
 
 \newpage
 

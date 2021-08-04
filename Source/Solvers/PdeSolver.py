@@ -295,8 +295,8 @@ class PdeSolver:
                 print('Assuming CFL = 0.1 and max wave speed = ({0:.2g}, {1:.2g}, {2:.2g}), try dt < {3:.2g}'.format(LFconstx, LFconsty, LFconstz, dt))
                 
         # Free Stream Preservation
-        test = self.dqdt(np.ones(self.qshape))
-        if np.max(abs(test))>1e-12:
+        test = self.free_stream(print_result=False)
+        if test>1e-12:
             print('WARNING: Free Stream is not preserved. Check Metrics and/or SAT discretization.')
             print('         Free Stream is violated by a maximum of {0:.2g}'.format(np.max(abs(test))))
 
@@ -713,6 +713,13 @@ class PdeSolver:
         if savefile is not None:
             plt.savefig(savefile+'.eps', format='eps')
     
+    def free_stream(self, print_result = True):
+        ''' check free stream preservation '''
+        result = np.max(abs(self.dqdt(np.ones(self.qshape))))
+        if print_result:
+            print('Free Stream Preservation holds to a maximum of {0:.5g}'.format(result))
+        else:
+            return result
         
         
         
