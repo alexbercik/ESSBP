@@ -880,7 +880,7 @@ class MakeMesh:
                 self.metrics[:,3,:] = dxp_dxr 
             
             if bdy_metric_method=='exact':
-                self.bdy_metrics = self.bdy_metrics_exa
+                self.bdy_metrics = np.copy(self.bdy_metrics_exa)
                 
             elif bdy_metric_method=='interpolate' or bdy_metric_method=='extrapolate' or bdy_metric_method=='project':
                 self.bdy_metrics = np.zeros((self.nen,4,4,self.nelem[0]*self.nelem[1])) 
@@ -940,7 +940,8 @@ class MakeMesh:
                         self.bdy_metrics[:,f,3,:] = sbp.D @ self.bdy_xy[:,0,f,:]
         
             
-            if use_optz_metrics:     
+            if use_optz_metrics:  
+                
                 assert (bdy_metric_method != 'calculate'),'Must use extrapolated or exact boundary metrics for optimization.'
                 # overwrite metrics with optimized ones         
                 eye = np.eye(self.nen)
@@ -948,39 +949,134 @@ class MakeMesh:
                 txa = np.kron(sbp.tL.reshape((self.nen,1)), eye)
                 tyb = np.kron(eye, sbp.tR.reshape((self.nen,1)))
                 tya = np.kron(eye, sbp.tL.reshape((self.nen,1)))
-                if optz_method == 'default':
+                if optz_method == 'essbp' or optz_method == 'default' or optz_method == 'alex':
+                    # First optimize surface metrics, then do default optimization
+                    totx = (self.nelem[0]+1)*self.nelem[1] # total number of facets with l=x (reference direction)
+                    toty = (self.nelem[1]+1)*self.nelem[0] # total number of facets with l=y (reference direction)
+                    HB = np.zeros((self.nelem[0]*self.nelem[1] , (totx + toty)*self.nen))
+                    A = np.zeros((self.nelem[0]*self.nelem[1],self.nelem[0]*self.nelem[1]))
+                    Hperp = np.diag(sbp.H)
+                    H2sum = np.sum(Hperp*Hperp)
+                    for ix in range(self.nelem[0]):
+                        for iy in range(self.nelem[1]):
+                            start = ix*self.nelem[1] + iy
+                            startx = ix*self.nelem[1]*self.nen + iy*self.nen
+                            startx2 = (ix+1)*self.nelem[1]*self.nen + iy*self.nen
+                            starty = totx*self.nen + ix*(self.nelem[1]+1)*self.nen + iy*self.nen
+                            HB[start, startx:startx+self.nen] = Hperp
+                            HB[start, startx2:startx2+self.nen] = - Hperp
+                            HB[start, starty:starty+self.nen] = Hperp
+                            HB[start, starty+self.nen:starty+2*self.nen] = - Hperp
+                                
+                            A[start,start] = 4*H2sum
+                            if iy != self.nelem[1]-1:
+                                A[start,start+1] = -H2sum
+                            if iy != 0:
+                                A[start,start-1] = -H2sum
+                            if ix != self.nelem[0]-1:
+                                A[start,start+self.nelem[1]] = -H2sum
+                            if ix != 0:
+                                A[start,start-self.nelem[1]] = -H2sum
+                            
+                    for phys_dir in range(2):
+                        if phys_dir == 0: # matrix entries for metric terms
+                            term = 'x'
+                            xm = 0 # l=x, m=x
+                            ym = 2 # l=y, m=x
+                        else: 
+                            term = 'y'
+                            xm = 1 # l=x, m=y
+                            ym = 3 # l=y, m=y
+                            
+                        b = np.zeros((totx + toty)*self.nen) # indices in order l, i_x, i_y, j(nodes)
+                        for ix in range(self.nelem[0]):
+                            for iy in range(self.nelem[1]):
+                                # bdy_metrics: nodes, boundary (left, right, lower, upper), d(xi_i)/d(x_j) (dx_r/dx_p, dx_r/dy_p, dy_r/dx_p, dy_r/dy_p), elem
+                                startx = ix*self.nelem[1]*self.nen + iy*self.nen
+                                starty = totx*self.nen + ix*(self.nelem[1]+1)*self.nen + iy*self.nen
+                                b[startx:startx+self.nen] = self.bdy_metrics[:,0,xm,ix*self.nelem[1]+iy]
+                                b[starty:starty+self.nen] = self.bdy_metrics[:,2,ym,ix*self.nelem[1]+iy]
+                            # do for the last facet on the topmost boundary (in this current x column)
+                            starty = totx*self.nen + ix*(self.nelem[1]+1)*self.nen + self.nelem[1]*self.nen
+                            b[starty:starty+self.nen] = self.bdy_metrics[:,3,ym,ix*self.nelem[1]+(self.nelem[1]-1)]           
+                        # do for the last set of facets on the rightmost boundary
+                        for iy in range(self.nelem[1]):
+                            startx = self.nelem[0]*self.nelem[1]*self.nen + iy*self.nen
+                            b[startx:startx+self.nen] = self.bdy_metrics[:,1,xm,(self.nelem[0]-1)*self.nelem[1]+iy]
+                    
+                        RHS = HB @ b
+                        print('Metric Optz: '+term+' surface integral GCL constraints violated by a max of {0:.2g}'.format(np.max(abs(RHS))))
+                        lam = np.linalg.solve(A,RHS)
+                        
+                        bnew = np.copy(b)
+                        for ix in range(self.nelem[0]):
+                            for iy in range(self.nelem[1]):
+                                start = ix*self.nelem[1] + iy
+                                startx = ix*self.nelem[1]*self.nen + iy*self.nen
+                                starty = totx*self.nen + ix*(self.nelem[1]+1)*self.nen + iy*self.nen
+                                if ix != 0:
+                                    bnew[startx:startx+self.nen] += Hperp*lam[start-self.nelem[1]]
+                                bnew[startx:startx+self.nen] -= Hperp*lam[start]              
+                                if iy != 0:
+                                    bnew[starty:starty+self.nen] += Hperp*lam[start-1]
+                                bnew[starty:starty+self.nen] -= Hperp*lam[start]
+                            # do for the last facet on the topmost boundary (in this current x column)
+                            start = ix*self.nelem[1] + self.nelem[1]-1
+                            starty = totx*self.nen + ix*(self.nelem[1]+1)*self.nen + self.nelem[1]*self.nen
+                            bnew[starty:starty+self.nen] +=  Hperp*lam[start]
+                        # do for the last set of facets on the rightmost boundary
+                        for iy in range(self.nelem[1]):
+                            start = self.nelem[0]*self.nelem[1] + iy
+                            startx = self.nelem[0]*self.nelem[1]*self.nen + iy*self.nen
+                            bnew[startx:startx+self.nen] += Hperp*lam[start-self.nelem[1]]
+                               
+                        RHSnew = HB @ bnew
+                        print('Metric Optz: modified '+term+' surface metrics by a max amount {0:.2g}'.format(np.max(abs(b-bnew))))
+                        print('Metric Optz: '+term+' surface integral GCL constraints are now satisfied to {0:.2g}'.format(np.max(abs(RHSnew)))) 
+                        
+                        for ix in range(self.nelem[0]):
+                            for iy in range(self.nelem[1]):
+                                # bdy_metrics: nodes, boundary (left, right, lower, upper), d(xi_i)/d(x_j) (dx_r/dx_p, dx_r/dy_p, dy_r/dx_p, dy_r/dy_p), elem
+                                startx = ix*self.nelem[1]*self.nen + iy*self.nen
+                                startx2 = (ix+1)*self.nelem[1]*self.nen + iy*self.nen
+                                starty = totx*self.nen + ix*(self.nelem[1]+1)*self.nen + iy*self.nen
+                                starty2 = totx*self.nen + ix*(self.nelem[1]+1)*self.nen + (iy+1)*self.nen
+                                self.bdy_metrics[:,0,xm,ix*self.nelem[1]+iy] = np.copy(bnew[startx:startx+self.nen])
+                                self.bdy_metrics[:,1,xm,ix*self.nelem[1]+iy] = np.copy(bnew[startx2:startx2+self.nen])
+                                self.bdy_metrics[:,2,ym,ix*self.nelem[1]+iy] = np.copy(bnew[starty:starty+self.nen])
+                                self.bdy_metrics[:,3,ym,ix*self.nelem[1]+iy] = np.copy(bnew[starty2:starty2+self.nen])          
+                    
+                    # now proceed to the normal optimization procedure
+                    optz_method = 'papers'
+                                    
+                if optz_method == 'papers' or optz_method == 'ddrf':
                     QxT = np.kron(sbp.Q, sbp.H).T
                     QyT = np.kron(sbp.H, sbp.Q).T
                     M = np.hstack((QxT,QyT))
                     Minv = np.linalg.pinv(M, rcond=1e-13)
                     if np.max(abs(Minv)) > 1e8:
                         print('WARNING: There may be an error in Minv of metric optimization. Try a higher rcond.')
-                    # first for (physical) x dimension
-                    c = txb @ sbp.H @ self.bdy_metrics[:,1,0,:] - txa @ sbp.H @ self.bdy_metrics[:,0,0,:] \
-                      + tyb @ sbp.H @ self.bdy_metrics[:,3,2,:] - tya @ sbp.H @ self.bdy_metrics[:,2,2,:]
-                    if np.any(abs(np.sum(c,axis=0))>1e-12):
-                        print('WARNING: c_x vector in optimized metric computation does not add to zero.')
-                        print('         max value (element) of sum is {0:.2g}'.format(np.max(abs(np.sum(c,axis=0)))))
-                        print('         i.e. Surface integrals in x do not hold discretely.')
-                    aex = np.vstack((self.metrics[:,0,:],self.metrics[:,2,:]))
-                    a = aex - Minv @ ( M @ aex - c )
-                    print('... metric optimization modified x-metrics by a maximum of {0:.2g}'.format(np.max(abs(a - aex))))
-                    print('TEMP: testing free stream - max is {0:.2g}'.format(np.max(abs(M @ a - c ))))
-                    self.metrics[:,0,:] = np.copy(a[:self.nen**2,:])
-                    self.metrics[:,2,:] = np.copy(a[self.nen**2:,:])
-                    # now for (physical) y dimension
-                    c = txb @ sbp.H @ self.bdy_metrics[:,1,1,:] - txa @ sbp.H @ self.bdy_metrics[:,0,1,:] \
-                      + tyb @ sbp.H @ self.bdy_metrics[:,3,3,:] - tya @ sbp.H @ self.bdy_metrics[:,2,3,:]
-                    if np.any(abs(np.sum(c,axis=0))>1e-12):
-                        print('WARNING: c_y vector in optimized metric computation does not add to zero.')
-                        print('         max value (element) of sum is {0:.2g}'.format(np.max(abs(np.sum(c,axis=0)))))
-                        print('         Surface integrals in y do not hold discretely.')
-                    aex = np.vstack((self.metrics[:,1,:],self.metrics[:,3,:]))
-                    a = aex - Minv @ ( M @ aex - c )
-                    print('... metric optimization modified y-metrics by a maximum of {0:.2g}'.format(np.max(abs(a - aex))))
-                    print('TEMP: testing free stream - max is {0:.2g}'.format(np.max(abs(M @ a - c ))))
-                    self.metrics[:,1,:] = np.copy(a[:self.nen**2,:])
-                    self.metrics[:,3,:] = np.copy(a[self.nen**2:,:])  
+                    for phys_dir in range(2):
+                        if phys_dir == 0: # matrix entries for metric terms
+                            term = 'x'
+                            xm = 0 # l=x, m=x
+                            ym = 2 # l=y, m=x
+                        else: 
+                            term = 'y'
+                            xm = 1 # l=x, m=y
+                            ym = 3 # l=y, m=y
+                            
+                        c = txb @ sbp.H @ self.bdy_metrics[:,1,xm,:] - txa @ sbp.H @ self.bdy_metrics[:,0,xm,:] \
+                          + tyb @ sbp.H @ self.bdy_metrics[:,3,ym,:] - tya @ sbp.H @ self.bdy_metrics[:,2,ym,:]
+                        if np.any(abs(np.sum(c,axis=0))>1e-13):
+                            print('WARNING: '+term+'surface integral GCL constraint violated by a max of {0:.2g}'.format(np.max(abs(np.sum(c,axis=0)))))
+                            print('         the c_'+term+' vector in optimization will not add to zero => Optimization will not work!')
+                        aex = np.vstack((self.metrics[:,xm,:],self.metrics[:,ym,:]))
+                        a = aex - Minv @ ( M @ aex - c )
+                        print('Metric Optz: modified '+term+' volume metrics by a max amount {0:.2g}'.format(np.max(abs(a - aex))))
+                        self.metrics[:,xm,:] = np.copy(a[:self.nen**2,:])
+                        self.metrics[:,ym,:] = np.copy(a[self.nen**2:,:])
+                     
                 elif optz_method == 'diablo': # NOTE: THIS IS WRONG. SEE EMAIL WITH DAVID CRAIG PENNER
                     Dx = np.kron(sbp.D, eye)
                     Dy = np.kron(eye, sbp.D)
@@ -1007,64 +1103,14 @@ class MakeMesh:
                     a = aex - Minv @ ( M @ aex - c )
                     self.metrics[:,1,:] = a[:self.nen**2,:]
                     self.metrics[:,3,:] = a[self.nen**2:,:] 
-                elif optz_method == 'direct':
-                    import scipy.optimize as sc
-                    QxT = np.kron(sbp.Q, sbp.H).T
-                    QyT = np.kron(sbp.H, sbp.Q).T
-                    M = np.hstack((QxT,QyT))
-                    # first for (physical) x dimension
-                    c = txb @ sbp.H @ self.bdy_metrics[:,1,0,:] - txa @ sbp.H @ self.bdy_metrics[:,0,0,:] \
-                      + tyb @ sbp.H @ self.bdy_metrics[:,3,2,:] - tya @ sbp.H @ self.bdy_metrics[:,2,2,:]
-                    if np.any(abs(np.sum(c,axis=0))>1e-12):
-                        print('WARNING: c_x vector in optimized metric computation does not add to zero.')
-                        print('         max value (element) of sum is {0:.2g}'.format(np.max(abs(np.sum(c,axis=0)))))
-                        print('         i.e. Surface integrals in x do not hold discretely.')
-                    aex = np.vstack((self.metrics[:,0,:],self.metrics[:,2,:]))
-                    aglob = np.empty(aex.shape)
-                    for e in range(self.nelem[0]*self.nelem[1]):
-                        def min_func(a):
-                            return (a - aex[:,e])@(a-aex[:,e])
-                        constraint = sc.LinearConstraint(M, c[:,e] , c[:,e])
-                        res = sc.minimize(min_func,aex[:,e],constraints=constraint,options={'maxiter':10000})
-                        if not res.success:
-                            print(res.message)
-                        a = res.x
-                        self.metrics[:,0,e] = a[:self.nen**2]
-                        self.metrics[:,2,e] = a[self.nen**2:]
-                        aglob[:,e] = a
-                    print('... metric optimization modified x-metrics by a maximum of {0:.2g}'.format(np.max(abs(aglob - aex))))
-                    print('TEMP: testing free stream - max is {0:.2g}'.format(np.max(abs(M @ aglob - c ))))
-
-                    # now for (physical) y dimension
-                    c = txb @ sbp.H @ self.bdy_metrics[:,1,1,:] - txa @ sbp.H @ self.bdy_metrics[:,0,1,:] \
-                      + tyb @ sbp.H @ self.bdy_metrics[:,3,3,:] - tya @ sbp.H @ self.bdy_metrics[:,2,3,:]
-                    if np.any(abs(np.sum(c,axis=0))>1e-12):
-                        print('WARNING: c_y vector in optimized metric computation does not add to zero.')
-                        print('         max value (element) of sum is {0:.2g}'.format(np.max(abs(np.sum(c,axis=0)))))
-                        print('         Surface integrals in y do not hold discretely.')
-                    aex = np.vstack((self.metrics[:,1,:],self.metrics[:,3,:]))
-                    aglob = np.empty(aex.shape)
-                    for e in range(self.nelem[0]*self.nelem[1]):
-                        def min_func(a):
-                            return (a - aex[:,e])@(a-aex[:,e])
-                        constraint = sc.LinearConstraint(M, c[:,e] , c[:,e])
-                        res = sc.minimize(min_func,aex[:,e],constraints=constraint,options={'maxiter':10000})
-                        if not res.success:
-                            print(res.message)
-                        a = res.x
-                        self.metrics[:,1,e] = a[:self.nen**2]
-                        self.metrics[:,3,e] = a[self.nen**2:] 
-                        aglob[:,e] = a
-                    print('... metric optimization modified y-metrics by a maximum of {0:.2g}'.format(np.max(abs(aglob - aex))))
-                    print('TEMP: testing free stream - max is {0:.2g}'.format(np.max(abs(M @ aglob - c ))))
 
                 else:
-                    raise Exception('metric optimization method not understood')
+                    raise Exception("metric optimization method '"+optz_method+"' not understood")
                     
                 # update the metric jacobian determinant to use the newly optimized quantities
                 det_jac_old = np.copy(self.det_jac)
                 self.det_jac = self.metrics[:,0,:] * self.metrics[:,3,:] - self.metrics[:,1,:] * self.metrics[:,2,:]
-                print('TEMP: Updated jacobian by a max of {0:.2g}'.format(np.max(abs(self.det_jac - det_jac_old ))))
+                print('... updated jacobian by a max of {0:.2g} to match optimized metrics'.format(np.max(abs(self.det_jac - det_jac_old))))
                 
                 
         elif self.dim == 3:
@@ -1097,7 +1143,6 @@ class MakeMesh:
             if metric_method=='exact':
                 self.det_jac = self.det_jac_exa
                 self.metrics = self.metrics_exa
-                self.bdy_metrics = self.bdy_metrics_exa
                 
             else:
                 self.metrics = np.zeros((self.nen**3,9,self.nelem[0]*self.nelem[1]*self.nelem[2])) 
@@ -1158,7 +1203,7 @@ class MakeMesh:
                         
                     
             if bdy_metric_method=='exact':
-                self.bdy_metrics = self.bdy_metrics_exa
+                self.bdy_metrics = np.copy(self.bdy_metrics_exa)
                 
             elif bdy_metric_method=='interpolate' or bdy_metric_method=='extrapolate' or bdy_metric_method=='project':
                 self.bdy_metrics = np.zeros((self.nen**2,6,9,self.nelem[0]*self.nelem[1]*self.nelem[2]))
@@ -1289,7 +1334,11 @@ class MakeMesh:
                 tzb = np.kron(np.kron(eye, eye), sbp.tR.reshape((self.nen,1)))
                 tza = np.kron(np.kron(eye, eye), sbp.tL.reshape((self.nen,1)))
                 Hperp = np.kron(sbp.H,sbp.H)
-                if optz_method == 'default':
+                if optz_method == 'default' or optz_method == 'essbp' or optz_method == 'alex':
+                    print('NOT SET UP YET')
+                    optz_method == 'papers'
+                    
+                if optz_method == 'papers' or optz_method == 'ddrf':
                     QxT = np.kron(np.kron(sbp.Q, sbp.H), sbp.H).T
                     QyT = np.kron(np.kron(sbp.H, sbp.Q), sbp.H).T
                     QzT = np.kron(np.kron(sbp.H, sbp.H), sbp.Q).T
@@ -1385,69 +1434,6 @@ class MakeMesh:
                     self.metrics[:,2,:] = a[:self.nen**3,:]
                     self.metrics[:,5,:] = a[self.nen**3:2*self.nen**3,:]
                     self.metrics[:,8,:] = a[2*self.nen**3:,:]
-                elif optz_method == 'direct':
-                    QxT = np.kron(np.kron(sbp.Q, sbp.H), sbp.H).T
-                    QyT = np.kron(np.kron(sbp.H, sbp.Q), sbp.H).T
-                    QzT = np.kron(np.kron(sbp.H, sbp.H), sbp.Q).T
-                    M = np.hstack((QxT,QyT,QzT))
-                    import scipy.optimize as sc
-                    # first for x dimension
-                    c = txb @ Hperp @ self.bdy_metrics[:,1,0,:] - txa @ Hperp @ self.bdy_metrics[:,0,0,:] \
-                      + tyb @ Hperp @ self.bdy_metrics[:,1,3,:] - tya @ Hperp @ self.bdy_metrics[:,0,3,:] \
-                      + tzb @ Hperp @ self.bdy_metrics[:,1,6,:] - tza @ Hperp @ self.bdy_metrics[:,0,6,:]
-                    if np.any(abs(np.sum(c,axis=0))>1e-12):
-                        print('WARNING: c_x vector in optimized metric computation does not add to zero.')
-                        print('         max value (element) of sum is {0:.2g}'.format(np.max(abs(np.sum(c,axis=0)))))
-                        print('         Surface integrals in x do not hold discretely.')
-                    aex = np.vstack((self.metrics[:,0,:],self.metrics[:,3,:],self.metrics[:,6,:]))
-                    for e in range(self.nelem[0]*self.nelem[1]*self.nelem[2]):
-                        def min_func(a):
-                            return (a - aex[:,e])@(a-aex[:,e])
-                        constraint = sc.LinearConstraint(M, c[:,e] , c[:,e])
-                        res = sc.minimize(min_func,aex[:,e],constraints=constraint)
-                        print(res.success)
-                        a = res.x
-                        self.metrics[:,0,e] = a[:self.nen**3]
-                        self.metrics[:,3,e] = a[self.nen**3:2*self.nen**3]
-                        self.metrics[:,6,e] = a[2*self.nen**3:]
-                    # now for y dimension
-                    c = txb @ Hperp @ self.bdy_metrics[:,3,1,:] - txa @ Hperp @ self.bdy_metrics[:,2,1,:] \
-                      + tyb @ Hperp @ self.bdy_metrics[:,3,4,:] - tya @ Hperp @ self.bdy_metrics[:,2,4,:] \
-                      + tzb @ Hperp @ self.bdy_metrics[:,3,7,:] - tza @ Hperp @ self.bdy_metrics[:,2,7,:]
-                    if np.any(abs(np.sum(c,axis=0))>1e-12):
-                        print('WARNING: c_y vector in optimized metric computation does not add to zero.')
-                        print('         max value (element) of sum is {0:.2g}'.format(np.max(abs(np.sum(c,axis=0)))))
-                        print('         Surface integrals in y do not hold discretely.')
-                    aex = np.vstack((self.metrics[:,1,:],self.metrics[:,4,:],self.metrics[:,7,:]))
-                    for e in range(self.nelem[0]*self.nelem[1]*self.nelem[2]):
-                        def min_func(a):
-                            return (a - aex[:,e])@(a-aex[:,e])
-                        constraint = sc.LinearConstraint(M, c[:,e] , c[:,e])
-                        res = sc.minimize(min_func,aex[:,e],constraints=constraint)
-                        print(res.success)
-                        a = res.x
-                        self.metrics[:,1,e] = a[:self.nen**3]
-                        self.metrics[:,4,e] = a[self.nen**3:2*self.nen**3]
-                        self.metrics[:,7,e] = a[2*self.nen**3:]  
-                    # now for z dimension
-                    c = txb @ Hperp @ self.bdy_metrics[:,5,2,:] - txa @ Hperp @ self.bdy_metrics[:,4,2,:] \
-                      + tyb @ Hperp @ self.bdy_metrics[:,5,5,:] - tya @ Hperp @ self.bdy_metrics[:,4,5,:] \
-                      + tzb @ Hperp @ self.bdy_metrics[:,5,8,:] - tza @ Hperp @ self.bdy_metrics[:,4,8,:]
-                    if np.any(abs(np.sum(c,axis=0))>1e-12):
-                        print('WARNING: c_z vector in optimized metric computation does not add to zero.')
-                        print('         max value (element) of sum is {0:.2g}'.format(np.max(abs(np.sum(c,axis=0)))))
-                        print('         Surface integrals in y do not hold discretely.')
-                    aex = np.vstack((self.metrics[:,2,:],self.metrics[:,5,:],self.metrics[:,8,:]))
-                    for e in range(self.nelem[0]*self.nelem[1]*self.nelem[2]):
-                        def min_func(a):
-                            return (a - aex[:,e])@(a-aex[:,e])
-                        constraint = sc.LinearConstraint(M, c[:,e] , c[:,e])
-                        res = sc.minimize(min_func,aex[:,e],constraints=constraint)
-                        print(res.success)
-                        a = res.x
-                        self.metrics[:,2,e] = a[:self.nen**3]
-                        self.metrics[:,5,e] = a[self.nen**3:2*self.nen**3]
-                        self.metrics[:,8,e] = a[2*self.nen**3:]
                 else:
                     print('WARNING: Optimization procedure not understood. Skipping Optimization.')
             
