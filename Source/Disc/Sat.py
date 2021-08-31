@@ -10,6 +10,7 @@ Created on Tue Feb 23 18:42:28 2021
 from Source.Disc.SatDer1 import SatDer1
 from Source.Disc.SatDer2 import SatDer2
 import numpy as np
+import Source.Methods.Functions as fn
 
 
 class Sat(SatDer1, SatDer2):
@@ -41,6 +42,7 @@ class Sat(SatDer1, SatDer2):
         self.nen = solver.nen
         self.neq_node = solver.neq_node
         self.nelem = solver.nelem
+        self.direction = direction
         eye = np.eye(self.nen*self.neq_node)
         
         if self.dim == 1:
@@ -52,21 +54,20 @@ class Sat(SatDer1, SatDer2):
             self.maxeig_dEdq = solver.diffeq.maxeig_dEdq
             self.metrics = solver.mesh.metrics[:,0,:]
             self.bdy_metrics = np.reshape(solver.mesh.bdy_metrics, (1,2,self.nelem))
+            self.had_flux_Ex = solver.had_flux_Ex
             
         elif self.dim == 2:
             self.Hperp = solver.H_perp #TODO: Flatten this
-            if direction == 'x': # computational direction, not physical direction
+            if self.direction == 'x': # computational direction, not physical direction
                 self.tL = np.kron(solver.tL, eye)
                 self.tR = np.kron(solver.tR, eye)
-                self.metrics = solver.mesh.metrics[:,:2,:] # only want dx_ref/dx_phys and dx_ref/dy_phys
-                self.bdy_metrics = solver.mesh.bdy_metrics[:,:2,:2,:] # facets 1 and 2, same matrix entries
-                self.set_metrics = self.set_metrics_2d_x
-            elif direction == 'y':
+                self.set_metrics_2d_x(solver.mesh.metrics, solver.mesh.bdy_metrics)
+            elif self.direction == 'y':
                 self.tL = np.kron(eye, solver.tL)
                 self.tR = np.kron(eye, solver.tR)
-                self.metrics = solver.mesh.metrics[:,2:,:] # only want dy_ref/dx_phys and dy_ref/dy_phys
-                self.bdy_metrics = solver.mesh.bdy_metrics[:,2:,2:,:] # facets 1 and 2, same matrix entries
-                self.set_metrics = self.set_metrics_2d_y
+                self.set_metrics_2d_y(solver.mesh.metrics, solver.mesh.bdy_metrics)
+            self.had_flux_Ex = solver.had_flux_Ex
+            self.had_flux_Ey = solver.had_flux_Ey
             self.dExdq = solver.diffeq.dExdq
             self.dEydq = solver.diffeq.dEydq
             self.d2Exdq2 = solver.diffeq.d2Exdq2
@@ -78,24 +79,21 @@ class Sat(SatDer1, SatDer2):
         
         elif self.dim == 3:
             self.Hperp = solver.H_perp
-            if direction == 'x': 
+            if self.direction == 'x': 
                 self.tL = np.kron(np.kron(solver.tL, eye), eye)
                 self.tR = np.kron(np.kron(solver.tR, eye), eye)
-                self.metrics = solver.mesh.metrics[:,:3,:]
-                self.bdy_metrics = solver.mesh.bdy_metrics[:,:2,:3,:]
-                self.set_metrics = self.set_metrics_3d_x
-            elif direction == 'y':
+                self.set_metrics_3d_x(solver.mesh.metrics, solver.mesh.bdy_metrics)
+            elif self.direction == 'y':
                 self.tL = np.kron(np.kron(eye, solver.tL), eye)
                 self.tR = np.kron(np.kron(eye, solver.tR), eye)
-                self.metrics = solver.mesh.metrics[:,3:6,:]
-                self.bdy_metrics = solver.mesh.bdy_metrics[:,2:4,3:6,:]
-                self.set_metrics = self.set_metrics_3d_y
-            elif direction == 'z':
+                self.set_metrics_3d_y(solver.mesh.metrics, solver.mesh.bdy_metrics)
+            elif self.direction == 'z':
                 self.tL = np.kron(eye, np.kron(eye, solver.tL))
                 self.tR = np.kron(eye, np.kron(eye, solver.tR))
-                self.metrics = solver.mesh.metrics[:,6:,:]
-                self.bdy_metrics = solver.mesh.bdy_metrics[:,4:,6:,:]
-                self.set_metrics = self.set_metrics_3d_z
+                self.set_metrics_3d_z(solver.mesh.metrics, solver.mesh.bdy_metrics)
+            self.had_flux_Ex = solver.had_flux_Ex
+            self.had_flux_Ey = solver.had_flux_Ey
+            self.had_flux_Ez = solver.had_flux_Ez
             self.dExdq = solver.diffeq.dExdq
             self.dEydq = solver.diffeq.dEydq
             self.dEzdq = solver.diffeq.dEzdq
@@ -108,9 +106,44 @@ class Sat(SatDer1, SatDer2):
             self.maxeig_dExdq = solver.diffeq.maxeig_dExdq
             self.maxeig_dEydq = solver.diffeq.maxeig_dEydq
             self.maxeig_dEzdq = solver.diffeq.maxeig_dEzdq
+            
+        ''' save useful matrices so as not to calculate on each loop '''
 
         self.tLT = self.tL.T
         self.tRT = self.tR.T
+        if self.dim == 1:
+            self.Esurf = self.tR @ self.tRT - self.tL @ self.tLT
+        else:
+            self.Esurf = self.tR @ np.diag(self.Hperp[:,0]) @ self.tRT - self.tL @ np.diag(self.Hperp[:,0]) @ self.tLT
+        
+        if self.disc_type == 'had':
+            if self.dim == 1:
+                self.vol_mat = fn.lm_gdiag(self.Esurf,self.metrics)
+                self.taphys = fn.lm_gm(self.tL, fn.gdiag_lm(self.bdy_metrics[:,0,:],self.tRT))
+                self.tbphys = fn.lm_gm(self.tR, fn.gdiag_lm(self.bdy_metrics[:,1,:],self.tLT))
+        
+            elif self.dim == 2:
+                # for volume terms, matrices to contract with x_phys and y_phys flux matrices
+                self.vol_x_mat = [fn.lm_gdiag(self.Esurf,metrics[:,0,:]) for metrics in self.metrics]
+                self.vol_y_mat = [fn.lm_gdiag(self.Esurf,metrics[:,1,:]) for metrics in self.metrics]
+                # for surface terms, matrices to contract with x_phys and y_phys flux matrices on a and b facets
+                self.taphysx = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp * bdy_metrics[:,0,0,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
+                self.taphysy = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp * bdy_metrics[:,0,1,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
+                self.tbphysx = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp * bdy_metrics[:,1,0,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
+                self.tbphysy = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp * bdy_metrics[:,1,1,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
+            
+            elif self.dim == 3:
+                # for volume terms, matrices to contract with x_phys, y_phys, and z_phys flux matrices
+                self.vol_x_mat = [fn.lm_gdiag(self.Esurf,metrics[:,0,:]) for metrics in self.metrics]
+                self.vol_y_mat = [fn.lm_gdiag(self.Esurf,metrics[:,1,:]) for metrics in self.metrics]
+                self.vol_z_mat = [fn.lm_gdiag(self.Esurf,metrics[:,2,:]) for metrics in self.metrics]
+                # for surface terms, matrices to contract with x_phys, y_phys, and z_phys flux matrices on a and b facets
+                self.taphysx = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp * bdy_metrics[:,0,0,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
+                self.taphysy = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp * bdy_metrics[:,0,1,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
+                self.taphysz = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp * bdy_metrics[:,0,2,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
+                self.tbphysx = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp * bdy_metrics[:,1,0,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
+                self.tbphysy = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp * bdy_metrics[:,1,1,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
+                self.tbphysz = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp * bdy_metrics[:,1,2,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
 
         ''' Set the methods that will be used to calculate the SATs '''
 
@@ -120,7 +153,7 @@ class Sat(SatDer1, SatDer2):
                 self.calc = solver.diffeq.calc_sat
                 self.calc_dfdq = solver.diffeq.calc_dfdq_sat
                 
-            elif self.method == 'central' or self.method == 'nondissipative':
+            elif self.method == 'central' or self.method == 'nondissipative' or self.method == 'symmetric':
                 if self.disc_type == 'div':
                     if self.dim == 1:
                         self.calc = self.central_div_1d
@@ -130,17 +163,21 @@ class Sat(SatDer1, SatDer2):
                         self.calc = self.central_div_3d
                 elif self.disc_type == 'had':
                     if self.dim == 1:
-                        self.calc = self.central_had_1d
+                        self.calc = self.base_had_1d
+                        self.diss = lambda *x: 0
                     elif self.dim == 2:
-                        self.calc = self.central_had_2d
+                        self.calc = self.base_had_2d
+                        self.diss = lambda *x: 0
                     elif self.dim == 3:
-                        self.calc = self.central_had_3d
+                        self.calc = self.base_had_3d
+                        self.diss = lambda *x: 0
                 if self.neq_node == 1:
                     if self.disc_type == 'div':
                         pass
                         #self.calc_dfdq = self.central_scalar_div_dfdq
                     elif self.disc_type == 'had':
-                        self.calc_dfdq = self.central_scalar_had_dfdq
+                        pass
+                        #self.calc_dfdq = self.central_scalar_had_dfdq
                 else:
                     self.calc_dfdq = self.dfdq_complexstep
                     
@@ -154,11 +191,11 @@ class Sat(SatDer1, SatDer2):
                         self.calc = self.upwind_div_3d
                 elif self.disc_type == 'had':
                     if self.dim == 1:
-                        self.calc = self.upwind_had_1d
+                        self.calc = self.base_had_1d
                     elif self.dim == 2:
-                        self.calc = self.upwind_had_2d
+                        self.calc = self.base_had_2d
                     elif self.dim == 3:
-                        self.calc = self.upwind_had_3d
+                        self.calc = self.base_had_3d
                 if self.neq_node == 1:
                     if self.disc_type == 'div':
                         pass
@@ -178,17 +215,21 @@ class Sat(SatDer1, SatDer2):
                         self.calc = self.llf_div_3d
                 elif self.disc_type == 'had':
                     if self.dim == 1:
-                        self.calc = self.llf_had_1d
+                        self.calc = self.base_had_1d
+                        self.diss = self.lf_diss_cons_1d
                     elif self.dim == 2:
-                        self.calc = self.llf_had_2d
+                        self.calc = self.base_had_2d
+                        self.diss = self.lf_diss_cons_2d
                     elif self.dim == 3:
-                        self.calc = self.llf_had_3d
+                        self.calc = self.base_had_3d
+                        self.diss = self.lf_diss_cons_3d
                 if self.neq_node == 1:
                     if self.disc_type == 'div':
                         pass
                         #self.calc_dfdq = self.llf_scalar_div_dfdq
                     elif self.disc_type == 'had':
-                        self.calc_dfdq = self.llf_scalar_had_dfdq
+                        pass
+                        #self.calc_dfdq = self.llf_scalar_had_dfdq
                 else:
                     self.calc_dfdq = self.dfdq_complexstep
                     
@@ -239,39 +280,129 @@ class Sat(SatDer1, SatDer2):
             raise Exception('SAT methods for reqested order of PDE is not available')
             
         
-    def set_metrics_2d_x(self, row):
-        ''' pick out the appropriate metrics for the given row '''
-        metrics = self.metrics[:,:,row::self.nelem[1]] 
-        bdy_metrics = self.bdy_metrics[:,:,:,row::self.nelem[1]]
-        return metrics, bdy_metrics
-    
-    def set_metrics_2d_y(self, col):
-        ''' pick out the appropriate metrics for the given column '''
-        start = col*self.nelem[0]
-        end = start + self.nelem[1]
-        metrics = self.metrics[:,:,start:end] 
-        bdy_metrics = self.bdy_metrics[:,:,:,start:end]
-        return metrics, bdy_metrics
+    def set_metrics_2d_x(self, metrics, bdy_metrics):
+        ''' create a list of metrics for each row '''  
+        self.metrics = []
+        self.bdy_metrics = []
+        for row in range(self.nelem[1]):
+            self.metrics.append(metrics[:,:2,row::self.nelem[1]]) # only want dx_ref/dx_phys and dx_ref/dy_phys
+            self.bdy_metrics.append(bdy_metrics[:,:2,:2,row::self.nelem[1]]) # facets 1 and 2, same matrix entries
 
-    def set_metrics_3d_x(self, row):
-        ''' pick out the appropriate metrics for the given row '''
+    def set_metrics_2d_y(self, metrics, bdy_metrics):
+        ''' create a list of metrics for each col '''  
+        self.metrics = []
+        self.bdy_metrics = []
+        for col in range(self.nelem[0]):
+            start = col*self.nelem[0]
+            end = start + self.nelem[1]
+            self.metrics.append(metrics[:,2:,start:end]) # only want dy_ref/dx_phys and dy_ref/dy_phys
+            self.bdy_metrics.append(bdy_metrics[:,2:,2:,start:end]) # facets 3 and 4, same matrix entries
+
+    def set_metrics_3d_x(self, metrics, bdy_metrics):
+        ''' create a list of metrics for each row '''  
+        self.metrics = []
+        self.bdy_metrics = []
         skipx = self.nelem[1]*self.nelem[2]
-        metrics = self.metrics[:,:,row::skipx]
-        bdy_metrics = self.bdy_metrics[:,:,:,row::skipx]
-        return metrics, bdy_metrics
+        for row in range(skipx):
+            self.metrics.append(metrics[:,:3,row::skipx])
+            self.bdy_metrics.append(bdy_metrics[:,:2,:3,row::skipx])
     
-    def set_metrics_3d_y(self, row):
-        ''' pick out the appropriate metrics for the given row '''
-        start = row + (row//self.nelem[2])*(self.nelem[1]-1)*self.nelem[2]
-        end = start + self.nelem[1]*self.nelem[2]
-        metrics = self.metrics[:,:,start:end:self.nelem[2]]
-        bdy_metrics = self.bdy_metrics[:,:,:,start:end:self.nelem[2]]
-        return metrics, bdy_metrics
+    def set_metrics_3d_y(self, metrics, bdy_metrics):
+        ''' create a list of metrics for each row '''  
+        self.metrics = []
+        self.bdy_metrics = []
+        for coly in range(self.nelem[0]*self.nelem[2]):
+            start = coly + (coly//self.nelem[2])*(self.nelem[1]-1)*self.nelem[2]
+            end = start + self.nelem[1]*self.nelem[2]
+            self.metrics.append(metrics[:,3:6,start:end:self.nelem[2]])
+            self.bdy_metrics.append(bdy_metrics[:,2:4,3:6,start:end:self.nelem[2]])
     
-    def set_metrics_3d_z(self, row):
-        ''' pick out the appropriate metrics for the given row '''
-        start = row*self.nelem[2]
-        end = start + self.nelem[2]
-        metrics = self.metrics[:,:,start:end]
-        bdy_metrics = self.bdy_metrics[:,:,:,start:end]
-        return metrics, bdy_metrics
+    def set_metrics_3d_z(self, metrics, bdy_metrics):
+        ''' create a list of metrics for each row '''  
+        self.metrics = []
+        self.bdy_metrics = []
+        for colz in range(self.nelem[0]*self.nelem[2]):
+            start = colz*self.nelem[2]
+            end = start + self.nelem[2]
+            self.metrics.append(metrics[:,6:,start:end])
+            self.bdy_metrics.append(bdy_metrics[:,4:,6:,start:end])
+
+    
+
+
+    ''' Define the 2-point flux dissipation functions. For a conservative flux + dissipation '''
+
+    def lf_diss_cons_1d(self,qL,qR,avg='simple'):
+        ''' lax-friedrichs dissipation in conservative variables '''
+        qLf = self.tRT @ qL
+        qRf = self.tLT @ qR
+        if avg=='simple': # Alternatively, a Roe average can be used
+            q_avg = (qLf + qRf)/2
+        elif avg=='roe':
+            raise Exception('Roe Average not coded up yet')
+        else:
+            raise Exception('Averaging method not understood.')
+        
+        q_jump = qRf - qLf
+        
+        maxeigs = self.maxeig_dEdq(q_avg)
+        metrics = fn.pad_1dR(self.bdy_metrics[:,0,:], self.bdy_metrics[:,1,-1])
+        Lambda = np.abs(maxeigs * metrics)
+        Lambda_q_jump = fn.gdiag_gv(Lambda, q_jump)
+        dissL = self.tL @ Lambda_q_jump[:,:-1]
+        dissR = self.tR @ Lambda_q_jump[:,1:]
+        
+        diss = (dissL - dissR)/2
+        return diss
+        
+    def lf_diss_cons_2d(self,qL,qR,idx,avg='simple'):
+        ''' lax-friedrichs dissipation in conservative variables '''
+        qLf = self.tRT @ qL
+        qRf = self.tLT @ qR
+        if avg=='simple': # Alternatively, a Roe average can be used
+            q_avg = (qLf + qRf)/2
+        elif avg=='roe':
+            raise Exception('Roe Average not coded up yet')
+        else:
+            raise Exception('Averaging method not understood.')
+        
+        q_jump = qRf - qLf
+        
+        maxeigsx = self.maxeig_dExdq(q_avg)
+        maxeigsy = self.maxeig_dEydq(q_avg)
+        metricsx = fn.pad_1dR(self.bdy_metrics[idx][:,0,0,:], self.bdy_metrics[idx][:,1,0,-1])
+        metricsy = fn.pad_1dR(self.bdy_metrics[idx][:,0,1,:], self.bdy_metrics[idx][:,1,1,-1])
+        H_Lambda = self.Hperp * np.abs(maxeigsx * metricsx + maxeigsy * metricsy)
+        Lambda_q_jump = fn.gdiag_gv(H_Lambda, q_jump)
+        dissL = self.tL @ Lambda_q_jump[:,:-1]
+        dissR = self.tR @ Lambda_q_jump[:,1:]
+        
+        diss = (dissL - dissR)/2
+        return diss
+    
+    def lf_diss_cons_3d(self,qL,qR,idx,avg='simple'):
+        ''' lax-friedrichs dissipation in conservative variables '''
+        qLf = self.tRT @ qL
+        qRf = self.tLT @ qR
+        if avg=='simple': # Alternatively, a Roe average can be used
+            q_avg = (qLf + qRf)/2
+        elif avg=='roe':
+            raise Exception('Roe Average not coded up yet')
+        else:
+            raise Exception('Averaging method not understood.')
+        
+        q_jump = qRf - qLf
+        
+        maxeigsx = self.maxeig_dExdq(q_avg)
+        maxeigsy = self.maxeig_dEydq(q_avg)
+        maxeigsz = self.maxeig_dEzdq(q_avg)
+        metricsx = fn.pad_1dR(self.bdy_metrics[idx][:,0,0,:], self.bdy_metrics[idx][:,1,0,-1])
+        metricsy = fn.pad_1dR(self.bdy_metrics[idx][:,0,1,:], self.bdy_metrics[idx][:,1,1,-1])
+        metricsz = fn.pad_1dR(self.bdy_metrics[idx][:,0,2,:], self.bdy_metrics[idx][:,1,2,-1])
+        H_Lambda = self.Hperp * np.abs(maxeigsx * metricsx + maxeigsy * metricsy + maxeigsz * metricsz)
+        Lambda_q_jump = fn.gdiag_gv(H_Lambda, q_jump)
+        dissL = self.tL @ Lambda_q_jump[:,:-1]
+        dissR = self.tR @ Lambda_q_jump[:,1:]
+        
+        diss = (dissL - dissR)/2
+        return diss

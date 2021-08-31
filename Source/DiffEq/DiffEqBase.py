@@ -415,6 +415,24 @@ class PdeBase:
 
     ''' Terms for the first derivative: E '''
     
+    def central_Ex(self,qL,qR):
+        ''' a simple central 2-point flux, the default for the Hadamard form
+        NOTE: Ideally this should NOT be used. Will be very slow. '''
+        fx = fn.arith_mean(self.calcEx(qL),self.calcEx(qR))
+        return fx
+        
+    def central_Ey(self,qL,qR):
+        ''' a simple central 2-point flux, the default for the Hadamard form
+        NOTE: Ideally this should NOT be used. Will be very slow. '''
+        fy = fn.arith_mean(self.calcEy(qL),self.calcEy(qR))
+        return fy
+    
+    def central_Ez(self,qL,qR):
+        ''' a simple central 2-point flux, the default for the Hadamard form
+        NOTE: Ideally this should NOT be used. Will be very slow. '''
+        fz = fn.arith_mean(self.calcEz(qL),self.calcEz(qR))
+        return fz
+
     def maxeig_dEdq(self,q):
         ''' Calculate the constant for the Lax-Friedrichs flux, useful to set 
         the CFL number but should not be used for computations in the code

@@ -123,10 +123,10 @@ class PdeSolverSbp(PdeSolver):
 
     def dqdt_1d_div(self, q):
         ''' the main dqdt function for divergence form in 1D '''
-        E = self.diffeq.calcE(q)
+        E = self.diffeq.calcEx(q)
         dEdx = fn.gm_gv(self.Dx_phys, E)
         
-        if self.periodicity:
+        if self.periodic:
             sat = self.sat.calc(q,E)
         else:
             raise Exception('Not coded up yet')
@@ -205,11 +205,99 @@ class PdeSolverSbp(PdeSolver):
         return dqdt
     
     def dfdq_3d_div(self, q):
-        ''' the main linearized RHS function for divergence form in 2D '''
-        raise Exception('Not done yet.')        
+        ''' the main linearized RHS function for divergence form in 3D '''
+        raise Exception('Not done yet.') 
+        
+    def dqdt_1d_had(self, q):
+        ''' the main dqdt function for hadamard form in 1D '''
+        Fvol = fn.build_F_vol(q, self.neq_node, self.had_flux_Ex)
+        dEdx = 2*fn.gm_gm_had_diff(self.Dx_phys, Fvol)
+        
+        if self.periodic:
+            sat = self.sat.calc(q,Fvol)
+        else:
+            raise Exception('Not coded up yet')
+        
+        dqdt = - dEdx + (self.H_inv_phys * sat) + self.diffeq.calcG(q)
+        return dqdt
+    
+    def dfdq_1d_had(self, q):
+        ''' the main linearized RHS function for hadamard form in 1D '''
+        raise Exception('Not done yet.')
+        
+    def dqdt_2d_had(self, q):
+        ''' the main dqdt function for hadamard form in 2D '''
+        Fxvol = fn.build_F_vol(q, self.neq_node, self.had_flux_Ex)
+        Fyvol = fn.build_F_vol(q, self.neq_node, self.had_flux_Ey)
+        dExdx = 2*fn.gm_gm_had_diff(self.Dx_phys, Fxvol)
+        dEydy = 2*fn.gm_gm_had_diff(self.Dy_phys, Fyvol)
+        satx, saty = np.empty(self.qshape), np.empty(self.qshape)
+        
+        if self.periodic[0]:   # x sat (in ref space) 
+            for row in range(self.nelem[1]):
+                # starts at bottom left to bottom right, then next row up
+                satx[:,row::self.nelem[1]] = self.satx.calc(q[:,row::self.nelem[1]],Fxvol[:,:,row::self.nelem[1]],Fyvol[:,:,row::self.nelem[1]],row)      
+        else:
+            raise Exception('Not coded up yet')
+            
+        if self.periodic[1]:   # y sat (in ref space) 
+            for col in range(self.nelem[0]):
+                # starts at bottom left to top left, then next column to right
+                start = col*self.nelem[0]
+                end = start + self.nelem[1]
+                saty[:,start:end] = self.saty.calc(q[:,start:end],Fxvol[:,:,start:end],Fyvol[:,:,start:end],col)
+        else:
+            raise Exception('Not coded up yet')
+        
+        dqdt = - dExdx -dEydy + (self.H_inv_phys * (satx + saty)) + self.diffeq.calcG(q)
+        return dqdt
+    
+    def dfdq_2d_had(self, q):
+        ''' the main linearized RHS function for hadamard form in 2D '''
+        raise Exception('Not done yet.')
+        
+    def dqdt_3d_had(self, q):
+        ''' the main dqdt function for hadamard form in 3D '''
+        Fxvol = fn.build_F_vol(q, self.neq_node, self.had_flux_Ex)
+        Fyvol = fn.build_F_vol(q, self.neq_node, self.had_flux_Ey)
+        Fzvol = fn.build_F_vol(q, self.neq_node, self.had_flux_Ez)
+        dExdx = 2*fn.gm_gm_had_diff(self.Dx_phys, Fxvol)
+        dEydy = 2*fn.gm_gm_had_diff(self.Dy_phys, Fyvol)
+        dEzdz = 2*fn.gm_gm_had_diff(self.Dz_phys, Fzvol)
+        satx, saty, satz, = np.empty(self.qshape), np.empty(self.qshape), np.empty(self.qshape)
+        
+        skipx = self.nelem[1]*self.nelem[2]
+        skipz = self.nelem[0]*self.nelem[1]
+        if self.periodic[0]:   # x sat (in ref space) 
+            for rowx in range(skipx):
+                satx[:,rowx::skipx] = self.satx.calc(q[:,rowx::skipx],Fxvol[:,:,rowx::skipx],Fyvol[:,:,rowx::skipx],Fzvol[:,:,rowx::skipx],rowx)
+        else:
+            raise Exception('Not coded up yet')
+        if self.periodic[1]:   # y sat (in ref space) 
+            for coly in range(self.nelem[0]*self.nelem[2]):
+                    start = coly + (coly//self.nelem[2])*(self.nelem[1]-1)*self.nelem[2]
+                    end = start + skipx
+                    saty[:,start:end:self.nelem[2]] = self.saty.calc(q[:,start:end:self.nelem[2]],Fxvol[:,:,start:end:self.nelem[2]],Fyvol[:,:,start:end:self.nelem[2]],Fzvol[:,:,start:end:self.nelem[2]],coly)
+        else:
+            raise Exception('Not coded up yet')
+        if self.periodic[2]:   # z sat (in ref space) 
+            for colz in range(skipz):
+                    start = colz*self.nelem[2]
+                    end = start + self.nelem[2]
+                    satz[:,start:end] = self.satz.calc(q[:,start:end],Fxvol[:,:,start:end],Fyvol[:,:,start:end],Fzvol[:,:,start:end],colz)      
+        else:
+            raise Exception('Not coded up yet')
+        
+        dqdt = - dExdx - dEydy - dEzdz + self.H_inv_phys * (satx + saty + satz) + self.diffeq.calcG(q)
+        return dqdt
+    
+    def dfdq_3d_had(self, q):
+        ''' the main linearized RHS function for hadamard form in 3D '''
+        raise Exception('Not done yet.')
         
     
-    ''' old functions '''
+    ############################################################################
+    '''' old functions '''
 
     
     def sbp_dfdq_1D(self, q):
@@ -509,5 +597,4 @@ class PdeSolverSbp(PdeSolver):
         print('Total estimated conservation = {0:.4g}'.format(erbdy + erQT))
         print('Actual conservation = {0:.4g}'.format(cons))
         print('Estimation off by {0:.4g}'.format(abs(cons - erbdy - erQT)))
-        
         

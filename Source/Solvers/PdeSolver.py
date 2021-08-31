@@ -26,8 +26,8 @@ class PdeSolver:
     def __init__(self, diffeq, settings,                            # Diffeq
                  tm_method, dt, t_final,                    # Time marching
                  q0=None,                                   # Initial solution
-                 dim=1, p=2, disc_type='div',               # Discretization
-                 surf_type='upwind', diss_type=None,
+                 p=2, disc_type='div',                      # Discretization
+                 surf_type='upwind', diss_type=None, had_flux='central',
                  nelem=0, nen=0,  disc_nodes='lgl',
                  bc=None, xmin=0, xmax=1,     # Domain
                  obj_name=None, cons_obj_name=None,         # Other
@@ -37,6 +37,8 @@ class PdeSolver:
         ----------
         diffeq : class
             The class of the differential equation.
+        settings : dict
+            A bunch of less important optional settings for the discretization
         tm_method : str
             The type of time marching method to use
         dt : float
@@ -51,8 +53,14 @@ class PdeSolver:
             Degree of the spatial discretization.
             The default is 2.
         disc_type : str, optional
-            Indicates the type of spatial discretization that is used.
-            The default is 'lgl'.
+            Indicates the form of spatial discretization that is used, either 
+            'div' for divergence or 'had' for hadamard.
+        surf_type : str, optional
+            The numerical flux to use along surface element boudnaries
+        diss_type : str or None, optional
+            The numerical volume dissipation to use
+        had_flux : str, optional
+            The 2-point numerical flux to use for the Hadamard form
         nelem : int, optional (Not used for FD)
             The number of elements in the mesh.
             The default is 0.
@@ -61,6 +69,9 @@ class PdeSolver:
             element is set according to whichever of p or nen results in the 
             largest number of nodes (See SbpQuadRule).
             The default is 0.
+        disc_nodes : str, optional
+            Indicates the type of spatial discretization that is used.
+            The default is 'lgl'.
         bc : str or tuple
             Indicates boundary conditions, ex. 'periodic' if the mesh is periodic.
             The default is None, in which case it searches diffeq for default.
@@ -117,17 +128,48 @@ class PdeSolver:
         self.q0 = q0
         
         # Discretization
-        self.dim = dim
-        if disc_type.lower() == 'div' or disc_type.lower() == 'divergence':
-            self.disc_type = 'div'
-        elif disc_type.lower() == 'had' or disc_type.lower() == 'hadamard':
-            self.disc_type = 'had'
-        else: raise Exception('Discretization type not understood. Try div or had.')
+        self.dim = self.diffeq.dim
         self.disc_nodes = disc_nodes.lower()
         self.neq_node = self.diffeq.neq_node
+        if disc_type.lower() == 'div' or disc_type.lower() == 'divergence':
+            self.disc_type = 'div'
+            self.had_flux_Ex = None
+            if self.dim > 1:
+                self.had_flux_Ey = None
+            if self.dim > 2:
+                self.had_flux_Ez = None
+        elif disc_type.lower() == 'had' or disc_type.lower() == 'hadamard':
+            self.disc_type = 'had'       
+            if hasattr(self.diffeq, had_flux.lower()+'_Ex'):
+                self.had_flux = had_flux.lower()
+            else:
+                print("WARNING: 2-point flux '"+had_flux+"' not available for this Diffeq. Reverting to Central flux.")
+                self.had_flux = 'central'
+            self.had_flux_Ex = getattr(self.diffeq, self.had_flux+'_Ex')
+            if self.dim > 1:
+                self.had_flux_Ey = getattr(self.diffeq, self.had_flux+'_Ey')
+            if self.dim > 2:
+                self.had_flux_Ez = getattr(self.diffeq, self.had_flux+'_Ez')
+            # quick test
+            import sys
+            from io import StringIO 
+            save_stderr = sys.stderr # console output for error
+            temp_stderr = StringIO()
+            sys.stderr = temp_stderr # make temporary string output
+            from Source.Methods.Functions import build_F
+            test = build_F(np.ones((2*self.neq_node,2)), np.ones((2*self.neq_node,2)), self.neq_node, self.had_flux_Ex)
+            sys.stderr = save_stderr # reset error output
+            if len(temp_stderr.getvalue()) > 1:
+                print('WARNING: The Hadamard Flux did not compile properly. Currently')
+                print('         supressing output, but most likely this is due to')
+                print('         passing class objects to the jitted function. The code')
+                print('         will not run as fast as it could, and may even fail.')
+
+        else: raise Exception('Discretization type not understood. Try div or had.')
         self.surf_type = surf_type.lower()
         self.diss_type = diss_type
         self.pde_order = self.diffeq.pde_order
+
 
         assert isinstance(p, int), 'p must be an integer'
         self.p = p
@@ -524,9 +566,9 @@ class PdeSolver:
                 exact_dfdq = False
                 print('WARNING: self.dfdq(q) returned errors. Using finite diff approximation')
         if not exact_dfdq:
-            nen,nelem = q.shape      
+            nen,nelem = q.shape    
             A = np.zeros((nelem*nen,nelem*nen))      
-            assert(self.nn*self.neq_node==q.size),"ERROR: sizes don't match"           
+            assert(self.qshape==q.shape),"ERROR: sizes don't match"           
             for i in range(nen):
                 for j in range(nelem):
                     ei = np.zeros((nen,nelem))
