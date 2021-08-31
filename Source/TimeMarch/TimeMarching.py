@@ -186,22 +186,48 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
         if t_idx == 10:
             sim_time = tm.time() - self.start_time
             rem_time = sim_time/10*(n_ts-10)
-            print('... Estimating {0}:{1:02d}:{2:02d} remaining.'.format(int(rem_time//3600),
+            print('... Estimating {0}:{1:02d}:{2:02d} to run.'.format(int(rem_time//3600),
                                                         int((rem_time//60)%60),int(rem_time%60)))         
             
-        if (t_idx*5/n_ts).is_integer():
+        if (t_idx*100/n_ts).is_integer():
             if t_idx == 0:
                 print('--- Beginning Simulation ---')
                 self.start_time = tm.time()
             elif t_idx == n_ts:
                 sim_time = tm.time() - self.start_time
-                print('... 100% Done. Took {0}:{1:02d}:{2:02d} to run.'.format(int(sim_time//3600),
-                                                int((sim_time//60)%60),int(sim_time%60)))
+                suf = 'Complete.'
+                h,m,s = int(sim_time//3600),int((sim_time//60)%60),int(sim_time%60)
+                printProgressBar(t_idx, n_ts, prefix = 'Progress:', suffix = suf)
+                print('... Took {0}:{1:02d}:{2:02d} to run.'.format(h,m,s))
             else:
                 sim_time = tm.time() - self.start_time
                 rem_time = sim_time/t_idx*(n_ts-t_idx)
-                print('... {0}% Done. Estimating {1}:{2:02d}:{3:02d} remaining.'.format(int(t_idx/n_ts*100),
-                                                int(rem_time//3600),int((rem_time//60)%60),int(rem_time%60)))
+                h,m,s = int(rem_time//3600),int((rem_time//60)%60),int(rem_time%60)
+                suf = 'Complete. Estimating {0}:{1:02d}:{2:02d} remaining.'.format(h,m,s)
+                #print('... {0}% Done. Estimating {1}:{2:02d}:{3:02d} remaining.'.format(pct,h,m,s))
+                printProgressBar(t_idx, n_ts, prefix = 'Progress:', suffix = suf)
 
         #TODO: Add convergence tests to stop time marching if solution is 
         # sufficiently converged (rhs=0) or blown up.
+
+    
+def printProgressBar(iteration, total, prefix = '', suffix = '', decimals = 0, length = 20, fill = '█', printEnd = "\r"):
+    """
+    Call in a loop to create terminal progress bar
+    @params:
+        iteration   - Required  : current iteration (Int)
+        total       - Required  : total iterations (Int)
+        prefix      - Optional  : prefix string (Str)
+        suffix      - Optional  : suffix string (Str)
+        decimals    - Optional  : positive number of decimals in percent complete (Int)
+        length      - Optional  : character length of bar (Int)
+        fill        - Optional  : bar fill character (Str)
+        printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
+    """
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    filledLength = int(length * iteration // total)
+    bar = fill * filledLength + '-' * (length - filledLength)
+    print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
+    # Print New Line on Complete
+    if iteration == total: 
+        print()
