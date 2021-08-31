@@ -10,6 +10,7 @@ import numpy as np
 
 from Source.DiffEq.DiffEqBase import PdeBase
 import Source.Methods.Functions as fn
+from numba import njit
 
 
 class LinearConv(PdeBase):
@@ -52,7 +53,7 @@ class LinearConv(PdeBase):
         dfdq = - self.a * self.Dx
         return dfdq
 
-    def calcE(self, q):
+    def calcEx(self, q):
 
         E = self.a * q
         return E
@@ -80,3 +81,10 @@ class LinearConv(PdeBase):
     def calc_LF_const(self,xy):
         ''' Constant for the Lax-Friedrichs flux'''
         return abs(self.a)
+
+    @njit   
+    def central_fix_Ex(qL,qR):
+        ''' a central 2-point flux for hadamard form but with a fixed at 1.
+        This allows us to jit the hadamard flux functions. '''
+        f = fn.arith_mean(qL,qR)
+        return f

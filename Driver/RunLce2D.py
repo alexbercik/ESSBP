@@ -42,12 +42,13 @@ xmax = (1,1)
 bc = 'periodic'
 
 # Spatial discretization
-disc_type = 'div' # 'div', 'had', 'dg'
-disc_nodes = 'lg' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
-p = 3
-nelem = (5,5) # optional, number of elements
+disc_type = 'had' # 'div', 'had', 'dg'
+disc_nodes = 'lgl' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
+p = 4
+nelem = (4,4) # optional, number of elements
 nen = 0 # optional, number of nodes per element
 surf_type = 'lf'
+had_flux = 'central_fix' # 2-point numerical flux used in hadamard form
 diss_type = None
 
 # Initial solution
@@ -62,7 +63,7 @@ print_sol_norm = False
 obj_name = None
 cons_obj_name = ('Energy','Conservation') # 'Energy', 'Conservation', 'None'
 
-settings = {'warp_factor':0.2,               # Warps / stretches mesh.
+settings = {'warp_factor':0,               # Warps / stretches mesh.
             'warp_type': 'default',         # Options: 'defualt', 'papers', 'quad'
             'metric_method':'exact',   # Options: 'calculate', 'exact'
             'bdy_metric_method':'exact',   # Options: 'calculate', 'exact', 'extrapolate'
@@ -81,11 +82,11 @@ else:
 
 diffeq = LinearConv(para, obj_name, q0_type)
 
-solver = solver_c(diffeq, settings,                     # Diffeq
+solver2D = solver_c(diffeq, settings,                     # Diffeq
                   tm_method, dt, tf,                    # Time marching
                   q0,                                   # Initial solution
-                  diffeq.dim, p, disc_type,             # Discretization
-                  surf_type, diss_type,
+                  p, disc_type,             # Discretization
+                  surf_type, diss_type, had_flux,
                   nelem, nen, disc_nodes,
                   bc, xmin, xmax,         # Domain
                   obj_name, cons_obj_name,              # Other
@@ -94,11 +95,11 @@ solver = solver_c(diffeq, settings,                     # Diffeq
 
 ''' Analyze results '''
 
-#solver.solve()
-#solver.plot_sol(plot_exa=bool_plot_exa)
-#solver.plot_cons_obj()
-#print('Final Error: ', solver1.calc_error())
+solver2D.solve()
+solver2D.plot_sol(plot_exa=bool_plot_exa)
+solver2D.plot_cons_obj()
+print('Final Error: ', solver2D.calc_error())
 
-from Source.Methods.Analysis import run_convergence
-schedule = [['disc_nodes','lg','lgl'],['p',3,4],['nelem',12,15,20,25,40]]
+#from Source.Methods.Analysis import run_convergence
+#schedule = [['disc_nodes','lg','lgl'],['p',3,4],['nelem',12,15,20,25,40]]
 #run_convergence(solver,schedule_in=schedule)

@@ -8,6 +8,8 @@ Created on Mon Nov  9 00:26:34 2020
 
 from numba import jit, literal_unroll
 import numpy as np
+from contextlib import contextmanager
+import sys, os
 #import scipy.sparse as sp
 
 # The useful functions are defined first, the others are shoved to the bottom
@@ -334,6 +336,7 @@ def block_diag(*entries):
     Returns
     -------
     c : numpy array of shape (nen*neq_node,nen*neq_node)
+    TODO: Speed up?
     '''
     neq_node = int(np.sqrt(len(entries)))
     nen,nelem = entries[0].shape
@@ -502,7 +505,7 @@ def gm_triblock_2D_flat_periodic(blockL,blockM,blockR,blockD,blockU,nelemy):
     return mat
 
 @jit(nopython=True)
-def lm_gm_hadamard(A,B):
+def lm_gm_had(A,B):
     '''
     Compute the hadamard product between a local matrix (nen1,nen2) and 
     global matrix (nen1,nen2,nelem)
@@ -517,6 +520,60 @@ def lm_gm_hadamard(A,B):
         C[:,:,e] = np.multiply(A,B[:,:,e])
             
     return C
+
+@jit(nopython=True)
+def lm_gm_had_diff(A,B):
+    '''
+    Compute the hadamard product between a local matrix (nen1,nen2) and 
+    global matrix (nen1,nen2,nelem) then sum rows
+
+    Returns
+    -------
+    C : numpy array of shape (nen1,nen2,nelem)
+    '''
+    nen,nen2,nelem = B.shape
+    C = np.zeros((nen,nen2,nelem))
+    for e in range(nelem):
+        C[:,:,e] = np.multiply(A,B[:,:,e])
+    
+    c = np.sum(C,axis=1)
+    return c
+
+@jit(nopython=True)
+def gm_gm_had(A,B):
+    '''
+    Compute the hadamard product between a local matrix (nen1,nen2) and 
+    global matrix (nen1,nen2,nelem)
+
+    Returns
+    -------
+    C : numpy array of shape (nen1,nen2,nelem)
+    '''
+    nen,nen2,nelem = B.shape
+    C = np.zeros((nen,nen2,nelem))
+    for e in range(nelem):
+        C[:,:,e] = np.multiply(A[:,:,e],B[:,:,e])
+            
+    return C
+
+@jit(nopython=True)
+def gm_gm_had_diff(A,B):
+    '''
+    Compute the hadamard product between a local matrix (nen1,nen2) and 
+    global matrix (nen1,nen2,nelem) then sum rows
+
+    Returns
+    -------
+    C : numpy array of shape (nen1,nen2,nelem)
+    '''
+    nen,nen2,nelem = B.shape
+    C = np.zeros((nen,nen2,nelem))
+    for e in range(nelem):
+        C[:,:,e] = np.multiply(A[:,:,e],B[:,:,e])
+    
+    c = np.sum(C,axis=1)
+    return c
+
 
 def isDiag(M):
     if M.ndim==2:
@@ -672,7 +729,91 @@ def reshape_to_meshgrid(q,nen,nelemx,nelemy):
                     Q[ex*nen + nx, ey*nen + ny] = q[nx*nen + ny,ex*nelemy + ey]
     return Q
     
-    
+# Don't use nopython @jit(nopython=True) in case we need to pass class objects in ec_flux
+@jit()
+def build_F_vol(q, neq, flux):
+    ''' builds a Flux differencing matrix (used for Hadamard form) given 1 
+    solution vector q, the number of equations per node, and a 2-point 
+    flux function '''
+    nen_neq, nelem = q.shape 
+    F = np.zeros((nen_neq,nen_neq,nelem))  
+    if neq == 1:
+        # nen = nen_neq
+        for e in range(nelem):
+            for i in range(nen_neq):
+                for j in range(i,nen_neq):
+                    f = flux(q[i,e],q[j,e])
+                    F[i,j,e] = f
+                    if i != j:
+                        F[j,i,e] = f
+    else:  
+        nen = int(nen_neq / neq)
+        for e in range(nelem):
+            for i in range(nen):
+                for j in range(i,nen):
+                    idxi = i*neq
+                    idxi2 = (i+1)*neq
+                    idxj = j*neq
+                    idxj2 = (j+1)*neq
+                    diag = np.diag(flux(q[idxi:idxi2,e],q[idxj:idxj2,e]))
+                    F[idxi:idxi2,idxj:idxj2,e] = diag
+                    if i != j:
+                        F[idxj:idxj2,idxi:idxi2,e] = diag
+    return F
+
+@jit()
+def build_F(q1, q2, neq, flux):
+    ''' builds a Flux differencing matrix (used for Hadamard form) given 2 
+    solution vectors q1, q2, the number of equations per node, and a 2-point 
+    flux function '''
+    nen_neq, nelem = q1.shape 
+    F = np.zeros((nen_neq,nen_neq,nelem))  
+    if neq == 1:
+        # nen = nen_neq
+        for e in range(nelem):
+            for i in range(nen_neq):
+                for j in range(nen_neq):
+                    f = flux(q1[i,e],q2[j,e])
+                    F[i,j,e] = f
+    else:  
+        nen = int(nen_neq / neq)
+        for e in range(nelem):
+            for i in range(nen):
+                for j in range(nen):
+                    idxi = i*neq
+                    idxi2 = (i+1)*neq
+                    idxj = j*neq
+                    idxj2 = (j+1)*neq
+                    diag = np.diag(flux(q1[idxi:idxi2,e],q2[idxj:idxj2,e]))
+                    F[idxi:idxi2,idxj:idxj2,e] = diag
+    return F
+
+
+
+@jit(nopython=True)
+def arith_mean(qL,qR):
+    ''' arithmetic mean. When used in Hadamard, equivalent to divergence form. '''
+    q = (qL+qR)/2
+    return q
+
+@jit(nopython=True)
+def log_mean(qL,qR):
+    ''' logarithmic mean. Useful for EC fluxes. '''
+    xi = qL/qR
+    zeta = (1-xi)/(1+xi)
+    zeta2 = zeta**2
+    if zeta2 < 0.01:
+        F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
+    else:
+        F = - np.log(xi)/zeta
+    q = (qL+qR)/F
+    return q
+
+@jit(nopython=True)
+def prod_mean(q1L,q2L,q1R,q2R):
+    '''' product mean. Useful for split-form fluxes. '''
+    q = (q1L*q2R+q2L*q1R)/2
+    return q
 
 
 

@@ -190,18 +190,46 @@ Local Lax Friedrichs, Entropy Lax Friedrichs (SBP Notes / Crean), my attempt
 
 We can also construct schemes using a flux differencing Hadamard formulation.
 \begin{align*}
-\der[\bm{u}_\kappa]{t} + 2 \sum_{m=1}^d \left[ D_{x_m} \circ F_{x_m} \right] \bm{1}  
-&= H^{-1} \sum_{l=1}^d \Bigg[ E_{\xi_l} \circ \sum_{m=1}^d \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} F_{x_m} \\
-&  + \sum_{m=1}^d \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \bm{t}_{\xi_l, b}^T \circ  F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,a}}) \\
-& - \sum_{m=1}^d \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \bm{t}_{\xi_l, a}^T \circ F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,b}})
-\Bigg] \bm{1}
+\der[\bm{u}_\kappa]{t} &+ 2 \sum_{m=1}^d \left[ D_{x_m} \circ F_{x_m} \right] \bm{1}  
+= H^{-1} \sum_{l=1}^d \Bigg[ E_{\xi_l} \circ \sum_{m=1}^d \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} F_{x_m} \\
+&  + \sum_{m=1}^d \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a} \bm{t}_{\xi_l, b}^T \circ  F_{x_m}^{\xi_l , a} 
+ - \sum_{m=1}^d \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b} \bm{t}_{\xi_l, a}^T \circ F_{x_m}^{\xi_l , b}
+\Bigg] \bm{1} + \textbf{diss}
 \end{align*}
-where we use a symmetric and consistent volume flux $ [F_{x_m}]_{ij} = \fn{F}^\star_{x_m} (u_i, u_j)$ and a surface flux $ [F^s_{x_m} (\bm{u}, \bm{v} )]_{ij} = \fn{F}^\star_{x_m} (u_i, v_j) + \text{diss}_{ij}$. The metric terms can be approximated in different ways, but to ensure free-stream preservation, use optimized metrics for the volume and first SAT term, then pre-specified (ex. analytical) surface metrics for the last 2 SAT terms.
+where we use a symmetric and consistent volume flux $ [F_{x_m}]_{ij} = \fn{F}^\star_{x_m} (u_i, u_j)$ and surface fluxes $ [F_{x_m}^{\xi_l , a} ]_{ij} = \fn{F}^\star_{x_m} (u^\kappa_i, u^{\nu_{\xi_l} , a}_j)$, $ [F_{x_m}^{\xi_l , b}]_{ij} = \fn{F}^\star_{x_m} (u^\kappa_i, u^{\nu_{\xi_l} , b}_j)$. The metric terms can be approximated in different ways, but to ensure free-stream preservation, use optimized metrics for the volume and first SAT term, then pre-specified (ex. analytical) surface metrics for the last 2 SAT terms. 
 
 
 \subsection{Two Point Conservative Fluxes}
 
 \subsection{Dissipative Terms}
+
+Entropy-stable surface dissipation can be added using
+\begin{align*}
+ \textbf{diss} = - \frac{1}{2} H^{-1} \sum_{l=1}^d \bigg[ & \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l} \Lambda ( \bm{u}_\kappa , \bm{u}_{\nu_{\xi_l},b} ) 
+ \left( \bm{t}_{\xi_l, b}^T \bm{w}_\kappa - \bm{t}_{\xi_l, a}^T \bm{w}_{\nu_{\xi_l , b}} \right) \\ + 
+& \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \Lambda ( \bm{u}_\kappa , \bm{u}_{\nu_{\xi_l},a} ) 
+ \left( \bm{t}_{\xi_l, a}^T \bm{w}_\kappa - \bm{t}_{\xi_l, b}^T \bm{w}_{\nu_{\xi_l , a}} \right) \bigg]
+\end{align*}
+where $\Lambda$ can be any symmetric positive semi-definite matrix. For example a Lax-Friedrichs flux has
+\begin{align*}
+\Lambda_{\text{LF}} ( \bm{u}_\kappa , \bm{u}_\nu ) &= \left\vert \sum_{m=1}^d \text{max} \left( {\lambda_m} \right) \pder[\fnb{U}]{\fnb{W}} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,\nu} \right\vert 
+\end{align*}
+where the matrix $\pder[\fnb{U}]{\fnb{W}}$ is block diagonal, each block corresponding to a $n_{eq} \times n_{eq}$ matrix at each node. The surface metric terms are of course a fully diagonal matrix. For the 2D Euler equations, one can choose to approximate this eigenvalue using \cite{carpenter_entropy_2014}
+\begin{align*}
+\text{max}^* \left( {\lambda_m} \right) \approx \left[ \frac{1}{2} \left( \left( u_\kappa^2 + v_\kappa^2 \right)^2 + \left( u_\nu^2 + v_\nu^2 \right)^2 + a_\kappa^4 + a_\nu^4 \right) \right]^{1/4} \geq \text{max} \left( {\lambda_m} \right)
+\end{align*}
+This flux however tends to be overly-dissipative. Alternatively, a Roe flux is
+\begin{align*}
+\Lambda_{\text{Roe}} ( \bm{u}_\kappa , \bm{u}_\nu ) &=  \sum_{m=1}^d Y_m \left\vert \Lambda_m \text{sign} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,\nu} \right\vert Y^{-1}_m \pder[\fnb{U}]{\fnb{W}} \left\vert \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,\nu} \right\vert
+\end{align*}
+where 
+For the Row flux we formulate the jacobian in terms of the entropy variables and therefore must multiply by $\pder[U]{W}$. This is made remarkably simpler by a scaling identity discovered by \cite{merriam_entropy-based_1989} and generalized by \cite{barth_numerical_1999}
+\begin{align*}
+\pder[\fnb{U}]{\fnb{W}} = Y Y^T \quad \Rightarrow \quad \Lambda_{\text{Roe}} ( \bm{u}_\kappa , \bm{u}_\nu ) &=  \sum_{m=1}^d Y_m \left\vert \Lambda_m \text{sign} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,\nu} \right\vert Y^T \left\vert \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,\nu} \right\vert
+\end{align*}
+ When a gas is callorically perfect (specific heat capacity $\gamma$ is constant throughout the fluid), the explicit flux jacobinas for the euler equations are. Otherwise one has to be more careful and use flux jabocian matrices described in \cite{fisher_high_2012}.
+
+
 
 Only surface? Can it be done for Volume (entropy dissipative surface flux)?
 
@@ -398,7 +426,7 @@ Assuming that $\text{FS}^{\text{vol}} = \text{FS}^{\text{surf}}$, which as we sh
 & - \beta \left(  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, b}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \bm{f}_{\nu_{\xi_l,b}} -  \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \bm{f}_{\nu_{\xi_l,a}} \right) \\
 & - (1-\beta) \left( \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T \bm{f}_{\nu_{\xi_l,b}} - \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a}^\text{ex} \bm{t}_{\xi_l, b}^T \bm{f}_{\nu_{\xi_l,a}} \right) \Bigg]
 \end{align*}
-which is now in a divergence form. We recover the usual nondissipative divergence form with $\alpha = 1$ and $\beta=0$ such as in \cite{del_rey_fernandez_extension_2019}, although clearly several other forms can be obtained through various choices of $\alpha$ and $\beta$. The choice $\alpha = 2$ and $\beta = 0$ was made for the divergence form (linear convection) in \cite{nolasco_optimized_2019}, while the choices $\alpha = 1$ and $\beta = \frac{1}{2}$ was made for the hadamard form (Euler equations). The assumption that  $\text{FS}^{\text{vol}} = \text{FS}^{\text{surf}}$ comes from the following free stream preservation (GCL) constraints, one for each physical dimension $m$.
+which is now in a divergence form. We recover the usual nondissipative divergence form with $\alpha = 1$ and $\beta=0$ such as in \cite{del_rey_fernandez_extension_2019}, although clearly several other forms can be obtained through various choices of $\alpha$ and $\beta$. The choice $\alpha = 2$ and $\beta = 0$ was made for the divergence form (linear convection) in \cite{nolasco_optimized_2020}, while the choices $\alpha = 1$ and $\beta = \frac{1}{2}$ was made for the hadamard form (Euler equations). The assumption that  $\text{FS}^{\text{vol}} = \text{FS}^{\text{surf}}$ comes from the following free stream preservation (GCL) constraints, one for each physical dimension $m$.
 \begin{align*}
  \left[ \text{diag}\left( \fn{J}_\kappa \right) \right]^{-1} \sum_{l=1}^d  D_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa \bm{1} &= H^{-1} \sum_{l=1}^d \Bigg[ E_{\xi_l}  \left[ \alpha \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} + (1-\alpha) \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \right] \\
 & \hspace{-4cm} - \beta \left(  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, b}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} - \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \right) \\
