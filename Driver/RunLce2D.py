@@ -63,13 +63,16 @@ print_sol_norm = False
 obj_name = None
 cons_obj_name = ('Energy','Conservation') # 'Energy', 'Conservation', 'None'
 
-settings = {'warp_factor':0,               # Warps / stretches mesh.
-            'warp_type': 'default',         # Options: 'defualt', 'papers', 'quad'
+settings = {'warp_factor':0.2,               # Warps / stretches mesh.
+            'warp_type': 'papers',         # Options: 'defualt', 'papers', 'quad'
             'metric_method':'exact',   # Options: 'calculate', 'exact'
             'bdy_metric_method':'exact',   # Options: 'calculate', 'exact', 'extrapolate'
             'use_optz_metrics':True,        # Uses optimized metrics for free stream preservation.
             'calc_exact_metrics':True,      # Calculates the exact metrics (useless if metric_method=exact).
-            'metric_optz_method':'default'} # Define the optimization procedure.}
+            'metric_optz_method':'alex', # Define the optimization procedure.
+            'had_alpha':2,                  # Modifies the SAT terms in the Hadamard form. Default is 1.
+            'had_beta':1,
+            'had_gamma':1}                   # Modifies the SAT terms in the Hadamard form. Default is 0.
 
 ''' Set diffeq and solve '''
 
@@ -95,10 +98,10 @@ solver2D = solver_c(diffeq, settings,                     # Diffeq
 
 ''' Analyze results '''
 
-solver2D.solve()
-solver2D.plot_sol(plot_exa=bool_plot_exa)
-solver2D.plot_cons_obj()
-print('Final Error: ', solver2D.calc_error())
+#solver2D.solve()
+#solver2D.plot_sol(plot_exa=bool_plot_exa)
+#solver2D.plot_cons_obj()
+#print('Final Error: ', solver2D.calc_error())
 
 #from Source.Methods.Analysis import run_convergence
 #schedule = [['disc_nodes','lg','lgl'],['p',3,4],['nelem',12,15,20,25,40]]

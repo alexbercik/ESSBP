@@ -107,6 +107,7 @@ class Sat(SatDer1, SatDer2):
             self.maxeig_dEydq = solver.diffeq.maxeig_dEydq
             self.maxeig_dEzdq = solver.diffeq.maxeig_dEzdq
             
+            
         ''' save useful matrices so as not to calculate on each loop '''
 
         self.tLT = self.tL.T
@@ -233,7 +234,6 @@ class Sat(SatDer1, SatDer2):
                 else:
                     self.calc_dfdq = self.dfdq_complexstep
                     
-
                     
             ######### TO DO
             
@@ -280,6 +280,36 @@ class Sat(SatDer1, SatDer2):
             raise Exception('SAT methods for reqested order of PDE is not available')
             
         
+        ''' Check if using a generalized Hadamard form, then adjust as needed '''
+        if (solver.settings['had_alpha'] != 1 or solver.settings['had_beta'] != 1 or solver.settings['had_gamma'] != 1):
+            assert self.dim == 2, 'Generalized Hadamard form only set up for 2 dimensions'
+            if self.direction == 'x': # computational direction, not physical direction
+                self.set_exact_metrics_2d_x(solver.mesh.metrics_exa)
+            elif self.direction == 'y':
+                self.set_exact_metrics_2d_y(solver.mesh.metrics_exa)
+            assert self.disc_type == 'had', 'Use had_alpha and had_beta only for Hadamard form'
+            
+            # overwrite base hadamard function for a general case
+            self.had_alpha = solver.settings['had_alpha']
+            self.had_beta = solver.settings['had_beta']
+            self.had_gamma = solver.settings['had_gamma']
+            self.calc = self.base_generalized_had_2d
+            
+            # create additional useful matrices
+            self.vol_x_mat2 = [fn.lm_gdiag(self.Esurf,metrics[:,0,:]) for metrics in self.metrics_exa]
+            self.vol_y_mat2 = [fn.lm_gdiag(self.Esurf,metrics[:,1,:]) for metrics in self.metrics_exa]
+            self.vol_x_mat3 = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp * bdy_metrics[:,1,0,:]), self.tRT)) - fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp * bdy_metrics[:,0,0,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
+            self.vol_y_mat3 = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp * bdy_metrics[:,1,1,:]), self.tRT)) - fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp * bdy_metrics[:,0,1,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
+            metricsR = self.metrics_exa.copy()
+            metricsL = self.metrics_exa.copy()
+            metricsR.append(metricsR.pop(0))
+            metricsL.insert(0, metricsL.pop(-1))
+            self.taphysx2 = [fn.lm_gdiag((self.tL @ (self.Hperp * self.tRT)), metrics[:,0,:]) for metrics in metricsL]
+            self.taphysy2 = [fn.lm_gdiag((self.tL @ (self.Hperp * self.tRT)), metrics[:,1,:]) for metrics in metricsL]
+            self.tbphysx2 = [fn.lm_gdiag((self.tR @ (self.Hperp * self.tLT)), metrics[:,0,:]) for metrics in metricsR]
+            self.tbphysy2 = [fn.lm_gdiag((self.tR @ (self.Hperp * self.tLT)), metrics[:,1,:]) for metrics in metricsR]
+            
+        
     def set_metrics_2d_x(self, metrics, bdy_metrics):
         ''' create a list of metrics for each row '''  
         self.metrics = []
@@ -297,6 +327,20 @@ class Sat(SatDer1, SatDer2):
             end = start + self.nelem[1]
             self.metrics.append(metrics[:,2:,start:end]) # only want dy_ref/dx_phys and dy_ref/dy_phys
             self.bdy_metrics.append(bdy_metrics[:,2:,2:,start:end]) # facets 3 and 4, same matrix entries
+            
+    def set_exact_metrics_2d_x(self, metrics):
+        ''' create a list of metrics for each row '''  
+        self.metrics_exa = []
+        for row in range(self.nelem[1]):
+            self.metrics_exa.append(metrics[:,:2,row::self.nelem[1]]) # only want dx_ref/dx_phys and dx_ref/dy_phys
+
+    def set_exact_metrics_2d_y(self, metrics):
+        ''' create a list of metrics for each col '''  
+        self.metrics_exa = []
+        for col in range(self.nelem[0]):
+            start = col*self.nelem[0]
+            end = start + self.nelem[1]
+            self.metrics_exa.append(metrics[:,2:,start:end]) # only want dy_ref/dx_phys and dy_ref/dy_phys
 
     def set_metrics_3d_x(self, metrics, bdy_metrics):
         ''' create a list of metrics for each row '''  
