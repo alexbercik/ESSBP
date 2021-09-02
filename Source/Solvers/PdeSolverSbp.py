@@ -56,7 +56,9 @@ class PdeSolverSbp(PdeSolver):
                         bdy_metric_method = self.settings['bdy_metric_method'],
                         use_optz_metrics = self.settings['use_optz_metrics'],
                         calc_exact_metrics = self.settings['calc_exact_metrics'],
-                        optz_method = self.settings['metric_optz_method'])
+                        optz_method = self.settings['metric_optz_method'],
+                        had_metric_alpha = self.settings['had_alpha'],
+                        had_metric_beta = self.settings['had_beta'])
         
         if self.dim == 1:
             self.H_phys, self.Dx_phys = self.sbp.ref_2_phys(self.mesh)

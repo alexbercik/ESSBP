@@ -513,6 +513,48 @@ class SatDer1:
         
         sat = vol + surfa - surfb - diss 
         return sat
+    
+    def base_generalized_had_2d(self, q, Fxvol, Fyvol, idx, q_bdyL=None, q_bdyR=None):
+        '''
+        The base conservative flux in a generalized Hadamard Form. Then add dissipative term.
+        '''
+        
+        vol = self.had_alpha * (fn.gm_gm_had_diff(self.vol_x_mat[idx], Fxvol) + fn.gm_gm_had_diff(self.vol_y_mat[idx], Fyvol))
+        vol2 = (1 - self.had_alpha) * self.had_beta * (fn.gm_gm_had_diff(self.vol_x_mat2[idx], Fxvol) + fn.gm_gm_had_diff(self.vol_y_mat2[idx], Fyvol))
+        vol3 = (1 - self.had_alpha) * (1 - self.had_beta) * (fn.gm_gm_had_diff(self.vol_x_mat3[idx], Fxvol) + fn.gm_gm_had_diff(self.vol_y_mat3[idx], Fyvol))
+        
+        # TODO: Modify build_F and hadamard functions to only consider non-zero entries
+        
+        # Here we work in terms of facets, starting from the left-most facet.
+        # This is NOT the same as elements. i.e. qR is to the right of the
+        # facet and qL is to the left of the facet, opposite of element-wise.
+        if q_bdyL is None:
+            qL = fn.pad_1dL(q, q[:,-1])
+        else:
+            qL = fn.pad_1dL(q, q_bdyL) # TODO: this definitely does not work
+            raise Exception('TODO: adding boundary condition.')
+        if q_bdyR is None:
+            qR = fn.pad_1dR(q, q[:,0])
+        else:
+            qR = fn.pad_1dL(q, q_bdyR)  # TODO: this definitely does not work
+            raise Exception('TODO: adding boundary condition.')
+        
+        Fsurfx = fn.build_F(qL, qR, self.neq_node, self.had_flux_Ex)
+        Fsurfy = fn.build_F(qL, qR, self.neq_node, self.had_flux_Ey)
+        
+        surfa = self.had_gamma * (fn.gm_gm_had_diff(self.taphysx[idx],np.transpose(Fsurfx[:,:,:-1],(1,0,2))) + \
+                                  fn.gm_gm_had_diff(self.taphysy[idx],np.transpose(Fsurfy[:,:,:-1],(1,0,2))) )
+        surfb = self.had_gamma * (fn.gm_gm_had_diff(self.tbphysx[idx],Fsurfx[:,:,1:]) + \
+                                  fn.gm_gm_had_diff(self.tbphysy[idx],Fsurfy[:,:,1:]) )
+        surfa2 = (1-self.had_gamma) * (fn.gm_gm_had_diff(self.taphysx2[idx],np.transpose(Fsurfx[:,:,:-1],(1,0,2))) + \
+                                  fn.gm_gm_had_diff(self.taphysy2[idx],np.transpose(Fsurfy[:,:,:-1],(1,0,2))) )
+        surfb2 = (1-self.had_gamma) * (fn.gm_gm_had_diff(self.tbphysx2[idx],Fsurfx[:,:,1:]) + \
+                                  fn.gm_gm_had_diff(self.tbphysy2[idx],Fsurfy[:,:,1:]) )
+        
+        diss = self.diss(qL,qR,idx)
+        
+        sat = vol + vol2 + vol3 + surfa - surfb + surfa2 - surfb2 - diss
+        return sat
 
 
     ##########################################################################

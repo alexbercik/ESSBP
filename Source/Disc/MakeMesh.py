@@ -398,7 +398,7 @@ class MakeMesh:
             warp = self.warp_factor*6.5
             xscale = (x-self.xmin[0])/self.dom_len[0]
             yscale = (y-self.xmin[1])/self.dom_len[1]
-            dxdx = warp*(yscale**3-1.7*yscale**2+0.7*yscale)*(2*xscale**2-1) + 1
+            dxdx = warp*(yscale**3-1.7*yscale**2+0.7*yscale)*(3*xscale**2-1) + 1
             dxdy = warp*self.dom_len[0]*(3*yscale**2-2*1.7*yscale+0.7)*(xscale**3-xscale)/self.dom_len[1]
             dydx = 1.5*warp*self.dom_len[1]*(3*xscale**2-2*1.2*xscale+0.2)*(yscale**3-yscale**2)/self.dom_len[0]
             dydy = 1.5*warp*(xscale**3-1.2*xscale**2+0.2*xscale)*(3*yscale**2-2*yscale) + 1
@@ -767,7 +767,7 @@ class MakeMesh:
 
     def get_jac_metrics(self, sbp, periodic, metric_method='exact', bdy_metric_method='exact',
                         use_optz_metrics = True, calc_exact_metrics = False,
-                        optz_method = 'default'): 
+                        optz_method = 'default', had_metric_alpha = 1, had_metric_beta = 0): 
         '''
         Parameters
         ----------
@@ -792,10 +792,14 @@ class MakeMesh:
             The default is False.
         optz_method : str
             Choose the different optimization methods:
-            'default' : from from DDRF et al. 
+            'default' / 'alex' / 'essbp' : Additional preoptimization for surface integrals, then ddrf.
+            'ddrf' / papers : from from DDRF et al. 
             'diablo' : the procedure implemented in Diablo. - though this one is suspicious.
-            'direct' : avoid inverting the H matrix. Still standard discretization.
+            'generalized' : Uses had_metric_alpha and had_metric_beta for a generalized optimization
             The defalt is 'default'.
+        had_metric_alpha / had_metric_beta : float
+            Parameters for a generalized Hadamard form (See ESSBP documentation).
+            Only get called wuth optz_method = 'generalized'. Default is 1 and 0.
 
         Sets
         -------
@@ -855,7 +859,7 @@ class MakeMesh:
             
             if metric_method=='exact':
                 self.det_jac = self.det_jac_exa
-                self.metrics = self.metrics_exa
+                self.metrics = np.copy(self.metrics_exa)
                 
             else:
                 self.metrics = np.zeros((self.nen**2,4,self.nelem[0]*self.nelem[1])) 
@@ -949,7 +953,7 @@ class MakeMesh:
                 txa = np.kron(sbp.tL.reshape((self.nen,1)), eye)
                 tyb = np.kron(eye, sbp.tR.reshape((self.nen,1)))
                 tya = np.kron(eye, sbp.tL.reshape((self.nen,1)))
-                if optz_method == 'essbp' or optz_method == 'default' or optz_method == 'alex':
+                if optz_method == 'essbp' or optz_method == 'default' or optz_method == 'alex' or optz_method == 'generalized':
                     # First optimize surface metrics, then do default optimization
                     totx = (self.nelem[0]+1)*self.nelem[1] # total number of facets with l=x (reference direction)
                     toty = (self.nelem[1]+1)*self.nelem[0] # total number of facets with l=y (reference direction)
@@ -1047,7 +1051,8 @@ class MakeMesh:
                                 self.bdy_metrics[:,3,ym,ix*self.nelem[1]+iy] = np.copy(bnew[starty2:starty2+self.nen])          
                     
                     # now proceed to the normal optimization procedure
-                    optz_method = 'papers'
+                    if optz_method != 'generalized':
+                        optz_method = 'papers'
                                     
                 if optz_method == 'papers' or optz_method == 'ddrf':
                     QxT = np.kron(sbp.Q, sbp.H).T
@@ -1102,7 +1107,35 @@ class MakeMesh:
                     aex = np.vstack((self.metrics[:,1,:],self.metrics[:,3,:]))
                     a = aex - Minv @ ( M @ aex - c )
                     self.metrics[:,1,:] = a[:self.nen**2,:]
-                    self.metrics[:,3,:] = a[self.nen**2:,:] 
+                    self.metrics[:,3,:] = a[self.nen**2:,:]
+                    
+                elif optz_method == 'generalized': #TODO
+                    QxT = np.kron(sbp.Q, sbp.H).T
+                    QyT = np.kron(sbp.H, sbp.Q).T
+                    M = np.hstack((QxT,QyT))
+                    Minv = np.linalg.pinv(M, rcond=1e-13)
+                    if np.max(abs(Minv)) > 1e8:
+                        print('WARNING: There may be an error in Minv of metric optimization. Try a higher rcond.')
+                    for phys_dir in range(2):
+                        if phys_dir == 0: # matrix entries for metric terms
+                            term = 'x'
+                            xm = 0 # l=x, m=x
+                            ym = 2 # l=y, m=x
+                        else: 
+                            term = 'y'
+                            xm = 1 # l=x, m=y
+                            ym = 3 # l=y, m=y
+                            
+                        c = txb @ sbp.H @ self.bdy_metrics[:,1,xm,:] - txa @ sbp.H @ self.bdy_metrics[:,0,xm,:] \
+                          + tyb @ sbp.H @ self.bdy_metrics[:,3,ym,:] - tya @ sbp.H @ self.bdy_metrics[:,2,ym,:]
+                        if np.any(abs(np.sum(c,axis=0))>1e-13):
+                            print('WARNING: '+term+'surface integral GCL constraint violated by a max of {0:.2g}'.format(np.max(abs(np.sum(c,axis=0)))))
+                            print('         the c_'+term+' vector in optimization will not add to zero => Optimization will not work!')
+                        aex = np.vstack((self.metrics[:,xm,:],self.metrics[:,ym,:]))
+                        a = aex - Minv @ ( M @ aex - c )
+                        print('Metric Optz: modified '+term+' volume metrics by a max amount {0:.2g}'.format(np.max(abs(a - aex))))
+                        self.metrics[:,xm,:] = np.copy(a[:self.nen**2,:])
+                        self.metrics[:,ym,:] = np.copy(a[self.nen**2:,:])
 
                 else:
                     raise Exception("metric optimization method '"+optz_method+"' not understood")

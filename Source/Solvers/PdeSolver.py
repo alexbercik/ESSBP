@@ -118,6 +118,12 @@ class PdeSolver:
         # called by Disc.MakeMesh.get_jac_metrics. Calculates exact metrics alongside regular method..
         self.settings.setdefault('metric_optz_method','default') 
         # called by Disc.MakeMesh.get_jac_metrics. Define the metric optimization procedure.
+        self.settings.setdefault('had_alpha',1) 
+        # Modifies the SAT terms in the Hadamard form. See ESSBP documentation.
+        self.settings.setdefault('had_beta',1) 
+        # Modifies the SAT terms in the Hadamard form. See ESSBP documentation.
+        self.settings.setdefault('had_gamma',1) 
+        # Modifies the SAT terms in the Hadamard form. See ESSBP documentation.
 
         # Time marching
         self.tm_method = tm_method.lower()
@@ -256,6 +262,10 @@ class PdeSolver:
             else:
                 print(cons_obj_name)
                 raise Exception('The variable cons_obj_name has to be either a string or a tuple of strings')
+        
+        if (self.settings['had_alpha'] != 1 or self.settings['had_beta'] != 1 or self.settings['had_gamma'] != 1):
+            # if we use a generalized Hadamard form, we need to keep the exact metrics
+            self.settings['calc_exact_metrics'] = True
 
         self.diffeq.calc_cons_obj = self.calc_cons_obj
         self.diffeq.n_cons_obj = self.n_cons_obj
