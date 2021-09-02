@@ -369,18 +369,22 @@ I begin by showing the equivalence of the divergence formulation and the Hadamar
 
 \subsection{Equivalence of Divergence and Hadamard Forms}
 
-We will begin with a very general Hadamard formulation,
+We will begin with a very general treatment of metrics in a non-dissipative Hadamard form,
 \begin{align*}
-\der[\bm{u}_\kappa]{t} + 2 \sum_{m=1}^d \left[ D_{x_m} \circ F_{x_m} \right] \bm{1}  
-&= H^{-1} \sum_{l=1}^d \Bigg[ \alpha E_{\xi_l} \circ \sum_{m=1}^d \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} F_{x_m} \\
-& + (1-\alpha) E_{\xi_l} \circ \sum_{m=1}^d \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} F_{x_m} \\
-& + \beta \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \circ \sum_{m=1}^d \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,a}}) \\
-&  -  \beta \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, b}^T \circ \sum_{m=1}^d \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,b}}) \\
-&  + (1- \beta) \sum_{m=1}^d \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a}^\text{ex} \bm{t}_{\xi_l, b}^T \circ  F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,a}}) \\
-& - (1- \beta)\sum_{m=1}^d \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T \circ F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,b}})
-\Bigg] \bm{1}
+\der[\bm{u}_\kappa]{t} &+ 2 \sum_{m=1}^d \left[ D_{x_m} \circ F_{x_m} \right] \bm{1}  
+= H^{-1} \sum_{l,m=1}^d \Bigg[  E_{\xi_l} \left[ \alpha \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} + (1-\alpha) \beta \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \right] \circ  F_{x_m} \\
+& + (1-\alpha) (1 - \beta)  \left(  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l, b}^\text{ex} \bm{t}_{\xi_l, b}^T -  \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l , a}^\text{ex} \bm{t}_{\xi_l, a}^T \right)  \circ  F_{x_m} \\
+& - \gamma \left( \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T \circ F_{x_m}^{\xi_l , b} - \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a}^\text{ex} \bm{t}_{\xi_l, b}^T \circ F_{x_m}^{\xi_l , a} \right) \\
+& - (1-\gamma) \left(  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\nu_{\xi_l,b}}^\text{ex} \circ F_{x_m}^{\xi_l , b} -  \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, b}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\nu_{\xi_l,a}}^\text{ex} \circ F_{x_m}^{\xi_l , a} \right) \Bigg] \bm{1}
 \end{align*}
-and show that using a central volume flux composed of arithmetic means $ \fn{F}^\star_{x_m} (u_i, u_j) = \frac{1}{2}(f_i + f_j) $ and nondissipative surface fluxes, we recover a nondissipative divergence formulation. This choice of flux makes our lives easier, but note that the same steps can be followed using any numerical flux constructed through arithmetic means. We begin with the volume term.
+where normally $\alpha = 1$, $\beta = 1$, and $\gamma=1$. In \cite{nolasco_optimized_2020}, they use $\alpha = 2$ (the $\beta$ and $\gamma$ parameters are irrelevant if boundary nodes are included or if the volume metrics are extrapolated exactly to the boundaries). We will then show that using a central volume flux composed of arithmetic means $ \fn{F}^\star_{x_m} (u_i, u_j) = \frac{1}{2}(f_i + f_j) $, we recover a nondissipative divergence formulation.
+\begin{align*}
+\der[\bm{u}_\kappa]{t} &+ \sum_{m=1}^d D_{x_m} \bm{f}^\kappa  =  \frac{1}{2} H^{-1} \sum_{l,m=1}^d \Bigg[ E_{\xi_l} \left[ \alpha \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} + (1-\alpha) \beta \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \right] \bm{f}_{\kappa} \\
+& + (1-\alpha) (1- \beta) \left(  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l, b}^\text{ex} \bm{t}_{\xi_l, b}^T -  \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l , a}^\text{ex} \bm{t}_{\xi_l, a}^T \right) \bm{f}_{\kappa} \\ 
+& - \gamma \left( \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T \bm{f}_{\nu_{\xi_l,b}} - \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a}^\text{ex} \bm{t}_{\xi_l, b}^T \bm{f}_{\nu_{\xi_l,a}} \right) \\
+& - (1-\gamma) \left(  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\nu_{\xi_l,b}}^\text{ex} \bm{f}_{\nu_{\xi_l,b}} -  \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, b}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\nu_{\xi_l,a}}^\text{ex} \bm{f}_{\nu_{\xi_l,a}} \right)  \Bigg]
+\end{align*}
+This choice of arithmetic flux makes our lives easier, but note that the same steps can be followed using any numerical flux constructed through arithmetic means to recover other split-form discretizations. We begin with the volume term.
 \begin{align*}
 2 \sum_{m=1}^d \left[ D_{x_m} \circ F_{x_m} \right] \bm{1} &= 2 \sum_{m=1}^d \sum_{j=1}^N [D_{x_m}]_{ij} [ F_{x_m} ]_{ij} = \sum_{m=1}^d \sum_{j=1}^N [D_{x_m}]_{ij} (f_i^\kappa + f_j^\kappa) \\
 & =  \sum_{m=1}^d \left( f_i^\kappa \sum_{j=1}^N [D_{x_m}]_{ij} + \sum_{j=1}^N [D_{x_m}]_{ij} f_j^\kappa \right)  \\
@@ -388,51 +392,40 @@ and show that using a central volume flux composed of arithmetic means $ \fn{F}^
 \end{align*}
 where we recognize the volume term $\text{FS}^{\text{vol}}$ from the free-stream preservation (or GCL) condition in the $m$\up{th} direction,
 \begin{align*}
-\sum_{j=1}^N [D_{x_m}]_{ij} &= \frac{1}{2} \sum_{j=1}^N \left[ \frac{1}{\fn{J}_\kappa} \right]_i \sum_{l=1}^d \left[ [D_{\xi_l}]_{ij} \left[ \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa \right]_j + \left[ \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa \right]_i  [ D_{\xi_l} ]_{ij} \right] \\
+\sum_{j=1}^N [D_{x_m}]_{ij} &= \frac{1}{2} \sum_{j=1}^N \left[ \frac{1}{\fn{J}_\kappa} \right]_i \sum_{l=1}^d \left[ [D_{x_l}]_{ij} \left[ \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa \right]_j + \left[ \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa \right]_i  [ D_{\xi_l} ]_{ij} \right] \\
 &= \frac{1}{2} \left[ \frac{1}{\fn{J}_\kappa} \right]_i \sum_{l=1}^d \left[ \sum_{j=1}^N [D_{\xi_l}]_{ij} \left[ \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa \right]_j + \left[ \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa \right]_i \cancelto{0}{\sum_{j=1}^N [ D_{\xi_l} ]_{ij}} \right] \\
 &= \frac{1}{2}  \left[ \text{diag}\left( \fn{J}_\kappa \right) \right]^{-1} \sum_{l=1}^d  D_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa \bm{1} 
 \end{align*}
 We will find that this free-stream term will cancel with contributions from the SAT, assuming the metrics are constructed in a way that respects free-stream conservation. We now consider the first term from the SAT.
 \begin{align*}
-\left[ E_{\xi_l} \circ \sum_{m=1}^d \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} F_{x_m}  \right] \bm{1} & = \sum_{m=1}^d \sum_{j=1}^N [E_{\xi_l}]_{ij} \left[ \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \right]_{j} [ F_{x_m} ]_{ij} \\
-& \hspace{-3cm} = \frac{1}{2} \sum_{m=1}^d \sum_{j=1}^N [E_{\xi_l}]_{ij} \left[ \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \right]_{j} (f_i + f_j) \\
-& \hspace{-3cm} = \frac{1}{2} \sum_{m=1}^d E_{\xi_l} \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \bm{f}_\kappa + \frac{1}{2} \text{diag} (\bm{f}_\kappa) \sum_{m=1}^d E_{\xi_l} \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \bm{1}
+\left[ E_{\xi_l} \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \circ  F_{x_m}  \right] \bm{1} & = \sum_{j=1}^N [E_{\xi_l}]_{ij} \left[ \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \right]_{j} [ F_{x_m} ]_{ij} \\
+& \hspace{-3cm} = \frac{1}{2}  \sum_{j=1}^N [E_{\xi_l}]_{ij} \left[ \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \right]_{j} (f_i + f_j) \\
+& \hspace{-3cm} = \frac{1}{2} E_{\xi_l} \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \bm{f}_\kappa + \frac{1}{2} \text{diag} (\bm{f}_\kappa)  E_{\xi_l} \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \bm{1}
 \end{align*}
-The second term is identical. Let's consider now the third term from the SAT,
+The other volume SAT terms follow similarly. Let's consider now the first coupling term,
 \begin{align*}
-\left[ \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \circ \sum_{m=1}^d \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,a}}) \right] \bm{1} &\\
-& \hspace{-9cm} =   \sum_{m=1}^d  \sum_{j=1}^N \left[ \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \right]_{ij} \left[  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \right]_j \left[ F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,a}}) \right]_{ij} \\
-& \hspace{-9cm} =  \sum_{m=1}^d  \sum_{j=1}^N \left[ \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \right]_{ij} \left[  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \right]_j   \left( f_{\kappa,i} + f_{\nu_{\xi_l,a},j} \right) \\
-& \hspace{-9cm} =  \frac{1}{2} \sum_{m=1}^d  \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \bm{f}_{\nu_{\xi_l,a}} + \frac{1}{2} \text{diag} (\bm{f}_\kappa) \sum_{m=1}^d  \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \bm{1} \\
+\left[ \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T \circ F_{x_m}^{\xi_l , b} \right] \bm{1}
+& =   \frac{1}{2} \sum_{j=1}^N \left[  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T  \right]_{ij}  \left( f_{\kappa,i} + f_{\nu_{\xi_l,b},j} \right) \\
+& \hspace{-5cm} =  \frac{1}{2} \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T \bm{f}_{\nu_{\xi_l,b}} + \frac{1}{2} \text{diag} (\bm{f}_\kappa)   \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T \bm{1} 
 \end{align*}
-Similarly, the fourth, fifth, and sixth SAT terms are
+The remaining terms are similar. Grouping the results together and denoting
 \begin{align*}
-& \left[  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, b}^T \circ \sum_{m=1}^d \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,b}}) \right] \bm{1}  \\
- & \qquad =  \frac{1}{2} \sum_{m=1}^d  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, b}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \bm{f}_{\nu_{\xi_l,b}} + \frac{1}{2} \text{diag} (\bm{f}_\kappa) \sum_{m=1}^d  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, b}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \bm{1} \\
- & \left[  \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a}^\text{ex} \bm{t}_{\xi_l, b}^T \circ  F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,a}}) \right] \bm{1}  \\
- &  \qquad =  \frac{1}{2}  \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a}^\text{ex} \bm{t}_{\xi_l, b}^T \bm{f}_{\nu_{\xi_l,a}} + \frac{1}{2} \text{diag} (\bm{f}_\kappa)  \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a}^\text{ex} \bm{t}_{\xi_l, b}^T \bm{1} \\
-& \left[ \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T \circ F^s_{x_m} (\bm{u}_\kappa, \bm{u}_{\nu_{\xi_l,b}}) \right] \bm{1}  \\
- & \qquad =  \frac{1}{2} \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T \bm{f}_{\nu_{\xi_l,b}} + \frac{1}{2} \text{diag} (\bm{f}_\kappa) \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T \bm{1}
+\text{FS}^{\text{surf}} &= \frac{1}{2} H^{-1} \text{diag} \left( \bm{f}_\kappa \right) \sum_{l,m=1}^d \Bigg[ E_{\xi_l} \left[ \alpha \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} + (1-\alpha) \beta \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \right]  \\
+& + (1-\alpha) (1- \beta) \left(  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l, b}^\text{ex} \bm{t}_{\xi_l, b}^T -  \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l , a}^\text{ex} \bm{t}_{\xi_l, a}^T \right)  \\ 
+& - \gamma \left( \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T  - \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a}^\text{ex} \bm{t}_{\xi_l, b}^T  \right) \\
+& - (1-\gamma) \left(  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\nu_{\xi_l,b}}^\text{ex} -  \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, b}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\nu_{\xi_l,a}}^\text{ex} \right)  \Bigg] \bm{1}
 \end{align*}
-We now group together various of the above terms, denoting
+then assuming diagonal $H$, we recover the desired divergence form as long as $\text{FS}^{\text{vol}} = \text{FS}^{\text{surf}}$. This condition comes from the free stream preservation (GCL) constraints, one for each physical dimension $m$.
 \begin{align*}
-\text{FS}^{\text{surf}} &= \frac{1}{2} \text{diag} \left( \bm{f}_\kappa \right) \sum_{l,m=1}^d \Bigg[ \alpha E_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}  + (1-\alpha) E_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex}   \\
-& \qquad  - \beta \left(  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, b}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex}  - \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex}   \right) \\
-&  \qquad  - (1-\beta) \left( \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T - \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a}^\text{ex} \bm{t}_{\xi_l, b}^T  \right) \Bigg] \bm{1}
+ \left[ \text{diag}\left( \fn{J}_\kappa \right) \right]^{-1} \sum_{l=1}^d  D_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa \bm{1} &= \frac{1}{2} H^{-1}  \sum_{l=1}^d \Bigg[ E_{\xi_l} \left[ \alpha \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} + (1-\alpha) \beta \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \right]  \\
+& \hspace{-4cm} + (1-\alpha) (1- \beta) \left(  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l, b}^\text{ex} \bm{t}_{\xi_l, b}^T -  \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l , a}^\text{ex} \bm{t}_{\xi_l, a}^T \right)  \\ 
+& \hspace{-4cm} - \gamma \left( \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T  - \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a}^\text{ex} \bm{t}_{\xi_l, b}^T  \right) \\
+& \hspace{-4cm} - (1-\gamma) \left(  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\nu_{\xi_l,b}}^\text{ex} -  \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, b}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\nu_{\xi_l,a}}^\text{ex} \right)  \Bigg] \bm{1}
 \end{align*}
-Assuming that $\text{FS}^{\text{vol}} = \text{FS}^{\text{surf}}$, which as we show below comes from the free stream preservation (GCL) constraing, by adding everything together, we finally get
-\begin{align*}
-\der[\bm{u}_\kappa]{t} &+ \sum_{m=1}^d D_{x_m} \bm{f}^\kappa  =  \frac{1}{2} H^{-1} \sum_{l,m=1}^d \Bigg[ E_{\xi_l} \left[ \alpha \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} + (1-\alpha) \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \right] \bm{f}_{\kappa} \\
-& - \beta \left(  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, b}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \bm{f}_{\nu_{\xi_l,b}} -  \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \bm{f}_{\nu_{\xi_l,a}} \right) \\
-& - (1-\beta) \left( \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T \bm{f}_{\nu_{\xi_l,b}} - \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a}^\text{ex} \bm{t}_{\xi_l, b}^T \bm{f}_{\nu_{\xi_l,a}} \right) \Bigg]
-\end{align*}
-which is now in a divergence form. We recover the usual nondissipative divergence form with $\alpha = 1$ and $\beta=0$ such as in \cite{del_rey_fernandez_extension_2019}, although clearly several other forms can be obtained through various choices of $\alpha$ and $\beta$. The choice $\alpha = 2$ and $\beta = 0$ was made for the divergence form (linear convection) in \cite{nolasco_optimized_2020}, while the choices $\alpha = 1$ and $\beta = \frac{1}{2}$ was made for the hadamard form (Euler equations). The assumption that  $\text{FS}^{\text{vol}} = \text{FS}^{\text{surf}}$ comes from the following free stream preservation (GCL) constraints, one for each physical dimension $m$.
-\begin{align*}
- \left[ \text{diag}\left( \fn{J}_\kappa \right) \right]^{-1} \sum_{l=1}^d  D_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa \bm{1} &= H^{-1} \sum_{l=1}^d \Bigg[ E_{\xi_l}  \left[ \alpha \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} + (1-\alpha) \text{diag}  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \right] \\
-& \hspace{-4cm} - \beta \left(  \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, b}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} - \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \bm{t}_{\xi_l, a}^T \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa}^\text{ex} \right) \\
-& \hspace{-4cm} - (1-\beta) \left( \bm{t}_{\xi_l, b} H^{\bot}_{\xi_l}  \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,b}^\text{ex} \bm{t}_{\xi_l, a}^T - \bm{t}_{\xi_l, a} H^{\bot}_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,a}^\text{ex} \bm{t}_{\xi_l, b}^T \right) \Bigg] \bm{1}
-\end{align*}
-One must be careful therefore to modify the optimization procedure for the metric terms appropriately.
+Once again recognize that choosing $\alpha = \beta = \gamma = 1$ recovers the standard free stream preservation constraint. One must be careful therefore to modify the optimization procedure for the metric terms appropriately.
+
+
+
 
 \subsection{Weak Form}
 
