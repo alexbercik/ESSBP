@@ -1476,3 +1476,60 @@ class MakeMesh:
             print('WARNING: The Metric Jacobian is not exact. The max difference is {0:.2g}'.format(np.max(abs(self.det_jac - self.det_jac_exa))))
             if metric_method != 'exact':
                 print("         Consider using exact Metric Jacobian and Invariants (set 'metric_method':'exact' in settings).")
+                
+        # compute unit normals on facets
+        if self.dim == 2:
+            self.fac_normals = np.zeros((self.nen,4,2,self.nelem[0]*self.nelem[1]))
+            for f in range(4):
+                if f == 0:
+                    nxref = -1
+                    nyref = 0
+                elif f == 1:
+                    nxref = 1
+                    nyref = 0
+                elif f == 2:
+                    nxref = 0
+                    nyref = -1
+                elif f == 3:
+                    nxref = 0
+                    nyref = 1                
+                x_unnormed = nxref*self.bdy_metrics[:,f,0,:] + nyref*self.bdy_metrics[:,f,2,:]
+                y_unnormed = nxref*self.bdy_metrics[:,f,1,:] + nyref*self.bdy_metrics[:,f,3,:]
+                norm = np.sqrt(x_unnormed**2 + y_unnormed**2)
+                self.fac_normals[:,f,0,:] = x_unnormed / norm
+                self.fac_normals[:,f,1,:] = y_unnormed / norm   
+                
+        elif self.dim == 3:
+            self.fac_normals = np.zeros((self.nen**2,6,3,self.nelem[0]*self.nelem[1]*self.nelem[2]))
+            for f in range(6):
+                if f == 0:
+                    nxref = -1
+                    nyref = 0
+                    nzref = 0
+                elif f == 1:
+                    nxref = 1
+                    nyref = 0
+                    nzref = 0
+                elif f == 2:
+                    nxref = 0
+                    nyref = -1
+                    nzref = 0
+                elif f == 3:
+                    nxref = 0
+                    nyref = 1
+                    nzref = 0
+                elif f == 2:
+                    nxref = 0
+                    nyref = 0
+                    nzref = -1
+                elif f == 3:
+                    nxref = 0
+                    nyref = 0
+                    nzref = 1  
+                x_unnormed = nxref*self.bdy_metrics[:,f,0,:] + nyref*self.bdy_metrics[:,f,3,:] + nzref*self.bdy_metrics[:,f,6,:]
+                y_unnormed = nxref*self.bdy_metrics[:,f,2,:] + nyref*self.bdy_metrics[:,f,4,:] + nzref*self.bdy_metrics[:,f,7,:]
+                z_unnormed = nxref*self.bdy_metrics[:,f,3,:] + nyref*self.bdy_metrics[:,f,5,:] + nzref*self.bdy_metrics[:,f,8,:]
+                norm = np.sqrt(x_unnormed**2 + y_unnormed**2 + y_unnormed**2)
+                self.fac_normals[:,f,0,:] = x_unnormed / norm
+                self.fac_normals[:,f,1,:] = y_unnormed / norm
+                self.fac_normals[:,f,2,:] = z_unnormed / norm
