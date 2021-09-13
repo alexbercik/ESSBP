@@ -212,7 +212,7 @@ Entropy-stable surface dissipation can be added using
 \end{align*}
 where $\Lambda$ can be any symmetric positive semi-definite matrix. For example a Lax-Friedrichs flux has
 \begin{align*}
-\Lambda_{\text{LF}} ( \bm{u}_\kappa , \bm{u}_\nu ) &= \left\vert \sum_{m=1}^d \text{max} \left( {\lambda_m} \right) \pder[\fnb{U}]{\fnb{W}} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,\nu} \right\vert 
+\Lambda_{\text{LF}} ( \bm{u}_\kappa , \bm{u}_\nu ) &= \left\vert \sum_{m=1}^d \text{max} \left( {\lambda_m} \right) \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,\nu}  \right\vert \pder[\fnb{U}]{\fnb{W}} 
 \end{align*}
 where the matrix $\pder[\fnb{U}]{\fnb{W}}$ is block diagonal, each block corresponding to a $n_{eq} \times n_{eq}$ matrix at each node. The surface metric terms are of course a fully diagonal matrix. For the 2D Euler equations, one can choose to approximate this eigenvalue using \cite{carpenter_entropy_2014}
 \begin{align*}
@@ -220,14 +220,17 @@ where the matrix $\pder[\fnb{U}]{\fnb{W}}$ is block diagonal, each block corresp
 \end{align*}
 This flux however tends to be overly-dissipative. Alternatively, a Roe flux is
 \begin{align*}
-\Lambda_{\text{Roe}} ( \bm{u}_\kappa , \bm{u}_\nu ) &=  \sum_{m=1}^d Y_m \left\vert \Lambda_m \text{sign} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,\nu} \right\vert Y^{-1}_m \pder[\fnb{U}]{\fnb{W}} \left\vert \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,\nu} \right\vert
+\Lambda_{\text{Roe}, l} ( \bm{u}_\kappa , \bm{u}_\nu ) &=  Y_l \left\vert \Lambda_l \right\vert Y^{-1}_l \pder[\fnb{U}]{\fnb{W}}
 \end{align*}
-where 
-For the Row flux we formulate the jacobian in terms of the entropy variables and therefore must multiply by $\pder[U]{W}$. This is made remarkably simpler by a scaling identity discovered by \cite{merriam_entropy-based_1989} and generalized by \cite{barth_numerical_1999}
+where $Y_l$ and $\Lambda_l$ are the right eigenvectors and eigenvalues of the flux jacobian $A( \bm{n}_{\xi_l} )$, that is in the direction $ \bm{n}_{\xi_l} $, or along the line $\xi_l$ in physical space. The values of this \textit{un-normalized} normal vector are given by the surface metric terms,
 \begin{align*}
-\pder[\fnb{U}]{\fnb{W}} = Y Y^T \quad \Rightarrow \quad \Lambda_{\text{Roe}} ( \bm{u}_\kappa , \bm{u}_\nu ) &=  \sum_{m=1}^d Y_m \left\vert \Lambda_m \text{sign} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,\nu} \right\vert Y^T \left\vert \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l,\nu} \right\vert
+\left[ \bm{n}_{\xi_l} \right]_m = \sum_{l=1}^d \fn{J} \pder[\xi_l]{x_m} n_{\xi_l}
 \end{align*}
- When a gas is callorically perfect (specific heat capacity $\gamma$ is constant throughout the fluid), the explicit flux jacobinas for the euler equations are. Otherwise one has to be more careful and use flux jabocian matrices described in \cite{fisher_high_2012}.
+This is made even simpler by a scaling identity discovered by \cite{merriam_entropy-based_1989} and generalized by \cite{barth_numerical_1999}
+\begin{align*}
+\pder[\fnb{U}]{\fnb{W}} = Y_l  Y_l^T \quad \Rightarrow \quad \Lambda_{\text{Roe}, l} ( \bm{u}_\kappa , \bm{u}_\nu ) &=  \sum_{m=1}^d Y_l \left\vert \Lambda_l \right\vert Y_l^T 
+\end{align*}
+When a gas is callorically perfect (specific heat capacity $\gamma$ is constant throughout the fluid), the explicit flux jacobinas for the euler equations are. Otherwise one has to be more careful and use flux jabocian matrices described in \cite{fisher_high_2012}.
 
 
 
