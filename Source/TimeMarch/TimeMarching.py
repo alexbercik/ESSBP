@@ -193,6 +193,8 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
             if t_idx == 0:
                 print('--- Beginning Simulation ---')
                 self.start_time = tm.time()
+            elif t_idx <= 10:
+                pass
             elif t_idx == n_ts:
                 sim_time = tm.time() - self.start_time
                 suf = 'Complete.'

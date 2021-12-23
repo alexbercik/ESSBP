@@ -112,6 +112,8 @@ class PdeSolver:
         # called by Disc.MakeMesh.get_jac_metrics. Options: 'calculate', 'VinokurYee', 'ThomasLombard', 'exact'
         self.settings.setdefault('bdy_metric_method','exact') 
         # called by Disc.MakeMesh.get_jac_metrics. Options: 'calculate', 'VinokurYee', 'ThomasLombard', 'exact', 'interpolate'
+        self.settings.setdefault('jac_method','exact') 
+        # called by Disc.MakeMesh.get_jac_metrics. Options: 'calculate', 'match', 'exact', 'deng'
         self.settings.setdefault('use_optz_metrics',True) 
         # called by Disc.MakeMesh.get_jac_metrics. Uses optimized metrics for free stream preservation.
         self.settings.setdefault('calc_exact_metrics',False) 
@@ -514,7 +516,7 @@ class PdeSolver:
         self.__init__(self.diffeq, self.settings, 
                       self.tm_method, self.dt, self.t_final, 
                       q0=self.q0, 
-                      dim=self.dim, p=self.p, disc_type=self.disc_type,
+                      p=self.p, disc_type=self.disc_type,
                       surf_type=self.surf_type, diss_type=self.diss_type,
                       nelem=self.nelem, nen=self.nen, disc_nodes=self.disc_nodes,
                       bc=self.bc, xmin=self.xmin, xmax=self.xmax,
@@ -770,6 +772,17 @@ class PdeSolver:
         result = np.max(abs(self.dqdt(np.ones(self.qshape))))
         if print_result:
             print('Free Stream Preservation holds to a maximum of {0:.5g}'.format(result))
+        else:
+            return result
+    
+    def check_conservation(self, print_result=True, q=None):
+        ''' check conservation '''
+        if q is None:
+            q = self.diffeq.set_q0()
+        dqdt = self.dqdt(q)
+        result = self.conservation_der(dqdt)
+        if print_result:
+            print('Derivative of conservation is {0:.5g}'.format(result))
         else:
             return result
         
