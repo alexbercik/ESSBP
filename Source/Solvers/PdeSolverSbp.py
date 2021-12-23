@@ -54,6 +54,7 @@ class PdeSolverSbp(PdeSolver):
         self.mesh.get_jac_metrics(self.sbp, self.periodic,
                         metric_method = self.settings['metric_method'], 
                         bdy_metric_method = self.settings['bdy_metric_method'],
+                        jac_method=self.settings['jac_method'],
                         use_optz_metrics = self.settings['use_optz_metrics'],
                         calc_exact_metrics = self.settings['calc_exact_metrics'],
                         optz_method = self.settings['metric_optz_method'],

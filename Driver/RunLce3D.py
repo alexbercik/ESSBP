@@ -42,7 +42,7 @@ xmax = (1,1,1)
 bc = 'periodic'
 
 # Spatial discretization
-disc_type = 'had' # 'div', 'had', 'dg'
+disc_type = 'div' # 'div', 'had', 'dg'
 disc_nodes = 'lgl' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
 p = 4
 nelem = (3,3,3) # optional, number of elements
@@ -63,13 +63,14 @@ print_sol_norm = False
 obj_name = None
 cons_obj_name = ('Energy','Conservation') # 'Energy', 'Conservation', 'None'
 
-settings = {'warp_factor':0,               # Warps / stretches mesh.
-            'warp_type':'cubic',         # Options: 'defualt', 'papers', 'quad'
-            'metric_method':'VinokurYee',   # Options: 'VinokurYee','ThomasLombard','exact'
-            'bdy_metric_method':'extrapolate',   # Options: 'VinokurYee','ThomasLombard','interpolate','exact'
-            'use_optz_metrics':False,        # Uses optimized metrics for free stream preservation.
+settings = {'warp_factor':0.2,               # Warps / stretches mesh.
+            'warp_type':'strong',         # Options: 'defualt', 'papers', 'quad'
+            'metric_method':'exact',   # Options: 'VinokurYee','ThomasLombard','exact'
+            'bdy_metric_method':'exact',   # Options: 'VinokurYee','ThomasLombard','interpolate','exact'
+            'jac_method':'exact',      # Options: 'direct','match','deng','exact'
+            'use_optz_metrics':True,        # Uses optimized metrics for free stream preservation.
             'calc_exact_metrics':True,      # calculate exact metrics alongside above choices.
-            'metric_optz_method':'default'} # Define the optimization procedure.}
+            'metric_optz_method':'alex'} # Define the optimization procedure.}
 
 ''' Set diffeq and solve '''
 
@@ -99,6 +100,6 @@ solver3D.solve()
 solver3D.plot_cons_obj()
 print('Final Error: ', solver3D.calc_error())
 
-from Source.Methods.Analysis import run_convergence
-schedule = [['disc_nodes','lg','lgl'],['p',3,4],['nelem',12,15,20]]
+#from Source.Methods.Analysis import run_convergence
+#schedule = [['disc_nodes','lg','lgl'],['p',3,4],['nelem',12,15,20]]
 #run_convergence(solver,schedule_in=schedule)

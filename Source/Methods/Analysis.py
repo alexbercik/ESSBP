@@ -477,7 +477,9 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
         legend_strings[casei] = legend_strings[casei].strip().strip(',') # formatting
         # if we change p, estimate that nen will also change by the same amount
         if 'p' in attributes:
-                    diff_p = cases[casei][attributes.index('p')] - solver.p
+            diff_p = cases[casei][attributes.index('p')] - solver.p
+        else:
+            diff_p = 0
         for runi in range(n_runs): # for each run (refinement)
             variables[0] = ('nelem',runs_nelem[runi])
             variables[1] = ('nen',runs_nen[runi])
@@ -523,146 +525,6 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
     if labels is not None:
         # overwrite legend_strings with labels
         legend_strings = labels
-        
-    ##########################################################################
-    def calc_conv_rate(dof_vec, err_vec, dim, n_points=None,
-                       print_conv=True, legend_strings=None):
-        '''
-        Parameters
-        ----------
-        dof_vec : numpy array
-            Indicates the no. of DOF at each iteration
-        err_vec : numpy array
-            Indicates the error at each iteration.
-        n_points : int, optional
-            The first no. of points to use to calculate the average convergence.
-            The default is to use all of the data points.
-        print_conv : bool, optional
-            Determines whether or not to print a table with convergence rates.
-            The default is True.
-        legend_strings : list of strings, optional
-            Labels to use when printing table. Defaults is None.
-
-        Returns
-        -------
-        conv_vec : numpy array
-            The convergence rate between all two data points.
-        avg_conv : float
-            The least squares slope (convergence rate) using the last n_points data
-            points.
-        '''
-        assert dof_vec.shape==err_vec.shape,"The two inputted arrays are not the same shape!"
-        if dof_vec.ndim>1:
-            n_cases, n_runs = dof_vec.shape
-        else:
-            n_cases, n_runs = 1, dof_vec.size
-            dof_vec = np.reshape(dof_vec,(n_cases, n_runs))
-            err_vec = np.reshape(err_vec,(n_cases, n_runs))
-        assert n_runs>1,"ERROR: Not enough grids to perform convergence."
-
-        conv_vec = np.zeros((n_cases, n_runs))
-        avg_conv = np.zeros(n_cases)
-        for casei in range(n_cases):
-            logx = np.log(dof_vec[casei])
-            logy = np.log(err_vec[casei])
-
-            # Calculate the convergence between every two sets of points
-            conv_vec[casei,1:] = -(logy[1:] - logy[:-1]) / (logx[1:] - logx[:-1])
-
-            # Calculate the least squares solution
-            if (n_points == None) or n_points > n_runs:
-                n_points = n_runs
-
-            logx_plus = np.vstack([logx[:n_points], np.ones(n_points)]).T
-            avg_conv[casei], _ = -np.linalg.lstsq(logx_plus, logy[:n_points], rcond=None)[0]
-
-            if print_conv:
-                if legend_strings is not None:
-                    print('Case: ' + legend_strings[casei])
-                print('Average Convergence: {:.3f}'.format(avg_conv[casei]))
-                data = np.array([dof_vec[casei],err_vec[casei],conv_vec[casei]]).T
-                if dim == 1: Ndof = 'Ndof'
-                elif dim == 2: Ndof = u'\u221A' + 'Ndof'
-                elif dim == 3: Ndof = u'\u221B' + 'Ndof'
-                print(tabulate((data), headers=[Ndof, 'Error','Convergence'], tablefmt='orgtbl'))
-
-        return conv_vec, avg_conv
-
-    def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None):
-        '''
-        Parameters
-        ----------
-        dof_vec : numpy array
-            Indicates the no. of DOF at each iteration
-        err_vec : numpy array
-            Indicates the error at each iteration.
-        legend_strings : list of strings
-            Labels to use when printing table.
-        title : string, optional
-            Title of plot. The default is None.
-        savefile : string, optional
-            file name under which to save the plot. The default is None.
-
-        Returns
-        -------
-        None
-        '''
-        
-        assert dof_vec.shape==err_vec.shape,"The two inputted arrays are not the same shape!"
-        if dof_vec.ndim>1:
-            n_cases, n_runs = dof_vec.shape
-        else:
-            n_cases, n_runs = 1, dof_vec.size
-            dof_vec = np.reshape(dof_vec,(n_cases, n_runs))
-            err_vec = np.reshape(err_vec,(n_cases, n_runs))
-        assert n_runs>1,"ERROR: Not enough grids to perform convergence."
-        
-        assert len(legend_strings)==n_cases,"ERROR: legend_strings do not match n_cases"
-
-        plt.figure(figsize=(6,4))
-        if title is not None:
-            plt.title(title,fontsize=18)
-        plt.ylabel(r"Error",fontsize=16)
-        if dim == 1: plt.xlabel(r"Degrees of Freedom",fontsize=16)
-        elif dim == 2: plt.xlabel(r"$\sqrt{}$ Degrees of Freedom",fontsize=16)
-        elif dim == 3: plt.xlabel(r"$\sqrt[3]{}$ Degrees of Freedom",fontsize=16)
-        
-        # Do a curve fit to find the slope on log-log plot (order of convergence)
-        def fit_func(x, a, b): 
-            return -a*x + b
-        
-        colors=['blue','red','green','magenta','orange','purple','brown']
-        marks=['o','^','s','D','>','<','8']
-        
-        for i in range(n_cases):
-            string = legend_strings[i].replace("disc_nodes=","")
-            p_opt, p_cov = sc.curve_fit(fit_func, np.log(dof_vec[i]),np.log(err_vec[i]),(2,1)) # fit
-            acc = int(np.floor(np.log10(np.sqrt(p_cov[0,0]))))
-            unc = np.round(np.sqrt(p_cov[0,0]),abs(acc))
-            acc = int(np.floor(np.log10(unc)))
-            if acc >=0:
-                slope = r": {0} $\pm$ {1}".format(int(p_opt[0]),int(unc))
-            elif acc==-1:
-                slope = r": {0:9.1f} $\pm$ {1:6.1f}".format(p_opt[0],unc)
-            elif acc==-2:
-                slope = r": {0:9.2f} $\pm$ {1:6.2f}".format(p_opt[0],unc)
-            elif acc==-3:
-                slope = r": {0:9.3f} $\pm$ {1:6.3f}".format(p_opt[0],unc)
-            else:
-                slope = r": {0:9.4f} $\pm$ {1:6.1g}".format(p_opt[0],unc)
-            plt.loglog(dof_vec[i],err_vec[i],marks[i],markersize=8, color=colors[i],
-                       label=string+slope)
-            plt.loglog(np.linspace(dof_vec[i][0],dof_vec[i][-1]), # plot
-                       np.exp(fit_func(np.log(np.linspace(dof_vec[i][0],dof_vec[i][-1])), *p_opt)), 
-                       linewidth=1, linestyle = '--', color=colors[i])
-        plt.legend(loc='best', fontsize=12)
-        #plt.subplots_adjust(left=0.2, right=0.8, top=0.8, bottom=0.2)
-        #plt.gca().xaxis.set_major_formatter(tik.ScalarFormatter())
-        #plt.gca().xaxis.set_minor_formatter(tik.ScalarFormatter())
-        if savefile is not None:
-            plt.savefig(savefile,dpi=600)
-    
-    ##########################################################################
     
     ''' Analyze convergence '''
     print('---------------------------------------------------------')
@@ -677,3 +539,278 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
     
     if return_conv:
         return dofs, errors, legend_strings
+    
+    
+def calc_conv_rate(dof_vec, err_vec, dim, n_points=None,
+                   print_conv=True, legend_strings=None):
+    '''
+    Parameters
+    ----------
+    dof_vec : numpy array
+        Indicates the no. of DOF at each iteration
+    err_vec : numpy array
+        Indicates the error at each iteration.
+    n_points : int, optional
+        The first no. of points to use to calculate the average convergence.
+        The default is to use all of the data points.
+    print_conv : bool, optional
+        Determines whether or not to print a table with convergence rates.
+        The default is True.
+    legend_strings : list of strings, optional
+        Labels to use when printing table. Defaults is None.
+
+    Returns
+    -------
+    conv_vec : numpy array
+        The convergence rate between all two data points.
+    avg_conv : float
+        The least squares slope (convergence rate) using the last n_points data
+        points.
+    '''
+    assert dof_vec.shape==err_vec.shape,"The two inputted arrays are not the same shape!"
+    if dof_vec.ndim>1:
+        n_cases, n_runs = dof_vec.shape
+    else:
+        n_cases, n_runs = 1, dof_vec.size
+        dof_vec = np.reshape(dof_vec,(n_cases, n_runs))
+        err_vec = np.reshape(err_vec,(n_cases, n_runs))
+    assert n_runs>1,"ERROR: Not enough grids to perform convergence."
+
+    conv_vec = np.zeros((n_cases, n_runs))
+    avg_conv = np.zeros(n_cases)
+    for casei in range(n_cases):
+        logx = np.log(dof_vec[casei])
+        logy = np.log(err_vec[casei])
+
+        # Calculate the convergence between every two sets of points
+        conv_vec[casei,1:] = -(logy[1:] - logy[:-1]) / (logx[1:] - logx[:-1])
+
+        # Calculate the least squares solution
+        if (n_points == None) or n_points > n_runs:
+            n_points = n_runs
+
+        logx_plus = np.vstack([logx[:n_points], np.ones(n_points)]).T
+        avg_conv[casei], _ = -np.linalg.lstsq(logx_plus, logy[:n_points], rcond=None)[0]
+
+        if print_conv:
+            if legend_strings is not None:
+                print('Case: ' + legend_strings[casei])
+            print('Average Convergence: {:.3f}'.format(avg_conv[casei]))
+            data = np.array([dof_vec[casei],err_vec[casei],conv_vec[casei]]).T
+            if dim == 1: Ndof = 'Ndof'
+            elif dim == 2: Ndof = u'\u221A' + 'Ndof'
+            elif dim == 3: Ndof = u'\u221B' + 'Ndof'
+            print(tabulate((data), headers=[Ndof, 'Error','Convergence'], tablefmt='orgtbl'))
+
+    return conv_vec, avg_conv
+
+def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None):
+    '''
+    Parameters
+    ----------
+    dof_vec : numpy array
+        Indicates the no. of DOF at each iteration
+    err_vec : numpy array
+        Indicates the error at each iteration.
+    legend_strings : list of strings
+        Labels to use when printing table.
+    title : string, optional
+        Title of plot. The default is None.
+    savefile : string, optional
+        file name under which to save the plot. The default is None.
+
+    Returns
+    -------
+    None
+    '''
+    
+    assert dof_vec.shape==err_vec.shape,"The two inputted arrays are not the same shape!"
+    if dof_vec.ndim>1:
+        n_cases, n_runs = dof_vec.shape
+    else:
+        n_cases, n_runs = 1, dof_vec.size
+        dof_vec = np.reshape(dof_vec,(n_cases, n_runs))
+        err_vec = np.reshape(err_vec,(n_cases, n_runs))
+    assert n_runs>1,"ERROR: Not enough grids to perform convergence."
+    
+    assert len(legend_strings)==n_cases,"ERROR: legend_strings do not match n_cases"
+
+    plt.figure(figsize=(6,4))
+    if title is not None:
+        plt.title(title,fontsize=18)
+    plt.ylabel(r"Error",fontsize=16)
+    if dim == 1: plt.xlabel(r"Degrees of Freedom",fontsize=16)
+    elif dim == 2: plt.xlabel(r"$\sqrt{}$ Degrees of Freedom",fontsize=16)
+    elif dim == 3: plt.xlabel(r"$\sqrt[3]{}$ Degrees of Freedom",fontsize=16)
+    
+    # Do a curve fit to find the slope on log-log plot (order of convergence)
+    def fit_func(x, a, b): 
+        return -a*x + b
+    
+    colors=['blue','red','green','magenta','orange','purple','brown']
+    marks=['o','^','s','D','>','<','8']
+    
+    for i in range(n_cases):
+        string = legend_strings[i].replace("disc_nodes=","")
+        p_opt, p_cov = sc.curve_fit(fit_func, np.log(dof_vec[i]),np.log(err_vec[i]),(2,1)) # fit
+        acc = int(np.floor(np.log10(np.sqrt(p_cov[0,0]))))
+        unc = np.round(np.sqrt(p_cov[0,0]),abs(acc))
+        acc = int(np.floor(np.log10(unc)))
+        if acc >=0:
+            slope = r": {0} $\pm$ {1}".format(int(p_opt[0]),int(unc))
+        elif acc==-1:
+            slope = r": {0:9.1f} $\pm$ {1:6.1f}".format(p_opt[0],unc)
+        elif acc==-2:
+            slope = r": {0:9.2f} $\pm$ {1:6.2f}".format(p_opt[0],unc)
+        elif acc==-3:
+            slope = r": {0:9.3f} $\pm$ {1:6.3f}".format(p_opt[0],unc)
+        else:
+            slope = r": {0:9.4f} $\pm$ {1:6.1g}".format(p_opt[0],unc)
+        plt.loglog(dof_vec[i],err_vec[i],marks[i],markersize=8, color=colors[i],
+                   label=string+slope)
+        plt.loglog(np.linspace(dof_vec[i][0],dof_vec[i][-1]), # plot
+                   np.exp(fit_func(np.log(np.linspace(dof_vec[i][0],dof_vec[i][-1])), *p_opt)), 
+                   linewidth=1, linestyle = '--', color=colors[i])
+    plt.legend(loc='best', fontsize=12)
+    #plt.subplots_adjust(left=0.2, right=0.8, top=0.8, bottom=0.2)
+    #plt.gca().xaxis.set_major_formatter(tik.ScalarFormatter())
+    #plt.gca().xaxis.set_minor_formatter(tik.ScalarFormatter())
+    if savefile is not None:
+        plt.savefig(savefile,dpi=600)
+        
+        
+def run_jacobian_convergence(solver, schedule_in=None,
+             return_conv=False, savefile=None, labels=None):
+    '''
+    Purpose
+    ----------
+    Runs a convergence analysis of the value 1 - (J_1/J_2), where J_1 is the
+    metric jacobian used for the time marching, and J_2 is the value backed
+    out from the metric terms.
+
+    Parameters
+    ----------
+    solver:
+    schedule_in: ex. [['disc_nodes','lgl','lg'],['p',3,4],['nelem',5,20,100]]
+    return_conv : bool (optional)
+        Flag whether to return dofs, jacobian ratio, and legend_strings.
+        The default is False.
+    savefile: string (optional)
+        file name under which to save the plot. The default is None.
+    labels: list of strings (optional)
+        labels to use in the legends for the different runs
+    '''
+    print('---------------------------------------------------------')
+    
+    if schedule_in==None:
+        schedule = [['disc_nodes','lgl','lg'],['p',3,4],['nelem',5,20,100]]
+    else:
+        schedule=schedule_in.copy()
+
+    ''' Unpack Schedule '''
+    # Check that we either use 'nen' or 'nelem'
+    # to refine. We can't use both.
+    if any(i[0]=='nen' for i in schedule) and any(i[0]=='nelem' for i in schedule):
+        print('WARNING: Can not do a refinement specifying both nen and nelem. Using only nelem values.')
+        # remove 'nelem' and 'nen' lists
+        schedule = [x for x in schedule if not ('nen' in x)]
+
+    # Otherwise, we now have combinations of attributes to run, and we
+    # calculate convergence according to either nn or nelem refinement.
+    # Note that nen can be used both with nn or nelem refinement.
+    if any(i[0]=='nen' for i in schedule):
+        runs_nen = [x[1:] for x in schedule if x[0] == 'nen'][0]
+        schedule.remove([x for x in schedule if x[0] == 'nen'][0])
+        runs_nelem = [solver.nelem] * len(runs_nen) # reset these as well
+    elif any(i[0]=='nelem' for i in schedule):
+        runs_nelem = [x[1:] for x in schedule if x[0] == 'nelem'][0]
+        schedule.remove([x for x in schedule if x[0] == 'nelem'][0])
+        runs_nen = [0] * len(runs_nelem) # reset these as well
+    else:
+        raise Exception('Convergence schedule must contain either nen or nelem refinement.')
+    
+    # unpack remaining attributes in schedule, store combinations in cases
+    attributes = []
+    values = []
+    for item in schedule:
+        attributes.append(item[0])
+        values.append(item[1:])
+    cases = list(itertools.product(*values)) # all possible combinations
+
+    ''' Run cases for various runs, store errors '''
+    n_cases = len(cases)
+    n_runs = len(runs_nelem)
+    n_tot = n_cases*n_runs
+    n_attributes = len(attributes)
+    avg_jacs = np.zeros((n_cases,n_runs)) # store jacobian ratios here
+    max_jacs = np.zeros((n_cases,n_runs))
+    dofs = np.zeros((n_cases,n_runs)) # store degrees of freedom here
+    legend_strings = ['']*n_cases # store labels for cases here
+    if labels is not None:
+        assert(len(labels)==n_cases),'labels must be a list of length = n_cases'
+
+    variables = [None]*(2+n_attributes)
+
+    n_toti = 1
+    for casei in range(n_cases): # for each case
+        for atti in range(n_attributes):
+            variables[atti+2] = (attributes[atti],cases[casei][atti]) # assign attributes
+            legend_strings[casei] += '{0}={1}, '.format(attributes[atti],cases[casei][atti])
+        legend_strings[casei] = legend_strings[casei].strip().strip(',') # formatting
+
+        for runi in range(n_runs): # for each run (refinement)
+            variables[0] = ('nelem',runs_nelem[runi])
+            variables[1] = ('nen',runs_nen[runi])
+            variables.append(('print_sol_norm', False))
+
+            ''' set case, store results '''
+            solver.reset(variables=variables)
+            jacs = abs( 1 - (solver.mesh.det_jac / solver.mesh.det_jac_exa) )
+            avg_jacs[casei,runi] = np.mean(jacs)
+            max_jacs[casei,runi] = np.max(jacs)
+            if solver.dim == 1:
+                nn = solver.nn
+                dofs[casei,runi] = nn
+            elif solver.dim == 2:
+                nn = solver.nn[0]*solver.nn[1]
+                dofs[casei,runi] = np.sqrt(nn)
+            elif solver.dim == 3:
+                nn = solver.nn[0]*solver.nn[1]*solver.nn[2]
+                dofs[casei,runi] = np.cbrt(nn)
+
+            print('Progress: run {0} of {1} complete.'.format(n_toti,n_tot))
+            print('Max Jac Error Ratio: ', max_jacs[casei,runi])
+            print('Avg Jac Error Ratio: ', avg_jacs[casei,runi])
+            print('Total number of nodes: ', nn)
+            print('---------------------------------------------------------')
+            n_toti += 1
+    if labels is not None:
+        # overwrite legend_strings with labels
+        legend_strings = labels
+    
+    ''' Analyze convergence '''
+    print('---------------------------------------------------------')
+    print('Average Error Convergence Rates:')
+    avg_conv_vec, avg_avg_conv = calc_conv_rate(dofs, avg_jacs, solver.dim,
+                                                    legend_strings=legend_strings)
+    print('---------------------------------------------------------')
+    print('Maximum Error Convergence Rates:')
+    max_conv_vec, max_avg_conv = calc_conv_rate(dofs, max_jacs, solver.dim,
+                                                    legend_strings=legend_strings)
+
+    ''' Plot Results '''
+    if savefile != None:
+        savefile1 = savefile + '_avg'
+        savefile2 = savefile + '_max'
+    else:
+        savefile1 = None
+        savefile2 = None
+        
+    title = r"Average Metric Jacobian Error $\left( 1-\frac{J}{J_{ex}} \right)$"
+    plot_conv(dofs, avg_jacs, legend_strings, solver.dim, title, savefile1)
+    
+    title = r"Maximum Metric Jacobian Error $\left( 1-\frac{J}{J_{ex}} \right)$"
+    plot_conv(dofs, max_jacs, legend_strings, solver.dim, title, savefile2)
+    
+    if return_conv:
+        return dofs, avg_jacs, max_jacs, legend_strings

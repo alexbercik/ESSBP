@@ -53,6 +53,7 @@
 \newcommand{\te}[1]{\texttt{\detokenize{#1}}}
 \lstMakeShortInline[columns=fixed]|
 
+\long\def\comment#1{} % ignore this text
 \newcommand{\pder}[2][]{\dfrac{\partial #1}{\partial #2}} %comand for partial derivative
 \newcommand{\der}[2][]{\dfrac{d #1}{d #2}} %comand for derivative
 \newcommand{\norm}[1]{\left\vert \left\vert #1 \right\vert \right\vert} %comand for norm
@@ -165,7 +166,8 @@ By divergence form, we mean the discretization uses the `standard' straighforwar
 where
 \begin{align*}
 \begin{gathered}
-D_{x_m} = \frac{1}{2} \left[ \text{diag}\left( \fn{J}_\kappa \right) \right]^{-1} \sum_{l=1}^d \left[ D_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa + \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa  D_{\xi_l} \right] \quad , \quad H = \text{diag} \left( \fn{J}_\kappa \right) H_\xi \\
+D_{x_m} = \frac{1}{2} \left[ \text{diag}\left( \fn{J}_\kappa \right) \right]^{-1} \sum_{l=1}^d \left[ D_{\xi_l} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa + \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_\kappa  D_{\xi_l} \right] \\
+ H = \text{diag} \left( \fn{J}_\kappa \right) \left( H_{\xi_1}^{(1D)} \otimes H_{\xi_2}^{(1D)}  \otimes H_{\xi_3}^{(1D)}  \right) \\
 \bm{f}_{\xi_l,a} =  \sum_{m=1}^d \bm{t}^T_{\xi_l,a} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \fnb{F}_m \left( \bm{u}_\kappa \right) \quad , \quad \bm{f}_{\xi_l,b} = \sum_{m=1}^d \bm{t}^T_{\xi_l,b} \text{diag} \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\kappa} \fnb{F}_m \left( \bm{u}_\kappa \right)
 \end{gathered}
 \end{align*}
@@ -302,7 +304,56 @@ where we have used the divergence theorem to again relate the surface metric con
 \end{enumerate}
 The fourth option, unique to ESSBP, is as follows. Find an optimal $\bm{c}_{\kappa , m}$ by minimizing the least squares error to the exact metrics $\bm{c}_{\kappa , m}^\text{ex}$  subject to the constraint $\bm{1}^T \bm{c}_{\kappa , m} = 0$. \\
 
-For each physical direction $m$, define a global vector $\bm{b}_{l,m}^{i_x,i_y,i_z} =  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l}^{i_x,i_y,i_z}$, where $l$ determines the direction of the interface, and the indices $i_x$, $i_y$, $i_z$ denote the interface (similar to labelling elements, though $i_s$ range from $1$ to $N_{e_s}$ if $s \neq l$, and range to $N_{e_s}+ 1$ instead if $s=l$). The element-wise constraints $\bm{1}^T \bm{c}_{\kappa , m} = 0$ can now be rewritten in a global manner as $N_{e_x} \times N_{e_y} \times N_{e_z}$ individual constraints 
+Due to the global nature of this optimization stemming from the coupling between adjacent facets, it is convenient to arrange the facet metrics in a global vector. However, relating the ordering of this global vector to the ordering of elements is difficult for complex mesh geometries, and is therefore most conveniently denoted through an explicit mapping $i(\kappa, s)$. We denote by
+\begin{align*}
+\bm{b}_{i,m} =  \left( \fn{J} \pder[\xi_l]{x_m} \right)_s^\kappa \quad , \quad l = \left\lfloor \frac{s}{2} \right\rfloor
+\end{align*}
+the facet metrics corresponding to side $s$ (from 1 to $2d$) of the element $\kappa$. The element-wise constraints $\bm{1}^T \bm{c}_{\kappa , m} = 0$ can now be rewritten as
+\begin{align*}
+\bm{1}^T \left[ H^{\bot,\kappa}_{x} \left( \bm{b}_{i(\kappa,2),m} - \bm{b}_{i(\kappa,1),m} \right) + H^{\bot,\kappa}_{y} \left( \bm{b}_{i(\kappa,4),m} - \bm{b}_{i(\kappa,3),m} \right) + H^{\bot,\kappa}_{z} \left( \bm{b}_{i(\kappa,6),m} - \bm{b}_{i(\kappa,5),m} \right) \right] = 0
+\end{align*}
+We want to find $\bm{b}$ as close as possible to the target values $\tilde{\bm{b}}$. For each $m$, define the Lagrangian
+\begin{align*}
+L_m &= \sum_{j=1}^{N_n} \sum_{i}^{N_i} \frac{1}{2} \left( \tilde{b}_{i,m,j} - b_{i,m,j} \right)^2 -  \sum_{\kappa=1}^{N_e} \lambda_{\kappa} \sum_{j=1}^{N_n} \Big[ H^{\bot,\kappa}_{x,j} \left( b_{i(\kappa,2),m,j} - b_{i(\kappa,1),m,j} \right)  \\
+&\hspace{5cm} + H^{\bot,\kappa}_{y,j} \left( b_{i(\kappa,4),m,j} - b_{i(\kappa,3),m,j} \right) + H^{\bot,\kappa}_{z,j} \left( b_{i(\kappa,6),m,j} - b_{i(\kappa,5),m,j} \right) \Big]
+\end{align*}
+We now follow the KKT conditions by looking for a saddle point of the Lagrangian,
+\begin{align*}
+0 &= \pder[L_m]{b_{i,m,j}} = b_{i,m,j}  -  \tilde{b}_{i,m,j}  - \sum_{l=1}^d \sum_{\kappa=1}^{N_e} H^{\bot,\kappa}_{l,j} \lambda_{\kappa} \left(  \delta_{i,i(\kappa,2l)}  -  \delta_{i,i(\kappa,2l-1)}  \right)
+\end{align*}
+This tells us
+\begin{align*}
+b_{i,m,j}  =  \tilde{b}_{i,m,j}  + \sum_{l=1}^d \sum_{\kappa=1}^{N_e}  H^{\bot,\kappa}_{l,j} \lambda_{\kappa} \left( \delta_{i,i(\kappa,2l)}  - \delta_{i,i(\kappa,2l-1)}  \right)
+\end{align*}
+or that the $j$\up{th} node of the $i,m$ interface metric is given by the target quantity with some correction. This correction includes a contributions from the $H$ interface operator and $\lambda$ constant corresponding to element $\kappa$ if the facet in question belongs to the $2l$ or $2l-1$ face of the $\kappa$\up{th} element. Plugging this into the original constraints allows us to solve for $\lambda$,
+\begin{align*}
+0 &= \sum_{j=1}^{N_n} \left[ H^{\bot,\kappa}_{x,j} \left( b_{i(\kappa,2),m,j} - b_{i(\kappa,1),m,j} \right) + H^{\bot,\kappa}_{y,j} \left( b_{i(\kappa,4),m,j} - b_{i(\kappa,3),m,j} \right) + H^{\bot,\kappa}_{z,j} \left( b_{i(\kappa,6),m,j} - b_{i(\kappa,5),m,j} \right) \right] \\
+&=  \sum_{j=1}^{N_n} \left[ H^{\bot,\kappa}_{x,j} \left( \tilde{b}_{i(\kappa,2),m,j} - \tilde{b}_{i(\kappa,1),m,j} \right) + H^{\bot,\kappa}_{y,j} \left( \tilde{b}_{i(\kappa,4),m,j} - \tilde{b}_{i(\kappa,3),m,j} \right) + H^{\bot,\kappa}_{z,j} \left( \tilde{b}_{i(\kappa,6),m,j} - \tilde{b}_{i(\kappa,5),m,j} \right) \right] \\
+&+ \sum_{\kappa'=1}^{N_e} \sum_{l=1}^d \left( \sum_{j=1}^{N_n} H^{\bot,\kappa}_{x,j} H^{\bot,\kappa'}_{l,j} \right) \lambda_{\kappa'}  \left( \delta_{i(\kappa,2),i(\kappa',2l)}  - \delta_{i(\kappa,2),i(\kappa',2l-1)} - \delta_{i(\kappa,1),i(\kappa',2l)}  + \delta_{i(\kappa,1),i(\kappa',2l-1)}  \right) \\
+&+ \sum_{\kappa'=1}^{N_e} \sum_{l=1}^d \left( \sum_{j=1}^{N_n} H^{\bot,\kappa}_{y,j} H^{\bot,\kappa'}_{l,j} \right) \lambda_{\kappa'}  \left( \delta_{i(\kappa,4),i(\kappa',2l)}  - \delta_{i(\kappa,4),i(\kappa',2l-1)} - \delta_{i(\kappa,3),i(\kappa',2l)}  + \delta_{i(\kappa,3),i(\kappa',2l-1)}  \right) \\
+&+ \sum_{\kappa'=1}^{N_e} \sum_{l=1}^d \left( \sum_{j=1}^{N_n} H^{\bot,\kappa}_{z,j} H^{\bot,\kappa'}_{l,j} \right) \lambda_{\kappa'}  \left( \delta_{i(\kappa,6),i(\kappa',2l)}  - \delta_{i(\kappa,6),i(\kappa',2l-1)} - \delta_{i(\kappa,5),i(\kappa',2l)}  + \delta_{i(\kappa,5),i(\kappa',2l-1)}  \right)
+\end{align*}
+Recognizing the first line simply as the original constraint, we rewrite this as a linear system
+\begin{align*}
+A_{\kappa, \kappa'} \lambda_{\kappa'} = - \bm{1}^T \tilde{\bm{c}}_{\kappa, m}
+\end{align*}
+where
+\begin{align*}
+A_{\kappa, \kappa'} &=  \sum_{l,l'=1}^d \left( \sum_{j=1}^{N_n} H^{\bot,\kappa}_{l,j} H^{\bot,\kappa'}_{l',j} \right)  \left( \delta_{i(\kappa,2l),i(\kappa',2l')}  - \delta_{i(\kappa,2l),i(\kappa',2l'-1)} - \delta_{i(\kappa,2l-1),i(\kappa',2l')}  + \delta_{i(\kappa,2l-1),i(\kappa',2l'-1)}  \right) 
+\end{align*}
+If we assume conforming and aligned interfaces such that in any $l$ direction the $H$ operators match along the interface and only $l$ faces match up with other $l$ faces ($l=l'$), this simplifies to
+\begin{align*}
+A_{\kappa, \kappa'} &=  \sum_{l=1}^d \left( \sum_{j=1}^{N_n} \left( H^{\bot,\kappa}_{l,j} \right)^2 \right)  \left( 2 \delta_{\kappa,\kappa'}  - \delta_{i(\kappa,2l),i(\kappa',2l-1)} - \delta_{i(\kappa,2l-1),i(\kappa',2l)}   \right)
+\end{align*}
+If we do not use periodic boundary conditions, $A$ is diagonally domiant and therefore a symmetric positive definite sparse matrix with entries along the main diagonal, as well as the $\kappa,\kappa'$ and $\kappa',\kappa$ entries where these elements share an interface. This guarantees the existence of a unique solution. However, in the case that we use periodic boundary conditions, $A$ may have zero eigenvalues, meaning the null space is non-trivial and the linear system no longer has a unique solution. A rigorous proof is required here, but experiments show that the resulting rank of $A$ is $N_e - 1$, leaving a degree of freedom that could be used to further optimize among the resulting infinite solutions. In this case we choose the minimum-norm least squares solution, i.e. that which solves
+\begin{align*}
+A_{\kappa, \kappa'} \lambda_{\kappa'} = - \bm{1}^T \tilde{\bm{c}}_{\kappa, m} \quad , \quad \bm{\lambda}^* = \text{arg} \ \text{min} \norm{\bm{\lambda}}_2
+\end{align*}
+This solution is given by the Moore-Penrose inverse of $A$, such that $ \bm{\lambda}^* = - A^\dagger \left( \bm{1}^T \tilde{\bm{c}}_{\kappa, m} \right)$. 
+
+%%%%%%%%%% Ignore all this %%%%%%%%
+\comment{
+For each physical direction $m$, define a global vector $\bm{b}_{l,m}^{i_x,i_y,i_z} =  \left( \fn{J} \pder[\xi_l]{x_m} \right)_{\xi_l}^{i_x,i_y,i_z}$, where $l$ determines the direction of the interface, and the indices $i_x$, $i_y$, $i_z$ denote the interface (similar to labelling elements, though $i_s$ range from $1$ to $N_{e_s}$ if $s \neq l$, and range to $N_{e_s}+ 1$ instead if $s=l$). Additionally we assume that the interfaces are conforming, that is each element interface matches exactly to an adjacent element interface (this may need to be updated for more complicated mesh structures). The element-wise constraints $\bm{1}^T \bm{c}_{\kappa , m} = 0$ can now be rewritten in a global manner as $N_{e_x} \times N_{e_y} \times N_{e_z}$ individual constraints 
 \begin{align*}
 \bm{1}^T \left[ H^\bot_{x} \left( \bm{b}_{x,m}^{i_x+1,i_y,i_z} - \bm{b}_{x,m}^{i_x,i_y,i_z} \right) + H^\bot_{y} \left( \bm{b}_{y,m}^{i_x,i_y+1,i_z} - \bm{b}_{y,m}^{i_x,i_y,i_z} \right) + H^\bot_{z} \left( \bm{b}_{z,m}^{i_x,i_y,i_z+1} - \bm{b}_{z,m}^{i_x,i_y,i_z} \right) \right] = 0
 \end{align*}
@@ -363,6 +414,8 @@ A^{i_x,i_y,i_z}_{j_x,j_y,j_z} &=
   -  \delta_{j_l}^{i_l-1} + 2 \delta_{j}^{i} - \delta_{j_l}^{i_l+1} \right)
 \end{align*}
 where because of our introduced notation, whenever the $i_l$ or $j_l$ components become $0$ and $N_e + 1$, the corresponding $\delta$ are zero. This can be flattened to a simple matrix-vector linear system, from which the $\bm{\lambda}$ can be obtained, in turn giving the optimum surface metrics $\bm{b}$.
+}
+%%%%%%%%% end comment %%%%%%%%%%%
 
 \newpage
 
