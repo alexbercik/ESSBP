@@ -604,7 +604,7 @@ def calc_conv_rate(dof_vec, err_vec, dim, n_points=None,
 
     return conv_vec, avg_conv
 
-def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None):
+def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None, extra_marker=None):
     '''
     Parameters
     ----------
@@ -618,6 +618,8 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None):
         Title of plot. The default is None.
     savefile : string, optional
         file name under which to save the plot. The default is None.
+    extra_marker : list of lists, optional
+        if True, mark the point with an additional marker X
 
     Returns
     -------
@@ -634,6 +636,9 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None):
     assert n_runs>1,"ERROR: Not enough grids to perform convergence."
     
     assert len(legend_strings)==n_cases,"ERROR: legend_strings do not match n_cases"
+    
+    if extra_marker != None:
+        assert np.shape(extra_marker)==(n_cases,n_runs),"ERROR: extra_marker shape should match dof_vec and err_vec"
 
     plt.figure(figsize=(6,4))
     if title is not None:
@@ -651,27 +656,46 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None):
     marks=['o','^','s','D','>','<','8']
     
     for i in range(n_cases):
+        dof_mod = np.copy(dof_vec[i])
+        err_mod = np.copy(err_vec[i])
+        k = 0
+        for j in range(len(dof_vec[i])):
+            if err_mod[j-k] == 0:
+                dof_mod = np.delete(dof_mod,j-k)
+                err_mod = np.delete(err_mod,j-k)
+                k += 1
         string = legend_strings[i].replace("disc_nodes=","")
-        p_opt, p_cov = sc.curve_fit(fit_func, np.log(dof_vec[i]),np.log(err_vec[i]),(2,1)) # fit
-        acc = int(np.floor(np.log10(np.sqrt(p_cov[0,0]))))
-        unc = np.round(np.sqrt(p_cov[0,0]),abs(acc))
-        acc = int(np.floor(np.log10(unc)))
-        if acc >=0:
-            slope = r": {0} $\pm$ {1}".format(int(p_opt[0]),int(unc))
-        elif acc==-1:
-            slope = r": {0:9.1f} $\pm$ {1:6.1f}".format(p_opt[0],unc)
-        elif acc==-2:
-            slope = r": {0:9.2f} $\pm$ {1:6.2f}".format(p_opt[0],unc)
-        elif acc==-3:
-            slope = r": {0:9.3f} $\pm$ {1:6.3f}".format(p_opt[0],unc)
+        if len(dof_mod) > 2:
+            p_opt, p_cov = sc.curve_fit(fit_func, np.log(dof_mod),np.log(err_mod),(2,1)) # fit
+            acc = int(np.floor(np.log10(np.sqrt(p_cov[0,0]))))
+            unc = np.round(np.sqrt(p_cov[0,0]),abs(acc))
+            acc = int(np.floor(np.log10(unc)))
+            if acc >=0:
+                slope = r": {0} $\pm$ {1}".format(int(p_opt[0]),int(unc))
+            elif acc==-1:
+                slope = r": {0:9.1f} $\pm$ {1:6.1f}".format(p_opt[0],unc)
+            elif acc==-2:
+                slope = r": {0:9.2f} $\pm$ {1:6.2f}".format(p_opt[0],unc)
+            elif acc==-3:
+                slope = r": {0:9.3f} $\pm$ {1:6.3f}".format(p_opt[0],unc)
+            else:
+                slope = r": {0:9.4f} $\pm$ {1:6.1g}".format(p_opt[0],unc)
+            plt.loglog(dof_mod,err_mod,marks[i],markersize=8, color=colors[i],
+                       label=string+slope)
+            plt.loglog(np.linspace(dof_mod[0],dof_mod[-1]), # plot
+                       np.exp(fit_func(np.log(np.linspace(dof_mod[0],dof_mod[-1])), *p_opt)), 
+                       linewidth=1, linestyle = '--', color=colors[i])
         else:
-            slope = r": {0:9.4f} $\pm$ {1:6.1g}".format(p_opt[0],unc)
-        plt.loglog(dof_vec[i],err_vec[i],marks[i],markersize=8, color=colors[i],
-                   label=string+slope)
-        plt.loglog(np.linspace(dof_vec[i][0],dof_vec[i][-1]), # plot
-                   np.exp(fit_func(np.log(np.linspace(dof_vec[i][0],dof_vec[i][-1])), *p_opt)), 
-                   linewidth=1, linestyle = '--', color=colors[i])
+            slope = r": {0:9.3}".format(-(np.log(err_mod[1])-np.log(err_mod[0]))/(np.log(dof_mod[1])-np.log(dof_mod[0])))
+            plt.loglog(dof_mod,err_mod,marks[i],markersize=8, color=colors[i],
+                       label=string+slope)
+            plt.loglog(dof_mod, err_mod, linewidth=1, linestyle = '--', color=colors[i])
+        if extra_marker != None:
+            for j in range(n_runs):
+                if extra_marker[i][j] == True:
+                    plt.plot(dof_vec[i][j],err_vec[i][j],'x',color='black',markersize=12,linewidth=2)
     plt.legend(loc='best', fontsize=12)
+    #plt.legend(loc='lower left', fontsize=12)
     #plt.subplots_adjust(left=0.2, right=0.8, top=0.8, bottom=0.2)
     #plt.gca().xaxis.set_major_formatter(tik.ScalarFormatter())
     #plt.gca().xaxis.set_minor_formatter(tik.ScalarFormatter())
@@ -680,7 +704,8 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None):
         
         
 def run_jacobian_convergence(solver, schedule_in=None,
-             return_conv=False, savefile=None, labels=None):
+             return_conv=False, savefile=None, labels=None, 
+             vol_metrics=False, surf_metrics=False):
     '''
     Purpose
     ----------
@@ -699,6 +724,10 @@ def run_jacobian_convergence(solver, schedule_in=None,
         file name under which to save the plot. The default is None.
     labels: list of strings (optional)
         labels to use in the legends for the different runs
+    vol_metrics: bool (optional)
+        whether to also run a convergence on the volume metrics
+    surf_metrics: bool (optional)
+        whether to also run a convergence on the surface metrics
     '''
     print('---------------------------------------------------------')
     
@@ -744,7 +773,14 @@ def run_jacobian_convergence(solver, schedule_in=None,
     n_attributes = len(attributes)
     avg_jacs = np.zeros((n_cases,n_runs)) # store jacobian ratios here
     max_jacs = np.zeros((n_cases,n_runs))
+    neg_jacs = [[False]*n_runs]*n_cases
     dofs = np.zeros((n_cases,n_runs)) # store degrees of freedom here
+    if vol_metrics:
+            avg_vol_mets = np.zeros((n_cases,n_runs))
+            max_vol_mets = np.zeros((n_cases,n_runs))
+    if surf_metrics:
+        avg_surf_mets = np.zeros((n_cases,n_runs))
+        max_surf_mets = np.zeros((n_cases,n_runs))
     legend_strings = ['']*n_cases # store labels for cases here
     if labels is not None:
         assert(len(labels)==n_cases),'labels must be a list of length = n_cases'
@@ -765,9 +801,9 @@ def run_jacobian_convergence(solver, schedule_in=None,
 
             ''' set case, store results '''
             solver.reset(variables=variables)
-            jacs = abs( 1 - (solver.mesh.det_jac / solver.mesh.det_jac_exa) )
-            avg_jacs[casei,runi] = np.mean(jacs)
-            max_jacs[casei,runi] = np.max(jacs)
+            temp = abs( 1 - (solver.mesh.det_jac / solver.mesh.det_jac_exa) )
+            avg_jacs[casei,runi] = np.mean(temp)
+            max_jacs[casei,runi] = np.max(temp)
             if solver.dim == 1:
                 nn = solver.nn
                 dofs[casei,runi] = nn
@@ -777,10 +813,28 @@ def run_jacobian_convergence(solver, schedule_in=None,
             elif solver.dim == 3:
                 nn = solver.nn[0]*solver.nn[1]*solver.nn[2]
                 dofs[casei,runi] = np.cbrt(nn)
+            if np.any(solver.mesh.det_jac < 0):
+                neg_jacs[casei][runi] = True
+            if vol_metrics:
+                temp = abs(solver.mesh.metrics-solver.mesh.metrics_exa)
+                avg_vol_mets[casei,runi] = np.mean(temp)
+                max_vol_mets[casei,runi] = np.max(temp)
+            if surf_metrics:
+                temp = abs(solver.mesh.bdy_metrics-solver.mesh.bdy_metrics_exa)
+                avg_surf_mets[casei,runi] = np.mean(temp)
+                max_surf_mets[casei,runi] = np.max(temp)
 
             print('Progress: run {0} of {1} complete.'.format(n_toti,n_tot))
             print('Max Jac Error Ratio: ', max_jacs[casei,runi])
             print('Avg Jac Error Ratio: ', avg_jacs[casei,runi])
+            if neg_jacs[casei][runi]:
+                print('There were negative jacobians.')
+            if vol_metrics:
+                print('Max Vol Metrics Error: ', max_vol_mets[casei,runi])
+                print('Avg Vol Metrics Error: ', avg_vol_mets[casei,runi])
+            if surf_metrics:
+                print('Max Surf Metrics Error: ', max_surf_mets[casei,runi])
+                print('Avg Surf Metrics Error: ', avg_surf_mets[casei,runi])
             print('Total number of nodes: ', nn)
             print('---------------------------------------------------------')
             n_toti += 1
@@ -791,12 +845,30 @@ def run_jacobian_convergence(solver, schedule_in=None,
     ''' Analyze convergence '''
     print('---------------------------------------------------------')
     print('Average Error Convergence Rates:')
-    avg_conv_vec, avg_avg_conv = calc_conv_rate(dofs, avg_jacs, solver.dim,
-                                                    legend_strings=legend_strings)
+    _,_ = calc_conv_rate(dofs, avg_jacs, solver.dim,
+                                                legend_strings=legend_strings)
     print('---------------------------------------------------------')
     print('Maximum Error Convergence Rates:')
-    max_conv_vec, max_avg_conv = calc_conv_rate(dofs, max_jacs, solver.dim,
+    _,_ = calc_conv_rate(dofs, max_jacs, solver.dim,
+                                                legend_strings=legend_strings)
+    if vol_metrics:
+        print('---------------------------------------------------------')
+        print('Vol Metrics: Average Error Convergence Rates:')
+        _,_ = calc_conv_rate(dofs, avg_vol_mets, solver.dim,
                                                     legend_strings=legend_strings)
+        print('---------------------------------------------------------')
+        print('Vol Metrics: Maximum Error Convergence Rates:')
+        _,_ = calc_conv_rate(dofs, max_vol_mets, solver.dim,
+                                                legend_strings=legend_strings)
+    if surf_metrics:
+        print('---------------------------------------------------------')
+        print('Surf Metrics: Average Error Convergence Rates:')
+        _,_ = calc_conv_rate(dofs, avg_surf_mets, solver.dim,
+                                                    legend_strings=legend_strings)
+        print('---------------------------------------------------------')
+        print('Surf Metrics: Maximum Error Convergence Rates:')
+        _,_ = calc_conv_rate(dofs, max_surf_mets, solver.dim,
+                                                legend_strings=legend_strings)
 
     ''' Plot Results '''
     if savefile != None:
@@ -806,11 +878,40 @@ def run_jacobian_convergence(solver, schedule_in=None,
         savefile1 = None
         savefile2 = None
         
-    title = r"Average Metric Jacobian Error $\left( 1-\frac{J}{J_{ex}} \right)$"
-    plot_conv(dofs, avg_jacs, legend_strings, solver.dim, title, savefile1)
+    title = r"Average Metric Jacobian Error $\left\vert 1-\frac{J}{J_{ex}} \right\vert $"
+    plot_conv(dofs, avg_jacs, legend_strings, solver.dim, title, savefile1, extra_marker=neg_jacs)
     
-    title = r"Maximum Metric Jacobian Error $\left( 1-\frac{J}{J_{ex}} \right)$"
-    plot_conv(dofs, max_jacs, legend_strings, solver.dim, title, savefile2)
+    title = r"Maximum Metric Jacobian Error $\left\vert 1-\frac{J}{J_{ex}} \right\vert $"
+    plot_conv(dofs, max_jacs, legend_strings, solver.dim, title, savefile2, extra_marker=neg_jacs)
+    
+    if vol_metrics:
+        if savefile != None:
+            savefile1 = savefile + '_vol_mets_avg'
+            savefile2 = savefile + '_vol_mets_max'
+        else:
+            savefile1 = None
+            savefile2 = None
+            
+        title = r"Average Volume Metrics Error"
+        plot_conv(dofs, avg_vol_mets, legend_strings, solver.dim, title, savefile1)
+        
+        title = r"Maximum Volume Metrics Error"
+        plot_conv(dofs, max_vol_mets, legend_strings, solver.dim, title, savefile2)
+    
+    if surf_metrics:
+        if savefile != None:
+            savefile1 = savefile + '_surf_mets_avg'
+            savefile2 = savefile + '_surf_mets_max'
+        else:
+            savefile1 = None
+            savefile2 = None
+            
+        title = r"Average Surface Metrics Error"
+        plot_conv(dofs, avg_surf_mets, legend_strings, solver.dim, title, savefile1)
+        
+        title = r"Maximum Surface Metrics Error"
+        plot_conv(dofs, max_surf_mets, legend_strings, solver.dim, title, savefile2)
+        
     
     if return_conv:
         return dofs, avg_jacs, max_jacs, legend_strings

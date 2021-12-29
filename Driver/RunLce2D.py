@@ -45,7 +45,7 @@ bc = 'periodic'
 disc_type = 'div' # 'div', 'had', 'dg'
 disc_nodes = 'lg' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
 p = 4
-nelem = (40,40) # optional, number of elements
+nelem = (10,10) # optional, number of elements
 nen = 0 # optional, number of nodes per element
 surf_type = 'lf'
 had_flux = 'central_fix' # 2-point numerical flux used in hadamard form
@@ -63,13 +63,15 @@ print_sol_norm = False
 obj_name = None
 cons_obj_name = ('Energy','Conservation') # 'Energy', 'Conservation', 'None'
 
-settings = {'warp_factor':0.99,               # Warps / stretches mesh.
+settings = {'warp_factor':1.,               # Warps / stretches mesh.
             'warp_type': 'strong',         # Options: 'defualt', 'papers', 'quad'
-            'metric_method':'exact',   # Options: 'calculate', 'exact'
-            'bdy_metric_method':'exact',   # Options: 'calculate', 'exact', 'extrapolate'
+            'metric_method':'calculate',   # Options: 'calculate', 'exact'
+            'bdy_metric_method':'extrapolate',   # Options: 'calculate', 'exact', 'extrapolate'
+            'jac_method':'match',
             'use_optz_metrics':True,        # Uses optimized metrics for free stream preservation.
             'calc_exact_metrics':True,      # Calculates the exact metrics (useless if metric_method=exact).
-            'metric_optz_method':'alex'} # Define the optimization procedure.
+            'metric_optz_method':'alex',   # Define the optimization procedure.
+            'stop_after_metrics': True } 
 
 ''' Set diffeq and solve '''
 
@@ -106,6 +108,8 @@ solver2D = solver_c(diffeq, settings,                     # Diffeq
 from Source.Methods.Analysis import run_convergence, run_jacobian_convergence
 #schedule = [['disc_nodes','lg','lgl'],['p',3,4],['nelem',12,15,20,25,40]]
 schedule = [['disc_nodes','lg', 'lgl'],['p',3,4],['nelem',10,20,40,80,160]]
+#schedule = [['disc_nodes','lg'],['p',3],['nelem',3,6,12,24,48]]
 #run_convergence(solver2D,schedule_in=schedule)
-#dofs, avg_jacs, max_jacs, legend_strings = run_jacobian_convergence(solver2D,
-#                                schedule_in=schedule,return_conv=True,savefile='jac_convergence')
+dofs, avg_jacs, max_jacs, legend_strings = run_jacobian_convergence(solver2D,
+            #schedule_in=schedule,return_conv=True,savefile='jac_match_met_optz_2D')
+            schedule_in=schedule,return_conv=True,savefile='optz_calc_2D',vol_metrics=True,surf_metrics=True)

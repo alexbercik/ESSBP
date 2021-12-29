@@ -126,6 +126,8 @@ class PdeSolver:
         # Modifies the SAT terms in the Hadamard form. See ESSBP documentation.
         self.settings.setdefault('had_gamma',1) 
         # Modifies the SAT terms in the Hadamard form. See ESSBP documentation.
+        self.settings.setdefault('stop_after_metrics', False) 
+        # Do not set up physical operators, SATs, etc. only Mesh setup.
 
         # Time marching
         self.tm_method = tm_method.lower()
@@ -316,7 +318,9 @@ class PdeSolver:
             
         
         ''' Call the discretisation specific method to finish the class initialization '''
-        self.init_disc_specific()        
+        self.init_disc_specific()  
+        if self.settings['stop_after_metrics']:
+            return
         
         ''' Sanity Checks '''
         

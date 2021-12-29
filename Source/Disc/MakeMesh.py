@@ -565,14 +565,14 @@ class MakeMesh:
 # 
 #         print('Max diff y values along x (Left/Right) boundary: ', max_xy[0])
 #         print('Max diff x values along y (Lower/Upper) boundary: ', max_xy[1])
-#         print('Max diff of dxnew(1)/dx(1) along x bdy (not nec. = 0): ', max_der[0])
+#         #print('Max diff of dxnew(1)/dx(1) along x bdy (not nec. = 0): ', max_der[0])
 #         print('Max diff of dxnew(1)/dx(2) along x bdy: ', max_der[1])
-#         print('Max diff of dxnew(2)/dx(1) along x bdy (not nec. = 0): ', max_der[2])
+#         #print('Max diff of dxnew(2)/dx(1) along x bdy (not nec. = 0): ', max_der[2])
 #         print('Max diff of dxnew(2)/dx(2) along x bdy: ', max_der[3])
 #         print('Max diff of dxnew(1)/dx(1) along y bdy: ', max_der[4])
-#         print('Max diff of dxnew(1)/dx(2) along y bdy (not nec. = 0): ', max_der[5])
+#         #print('Max diff of dxnew(1)/dx(2) along y bdy (not nec. = 0): ', max_der[5])
 #         print('Max diff of dxnew(2)/dx(1) along y bdy: ', max_der[6])
-#         print('Max diff of dxnew(2)/dx(2) along y bdy (not nec. = 0): ', max_der[7])
+#         #print('Max diff of dxnew(2)/dx(2) along y bdy (not nec. = 0): ', max_der[7])
 # =============================================================================
         
             
@@ -608,6 +608,32 @@ class MakeMesh:
             dzdx = 0.25*self.warp_factor*self.dom_len[2]*2*np.pi*(np.cos(2*np.pi*(new_x-self.xmin[0])/self.dom_len[0])*dxdx/self.dom_len[0] + np.cos(2*np.pi*(new_y-self.xmin[1])/self.dom_len[1])*dydx/self.dom_len[1])
             dzdy = 0.25*self.warp_factor*self.dom_len[2]*2*np.pi*(np.cos(2*np.pi*(new_x-self.xmin[0])/self.dom_len[0])*dxdy/self.dom_len[0] + np.cos(2*np.pi*(new_y-self.xmin[1])/self.dom_len[1])*dydy/self.dom_len[1])
             dzdz = np.ones(np.shape(dxdx))
+            return dxdx, dxdy, dxdz, dydx, dydy, dydz, dzdx, dzdy, dzdz
+        
+        def warp_cuboid_flipped(x,y,z):
+            ''' Based on function from 2019 DDRF Paper, but x changed to y, y to z, z to x. Warps a cuboid mesh
+            Try to keep the warp.factor <0.24 ''' 
+            argy = (y-self.xmin[1])/self.dom_len[1] 
+            argz = (y-self.xmin[2])/self.dom_len[2]
+            new_y = y + self.warp_factor*self.dom_len[1]*np.sin(np.pi*argy)*np.sin(np.pi*argz)
+            new_z = z + self.warp_factor*self.dom_len[2]*np.exp(1-argz)*np.sin(np.pi*argy)*np.sin(np.pi*argz) 
+            new_x = x + 0.25*self.warp_factor*self.dom_len[0]*(np.sin(2*np.pi*(new_y-self.xmin[1])/self.dom_len[1])+np.sin(2*np.pi*(new_z-self.xmin[2])/self.dom_len[2]))
+            return new_x , new_y, new_z
+        
+        def warp_cuboid_flipped_der(x,y,z):
+            ''' the derivative of the function warp_cuboid wrt x (i.e. dnew_x/dx) '''   
+            argy = (y-self.xmin[1])/self.dom_len[1]
+            argz = (z-self.xmin[2])/self.dom_len[2] 
+            new_x, new_y, new_z, = warp_cuboid(x,y,z)
+            dydy = 1 + self.warp_factor*np.pi*np.cos(np.pi*argy)*np.sin(np.pi*argz)
+            dydz = self.warp_factor*self.dom_len[1]*np.pi*np.sin(np.pi*argy)*np.cos(np.pi*argz)/self.dom_len[2]
+            dydx = np.zeros(np.shape(dydy))
+            dzdy = self.warp_factor*self.dom_len[2]*np.pi*np.exp(1-argz)*np.cos(np.pi*argy)*np.sin(np.pi*argz)/self.dom_len[1]
+            dzdz = 1 + self.warp_factor*(np.pi*np.exp(1-argz)*np.sin(np.pi*argy)*np.cos(np.pi*argz) - np.exp(1-argz)*np.sin(np.pi*argy)*np.sin(np.pi*argz))
+            dzdx = np.zeros(np.shape(dydy))
+            dxdy = 0.25*self.warp_factor*self.dom_len[0]*2*np.pi*(np.cos(2*np.pi*(new_y-self.xmin[1])/self.dom_len[1])*dydy/self.dom_len[1] + np.cos(2*np.pi*(new_z-self.xmin[2])/self.dom_len[2])*dzdy/self.dom_len[2])
+            dxdz = 0.25*self.warp_factor*self.dom_len[0]*2*np.pi*(np.cos(2*np.pi*(new_y-self.xmin[1])/self.dom_len[1])*dydz/self.dom_len[1] + np.cos(2*np.pi*(new_z-self.xmin[2])/self.dom_len[2])*dzdz/self.dom_len[2])
+            dxdx = np.ones(np.shape(dydy))
             return dxdx, dxdy, dxdz, dydx, dydy, dydz, dzdx, dzdy, dzdz
         
         def warp_quad(x,y,z):
@@ -689,16 +715,50 @@ class MakeMesh:
             dzdz = warp*(xscale**3-az*xscale**2+(az-1)*xscale)*(3*zscale**2-1) + 1
             return dxdx, dxdy, dxdz, dydx, dydy, dydz, dzdx, dzdy, dzdz
         
+        def warp_strong(x,y,z):
+            ''' my modified function in Diablo ''' 
+            #assert self.warp_factor<=1,'Try a warp_factor < 1 for this mesh transformation'
+            argx = (x-self.xmin[0])/self.dom_len[0]
+            argy = (y-self.xmin[1])/self.dom_len[1]
+            argz = (z-self.xmin[2])/self.dom_len[2]
+            
+            new_x = x + self.warp_factor*self.dom_len[0]*(0.015*np.sin(4*np.pi*argy)+0.016*np.sin(5*np.pi*argz)+0.013*np.sin(5*np.pi*argx)*np.sin(7*np.pi*argy)*np.exp(1-argx)+0.017*np.sin(7*np.pi*argy)*np.sin(8*np.pi*argy)*np.sin(6*np.pi*argz)*np.sin(6*np.pi*argx)-0.01*np.sin(9*np.pi*argx)*np.sin(4*np.pi*argy)*np.sin(7*np.pi*argz))
+            new_y = y + self.warp_factor*self.dom_len[1]*(0.016*np.sin(5*np.pi*argx)-0.015*np.sin(4*np.pi*argz)-0.012*np.sin(8*np.pi*argx)*np.sin(4*np.pi*argy)*np.exp(1-argy)-0.017*np.sin(3*np.pi*argx)*np.sin(9*np.pi*argx)*np.sin(6*np.pi*argz)*np.sin(7*np.pi*argy)-0.01*np.sin(6*np.pi*argx)*np.sin(6*np.pi*argy)*np.sin(7*np.pi*argz))
+            new_z = z + self.warp_factor*self.dom_len[2]*(0.018*np.sin(6*np.pi*argx)+0.02*np.sin(5*np.pi*argy)+0.018*np.sin(7*np.pi*argz)*np.sin(9*np.pi*argz)*np.sin(8*np.pi*argx)*np.sin(7*np.pi*argy)+0.01*np.sin(5*np.pi*argx)*np.sin(8*np.pi*argy)*np.sin(6*np.pi*argz))
+            return new_x , new_y, new_z
+
+        def warp_strong_der(x,y,z):
+            ''' the derivative of the function warp_bdy wrt x (i.e. dnew_x/dx) '''
+            argx = (x-self.xmin[0])/self.dom_len[0]
+            argy = (y-self.xmin[1])/self.dom_len[1]
+            argz = (z-self.xmin[2])/self.dom_len[2]
+            dxdx = 1 + self.warp_factor*(0.013*np.sin(7*np.pi*argy)*(5*np.pi*np.cos(5*np.pi*argx)*np.exp(1-argx)-np.sin(5*np.pi*argx)*np.exp(1-argx))+0.017*np.sin(7*np.pi*argy)*np.sin(8*np.pi*argy)*np.sin(6*np.pi*argz)*6*np.pi*np.cos(6*np.pi*argx)-0.01*9*np.pi*np.cos(9*np.pi*argx)*np.sin(4*np.pi*argy)*np.sin(7*np.pi*argz))
+            dxdy = self.warp_factor*self.dom_len[0]*(0.015*4*np.pi*np.cos(4*np.pi*argy)+0.013*np.sin(5*np.pi*argx)*7*np.pi*np.cos(7*np.pi*argy)*np.exp(1-argx)+0.017*(7*np.pi*np.cos(7*np.pi*argy)*np.sin(8*np.pi*argy)+8*np.pi*np.sin(7*np.pi*argy)*np.cos(8*np.pi*argy))*np.sin(6*np.pi*argz)*np.sin(6*np.pi*argx)-0.01*np.sin(9*np.pi*argx)*4*np.pi*np.cos(4*np.pi*argy)*np.sin(7*np.pi*argz))/self.dom_len[1]
+            dxdz = self.warp_factor*self.dom_len[0]*(5*np.pi*0.016*np.cos(5*np.pi*argz)+0.017*np.sin(7*np.pi*argy)*np.sin(8*np.pi*argy)*6*np.pi*np.cos(6*np.pi*argz)*np.sin(6*np.pi*argx)-0.01*np.sin(9*np.pi*argx)*np.sin(4*np.pi*argy)*7*np.pi*np.cos(7*np.pi*argz))/self.dom_len[2]
+            dydx = self.warp_factor*self.dom_len[1]*(0.016*5*np.pi*np.cos(5*np.pi*argx)-0.012*8*np.pi*np.cos(8*np.pi*argx)*np.sin(4*np.pi*argy)*np.exp(1-argy)-0.017*np.pi*(3*np.cos(3*np.pi*argx)*np.sin(9*np.pi*argx)+9*np.sin(3*np.pi*argx)*np.cos(9*np.pi*argx))*np.sin(6*np.pi*argz)*np.sin(7*np.pi*argy)-0.01*6*np.pi*np.cos(6*np.pi*argx)*np.sin(6*np.pi*argy)*np.sin(7*np.pi*argz))/self.dom_len[0]
+            dydy = 1 + self.warp_factor*(-0.012*np.sin(8*np.pi*argx)*(4*np.pi*np.cos(4*np.pi*argy)*np.exp(1-argy)-np.sin(4*np.pi*argy)*np.exp(1-argy))-0.017*np.sin(3*np.pi*argx)*np.sin(9*np.pi*argx)*np.sin(6*np.pi*argz)*7*np.pi*np.cos(7*np.pi*argy)-0.01*np.sin(6*np.pi*argx)*6*np.pi*np.cos(6*np.pi*argy)*np.sin(7*np.pi*argz))
+            dydz = self.warp_factor*self.dom_len[1]*(-0.015*4*np.pi*np.sin(4*np.pi*argz)-0.017*np.sin(3*np.pi*argx)*np.sin(9*np.pi*argx)*6*np.pi*np.sin(6*np.pi*argz)*np.sin(7*np.pi*argy)-0.01*np.sin(6*np.pi*argx)*np.sin(6*np.pi*argy)*7*np.pi*np.cos(7*np.pi*argz))/self.dom_len[2]
+            dzdx = self.warp_factor*self.dom_len[2]*(0.018*6*np.pi*np.sin(6*np.pi*argx)+0.018*np.sin(7*np.pi*argz)*np.sin(9*np.pi*argz)*8*np.pi*np.cos(8*np.pi*argx)*np.sin(7*np.pi*argy)+0.01*5*np.pi*np.cos(5*np.pi*argx)*np.sin(8*np.pi*argy)*np.sin(6*np.pi*argz))/self.dom_len[0]
+            dzdy = self.warp_factor*self.dom_len[2]*(0.02*5*np.pi*np.sin(5*np.pi*argy)+0.018*np.sin(7*np.pi*argz)*np.sin(9*np.pi*argz)*np.sin(8*np.pi*argx)*7*np.pi*np.cos(7*np.pi*argy)+0.01*np.sin(5*np.pi*argx)*8*np.pi*np.cos(8*np.pi*argy)*np.sin(6*np.pi*argz))/self.dom_len[1]
+            dzdz = 1 + self.warp_factor*(0.018*np.pi*(7*np.cos(7*np.pi*argz)*np.sin(9*np.pi*argz)+9*np.sin(7*np.pi*argz)*np.cos(9*np.pi*argz))*np.sin(8*np.pi*argx)*np.sin(7*np.pi*argy)+0.01*np.sin(5*np.pi*argx)*np.sin(8*np.pi*argy)*6*np.pi*np.cos(6*np.pi*argz))
+            return dxdx, dxdy, dxdz, dydx, dydy, dydz, dzdx, dzdy, dzdz
+        
         # switch between different mappings here
         if self.warp_type == 'default' or self.warp_type == 'papers':
             warp_fun = warp_cuboid
             warp_der = warp_cuboid_der 
+        elif self.warp_type == 'papers_flipped' or self.warp_type == 'papers flipped':
+            warp_fun = warp_cuboid_flipped
+            warp_der = warp_cuboid_flipped_der 
         elif self.warp_type == 'quad':
             warp_fun = warp_quad
             warp_der = warp_quad_der  
         elif self.warp_type == 'cubic':
             warp_fun = warp_cubic
             warp_der = warp_cubic_der
+        elif self.warp_type == 'strong':
+            warp_fun = warp_strong
+            warp_der = warp_strong_der
         else:
             print('WARNING: mesh.warp_type not understood. Reverting to default.')
             warp_fun = warp_cuboid
@@ -754,6 +814,133 @@ class MakeMesh:
             for i in range(6):
                 self.bdy_det_jac_exa[:,i,elem] = np.linalg.det(self.bdy_jac_exa[:,:,:,i,elem])
                 self.bdy_jac_inv_exa[:,:,:,i,elem] = np.linalg.inv(self.bdy_jac_exa[:,:,:,i,elem])
+                
+        ''' Uncomment the below section to debug and test the consistency of the warping '''
+# =============================================================================
+#         max_xy = [0,0,0,0,0,0,0,0,0]
+#         max_der = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+#             
+#         skipx = self.nelem[1]*self.nelem[2]
+#         for row in range(skipx):
+#             diff = abs(self.bdy_xyz[:,0,0,row::skipx][:,0] - self.bdy_xyz[:,0,1,row::skipx][:,-1])
+#             max_xy[0] = max(max_xy[0],np.max(diff))
+#             diff = abs(self.bdy_xyz[:,1,0,row::skipx][:,0] - self.bdy_xyz[:,1,1,row::skipx][:,-1])
+#             max_xy[1] = max(max_xy[1],np.max(diff))
+#             diff = abs(self.bdy_xyz[:,2,0,row::skipx][:,0] - self.bdy_xyz[:,2,1,row::skipx][:,-1])
+#             max_xy[2] = max(max_xy[2],np.max(diff))
+#             diff = abs(dxnewdx[:,0,row::skipx][:,0] - dxnewdx[:,1,row::skipx][:,-1])
+#             max_der[0] = max(max_der[0],np.max(diff))
+#             diff = abs(dxnewdy[:,0,row::skipx][:,0] - dxnewdy[:,1,row::skipx][:,-1])
+#             max_der[1] = max(max_der[1],np.max(diff))
+#             diff = abs(dxnewdz[:,0,row::skipx][:,0] - dxnewdz[:,1,row::skipx][:,-1])
+#             max_der[2] = max(max_der[2],np.max(diff))
+#             diff = abs(dynewdx[:,0,row::skipx][:,0] - dynewdx[:,1,row::skipx][:,-1])
+#             max_der[3] = max(max_der[3],np.max(diff))
+#             diff = abs(dynewdy[:,0,row::skipx][:,0] - dynewdy[:,1,row::skipx][:,-1])
+#             max_der[4] = max(max_der[4],np.max(diff))
+#             diff = abs(dynewdz[:,0,row::skipx][:,0] - dynewdz[:,1,row::skipx][:,-1])
+#             max_der[5] = max(max_der[5],np.max(diff))
+#             diff = abs(dznewdx[:,0,row::skipx][:,0] - dznewdx[:,1,row::skipx][:,-1])
+#             max_der[6] = max(max_der[6],np.max(diff))
+#             diff = abs(dznewdy[:,0,row::skipx][:,0] - dznewdy[:,1,row::skipx][:,-1])
+#             max_der[7] = max(max_der[7],np.max(diff))
+#             diff = abs(dznewdz[:,0,row::skipx][:,0] - dznewdz[:,1,row::skipx][:,-1])
+#             max_der[8] = max(max_der[8],np.max(diff))
+#                 
+#         for coly in range(self.nelem[0]*self.nelem[2]):
+#             start = coly + (coly//self.nelem[2])*(self.nelem[1]-1)*self.nelem[2]
+#             end = start + self.nelem[1]*self.nelem[2]
+#             diff = abs(self.bdy_xyz[:,0,2,start:end:self.nelem[2]][:,0] - self.bdy_xyz[:,0,3,start:end:self.nelem[2]][:,-1])
+#             max_xy[3] = max(max_xy[3],np.max(diff))
+#             diff = abs(self.bdy_xyz[:,1,2,start:end:self.nelem[2]][:,0] - self.bdy_xyz[:,1,3,start:end:self.nelem[2]][:,-1])
+#             max_xy[4] = max(max_xy[4],np.max(diff))
+#             diff = abs(self.bdy_xyz[:,2,2,start:end:self.nelem[2]][:,0] - self.bdy_xyz[:,2,3,start:end:self.nelem[2]][:,-1])
+#             max_xy[5] = max(max_xy[5],np.max(diff))
+#             diff = abs(dxnewdx[:,2,start:end:self.nelem[2]][:,0] - dxnewdx[:,3,start:end:self.nelem[2]][:,-1])
+#             max_der[9] = max(max_der[9],np.max(diff))
+#             diff = abs(dxnewdy[:,2,start:end:self.nelem[2]][:,0] - dxnewdy[:,3,start:end:self.nelem[2]][:,-1])
+#             max_der[10] = max(max_der[10],np.max(diff))
+#             diff = abs(dxnewdz[:,2,start:end:self.nelem[2]][:,0] - dxnewdz[:,3,start:end:self.nelem[2]][:,-1])
+#             max_der[11] = max(max_der[11],np.max(diff))
+#             diff = abs(dynewdx[:,2,start:end:self.nelem[2]][:,0] - dynewdx[:,3,start:end:self.nelem[2]][:,-1])
+#             max_der[12] = max(max_der[12],np.max(diff))
+#             diff = abs(dynewdy[:,2,start:end:self.nelem[2]][:,0] - dynewdy[:,3,start:end:self.nelem[2]][:,-1])
+#             max_der[13] = max(max_der[13],np.max(diff))
+#             diff = abs(dynewdz[:,2,start:end:self.nelem[2]][:,0] - dynewdz[:,3,start:end:self.nelem[2]][:,-1])
+#             max_der[14] = max(max_der[14],np.max(diff))
+#             diff = abs(dznewdx[:,2,start:end:self.nelem[2]][:,0] - dznewdx[:,3,start:end:self.nelem[2]][:,-1])
+#             max_der[15] = max(max_der[15],np.max(diff))
+#             diff = abs(dznewdy[:,2,start:end:self.nelem[2]][:,0] - dznewdy[:,3,start:end:self.nelem[2]][:,-1])
+#             max_der[16] = max(max_der[16],np.max(diff))
+#             diff = abs(dznewdz[:,2,start:end:self.nelem[2]][:,0] - dznewdz[:,3,start:end:self.nelem[2]][:,-1])
+#             max_der[17] = max(max_der[17],np.max(diff))
+# 
+#         
+#         for colz in range(self.nelem[0]*self.nelem[2]):
+#             start = colz*self.nelem[2]
+#             end = start + self.nelem[2]
+#             diff = abs(self.bdy_xyz[:,0,4,start:end][:,0] - self.bdy_xyz[:,0,5,start:end][:,-1])
+#             max_xy[6] = max(max_xy[6],np.max(diff))
+#             diff = abs(self.bdy_xyz[:,1,4,start:end][:,0] - self.bdy_xyz[:,1,5,start:end][:,-1])
+#             max_xy[7] = max(max_xy[7],np.max(diff))
+#             diff = abs(self.bdy_xyz[:,2,4,start:end][:,0] - self.bdy_xyz[:,2,5,start:end][:,-1])
+#             max_xy[8] = max(max_xy[8],np.max(diff))
+#             diff = abs(dxnewdx[:,4,start:end][:,0] - dxnewdx[:,5,start:end][:,-1])
+#             max_der[18] = max(max_der[18],np.max(diff))
+#             diff = abs(dxnewdy[:,4,start:end][:,0] - dxnewdy[:,5,start:end][:,-1])
+#             max_der[19] = max(max_der[19],np.max(diff))
+#             diff = abs(dxnewdz[:,4,start:end][:,0] - dxnewdz[:,5,start:end][:,-1])
+#             max_der[20] = max(max_der[20],np.max(diff))
+#             diff = abs(dynewdx[:,4,start:end][:,0] - dynewdx[:,5,start:end][:,-1])
+#             max_der[21] = max(max_der[21],np.max(diff))
+#             diff = abs(dynewdy[:,4,start:end][:,0] - dynewdy[:,5,start:end][:,-1])
+#             max_der[22] = max(max_der[22],np.max(diff))
+#             diff = abs(dynewdz[:,4,start:end][:,0] - dynewdz[:,5,start:end][:,-1])
+#             max_der[23] = max(max_der[23],np.max(diff))
+#             diff = abs(dznewdx[:,4,start:end][:,0] - dznewdx[:,5,start:end][:,-1])
+#             max_der[24] = max(max_der[24],np.max(diff))
+#             diff = abs(dznewdy[:,4,start:end][:,0] - dznewdy[:,5,start:end][:,-1])
+#             max_der[25] = max(max_der[25],np.max(diff))
+#             diff = abs(dznewdz[:,4,start:end][:,0] - dznewdz[:,5,start:end][:,-1])
+#             max_der[26] = max(max_der[26],np.max(diff))
+# 
+#         #print('Max diff x values along x_ref direction boundary (=domain[0]): ', max_xy[0])
+#         print('Max diff y values along x_ref direction boundary: ', max_xy[1])
+#         print('Max diff z values along x_ref direction boundary: ', max_xy[2])
+#         print('Max diff x values along y_ref direction boundary: ', max_xy[3])
+#         #print('Max diff y values along y_ref direction boundary: (=domain[1])', max_xy[4])
+#         print('Max diff z values along y_ref direction boundary: ', max_xy[5])
+#         print('Max diff x values along z_ref direction boundary: ', max_xy[6])
+#         print('Max diff y values along z_ref direction boundary: ', max_xy[7])
+#         #print('Max diff z values along z_ref direction boundary: (=domain[2])', max_xy[8])
+#         #print('Max diff of dxnew(1)/dxref(1) along x bdy (not nec. = 0): ', max_der[0])
+#         print('Max diff of dxnew(1)/dxref(2) along x bdy: ', max_der[1])
+#         print('Max diff of dxnew(1)/dxref(3) along x bdy: ', max_der[2])
+#         #print('Max diff of dxnew(2)/dxref(1) along x bdy (not nec. = 0): ', max_der[3])
+#         print('Max diff of dxnew(2)/dxref(2) along x bdy: ', max_der[4])
+#         print('Max diff of dxnew(2)/dxref(3) along x bdy: ', max_der[5])
+#         #print('Max diff of dxnew(3)/dxref(1) along x bdy (not nec. = 0): ', max_der[6])
+#         print('Max diff of dxnew(3)/dxref(2) along x bdy: ', max_der[7])
+#         print('Max diff of dxnew(3)/dxref(3) along x bdy: ', max_der[8])
+#         print('Max diff of dxnew(1)/dxref(1) along y bdy: ', max_der[9])
+#         #print('Max diff of dxnew(1)/dxref(2) along y bdy (not nec. = 0): ', max_der[10])
+#         print('Max diff of dxnew(1)/dxref(3) along y bdy: ', max_der[11])
+#         print('Max diff of dxnew(2)/dxref(1) along y bdy: ', max_der[12])
+#         #print('Max diff of dxnew(2)/dxref(2) along y bdy (not nec. = 0): ', max_der[13])
+#         print('Max diff of dxnew(2)/dxref(3) along y bdy: ', max_der[14])
+#         print('Max diff of dxnew(3)/dxref(1) along y bdy: ', max_der[15])
+#         #print('Max diff of dxnew(3)/dxref(2) along y bdy (not nec. = 0): ', max_der[16])
+#         print('Max diff of dxnew(3)/dxref(3) along y bdy: ', max_der[17])
+#         print('Max diff of dxnew(1)/dxref(1) along z bdy: ', max_der[18])
+#         print('Max diff of dxnew(1)/dxref(2) along z bdy: ', max_der[19])
+#         #print('Max diff of dxnew(1)/dxref(3) along z bdy (not nec. = 0): ', max_der[20])
+#         print('Max diff of dxnew(2)/dxref(1) along z bdy: ', max_der[21])
+#         print('Max diff of dxnew(2)/dxref(2) along z bdy: ', max_der[22])
+#         #print('Max diff of dxnew(2)/dxref(3) along z bdy (not nec. = 0): ', max_der[23])
+#         print('Max diff of dxnew(3)/dxref(1) along z bdy: ', max_der[24])
+#         print('Max diff of dxnew(3)/dxref(2) along z bdy: ', max_der[25])
+#         #print('Max diff of dxnew(3)/dxref(3) along z bdy (not nec. = 0): ', max_der[26])
+# =============================================================================
 
     def plot(self,plt_save_name=None,markersize=4,fontsize=12,dpi=1000,label=True,
              label_all_lines=True, nodes=True, bdy_nodes=False):
@@ -968,6 +1155,17 @@ class MakeMesh:
             if metric_method=='exact':
                 self.metrics = np.copy(self.metrics_exa)
                 
+                if jac_method=='calculate' or jac_method=='direct':
+                    Dx = np.kron(sbp.D, np.eye(self.nen)) # shape (nen^2,nen^2)
+                    Dy = np.kron(np.eye(self.nen), sbp.D) 
+                    dxp_dxr = Dx @ self.xy_elem[:,0,:]
+                    dxp_dyr = Dy @ self.xy_elem[:,0,:]
+                    dyp_dxr = Dx @ self.xy_elem[:,1,:]
+                    dyp_dyr = Dy @ self.xy_elem[:,1,:]
+                    # metric jacobian (determinant) is given by 
+                    # Dx_ref@x_phys*Dy_ref@y_phys - Dy_ref@x_phys*Dx_ref@y_phys  
+                    self.det_jac = dxp_dxr*dyp_dyr - dxp_dyr*dyp_dxr 
+                
             else:
                 self.metrics = np.zeros((self.nen**2,4,self.nelem[0]*self.nelem[1])) 
             
@@ -987,9 +1185,7 @@ class MakeMesh:
                 self.metrics[:,2,:] = - dyp_dxr
                 self.metrics[:,3,:] = dxp_dxr 
                 
-                if metric_method=='calculate' or metric_method=='direct':
-                    Dx = np.kron(sbp.D, np.eye(self.nen)) # shape (nen^2,nen^2)
-                    Dy = np.kron(np.eye(self.nen), sbp.D) 
+                if jac_method=='calculate' or jac_method=='direct':
                     # metric jacobian (determinant) is given by 
                     # Dx_ref@x_phys*Dy_ref@y_phys - Dy_ref@x_phys*Dx_ref@y_phys  
                     self.det_jac = dxp_dxr*dyp_dyr - dxp_dyr*dyp_dxr 
@@ -1066,22 +1262,12 @@ class MakeMesh:
                 tya = np.kron(eye, sbp.tL.reshape((self.nen,1)))
                 if optz_method == 'essbp' or optz_method == 'default' or optz_method == 'alex' or optz_method == 'generalized':
                     # First optimize surface metrics, then do default optimization
-                    totx = (self.nelem[0]+1)*self.nelem[1] # total number of facets with l=x (reference direction)
-                    toty = (self.nelem[1]+1)*self.nelem[0] # total number of facets with l=y (reference direction)
-                    HB = np.zeros((self.nelem[0]*self.nelem[1] , (totx + toty)*self.nen))
                     A = np.zeros((self.nelem[0]*self.nelem[1],self.nelem[0]*self.nelem[1]))
                     Hperp = np.diag(sbp.H)
                     H2sum = np.sum(Hperp*Hperp)
                     for ix in range(self.nelem[0]):
                         for iy in range(self.nelem[1]):
                             start = ix*self.nelem[1] + iy
-                            startx = ix*self.nelem[1]*self.nen + iy*self.nen
-                            startx2 = (ix+1)*self.nelem[1]*self.nen + iy*self.nen
-                            starty = totx*self.nen + ix*(self.nelem[1]+1)*self.nen + iy*self.nen
-                            HB[start, startx:startx+self.nen] = Hperp
-                            HB[start, startx2:startx2+self.nen] = - Hperp
-                            HB[start, starty:starty+self.nen] = Hperp
-                            HB[start, starty+self.nen:starty+2*self.nen] = - Hperp
                                 
                             A[start,start] += 4*H2sum
                             if iy != self.nelem[1]-1:
@@ -1111,23 +1297,9 @@ class MakeMesh:
                             xm = 1 # l=x, m=y
                             ym = 3 # l=y, m=y
                             
-                        b = np.zeros((totx + toty)*self.nen) # indices in order l, i_x, i_y, j(nodes)
-                        for ix in range(self.nelem[0]):
-                            for iy in range(self.nelem[1]):
-                                # bdy_metrics: nodes, boundary (left, right, lower, upper), d(xi_i)/d(x_j) (dx_r/dx_p, dx_r/dy_p, dy_r/dx_p, dy_r/dy_p), elem
-                                startx = ix*self.nelem[1]*self.nen + iy*self.nen
-                                starty = totx*self.nen + ix*(self.nelem[1]+1)*self.nen + iy*self.nen
-                                b[startx:startx+self.nen] = self.bdy_metrics[:,0,xm,ix*self.nelem[1]+iy]
-                                b[starty:starty+self.nen] = self.bdy_metrics[:,2,ym,ix*self.nelem[1]+iy]
-                            # do for the last facet on the topmost boundary (in this current x column)
-                            starty = totx*self.nen + ix*(self.nelem[1]+1)*self.nen + self.nelem[1]*self.nen
-                            b[starty:starty+self.nen] = self.bdy_metrics[:,3,ym,ix*self.nelem[1]+(self.nelem[1]-1)]           
-                        # do for the last set of facets on the rightmost boundary
-                        for iy in range(self.nelem[1]):
-                            startx = self.nelem[0]*self.nelem[1]*self.nen + iy*self.nen
-                            b[startx:startx+self.nen] = self.bdy_metrics[:,1,xm,(self.nelem[0]-1)*self.nelem[1]+iy]
+                        RHS = -np.dot(Hperp, ( self.bdy_metrics[:,1,xm,:] - self.bdy_metrics[:,0,xm,:] \
+                                             + self.bdy_metrics[:,3,ym,:] - self.bdy_metrics[:,2,ym,:] ))
                     
-                        RHS = HB @ b
                         print('Metric Optz: '+term+' surface integral GCL constraints violated by a max of {0:.2g}'.format(np.max(abs(RHS))))
                         if np.max(abs(RHS)) < 2e-16:
                             print('... good enough already. skipping optimization.')
@@ -1140,51 +1312,42 @@ class MakeMesh:
                             #print('rank(A) = ', np.linalg.matrix_rank(A))
                             #print('rank([Ab]) = ', np.linalg.matrix_rank(np.c_[A,RHS]))
                             
-                            bnew = np.copy(b)
+                                    
                             for ix in range(self.nelem[0]):
                                 for iy in range(self.nelem[1]):
-                                    start = ix*self.nelem[1] + iy
-                                    startx = ix*self.nelem[1]*self.nen + iy*self.nen
-                                    starty = totx*self.nen + ix*(self.nelem[1]+1)*self.nen + iy*self.nen
-                                    if ix != 0:
-                                        bnew[startx:startx+self.nen] += Hperp*lam[start-self.nelem[1]]
-                                    elif (ix == 0) and periodic[0]:
-                                        bnew[startx:startx+self.nen] += Hperp*lam[(self.nelem[0]-1)*self.nelem[1] + iy]
-                                    bnew[startx:startx+self.nen] -= Hperp*lam[start]              
+                                    elem = ix*self.nelem[1] + iy
+    
+                                    if iy != self.nelem[1]-1:
+                                        self.bdy_metrics[:,3,ym,elem] += Hperp * lam[elem]
+                                        self.bdy_metrics[:,2,ym,elem+1] += Hperp * lam[elem]
+                                    elif (iy == self.nelem[1]-1) and periodic[1]:
+                                        self.bdy_metrics[:,3,ym,elem] += Hperp * lam[elem]
+                                        self.bdy_metrics[:,2,ym,ix*self.nelem[1]] += Hperp * lam[elem]
                                     if iy != 0:
-                                        bnew[starty:starty+self.nen] += Hperp*lam[start-1]
+                                        self.bdy_metrics[:,2,ym,elem] -= Hperp * lam[elem]
+                                        self.bdy_metrics[:,3,ym,elem-1] -= Hperp * lam[elem]
                                     elif (iy == 0) and periodic[1]:
-                                        bnew[starty:starty+self.nen] += Hperp*lam[start+self.nelem[1]-1]
-                                    bnew[starty:starty+self.nen] -= Hperp*lam[start]
-                                # do for the last facet on the topmost boundary (in this current x column)
-                                start = ix*self.nelem[1] + self.nelem[1]-1
-                                starty = totx*self.nen + ix*(self.nelem[1]+1)*self.nen + self.nelem[1]*self.nen
-                                bnew[starty:starty+self.nen] +=  Hperp*lam[start]
-                                if periodic[1]:
-                                    bnew[starty:starty+self.nen] -=  Hperp*lam[ix*self.nelem[1]]
-                            # do for the last set of facets on the rightmost boundary
-                            for iy in range(self.nelem[1]):
-                                start = (self.nelem[0]-1)*self.nelem[1] + iy
-                                startx = self.nelem[0]*self.nelem[1]*self.nen + iy*self.nen
-                                bnew[startx:startx+self.nen] += Hperp*lam[start]
-                                if periodic[0]:
-                                    bnew[startx:startx+self.nen] -= Hperp*lam[iy]
-                                   
-                            RHSnew = HB @ bnew
-                            print('... modified '+term+' surface metrics by a max amount {0:.2g}'.format(np.max(abs(b-bnew))))
-                            print('... '+term+' surface integral GCL constraints are now satisfied to {0:.2g}'.format(np.max(abs(RHSnew)))) 
-                            
-                            for ix in range(self.nelem[0]):
-                                for iy in range(self.nelem[1]):
-                                    # bdy_metrics: nodes, boundary (left, right, lower, upper), d(xi_i)/d(x_j) (dx_r/dx_p, dx_r/dy_p, dy_r/dx_p, dy_r/dy_p), elem
-                                    startx = ix*self.nelem[1]*self.nen + iy*self.nen
-                                    startx2 = (ix+1)*self.nelem[1]*self.nen + iy*self.nen
-                                    starty = totx*self.nen + ix*(self.nelem[1]+1)*self.nen + iy*self.nen
-                                    starty2 = totx*self.nen + ix*(self.nelem[1]+1)*self.nen + (iy+1)*self.nen
-                                    self.bdy_metrics[:,0,xm,ix*self.nelem[1]+iy] = np.copy(bnew[startx:startx+self.nen])
-                                    self.bdy_metrics[:,1,xm,ix*self.nelem[1]+iy] = np.copy(bnew[startx2:startx2+self.nen])
-                                    self.bdy_metrics[:,2,ym,ix*self.nelem[1]+iy] = np.copy(bnew[starty:starty+self.nen])
-                                    self.bdy_metrics[:,3,ym,ix*self.nelem[1]+iy] = np.copy(bnew[starty2:starty2+self.nen])          
+                                        self.bdy_metrics[:,2,ym,elem] -= Hperp * lam[elem]
+                                        self.bdy_metrics[:,3,ym,elem+(self.nelem[1]-1)] -= Hperp * lam[elem]
+                                    if ix != self.nelem[0]-1:
+                                        self.bdy_metrics[:,1,xm,elem] += Hperp * lam[elem]
+                                        self.bdy_metrics[:,0,xm,elem+self.nelem[1]] += Hperp * lam[elem]
+                                    elif (ix == self.nelem[0]-1) and periodic[0]:
+                                        self.bdy_metrics[:,1,xm,elem] += Hperp * lam[elem]
+                                        self.bdy_metrics[:,0,xm,iy] += Hperp * lam[elem]
+                                    if ix != 0:
+                                        self.bdy_metrics[:,0,xm,elem] -= Hperp * lam[elem]
+                                        self.bdy_metrics[:,1,xm,elem-self.nelem[1]] -= Hperp * lam[elem]
+                                    elif (ix == 0) and periodic[0]:
+                                        self.bdy_metrics[:,0,xm,elem] -= Hperp * lam[elem]
+                                        self.bdy_metrics[:,1,xm,(self.nelem[0]-1)*self.nelem[1] + iy] -= Hperp * lam[elem]
+                                       
+                            RHS = -np.dot(Hperp, ( self.bdy_metrics[:,1,xm,:] - self.bdy_metrics[:,0,xm,:] \
+                                             + self.bdy_metrics[:,3,ym,:] - self.bdy_metrics[:,2,ym,:] ))
+                                
+                            print('... largest (single side) correction term to '+term+' surface metrics is {0:.2g}'.format(np.max(abs(lam))*np.max(abs(Hperp))))
+                            print('... '+term+' surface integral GCL constraints are now satisfied to {0:.2g}'.format(np.max(abs(RHS))))
+                                           
                     
                     # now proceed to the normal optimization procedure
                     if optz_method != 'generalized':
@@ -1297,7 +1460,7 @@ class MakeMesh:
                 
         elif self.dim == 3:
             
-            if calc_exact_metrics:
+            if calc_exact_metrics or metric_method.lower()=='exact':
                 self.metrics_exa = np.zeros((self.nen**3,9,self.nelem[0]*self.nelem[1]*self.nelem[2])) 
                 self.bdy_metrics_exa = np.zeros((self.nen**2,6,9,self.nelem[0]*self.nelem[1]*self.nelem[2]))
             
@@ -1322,12 +1485,31 @@ class MakeMesh:
                     self.bdy_metrics_exa[:,f,7,:] = self.bdy_det_jac_exa[:,f,:] * self.bdy_jac_inv_exa[:,2,1,f,:]
                     self.bdy_metrics_exa[:,f,8,:] = self.bdy_det_jac_exa[:,f,:] * self.bdy_jac_inv_exa[:,2,2,f,:]
                 
-            if metric_method=='exact':
-                self.metrics = self.metrics_exa
+            if metric_method.lower()=='exact':
+                self.metrics = np.copy(self.metrics_exa)
+                
+                if jac_method.lower()=='direct' or jac_method.lower()=='calculate':
+                    eye = np.eye(self.nen)
+                    Dx = np.kron(np.kron(sbp.D, eye), eye)
+                    Dy = np.kron(np.kron(eye, sbp.D), eye)
+                    Dz = np.kron(np.kron(eye, eye), sbp.D)   
+                    dxp_dxr = Dx @ self.xyz_elem[:,0,:]
+                    dxp_dyr = Dy @ self.xyz_elem[:,0,:]
+                    dxp_dzr = Dz @ self.xyz_elem[:,0,:]
+                    dyp_dxr = Dx @ self.xyz_elem[:,1,:]
+                    dyp_dyr = Dy @ self.xyz_elem[:,1,:]
+                    dyp_dzr = Dz @ self.xyz_elem[:,1,:]
+                    dzp_dxr = Dx @ self.xyz_elem[:,2,:]
+                    dzp_dyr = Dy @ self.xyz_elem[:,2,:]
+                    dzp_dzr = Dz @ self.xyz_elem[:,2,:]
+                    # unique (matrix has unique determinant)                            
+                    self.det_jac = dxp_dxr*(dyp_dyr*dzp_dzr - dyp_dzr*dzp_dyr) \
+                                 - dyp_dxr*(dxp_dyr*dzp_dzr - dxp_dzr*dzp_dyr) \
+                                 + dzp_dxr*(dxp_dyr*dyp_dzr - dxp_dzr*dyp_dyr)
                 
             else:
                 self.metrics = np.zeros((self.nen**3,9,self.nelem[0]*self.nelem[1]*self.nelem[2])) 
-                if not (metric_method=='ThomasLombard' or metric_method=='VinokurYee'):
+                if not (metric_method.lower()=='thomaslombard' or metric_method.lower()=='vinokuryee'):
                     print("WARNING: Did not understand metric_method. For 3D, try 'exact', 'VinokurYee', or 'ThomasLombard'.")
                     print("         Defaulting to 'VinokurYee'.")
                     metric_method = 'VinokurYee'
@@ -1354,13 +1536,13 @@ class MakeMesh:
                 dZp_dyr = fn.lm_gdiag(Dy, self.xyz_elem[:,2,:])
                 dZp_dzr = fn.lm_gdiag(Dz, self.xyz_elem[:,2,:])
                 
-                if jac_method=='direct' or jac_method=='calculate':
+                if jac_method.lower()=='direct' or jac_method.lower()=='calculate':
                     # unique (matrix has unique determinant)                            
                     self.det_jac = dxp_dxr*(dyp_dyr*dzp_dzr - dyp_dzr*dzp_dyr) \
                                  - dyp_dxr*(dxp_dyr*dzp_dzr - dxp_dzr*dzp_dyr) \
                                  + dzp_dxr*(dxp_dyr*dyp_dzr - dxp_dzr*dyp_dyr)
                 
-                if metric_method == 'ThomasLombard':
+                if metric_method.lower() == 'thomaslombard':
                     self.metrics[:,0,:] = fn.gm_gv(dZp_dzr,dyp_dyr) - fn.gm_gv(dZp_dyr,dyp_dzr)
                     self.metrics[:,1,:] = fn.gm_gv(dXp_dzr,dzp_dyr) - fn.gm_gv(dXp_dyr,dzp_dzr)
                     self.metrics[:,2,:] = fn.gm_gv(dYp_dzr,dxp_dyr) - fn.gm_gv(dYp_dyr,dxp_dzr)
@@ -1371,7 +1553,7 @@ class MakeMesh:
                     self.metrics[:,7,:] = fn.gm_gv(dXp_dyr,dzp_dxr) - fn.gm_gv(dXp_dxr,dzp_dyr)
                     self.metrics[:,8,:] = fn.gm_gv(dYp_dyr,dxp_dxr) - fn.gm_gv(dYp_dxr,dxp_dyr) 
                                    
-                elif metric_method == 'VinokurYee':                   
+                elif metric_method.lower() == 'vinokuryee':                   
                     self.metrics[:,0,:] = 0.5*(fn.gm_gv(dYp_dyr,dzp_dzr) - fn.gm_gv(dZp_dyr,dyp_dzr) + fn.gm_gv(dZp_dzr,dyp_dyr) - fn.gm_gv(dYp_dzr,dzp_dyr))
                     self.metrics[:,1,:] = 0.5*(fn.gm_gv(dZp_dyr,dxp_dzr) - fn.gm_gv(dXp_dyr,dzp_dzr) + fn.gm_gv(dXp_dzr,dzp_dyr) - fn.gm_gv(dZp_dzr,dxp_dyr))
                     self.metrics[:,2,:] = 0.5*(fn.gm_gv(dXp_dyr,dyp_dzr) - fn.gm_gv(dYp_dyr,dxp_dzr) + fn.gm_gv(dYp_dzr,dxp_dyr) - fn.gm_gv(dXp_dzr,dyp_dyr))
@@ -1384,10 +1566,10 @@ class MakeMesh:
                     
                         
                     
-            if bdy_metric_method=='exact':
+            if bdy_metric_method.lower()=='exact':
                 self.bdy_metrics = np.copy(self.bdy_metrics_exa)
                 
-            elif bdy_metric_method=='interpolate' or bdy_metric_method=='extrapolate' or bdy_metric_method=='project':
+            elif bdy_metric_method.lower()=='interpolate' or bdy_metric_method.lower()=='extrapolate' or bdy_metric_method.lower()=='project':
                 self.bdy_metrics = np.zeros((self.nen**2,6,9,self.nelem[0]*self.nelem[1]*self.nelem[2]))
                 eye = np.eye(self.nen)
                 D1 = np.kron(sbp.D,eye)
@@ -1400,16 +1582,19 @@ class MakeMesh:
                 tzaT = np.kron(np.kron(eye, eye), sbp.tL.reshape((self.nen,1))).T
                 skipx = self.nelem[1]*self.nelem[2]
                 skipz = self.nelem[0]*self.nelem[1]
+                maxdiff = 0
                 
                 for rowx in range(skipx):
                     for i in range(9): # loop over matrix entries
                         Lmetrics = txbT @ self.metrics[:,i,rowx::skipx]
                         Rmetrics = txaT @ self.metrics[:,i,rowx::skipx]
                         avgmetrics = (Lmetrics[:,:-1] + Rmetrics[:,1:])/2
+                        maxdiff = max(maxdiff, np.max(abs(avgmetrics-Lmetrics[:,:-1])))
                         self.bdy_metrics[:,0,i,rowx::skipx][:,1:] = avgmetrics
                         self.bdy_metrics[:,1,i,rowx::skipx][:,:-1] = avgmetrics
                         if periodic[0]:   
                             avgmetrics = (Lmetrics[:,-1] + Rmetrics[:,0])/2
+                            maxdiff = max(maxdiff, np.max(abs(avgmetrics-Lmetrics[:,-1])))
                             self.bdy_metrics[:,0,i,rowx::skipx][:,0] = avgmetrics
                             self.bdy_metrics[:,1,i,rowx::skipx][:,-1] = avgmetrics     
                         else:
@@ -1423,10 +1608,12 @@ class MakeMesh:
                         Lmetrics = tybT @ self.metrics[:,i,start:end:self.nelem[2]]
                         Rmetrics = tyaT @ self.metrics[:,i,start:end:self.nelem[2]]
                         avgmetrics = (Lmetrics[:,:-1] + Rmetrics[:,1:])/2
+                        maxdiff = max(maxdiff, np.max(abs(avgmetrics-Lmetrics[:,:-1])))
                         self.bdy_metrics[:,2,i,start:end:self.nelem[2]][:,1:] = avgmetrics
                         self.bdy_metrics[:,3,i,start:end:self.nelem[2]][:,:-1] = avgmetrics
                         if periodic[1]:
                             avgmetrics = (Lmetrics[:,-1] + Rmetrics[:,0])/2
+                            maxdiff = max(maxdiff, np.max(abs(avgmetrics-Lmetrics[:,-1])))
                             self.bdy_metrics[:,2,i,start:end:self.nelem[2]][:,0] = avgmetrics
                             self.bdy_metrics[:,3,i,start:end:self.nelem[2]][:,-1] = avgmetrics     
                         else:
@@ -1440,25 +1627,29 @@ class MakeMesh:
                         Lmetrics = tzbT @ self.metrics[:,i,start:end]
                         Rmetrics = tzaT @ self.metrics[:,i,start:end]
                         avgmetrics = (Lmetrics[:,:-1] + Rmetrics[:,1:])/2
+                        maxdiff = max(maxdiff, np.max(abs(avgmetrics-Lmetrics[:,:-1])))
                         self.bdy_metrics[:,4,i,start:end][:,1:] = avgmetrics
                         self.bdy_metrics[:,5,i,start:end][:,:-1] = avgmetrics
                         if periodic[2]:
                             avgmetrics = (Lmetrics[:,-1] + Rmetrics[:,0])/2
+                            maxdiff = max(maxdiff, np.max(abs(avgmetrics-Lmetrics[:,-1])))
                             self.bdy_metrics[:,4,i,start:end][:,0] = avgmetrics
                             self.bdy_metrics[:,5,i,start:end][:,-1] = avgmetrics     
                         else:
                             self.bdy_metrics[:,4,i,start:end][:,0] = Rmetrics[:,0]
                             self.bdy_metrics[:,5,i,start:end][:,-1] = Lmetrics[:,-1]
+                
+                print('TEMP: The boundary metric extrapolations modified by a max of {0:.2g} in averaging.'.format(maxdiff))
                             
             else: 
-                if not (bdy_metric_method=='ThomasLombard' or bdy_metric_method=='VinokurYee'):
+                if not (bdy_metric_method.lower()=='thomaslombard' or bdy_metric_method.lower()=='vinokurYee'):
                     print("WARNING: Did not understand bdy_metric_method. For 3D, try 'exact', 'VinokurYee', 'ThomasLombard', or 'interpolate'.")
                     print("         Defaulting to 'VinokurYee'.")
                 self.bdy_metrics = np.zeros((self.nen**2,6,9,self.nelem[0]*self.nelem[1]*self.nelem[2]))
                 eye = np.eye(self.nen)
                 D1 = np.kron(sbp.D,eye)
                 D2 = np.kron(eye,sbp.D)
-                if bdy_metric_method == 'ThomasLombard':
+                if bdy_metric_method.lower() == 'thomaslombard':
                     for f in range(6): # loop over facets (xleft, xright, yleft, yright, zxleft, zright)
                         if (f == 0) or (f == 1):
                             self.bdy_metrics[:,f,0,:] = fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,2,f,:]),(D1 @ self.bdy_xyz[:,1,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,2,f,:]),(D2 @ self.bdy_xyz[:,1,f,:]))
@@ -1476,7 +1667,7 @@ class MakeMesh:
                             self.bdy_metrics[:,f,6,:] = fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,2,f,:]),(D1 @ self.bdy_xyz[:,1,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,2,f,:]),(D2 @ self.bdy_xyz[:,1,f,:]))
                             self.bdy_metrics[:,f,7,:] = fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,0,f,:]),(D1 @ self.bdy_xyz[:,2,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,0,f,:]),(D2 @ self.bdy_xyz[:,2,f,:]))
                             self.bdy_metrics[:,f,8,:] = fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,1,f,:]),(D1 @ self.bdy_xyz[:,0,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,1,f,:]),(D2 @ self.bdy_xyz[:,0,f,:]))
-                elif bdy_metric_method == 'VinokurYee':
+                elif bdy_metric_method.lower() == 'vinokuryee':
                     for f in range(6): # loop over facets (xleft, xright, yleft, yright, zxleft, zright)
                         if (f == 0) or (f == 1):
                             self.bdy_metrics[:,f,0,:] = 0.5*(fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,1,f,:]),(D2 @ self.bdy_xyz[:,2,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,2,f,:]),(D2 @ self.bdy_xyz[:,1,f,:])) \
@@ -1506,7 +1697,7 @@ class MakeMesh:
            
             
             if use_optz_metrics:
-                assert (bdy_metric_method != 'VinokurYee' and bdy_metric_method != 'ThomasLombard'),'Must use extrapolated or exact boundary metrics for optimization.'
+                assert (bdy_metric_method.lower() != 'vinokuryee' and bdy_metric_method.lower() != 'thomaslombard'),'Must use extrapolated or exact boundary metrics for optimization.'
                 # overwrite metrics with optimized ones 
                 eye = np.eye(self.nen)
                 txb = np.kron(np.kron(sbp.tR.reshape((self.nen,1)), eye), eye)
@@ -1577,7 +1768,7 @@ class MakeMesh:
                         if np.max(abs(RHS)) < 2e-16:
                             print('... good enough already. skipping optimization.')
                         else:
-                            if (periodic[0] and periodic[1]):
+                            if (periodic[0] and periodic[1] and periodic[2]):
                                 lam = np.linalg.lstsq(A,RHS,rcond=-1)[0]
                             else:
                                 lam = np.linalg.solve(A,RHS)
@@ -1631,8 +1822,8 @@ class MakeMesh:
                                              + self.bdy_metrics[:,3,ym,:] - self.bdy_metrics[:,2,ym,:] \
                                              + self.bdy_metrics[:,5,zm,:] - self.bdy_metrics[:,4,zm,:] ))
                                 
-                            print('... modified '+term+' surface metrics by a max amount {0:.2g}'.format(np.max(abs(lam))*np.max(abs(Hperp))))
-                            print('... '+term+' surface integral GCL constraints are now satisfied to {0:.2g}'.format(np.max(abs(RHS)))) 
+                            print('... largest (single side) correction term to '+term+' surface metrics is {0:.2g}'.format(np.max(abs(lam))*np.max(abs(Hperp))))
+                            print('... '+term+' surface integral GCL constraints are now satisfied to {0:.2g}'.format(np.max(abs(RHS))))
                                          
                     
                     # now proceed to the normal optimization procedure
@@ -1659,7 +1850,7 @@ class MakeMesh:
                     aex = np.vstack((self.metrics[:,0,:],self.metrics[:,3,:],self.metrics[:,6,:]))
                     a = aex - Minv @ ( M @ aex - c )
                     print('... metric optimization modified x-metrics by a maximum of {0:.2g}'.format(np.max(abs(a - aex))))
-                    print('TEMP: testing free stream - max is {0:.2g}'.format(np.max(abs(M @ a - c ))))
+                    #print('TEMP: testing free stream - max is {0:.2g}'.format(np.max(abs(M @ a - c ))))
                     self.metrics[:,0,:] = a[:self.nen**3,:]
                     self.metrics[:,3,:] = a[self.nen**3:2*self.nen**3,:]
                     self.metrics[:,6,:] = a[2*self.nen**3:,:]
@@ -1674,7 +1865,7 @@ class MakeMesh:
                     aex = np.vstack((self.metrics[:,1,:],self.metrics[:,4,:],self.metrics[:,7,:]))
                     a = aex - Minv @ ( M @ aex - c )
                     print('... metric optimization modified y-metrics by a maximum of {0:.2g}'.format(np.max(abs(a - aex))))
-                    print('TEMP: testing free stream - max is {0:.2g}'.format(np.max(abs(M @ a - c ))))
+                    #print('TEMP: testing free stream - max is {0:.2g}'.format(np.max(abs(M @ a - c ))))
                     self.metrics[:,1,:] = a[:self.nen**3,:]
                     self.metrics[:,4,:] = a[self.nen**3:2*self.nen**3,:]
                     self.metrics[:,7,:] = a[2*self.nen**3:,:]  
@@ -1689,10 +1880,11 @@ class MakeMesh:
                     aex = np.vstack((self.metrics[:,2,:],self.metrics[:,5,:],self.metrics[:,8,:]))
                     a = aex - Minv @ ( M @ aex - c )
                     print('... metric optimization modified z-metrics by a maximum of {0:.2g}'.format(np.max(abs(a - aex))))
-                    print('TEMP: testing free stream - max is {0:.2g}'.format(np.max(abs(M @ a - c ))))
+                    #print('TEMP: testing free stream - max is {0:.2g}'.format(np.max(abs(M @ a - c ))))
                     self.metrics[:,2,:] = a[:self.nen**3,:]
                     self.metrics[:,5,:] = a[self.nen**3:2*self.nen**3,:]
                     self.metrics[:,8,:] = a[2*self.nen**3:,:]
+
                 elif optz_method == 'diablo': # TODO: I THINK THIS IS WRONG
                     Hperp = np.kron(sbp.H,sbp.H)
                     Dx = np.kron(np.kron(sbp.D, eye), eye)
@@ -1750,21 +1942,20 @@ class MakeMesh:
                 Dx = np.kron(np.kron(sbp.D, eye), eye)
                 Dy = np.kron(np.kron(eye, sbp.D), eye)
                 Dz = np.kron(np.kron(eye, eye), sbp.D)            
-                self.det_jac = ( Dx @ ( self.xy_elem[:,0,:] * self.metrics[:,0,:] + self.xy_elem[:,1,:] * self.metrics[:,1,:] + self.xy_elem[:,2,:] * self.metrics[:,2,:] ) \
-                               + Dy @ ( self.xy_elem[:,0,:] * self.metrics[:,3,:] + self.xy_elem[:,1,:] * self.metrics[:,4,:] + self.xy_elem[:,2,:] * self.metrics[:,5,:] ) \
-                               + Dz @ ( self.xy_elem[:,0,:] * self.metrics[:,6,:] + self.xy_elem[:,1,:] * self.metrics[:,7,:] + self.xy_elem[:,2,:] * self.metrics[:,8,:] ))/3
+                self.det_jac = ( Dx @ ( self.xyz_elem[:,0,:] * self.metrics[:,0,:] + self.xyz_elem[:,1,:] * self.metrics[:,1,:] + self.xyz_elem[:,2,:] * self.metrics[:,2,:] ) \
+                               + Dy @ ( self.xyz_elem[:,0,:] * self.metrics[:,3,:] + self.xyz_elem[:,1,:] * self.metrics[:,4,:] + self.xyz_elem[:,2,:] * self.metrics[:,5,:] ) \
+                               + Dz @ ( self.xyz_elem[:,0,:] * self.metrics[:,6,:] + self.xyz_elem[:,1,:] * self.metrics[:,7,:] + self.xyz_elem[:,2,:] * self.metrics[:,8,:] ))/3
             elif jac_method=='match' or jac_method=='backout':
                 self.det_jac = np.sqrt( self.metrics[:,8,:] * (self.metrics[:,0,:] * self.metrics[:,4,:] - self.metrics[:,1,:] * self.metrics[:,3,:]) \
                                        -self.metrics[:,7,:] * (self.metrics[:,0,:] * self.metrics[:,5,:] - self.metrics[:,2,:] * self.metrics[:,3,:]) \
                                        +self.metrics[:,6,:] * (self.metrics[:,1,:] * self.metrics[:,5,:] - self.metrics[:,2,:] * self.metrics[:,4,:]))
+                self.det_jac = np.nan_to_num(self.det_jac, copy=False)
             else:
                 print('ERROR: Did not understant inputted jac_method: ', jac_method)
                 print("       Defaulting to 'exact'.")
                 self.det_jac = self.det_jac_exa
 
-                    
-                
-            
+
 
         self.det_jac_inv = 1/self.det_jac
         if np.any(abs(self.det_jac - self.det_jac_exa) > 1e-12):
@@ -1912,7 +2103,7 @@ class MakeMesh:
             print('Max diff of surface metrics entry dxi(2)/dx(3) on boundary: ', maxbdy[5])
             print('Max diff of surface metrics entry dxi(3)/dx(1) on boundary: ', maxbdy[6])
             print('Max diff of surface metrics entry dxi(3)/dx(2) on boundary: ', maxbdy[7])
-            print('Max diff of surface metrics entry dxi(3)/dx() on boundary: ', maxbdy[8])
+            print('Max diff of surface metrics entry dxi(3)/dx(3) on boundary: ', maxbdy[8])
             
         
 
