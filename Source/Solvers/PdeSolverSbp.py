@@ -61,6 +61,9 @@ class PdeSolverSbp(PdeSolver):
                         had_metric_alpha = self.settings['had_alpha'],
                         had_metric_beta = self.settings['had_beta'])
         
+        if self.settings['stop_after_metrics']:
+            return
+        
         if self.dim == 1:
             self.H_phys, self.Dx_phys = self.sbp.ref_2_phys(self.mesh)
         elif self.dim == 2:

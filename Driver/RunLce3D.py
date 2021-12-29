@@ -44,8 +44,8 @@ bc = 'periodic'
 # Spatial discretization
 disc_type = 'div' # 'div', 'had', 'dg'
 disc_nodes = 'lgl' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
-p = 4
-nelem = (3,3,3) # optional, number of elements
+p = 3
+nelem = (4,4,4) # optional, number of elements
 nen = 0 # optional, number of nodes per element
 surf_type = 'lf'
 had_flux = 'central_fix' # 2-point numerical flux used in hadamard form
@@ -63,14 +63,15 @@ print_sol_norm = False
 obj_name = None
 cons_obj_name = ('Energy','Conservation') # 'Energy', 'Conservation', 'None'
 
-settings = {'warp_factor':0.2,               # Warps / stretches mesh.
+settings = {'warp_factor':0.15,               # Warps / stretches mesh.
             'warp_type':'strong',         # Options: 'defualt', 'papers', 'quad'
             'metric_method':'exact',   # Options: 'VinokurYee','ThomasLombard','exact'
             'bdy_metric_method':'exact',   # Options: 'VinokurYee','ThomasLombard','interpolate','exact'
-            'jac_method':'exact',      # Options: 'direct','match','deng','exact'
-            'use_optz_metrics':True,        # Uses optimized metrics for free stream preservation.
+            'jac_method':'direct',      # Options: 'direct','match','deng','exact'
+            'use_optz_metrics':False,        # Uses optimized metrics for free stream preservation.
             'calc_exact_metrics':True,      # calculate exact metrics alongside above choices.
-            'metric_optz_method':'alex'} # Define the optimization procedure.}
+            'metric_optz_method':'alex',    # Define the optimization procedure.
+            'stop_after_metrics': True } # Do not set up physical operators, SATs, etc. only Mesh setup.
 
 ''' Set diffeq and solve '''
 
@@ -96,10 +97,15 @@ solver3D = solver_c(diffeq, settings,                     # Diffeq
 
 ''' Analyze results '''
 
-solver3D.solve()
-solver3D.plot_cons_obj()
-print('Final Error: ', solver3D.calc_error())
+#solver3D.solve()
+#solver3D.plot_cons_obj()
+#print('Final Error: ', solver3D.calc_error())
 
-#from Source.Methods.Analysis import run_convergence
+from Source.Methods.Analysis import run_convergence, run_jacobian_convergence
 #schedule = [['disc_nodes','lg','lgl'],['p',3,4],['nelem',12,15,20]]
 #run_convergence(solver,schedule_in=schedule)
+schedule = [['disc_nodes','lg', 'lgl'],['p',3,4],['nelem',3,6,12,24,40]]
+#schedule = [['disc_nodes','lg'],['p',3,4],['nelem',3,6,12]]
+#run_convergence(solver2D,schedule_in=schedule)
+dofs, avg_jacs, max_jacs, legend_strings = run_jacobian_convergence(solver3D,
+                                schedule_in=schedule,return_conv=True,savefile='jac_deng_met_optz_3D')
