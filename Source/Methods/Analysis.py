@@ -660,7 +660,7 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None, 
         err_mod = np.copy(err_vec[i])
         k = 0
         for j in range(len(dof_vec[i])):
-            if err_mod[j-k] == 0:
+            if err_mod[j-k] < 1e-16:
                 dof_mod = np.delete(dof_mod,j-k)
                 err_mod = np.delete(err_mod,j-k)
                 k += 1
@@ -705,14 +705,19 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None, 
         
 def run_jacobian_convergence(solver, schedule_in=None,
              return_conv=False, savefile=None, labels=None, 
-             vol_metrics=False, surf_metrics=False):
+             vol_metrics=False, surf_metrics=False, jacs=False, jac_ratios=False, backout_jacs=False):
     '''
     Purpose
     ----------
-    Runs a convergence analysis of the value 1 - (J_1/J_2), where J_1 is the
-    metric jacobian used for the time marching, and J_2 is the value backed
-    out from the metric terms.
-
+    Runs a convergence analysis of either:
+        jac_ratio=True:  the value 1 - (J/J'), where J is the metric 
+                         jacobian used for the time marching, and J' is 
+                         the value backed out from the metric terms.
+        jac=True:   The value (abs(J-J_ex)) where J_ex is the exact value
+        backout_jacs=True: The value (abs(J-J_ex)) where J is the backed out jacobian
+        vol_metrics:     The value (abs(M-M_ex)) where M_ex is the exact value
+        surf_metrics:    The value (abs(M-M_ex)) where M_ex is the exact value
+                         
     Parameters
     ----------
     solver:
@@ -724,11 +729,8 @@ def run_jacobian_convergence(solver, schedule_in=None,
         file name under which to save the plot. The default is None.
     labels: list of strings (optional)
         labels to use in the legends for the different runs
-    vol_metrics: bool (optional)
-        whether to also run a convergence on the volume metrics
-    surf_metrics: bool (optional)
-        whether to also run a convergence on the surface metrics
     '''
+    assert(vol_metrics or surf_metrics or jacs or jac_ratios or backout_jacs),'Must have at least one of (vol_metrics, surf_metrics, jacs, jac_ratios) = True'
     print('---------------------------------------------------------')
     
     if schedule_in==None:
@@ -771,16 +773,24 @@ def run_jacobian_convergence(solver, schedule_in=None,
     n_runs = len(runs_nelem)
     n_tot = n_cases*n_runs
     n_attributes = len(attributes)
-    avg_jacs = np.zeros((n_cases,n_runs)) # store jacobian ratios here
-    max_jacs = np.zeros((n_cases,n_runs))
-    neg_jacs = [[False]*n_runs]*n_cases
     dofs = np.zeros((n_cases,n_runs)) # store degrees of freedom here
+    if jacs:
+        avg_jacs = np.zeros((n_cases,n_runs)) # store jacobian ratios here
+        max_jacs = np.zeros((n_cases,n_runs))
+    if jac_ratios:
+        avg_jac_ratios = np.zeros((n_cases,n_runs)) # store jacobian ratios here
+        max_jac_ratios = np.zeros((n_cases,n_runs))
+    if backout_jacs:
+        avg_backout_jacs = np.zeros((n_cases,n_runs))
+        max_backout_jacs = np.zeros((n_cases,n_runs))
+        backout_neg_jacs = [[False]*n_runs]*n_cases
     if vol_metrics:
-            avg_vol_mets = np.zeros((n_cases,n_runs))
-            max_vol_mets = np.zeros((n_cases,n_runs))
+        avg_vol_mets = np.zeros((n_cases,n_runs))
+        max_vol_mets = np.zeros((n_cases,n_runs))
     if surf_metrics:
         avg_surf_mets = np.zeros((n_cases,n_runs))
         max_surf_mets = np.zeros((n_cases,n_runs))
+    neg_jacs = [[False]*n_runs]*n_cases
     legend_strings = ['']*n_cases # store labels for cases here
     if labels is not None:
         assert(len(labels)==n_cases),'labels must be a list of length = n_cases'
@@ -788,6 +798,7 @@ def run_jacobian_convergence(solver, schedule_in=None,
     variables = [None]*(2+n_attributes)
 
     n_toti = 1
+    solver.settings['stop_after_metrics'] = True
     for casei in range(n_cases): # for each case
         for atti in range(n_attributes):
             variables[atti+2] = (attributes[atti],cases[casei][atti]) # assign attributes
@@ -801,9 +812,6 @@ def run_jacobian_convergence(solver, schedule_in=None,
 
             ''' set case, store results '''
             solver.reset(variables=variables)
-            temp = abs( 1 - (solver.mesh.det_jac / solver.mesh.det_jac_exa) )
-            avg_jacs[casei,runi] = np.mean(temp)
-            max_jacs[casei,runi] = np.max(temp)
             if solver.dim == 1:
                 nn = solver.nn
                 dofs[casei,runi] = nn
@@ -815,20 +823,51 @@ def run_jacobian_convergence(solver, schedule_in=None,
                 dofs[casei,runi] = np.cbrt(nn)
             if np.any(solver.mesh.det_jac < 0):
                 neg_jacs[casei][runi] = True
+            if jacs:
+                temp = abs(solver.mesh.det_jac-solver.mesh.det_jac_exa)
+                avg_jacs[casei,runi] = np.mean(temp)
+                max_jacs[casei,runi] = np.max(temp)
+            if (jac_ratios or backout_jacs):
+                if solver.dim == 2:
+                    back_jacs = solver.mesh.metrics[:,0,:] * solver.mesh.metrics[:,3,:] - \
+                                    solver.mesh.metrics[:,1,:] * solver.mesh.metrics[:,2,:]
+                elif solver.dim == 3:
+                    back_jacs = np.sqrt( solver.mesh.metrics[:,8,:] * (solver.mesh.metrics[:,0,:] * solver.mesh.metrics[:,4,:] - solver.mesh.metrics[:,1,:] * solver.mesh.metrics[:,3,:]) \
+                                       -solver.mesh.metrics[:,7,:] * (solver.mesh.metrics[:,0,:] * solver.mesh.metrics[:,5,:] - solver.mesh.metrics[:,2,:] * solver.mesh.metrics[:,3,:]) \
+                                       +solver.mesh.metrics[:,6,:] * (solver.mesh.metrics[:,1,:] * solver.mesh.metrics[:,5,:] - solver.mesh.metrics[:,2,:] * solver.mesh.metrics[:,4,:]))
+                if jac_ratios:
+                    temp = abs( 1 - (back_jacs / solver.mesh.det_jac) )
+                    avg_jac_ratios[casei,runi] = np.mean(temp)
+                    max_jac_ratios[casei,runi] = np.max(temp)
+                if backout_jacs:
+                    if np.any(back_jacs < 0):
+                        backout_neg_jacs[casei][runi] = True
+                    temp = abs(back_jacs-solver.mesh.det_jac_exa)
+                    avg_backout_jacs[casei,runi] = np.mean(temp)
+                    max_backout_jacs[casei,runi] = np.max(temp)
             if vol_metrics:
                 temp = abs(solver.mesh.metrics-solver.mesh.metrics_exa)
                 avg_vol_mets[casei,runi] = np.mean(temp)
                 max_vol_mets[casei,runi] = np.max(temp)
             if surf_metrics:
+                solver.mesh.ignore_surface_metrics()
                 temp = abs(solver.mesh.bdy_metrics-solver.mesh.bdy_metrics_exa)
-                avg_surf_mets[casei,runi] = np.mean(temp)
-                max_surf_mets[casei,runi] = np.max(temp)
+                temp = np.ma.masked_invalid(temp)
+                avg_surf_mets[casei,runi] = temp.mean()
+                max_surf_mets[casei,runi] = temp.max()
 
             print('Progress: run {0} of {1} complete.'.format(n_toti,n_tot))
-            print('Max Jac Error Ratio: ', max_jacs[casei,runi])
-            print('Avg Jac Error Ratio: ', avg_jacs[casei,runi])
             if neg_jacs[casei][runi]:
                 print('There were negative jacobians.')
+            if jacs:
+                print('Max Jac Error: ', max_jacs[casei,runi])
+                print('Avg Jac Error: ', avg_jacs[casei,runi])
+            if jac_ratios:
+                print('Max Jac Ratio: ', max_jac_ratios[casei,runi])
+                print('Avg Jac Ratio: ', avg_jac_ratios[casei,runi])
+            if backout_jacs:
+                print('Max Backout Jac Error: ', max_backout_jacs[casei,runi])
+                print('Avg Backout Jac Error: ', avg_backout_jacs[casei,runi])
             if vol_metrics:
                 print('Max Vol Metrics Error: ', max_vol_mets[casei,runi])
                 print('Avg Vol Metrics Error: ', avg_vol_mets[casei,runi])
@@ -843,14 +882,33 @@ def run_jacobian_convergence(solver, schedule_in=None,
         legend_strings = labels
     
     ''' Analyze convergence '''
-    print('---------------------------------------------------------')
-    print('Average Error Convergence Rates:')
-    _,_ = calc_conv_rate(dofs, avg_jacs, solver.dim,
-                                                legend_strings=legend_strings)
-    print('---------------------------------------------------------')
-    print('Maximum Error Convergence Rates:')
-    _,_ = calc_conv_rate(dofs, max_jacs, solver.dim,
-                                                legend_strings=legend_strings)
+    if jacs:
+        print('---------------------------------------------------------')
+        print('Average Jacobian Error Convergence Rates:')
+        _,_ = calc_conv_rate(dofs, avg_jacs, solver.dim,
+                                                    legend_strings=legend_strings)
+        print('---------------------------------------------------------')
+        print('Maximum Jacobian Error Convergence Rates:')
+        _,_ = calc_conv_rate(dofs, max_jacs, solver.dim,
+                                                    legend_strings=legend_strings)
+    if jac_ratios:
+        print('---------------------------------------------------------')
+        print('Average Jacobian Ratio Convergence Rates:')
+        _,_ = calc_conv_rate(dofs, avg_jac_ratios, solver.dim,
+                                                    legend_strings=legend_strings)
+        print('---------------------------------------------------------')
+        print('Maximum Jacobian Ratio Convergence Rates:')
+        _,_ = calc_conv_rate(dofs, max_jac_ratios, solver.dim,
+                                                    legend_strings=legend_strings)
+    if backout_jacs:
+        print('---------------------------------------------------------')
+        print('Average Backed-out Jacobian Convergence Rates:')
+        _,_ = calc_conv_rate(dofs, avg_backout_jacs, solver.dim,
+                                                    legend_strings=legend_strings)
+        print('---------------------------------------------------------')
+        print('Maximum Backed-out Jacobian Convergence Rates:')
+        _,_ = calc_conv_rate(dofs, max_backout_jacs, solver.dim,
+                                                    legend_strings=legend_strings)
     if vol_metrics:
         print('---------------------------------------------------------')
         print('Vol Metrics: Average Error Convergence Rates:')
@@ -871,23 +929,53 @@ def run_jacobian_convergence(solver, schedule_in=None,
                                                 legend_strings=legend_strings)
 
     ''' Plot Results '''
-    if savefile != None:
-        savefile1 = savefile + '_avg'
-        savefile2 = savefile + '_max'
-    else:
-        savefile1 = None
-        savefile2 = None
         
-    title = r"Average Metric Jacobian Error $\left\vert 1-\frac{J}{J_{ex}} \right\vert $"
-    plot_conv(dofs, avg_jacs, legend_strings, solver.dim, title, savefile1, extra_marker=neg_jacs)
-    
-    title = r"Maximum Metric Jacobian Error $\left\vert 1-\frac{J}{J_{ex}} \right\vert $"
-    plot_conv(dofs, max_jacs, legend_strings, solver.dim, title, savefile2, extra_marker=neg_jacs)
+    if jacs:
+        if savefile != None:
+            savefile1 = 'jac_' + savefile + '_avg'
+            savefile2 = 'jac_' + savefile + '_max'
+        else:
+            savefile1 = None
+            savefile2 = None
+        
+        title = r"Average Metric Jacobian Error $\left\vert J_h - J_{ex} \right\vert $"
+        plot_conv(dofs, avg_jacs, legend_strings, solver.dim, title, savefile1, extra_marker=neg_jacs)
+        
+        title = r"Maximum Metric Jacobian Error $\left\vert J_h - J_{ex} \right\vert $"
+        plot_conv(dofs, max_jacs, legend_strings, solver.dim, title, savefile2, extra_marker=neg_jacs)
+        
+    if jac_ratios:
+        if savefile != None:
+            savefile1 = 'jac_ratio_' + savefile + '_avg'
+            savefile2 = 'jac_ratio_' + savefile + '_max'
+        else:
+            savefile1 = None
+            savefile2 = None
+        
+        title = r"Average Metric Jacobian Ratio $\left\vert 1-\frac{J_h}{J_h'} \right\vert $"
+        plot_conv(dofs, avg_jac_ratios, legend_strings, solver.dim, title, savefile1, extra_marker=neg_jacs)
+        
+        title = r"Maximum Metric Jacobian Ratio $\left\vert 1-\frac{J_h}{J_h'} \right\vert $"
+        plot_conv(dofs, max_jac_ratios, legend_strings, solver.dim, title, savefile2, extra_marker=neg_jacs)
+        
+    if backout_jacs:
+        if savefile != None:
+            savefile1 = 'jac_match_' + savefile + '_avg'
+            savefile2 = 'jac_match_' + savefile + '_max'
+        else:
+            savefile1 = None
+            savefile2 = None
+        
+        title = r"Average Metric Jacobian Error $\left\vert J_h - J_{ex} \right\vert $"
+        plot_conv(dofs, avg_backout_jacs, legend_strings, solver.dim, title, savefile1, extra_marker=backout_neg_jacs)
+        
+        title = r"Maximum Metric Jacobian Error $\left\vert J_h - J_{ex} \right\vert $"
+        plot_conv(dofs, max_backout_jacs, legend_strings, solver.dim, title, savefile2, extra_marker=backout_neg_jacs)
     
     if vol_metrics:
         if savefile != None:
-            savefile1 = savefile + '_vol_mets_avg'
-            savefile2 = savefile + '_vol_mets_max'
+            savefile1 = 'met_' + savefile + '_avg'
+            savefile2 = 'met_' + savefile + '_max'
         else:
             savefile1 = None
             savefile2 = None
@@ -900,8 +988,8 @@ def run_jacobian_convergence(solver, schedule_in=None,
     
     if surf_metrics:
         if savefile != None:
-            savefile1 = savefile + '_surf_mets_avg'
-            savefile2 = savefile + '_surf_mets_max'
+            savefile1 = 'surf_' + savefile + '_avg'
+            savefile2 = 'surf_' + savefile + '_max'
         else:
             savefile1 = None
             savefile2 = None
@@ -914,4 +1002,21 @@ def run_jacobian_convergence(solver, schedule_in=None,
         
     
     if return_conv:
-        return dofs, avg_jacs, max_jacs, legend_strings
+        avg_ers = []
+        max_ers = []
+        if jacs:
+            avg_ers.append(avg_jacs)
+            max_ers.append(max_jacs)
+        if jac_ratios:
+            avg_ers.append(avg_jac_ratios)
+            max_ers.append(max_jac_ratios)
+        if backout_jacs:
+            avg_ers.append(avg_backout_jacs)
+            max_ers.append(max_backout_jacs)
+        if vol_metrics:
+            avg_ers.append(avg_vol_mets)
+            max_ers.append(max_vol_mets)
+        if surf_metrics:
+            avg_ers.append(avg_surf_mets)
+            max_ers.append(max_surf_mets)
+        return dofs, avg_ers, max_ers, legend_strings
