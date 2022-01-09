@@ -1199,39 +1199,51 @@ class MakeMesh:
                 txbT = np.kron(sbp.tR.reshape((self.nen,1)), eye).T
                 txaT = np.kron(sbp.tL.reshape((self.nen,1)), eye).T
                 tybT = np.kron(eye, sbp.tR.reshape((self.nen,1))).T
-                tyaT = np.kron(eye, sbp.tL.reshape((self.nen,1))).T
-                
-                for row in range(self.nelem[1]): # starts at bottom left to bottom right, then next row up
-                    for i in range(4): # loop over matrix entries
-                        Lmetrics = txbT @ self.metrics[:,i,row::self.nelem[1]]
-                        Rmetrics = txaT @ self.metrics[:,i,row::self.nelem[1]]
-                        avgmetrics = (Lmetrics[:,:-1] + Rmetrics[:,1:])/2
-                        self.bdy_metrics[:,0,i,row::self.nelem[1]][:,1:] = avgmetrics
-                        self.bdy_metrics[:,1,i,row::self.nelem[1]][:,:-1] = avgmetrics
-                        if periodic[0]:   
-                            avgmetrics = (Lmetrics[:,-1] + Rmetrics[:,0])/2
-                            self.bdy_metrics[:,0,i,row::self.nelem[1]][:,0] = avgmetrics
-                            self.bdy_metrics[:,1,i,row::self.nelem[1]][:,-1] = avgmetrics     
-                        else:
-                            self.bdy_metrics[:,0,i,row::self.nelem[1]][:,0] = Rmetrics[:,0]
-                            self.bdy_metrics[:,1,i,row::self.nelem[1]][:,-1] = Lmetrics[:,-1]
+                tyaT = np.kron(eye, sbp.tL.reshape((self.nen,1))).T                
+                average = True # for testing things when not averaging surface metrics
+              
+                if average:
+                    for row in range(self.nelem[1]): # starts at bottom left to bottom right, then next row up
+                        for i in range(4): # loop over matrix entries
+                            Lmetrics = txbT @ self.metrics[:,i,row::self.nelem[1]]
+                            Rmetrics = txaT @ self.metrics[:,i,row::self.nelem[1]]
+                            avgmetrics = (Lmetrics[:,:-1] + Rmetrics[:,1:])/2
+                            self.bdy_metrics[:,0,i,row::self.nelem[1]][:,1:] = avgmetrics
+                            self.bdy_metrics[:,1,i,row::self.nelem[1]][:,:-1] = avgmetrics
+                            if periodic[0]:   
+                                avgmetrics = (Lmetrics[:,-1] + Rmetrics[:,0])/2
+                                self.bdy_metrics[:,0,i,row::self.nelem[1]][:,0] = avgmetrics
+                                self.bdy_metrics[:,1,i,row::self.nelem[1]][:,-1] = avgmetrics     
+                            else:
+                                self.bdy_metrics[:,0,i,row::self.nelem[1]][:,0] = Rmetrics[:,0]
+                                self.bdy_metrics[:,1,i,row::self.nelem[1]][:,-1] = Lmetrics[:,-1]
+                        
+                    for col in range(self.nelem[0]): # starts at bottom left to top left, then next column to right
+                        start = col*self.nelem[0]
+                        end = start + self.nelem[1]
+                        for i in range(4): # loop over matrix entries
+                            Lmetrics = tybT @ self.metrics[:,i,start:end]
+                            Rmetrics = tyaT @ self.metrics[:,i,start:end]
+                            avgmetrics = (Lmetrics[:,:-1] + Rmetrics[:,1:])/2
+                            self.bdy_metrics[:,2,i,start:end][:,1:] = avgmetrics
+                            self.bdy_metrics[:,3,i,start:end][:,:-1] = avgmetrics
+                            if periodic[1]:
+                                avgmetrics = (Lmetrics[:,-1] + Rmetrics[:,0])/2
+                                self.bdy_metrics[:,2,i,start:end][:,0] = avgmetrics
+                                self.bdy_metrics[:,3,i,start:end][:,-1] = avgmetrics     
+                            else:
+                                self.bdy_metrics[:,2,i,start:end][:,0] = Rmetrics[:,0]
+                                self.bdy_metrics[:,3,i,start:end][:,-1] = Lmetrics[:,-1]
+                else:
+                    for i in range(4):
+                        self.bdy_metrics[:,0,i,:] = txaT @ self.metrics[:,i,:]
+                        self.bdy_metrics[:,1,i,:] = txbT @ self.metrics[:,i,:]
+                        self.bdy_metrics[:,2,i,:] = tyaT @ self.metrics[:,i,:]
+                        self.bdy_metrics[:,3,i,:] = tybT @ self.metrics[:,i,:]
+                        
+                # set unused components to None to avoid mistakes
+                self.ignore_surface_metrics()
                     
-                for col in range(self.nelem[0]): # starts at bottom left to top left, then next column to right
-                    start = col*self.nelem[0]
-                    end = start + self.nelem[1]
-                    for i in range(4): # loop over matrix entries
-                        Lmetrics = tybT @ self.metrics[:,i,start:end]
-                        Rmetrics = tyaT @ self.metrics[:,i,start:end]
-                        avgmetrics = (Lmetrics[:,:-1] + Rmetrics[:,1:])/2
-                        self.bdy_metrics[:,2,i,start:end][:,1:] = avgmetrics
-                        self.bdy_metrics[:,3,i,start:end][:,:-1] = avgmetrics
-                        if periodic[1]:
-                            avgmetrics = (Lmetrics[:,-1] + Rmetrics[:,0])/2
-                            self.bdy_metrics[:,2,i,start:end][:,0] = avgmetrics
-                            self.bdy_metrics[:,3,i,start:end][:,-1] = avgmetrics     
-                        else:
-                            self.bdy_metrics[:,2,i,start:end][:,0] = Rmetrics[:,0]
-                            self.bdy_metrics[:,3,i,start:end][:,-1] = Lmetrics[:,-1]
                           
             else: 
                 if bdy_metric_method!='calculate':
@@ -1252,8 +1264,6 @@ class MakeMesh:
         
             
             if use_optz_metrics:  
-                
-                assert (bdy_metric_method != 'calculate'),'Must use extrapolated or exact boundary metrics for optimization.'
                 # overwrite metrics with optimized ones         
                 eye = np.eye(self.nen)
                 txb = np.kron(sbp.tR.reshape((self.nen,1)), eye)
@@ -1440,21 +1450,21 @@ class MakeMesh:
                 else:
                     raise Exception("metric optimization method '"+optz_method+"' not understood")
                     
-                if jac_method=='exact':
-                    self.det_jac = self.det_jac_exa
-                elif jac_method=='calculate' or jac_method=='direct':
-                    pass # already done  
-                elif jac_method=='deng':
-                    Dx = np.kron(sbp.D, np.eye(self.nen)) # shape (nen^2,nen^2)
-                    Dy = np.kron(np.eye(self.nen), sbp.D)             
-                    self.det_jac = ( Dx @ ( self.xy_elem[:,0,:] * self.metrics[:,0,:] + self.xy_elem[:,1,:] * self.metrics[:,1,:] ) \
-                                   + Dy @ ( self.xy_elem[:,0,:] * self.metrics[:,2,:] + self.xy_elem[:,1,:] * self.metrics[:,3,:] ))/2
-                elif jac_method=='match' or jac_method=='backout':
-                    self.det_jac = self.metrics[:,0,:] * self.metrics[:,3,:] - self.metrics[:,1,:] * self.metrics[:,2,:]
-                else:
-                    print('ERROR: Did not understant inputted jac_method: ', jac_method)
-                    print("       Defaulting to 'exact'.")
-                    self.det_jac = self.det_jac_exa
+            if jac_method=='exact':
+                self.det_jac = self.det_jac_exa
+            elif jac_method=='calculate' or jac_method=='direct':
+                pass # already done  
+            elif jac_method=='deng':
+                Dx = np.kron(sbp.D, np.eye(self.nen)) # shape (nen^2,nen^2)
+                Dy = np.kron(np.eye(self.nen), sbp.D)             
+                self.det_jac = ( Dx @ ( self.xy_elem[:,0,:] * self.metrics[:,0,:] + self.xy_elem[:,1,:] * self.metrics[:,1,:] ) \
+                               + Dy @ ( self.xy_elem[:,0,:] * self.metrics[:,2,:] + self.xy_elem[:,1,:] * self.metrics[:,3,:] ))/2
+            elif jac_method=='match' or jac_method=='backout':
+                self.det_jac = self.metrics[:,0,:] * self.metrics[:,3,:] - self.metrics[:,1,:] * self.metrics[:,2,:]
+            else:
+                print('ERROR: Did not understant inputted jac_method: ', jac_method)
+                print("       Defaulting to 'exact'.")
+                self.det_jac = self.det_jac_exa
                     
                 
                 
@@ -1463,6 +1473,8 @@ class MakeMesh:
             if calc_exact_metrics or metric_method.lower()=='exact':
                 self.metrics_exa = np.zeros((self.nen**3,9,self.nelem[0]*self.nelem[1]*self.nelem[2])) 
                 self.bdy_metrics_exa = np.zeros((self.nen**2,6,9,self.nelem[0]*self.nelem[1]*self.nelem[2]))
+                
+                #TODO: Use metric relations here, not the jacobian matrix inverse
             
                 self.metrics_exa[:,0,:] = self.det_jac_exa * self.jac_inv_exa[:,0,0,:]
                 self.metrics_exa[:,1,:] = self.det_jac_exa * self.jac_inv_exa[:,0,1,:]
@@ -2022,6 +2034,23 @@ class MakeMesh:
                 self.fac_normals[:,f,1,:] = y_unnormed / norm
                 self.fac_normals[:,f,2,:] = z_unnormed / norm
                 
+    def ignore_surface_metrics(self):
+        ''' set the unused components to None '''
+        if self.dim == 1:
+            print('nothing to do in 1D')
+            
+        elif self.dim == 2:
+            for f in range(4): # loop over facets (left, right, lower, upper)
+                    if (f == 0) or (f == 1):
+                        self.bdy_metrics[:,f,2,:] = None
+                        self.bdy_metrics[:,f,3,:] = None
+                    elif (f == 2) or (f == 3):
+                        self.bdy_metrics[:,f,0,:] = None
+                        self.bdy_metrics[:,f,1,:] = None
+            
+        else:
+            print('Not set up yet')
+                
     def check_surface_metrics(self):
         ''' check that the surface metrics on either side of an interface are equal '''
         if self.dim == 1:
@@ -2036,7 +2065,7 @@ class MakeMesh:
                     diff = abs(self.bdy_metrics[:,0,i,row::self.nelem[1]][:,1:] - self.bdy_metrics[:,1,i,row::self.nelem[1]][:,:-1])
                     maxint[i] = max(maxint[i],np.max(diff))
                     diff = abs(self.bdy_metrics[:,0,i,row::self.nelem[1]][:,0] - self.bdy_metrics[:,1,i,row::self.nelem[1]][:,-1])
-                    maxbdy[i] = max(maxint[i],np.max(diff))
+                    maxbdy[i] = max(maxbdy[i],np.max(diff))
                 
             for col in range(self.nelem[0]): # starts at bottom left to top left, then next column to right
                 start = col*self.nelem[0]
@@ -2045,7 +2074,7 @@ class MakeMesh:
                     diff = abs(self.bdy_metrics[:,2,i,start:end][:,1:] - self.bdy_metrics[:,3,i,start:end][:,:-1])
                     maxint[i] = max(maxint[i],np.max(diff))
                     diff = abs(self.bdy_metrics[:,2,i,start:end][:,0] - self.bdy_metrics[:,3,i,start:end][:,-1]) 
-                    maxbdy[i] = max(maxint[i],np.max(diff))
+                    maxbdy[i] = max(maxbdy[i],np.max(diff))
 
             print('Max diff of surface metrics entry dxi(1)/dx(1) on interior: ', maxint[0])
             print('Max diff of surface metrics entry dxi(1)/dx(2) on interior: ', maxint[1])
@@ -2066,7 +2095,7 @@ class MakeMesh:
                     diff = abs(self.bdy_metrics[:,0,i,row::skipx][:,1:] - self.bdy_metrics[:,1,i,row::skipx][:,:-1])
                     maxint[i] = max(maxint[i],np.max(diff))
                     diff = abs(self.bdy_metrics[:,0,i,row::skipx][:,0] - self.bdy_metrics[:,1,i,row::skipx][:,-1])
-                    maxbdy[i] = max(maxint[i],np.max(diff))
+                    maxbdy[i] = max(maxbdy[i],np.max(diff))
                     
             for coly in range(self.nelem[0]*self.nelem[2]):
                 start = coly + (coly//self.nelem[2])*(self.nelem[1]-1)*self.nelem[2]
@@ -2075,7 +2104,7 @@ class MakeMesh:
                     diff = abs(self.bdy_metrics[:,2,i,start:end:self.nelem[2]][:,1:] - self.bdy_metrics[:,3,i,start:end:self.nelem[2]][:,:-1])
                     maxint[i] = max(maxint[i],np.max(diff))
                     diff = abs(self.bdy_metrics[:,2,i,start:end:self.nelem[2]][:,0] - self.bdy_metrics[:,3,i,start:end:self.nelem[2]][:,-1])
-                    maxbdy[i] = max(maxint[i],np.max(diff))
+                    maxbdy[i] = max(maxbdy[i],np.max(diff))
             
             for colz in range(self.nelem[0]*self.nelem[2]):
                 start = colz*self.nelem[2]
@@ -2084,7 +2113,7 @@ class MakeMesh:
                     diff = abs(self.bdy_metrics[:,4,i,start:end][:,1:] - self.bdy_metrics[:,5,i,start:end][:,:-1])
                     maxint[i] = max(maxint[i],np.max(diff))
                     diff = abs(self.bdy_metrics[:,4,i,start:end][:,0] - self.bdy_metrics[:,5,i,start:end][:,-1])
-                    maxbdy[i] = max(maxint[i],np.max(diff))
+                    maxbdy[i] = max(maxbdy[i],np.max(diff))
 
             print('Max diff of surface metrics entry dxi(1)/dx(1) on interior: ', maxint[0])
             print('Max diff of surface metrics entry dxi(1)/dx(2) on interior: ', maxint[1])
