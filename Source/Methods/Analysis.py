@@ -658,12 +658,14 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None, 
     for i in range(n_cases):
         dof_mod = np.copy(dof_vec[i])
         err_mod = np.copy(err_vec[i])
+        ######### comment this out if you want to print things <1e-16 ########
         k = 0
         for j in range(len(dof_vec[i])):
             if err_mod[j-k] < 1e-16:
                 dof_mod = np.delete(dof_mod,j-k)
                 err_mod = np.delete(err_mod,j-k)
                 k += 1
+        ######################################################################
         string = legend_strings[i].replace("disc_nodes=","")
         if len(dof_mod) > 2:
             p_opt, p_cov = sc.curve_fit(fit_func, np.log(dof_mod),np.log(err_mod),(2,1)) # fit
@@ -799,6 +801,7 @@ def run_jacobian_convergence(solver, schedule_in=None,
 
     n_toti = 1
     solver.settings['stop_after_metrics'] = True
+    solver.settings['calc_exact_metrics'] = True
     for casei in range(n_cases): # for each case
         for atti in range(n_attributes):
             variables[atti+2] = (attributes[atti],cases[casei][atti]) # assign attributes
@@ -821,7 +824,7 @@ def run_jacobian_convergence(solver, schedule_in=None,
             elif solver.dim == 3:
                 nn = solver.nn[0]*solver.nn[1]*solver.nn[2]
                 dofs[casei,runi] = np.cbrt(nn)
-            if np.any(solver.mesh.det_jac < 0):
+            if np.any(solver.mesh.det_jac <= 0):
                 neg_jacs[casei][runi] = True
             if jacs:
                 temp = abs(solver.mesh.det_jac-solver.mesh.det_jac_exa)
@@ -835,12 +838,13 @@ def run_jacobian_convergence(solver, schedule_in=None,
                     back_jacs = np.sqrt( solver.mesh.metrics[:,8,:] * (solver.mesh.metrics[:,0,:] * solver.mesh.metrics[:,4,:] - solver.mesh.metrics[:,1,:] * solver.mesh.metrics[:,3,:]) \
                                        -solver.mesh.metrics[:,7,:] * (solver.mesh.metrics[:,0,:] * solver.mesh.metrics[:,5,:] - solver.mesh.metrics[:,2,:] * solver.mesh.metrics[:,3,:]) \
                                        +solver.mesh.metrics[:,6,:] * (solver.mesh.metrics[:,1,:] * solver.mesh.metrics[:,5,:] - solver.mesh.metrics[:,2,:] * solver.mesh.metrics[:,4,:]))
+                    back_jacs = np.nan_to_num(back_jacs, copy=False)
                 if jac_ratios:
                     temp = abs( 1 - (back_jacs / solver.mesh.det_jac) )
                     avg_jac_ratios[casei,runi] = np.mean(temp)
                     max_jac_ratios[casei,runi] = np.max(temp)
                 if backout_jacs:
-                    if np.any(back_jacs < 0):
+                    if np.any(back_jacs <= 0):
                         backout_neg_jacs[casei][runi] = True
                     temp = abs(back_jacs-solver.mesh.det_jac_exa)
                     avg_backout_jacs[casei,runi] = np.mean(temp)
@@ -1020,3 +1024,260 @@ def run_jacobian_convergence(solver, schedule_in=None,
             avg_ers.append(avg_surf_mets)
             max_ers.append(max_surf_mets)
         return dofs, avg_ers, max_ers, legend_strings
+    
+    
+def run_invariants_convergence(solver, schedule_in=None, labels=None):
+    '''
+    Purpose
+    ----------
+    Runs a convergence analysis for a given problem. The convergence is
+    always done in terms of DOF (solver.nen or solver.nelem).
+
+    Parameters
+    ----------
+    solver:
+    schedule_in: ex. [['disc_nodes','lgl','lg'],['p',3,4],['nelem',5,20,100]]
+    return_conv : bool (optional)
+        Flag whether to return dofs, errors, and legend_strings.
+        The default is False.
+    labels: list of strings (optional)
+        labels to use in the legends for the different runs
+    '''
+    print('---------------------------------------------------------')
+    
+    if schedule_in==None:
+        schedule = [['disc_nodes','lgl','lg'],['p',3,4],['nelem',5,20,100]]
+    else:
+        schedule=schedule_in.copy()
+
+    ''' Unpack Schedule '''
+    # Check that we either use 'nen' or 'nelem'
+    # to refine. We can't use both.
+    if any(i[0]=='nen' for i in schedule) and any(i[0]=='nelem' for i in schedule):
+        print('WARNING: Can not do a refinement specifying both nen and nelem. Using only nelem values.')
+        # remove 'nelem' and 'nen' lists
+        schedule = [x for x in schedule if not ('nen' in x)]
+
+    # Otherwise, we now have combinations of attributes to run, and we
+    # calculate convergence according to either nn or nelem refinement.
+    # Note that nen can be used both with nn or nelem refinement.
+    if any(i[0]=='nen' for i in schedule):
+        runs_nen = [x[1:] for x in schedule if x[0] == 'nen'][0]
+        schedule.remove([x for x in schedule if x[0] == 'nen'][0])
+        runs_nelem = [solver.nelem] * len(runs_nen) # reset these as well
+    elif any(i[0]=='nelem' for i in schedule):
+        runs_nelem = [x[1:] for x in schedule if x[0] == 'nelem'][0]
+        schedule.remove([x for x in schedule if x[0] == 'nelem'][0])
+        runs_nen = [0] * len(runs_nelem) # reset these as well
+    else:
+        raise Exception('Convergence schedule must contain either nen or nelem refinement.')
+    
+    # unpack remaining attributes in schedule, store combinations in cases
+    attributes = []
+    values = []
+    for item in schedule:
+        attributes.append(item[0])
+        values.append(item[1:])
+    cases = list(itertools.product(*values)) # all possible combinations
+
+    ''' Run cases for various runs, store errors '''
+    n_cases = len(cases)
+    n_runs = len(runs_nelem)
+    n_tot = n_cases*n_runs
+    n_attributes = len(attributes)
+    if solver.dim==1:
+        raise Exception('Only set up for 2D or 3D')
+    else:  
+        avg_xRHS = np.zeros((n_cases,n_runs)) 
+        max_xRHS = np.zeros((n_cases,n_runs))
+        avg_yRHS = np.zeros((n_cases,n_runs)) 
+        max_yRHS = np.zeros((n_cases,n_runs))
+        avg_xLHS = np.zeros((n_cases,n_runs)) 
+        max_xLHS = np.zeros((n_cases,n_runs))
+        avg_yLHS = np.zeros((n_cases,n_runs)) 
+        max_yLHS = np.zeros((n_cases,n_runs))
+        avg_xtot = np.zeros((n_cases,n_runs)) 
+        max_xtot = np.zeros((n_cases,n_runs))
+        avg_ytot = np.zeros((n_cases,n_runs)) 
+        max_ytot = np.zeros((n_cases,n_runs))
+    if solver.dim==3:
+        avg_zRHS = np.zeros((n_cases,n_runs)) 
+        max_zRHS = np.zeros((n_cases,n_runs))
+        avg_zLHS = np.zeros((n_cases,n_runs)) 
+        max_zLHS = np.zeros((n_cases,n_runs))
+        avg_ztot = np.zeros((n_cases,n_runs)) 
+        max_ztot = np.zeros((n_cases,n_runs))
+    dofs = np.zeros((n_cases,n_runs)) # store degrees of freedom here
+    legend_strings = ['']*n_cases # store labels for cases here
+    if labels is not None:
+        assert(len(labels)==n_cases),'labels must be a list of length = n_cases'
+
+    variables = [None]*(2+n_attributes)
+
+    n_toti = 1
+    for casei in range(n_cases): # for each case
+        for atti in range(n_attributes):
+            variables[atti+2] = (attributes[atti],cases[casei][atti]) # assign attributes
+            legend_strings[casei] += '{0}={1}, '.format(attributes[atti],cases[casei][atti])
+        legend_strings[casei] = legend_strings[casei].strip().strip(',') # formatting
+
+        for runi in range(n_runs): # for each run (refinement)
+            variables[0] = ('nelem',runs_nelem[runi])
+            variables[1] = ('nen',runs_nen[runi])
+
+            # add a few default things to save time
+            # TODO : add flag to also calculate conservation objectives
+            variables.append(('print_sol_norm', False))
+            variables.append(('bool_plot_sol', False))
+            variables.append(('cons_obj_name', None))
+
+            ''' solve run for case, store results '''
+            solver.reset(variables=variables)
+            solver.settings['calc_exact_metrics'] = True
+            
+            if solver.dim==2:
+                max_xLHS[casei,runi],avg_xLHS[casei,runi],max_yLHS[casei,runi],avg_yLHS[casei,runi],\
+                max_xRHS[casei,runi],avg_xRHS[casei,runi],max_yRHS[casei,runi],avg_yRHS[casei,runi],\
+                max_xtot[casei,runi],avg_xtot[casei,runi],max_ytot[casei,runi],avg_ytot[casei,runi]=\
+                    solver.check_invariants(return_ers=True)
+            else:
+                max_xLHS[casei,runi],avg_xLHS[casei,runi],max_yLHS[casei,runi],avg_yLHS[casei,runi],max_zLHS[casei,runi],avg_zLHS[casei,runi],\
+                max_xRHS[casei,runi],avg_xRHS[casei,runi],max_yRHS[casei,runi],avg_yRHS[casei,runi],max_zRHS[casei,runi],avg_zRHS[casei,runi],\
+                max_xtot[casei,runi],avg_xtot[casei,runi],max_ytot[casei,runi],avg_ytot[casei,runi],max_ztot[casei,runi],avg_ztot[casei,runi]=\
+                    solver.check_invariants(return_ers=True)
+
+            if solver.dim == 1:
+                nn = solver.nn
+                dofs[casei,runi] = nn
+            elif solver.dim == 2:
+                nn = solver.nn[0]*solver.nn[1]
+                dofs[casei,runi] = np.sqrt(nn)
+            elif solver.dim == 3:
+                nn = solver.nn[0]*solver.nn[1]*solver.nn[2]
+                dofs[casei,runi] = np.cbrt(nn)
+
+            print('Convergence Progress: run {0} of {1} complete.'.format(n_toti,n_tot))
+            print('Total number of nodes: ', nn)
+            print('---------------------------------------------------------')
+            n_toti += 1
+        if np.all(max_xLHS[casei,:] < 1e-13): max_xLHS[casei,:]=0
+        if np.all(avg_xLHS[casei,:] < 1e-13): avg_xLHS[casei,:]=0
+        if np.all(max_xRHS[casei,:] < 1e-13): max_xRHS[casei,:]=0
+        if np.all(avg_xRHS[casei,:] < 1e-13): avg_xRHS[casei,:]=0
+        if np.all(max_xtot[casei,:] < 1e-13): max_xtot[casei,:]=0
+        if np.all(avg_xtot[casei,:] < 1e-13): avg_xtot[casei,:]=0
+        if np.all(max_yLHS[casei,:] < 1e-13): max_yLHS[casei,:]=0
+        if np.all(avg_yLHS[casei,:] < 1e-13): avg_yLHS[casei,:]=0
+        if np.all(max_yRHS[casei,:] < 1e-13): max_yRHS[casei,:]=0
+        if np.all(avg_yRHS[casei,:] < 1e-13): avg_yRHS[casei,:]=0
+        if np.all(max_ytot[casei,:] < 1e-13): max_ytot[casei,:]=0
+        if np.all(avg_ytot[casei,:] < 1e-13): avg_ytot[casei,:]=0
+        if solver.dim==3:
+            if np.all(max_zLHS[casei,:] < 1e-13): max_zLHS[casei,:]=0
+            if np.all(avg_zLHS[casei,:] < 1e-13): avg_zLHS[casei,:]=0
+            if np.all(max_zRHS[casei,:] < 1e-13): max_zRHS[casei,:]=0
+            if np.all(avg_zRHS[casei,:] < 1e-13): avg_zRHS[casei,:]=0
+            if np.all(max_ztot[casei,:] < 1e-13): max_ztot[casei,:]=0
+            if np.all(avg_ztot[casei,:] < 1e-13): avg_ztot[casei,:]=0
+    if labels is not None:
+        # overwrite legend_strings with labels
+        legend_strings = labels
+    
+    ''' Analyze convergence '''
+    print('---------------------------------------------------------')
+    print('Max x LHS')
+    _,conv_max_xLHS = calc_conv_rate(dofs, max_xLHS, solver.dim, legend_strings=legend_strings)
+    print('---------------------------------------------------------')
+    print('Avg x LHS')
+    _,conv_avg_xLHS = calc_conv_rate(dofs, avg_xLHS, solver.dim, legend_strings=legend_strings)
+    print('---------------------------------------------------------')
+    print('Max x RHS')
+    _,conv_max_xRHS = calc_conv_rate(dofs, max_xRHS, solver.dim, legend_strings=legend_strings)
+    print('---------------------------------------------------------')
+    print('Avg x RHS')
+    _,conv_avg_xRHS = calc_conv_rate(dofs, avg_xRHS, solver.dim, legend_strings=legend_strings)
+    print('---------------------------------------------------------')
+    print('Max x tot')
+    _,conv_max_xtot = calc_conv_rate(dofs, max_xtot, solver.dim, legend_strings=legend_strings)
+    print('---------------------------------------------------------')
+    print('Avg x tot')
+    _,conv_avg_xtot = calc_conv_rate(dofs, avg_xtot, solver.dim, legend_strings=legend_strings)
+    print('---------------------------------------------------------')
+    print('Max y LHS')
+    _,conv_max_yLHS = calc_conv_rate(dofs, max_yLHS, solver.dim, legend_strings=legend_strings)
+    print('---------------------------------------------------------')
+    print('Avg y LHS')
+    _,conv_avg_yLHS = calc_conv_rate(dofs, avg_yLHS, solver.dim, legend_strings=legend_strings)
+    print('---------------------------------------------------------')
+    print('Max y RHS')
+    _,conv_max_yRHS = calc_conv_rate(dofs, max_yRHS, solver.dim, legend_strings=legend_strings)
+    print('---------------------------------------------------------')
+    print('Avg y RHS')
+    _,conv_avg_yRHS = calc_conv_rate(dofs, avg_yRHS, solver.dim, legend_strings=legend_strings)
+    print('---------------------------------------------------------')
+    print('Max y tot')
+    _,conv_max_ytot = calc_conv_rate(dofs, max_ytot, solver.dim, legend_strings=legend_strings)
+    print('---------------------------------------------------------')
+    print('Avg y tot')
+    _,conv_avg_ytot = calc_conv_rate(dofs, avg_ytot, solver.dim, legend_strings=legend_strings)
+    if solver.dim==3:
+        print('---------------------------------------------------------')
+        print('Max z LHS')
+        _,conv_max_zLHS = calc_conv_rate(dofs, max_zLHS, solver.dim, legend_strings=legend_strings)
+        print('---------------------------------------------------------')
+        print('Avg z LHS')
+        _,conv_avg_zLHS = calc_conv_rate(dofs, avg_zLHS, solver.dim, legend_strings=legend_strings)
+        print('---------------------------------------------------------')
+        print('Max z RHS')
+        _,conv_max_zRHS = calc_conv_rate(dofs, max_zRHS, solver.dim, legend_strings=legend_strings)
+        print('---------------------------------------------------------')
+        print('Avg z RHS')
+        _,conv_avg_zRHS = calc_conv_rate(dofs, avg_zRHS, solver.dim, legend_strings=legend_strings)
+        print('---------------------------------------------------------')
+        print('Max z tot')
+        _,conv_max_ztot = calc_conv_rate(dofs, max_ztot, solver.dim, legend_strings=legend_strings)
+        print('---------------------------------------------------------')
+        print('Avg z tot')
+        _,conv_avg_ztot = calc_conv_rate(dofs, avg_ztot, solver.dim, legend_strings=legend_strings)
+    
+
+    print('---------------------------------------------------------')
+    print('---------------------------------------------------------')
+    print('                    SUMMARY:                             ')
+    print('---------------------------------------------------------')
+    for casei in range(n_cases): # for each case
+        print('---------------------------------------------------------')
+        print('Convergence for ', legend_strings[casei], ': ')
+        if solver.dim==2:
+            res = [np.mean([conv_max_xLHS[casei],conv_max_yLHS[casei]]),\
+                   np.mean([conv_avg_xLHS[casei],conv_avg_yLHS[casei]]),\
+                   np.mean([conv_max_xRHS[casei],conv_max_yRHS[casei]]),\
+                   np.mean([conv_avg_xRHS[casei],conv_avg_yRHS[casei]]),\
+                   np.mean([conv_max_xtot[casei],conv_max_ytot[casei]]),\
+                   np.mean([conv_avg_xtot[casei],conv_avg_ytot[casei]])]
+            for i in range(len(res)):
+                if np.isnan(res[i]):
+                    res[i] = 'exact'
+            print('Max LHS: ', res[0])
+            print('Avg LHS: ', res[1])
+            print('Max RHS: ', res[2])
+            print('Avg RHS: ', res[3])
+            print('Max tot: ', res[4])
+            print('Avg tot: ', res[5])
+        else:
+            res = [np.mean([conv_max_xLHS[casei],conv_max_yLHS[casei],conv_max_zLHS[casei]]),\
+                   np.mean([conv_avg_xLHS[casei],conv_avg_yLHS[casei],conv_avg_zLHS[casei]]),\
+                   np.mean([conv_max_xRHS[casei],conv_max_yRHS[casei],conv_max_zRHS[casei]]),\
+                   np.mean([conv_avg_xRHS[casei],conv_avg_yRHS[casei],conv_avg_zRHS[casei]]),\
+                   np.mean([conv_max_xtot[casei],conv_max_ytot[casei],conv_max_ztot[casei]]),\
+                   np.mean([conv_avg_xtot[casei],conv_avg_ytot[casei],conv_avg_ztot[casei]])]
+            for i in range(len(res)):
+                if np.isnan(res[i]):
+                    res[i] = 'exact'
+            print('Max LHS: ', res[0])
+            print('Avg LHS: ', res[1])
+            print('Max RHS: ', res[2])
+            print('Avg RHS: ', res[3])
+            print('Max tot: ', res[4])
+            print('Avg tot: ', res[5])
+    
