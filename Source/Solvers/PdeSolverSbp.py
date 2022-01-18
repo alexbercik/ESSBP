@@ -464,6 +464,108 @@ class PdeSolverSbp(PdeSolver):
 
 
     ''' temporary functions '''
+    def check_invariants(self,return_ers=False):
+        eye = np.eye(self.nen)
+        if self.dim==1:
+            pass
+        elif self.dim==2:
+            Dx = np.kron(self.sbp.D, eye)
+            Dy = np.kron(eye, self.sbp.D)
+            tLx = np.kron(self.tL, eye)
+            tRx = np.kron(self.tR, eye)
+            tLy = np.kron(eye, self.tL)
+            tRy = np.kron(eye, self.tR)
+            tLTx = tLx.T
+            tRTx = tRx.T
+            tLTy = tLy.T
+            tRTy = tRy.T
+            Hinv = np.linalg.inv(np.kron(self.sbp.H, self.sbp.H))
+            LHS1 = Dx @ self.mesh.metrics[:,0,:] + Dy @ self.mesh.metrics[:,2,:]
+            LHS2 = Dx @ self.mesh.metrics[:,1,:] + Dy @ self.mesh.metrics[:,3,:]    
+            RHS1 = tRx @ ( self.H_perp * ( tRTx @ self.mesh.metrics[:,0,:] - self.mesh.bdy_metrics[:,1,0,:] )) \
+                 - tLx @ ( self.H_perp * ( tLTx @ self.mesh.metrics[:,0,:] - self.mesh.bdy_metrics[:,0,0,:] )) \
+                 + tRy @ ( self.H_perp * ( tRTy @ self.mesh.metrics[:,2,:] - self.mesh.bdy_metrics[:,3,2,:] )) \
+                 - tLy @ ( self.H_perp * ( tLTy @ self.mesh.metrics[:,2,:] - self.mesh.bdy_metrics[:,2,2,:] ))
+            RHS2 = tRx @ ( self.H_perp * ( tRTx @ self.mesh.metrics[:,1,:] - self.mesh.bdy_metrics[:,1,1,:] )) \
+                 - tLx @ ( self.H_perp * ( tLTx @ self.mesh.metrics[:,1,:] - self.mesh.bdy_metrics[:,0,1,:] )) \
+                 + tRy @ ( self.H_perp * ( tRTy @ self.mesh.metrics[:,3,:] - self.mesh.bdy_metrics[:,3,3,:] )) \
+                 - tLy @ ( self.H_perp * ( tLTy @ self.mesh.metrics[:,3,:] - self.mesh.bdy_metrics[:,2,3,:] ))
+            tot1 = LHS1 - Hinv @ RHS1
+            tot2 = LHS2 - Hinv @ RHS2
+        else:
+            Dx = np.kron(np.kron(self.sbp.D, eye), eye)
+            Dy = np.kron(np.kron(eye, self.sbp.D), eye)
+            Dz = np.kron(np.kron(eye, eye), self.sbp.D)
+            tLx = np.kron(np.kron(self.tL, eye), eye)
+            tRx = np.kron(np.kron(self.tR, eye), eye)
+            tLy = np.kron(np.kron(eye, self.tL), eye)
+            tRy = np.kron(np.kron(eye, self.tR), eye)
+            tLz = np.kron(np.kron(eye, eye), self.tL)
+            tRz = np.kron(np.kron(eye, eye), self.tR)
+            tLTx = tLx.T
+            tRTx = tRx.T
+            tLTy = tLy.T
+            tRTy = tRy.T
+            tLTz = tLz.T
+            tRTz = tRz.T
+            Hinv = np.linalg.inv(np.kron(np.kron(self.sbp.H, self.sbp.H),self.sbp.H))
+            LHS1 = Dx @ self.mesh.metrics[:,0,:] + Dy @ self.mesh.metrics[:,3,:] + Dz @ self.mesh.metrics[:,6,:]
+            LHS2 = Dx @ self.mesh.metrics[:,1,:] + Dy @ self.mesh.metrics[:,4,:] + Dz @ self.mesh.metrics[:,7,:]
+            LHS3 = Dx @ self.mesh.metrics[:,2,:] + Dy @ self.mesh.metrics[:,5,:] + Dz @ self.mesh.metrics[:,8,:] 
+            RHS1 = tRx @ ( self.H_perp * ( tRTx @ self.mesh.metrics[:,0,:] - self.mesh.bdy_metrics[:,1,0,:] )) \
+                 - tLx @ ( self.H_perp * ( tLTx @ self.mesh.metrics[:,0,:] - self.mesh.bdy_metrics[:,0,0,:] )) \
+                 + tRy @ ( self.H_perp * ( tRTy @ self.mesh.metrics[:,3,:] - self.mesh.bdy_metrics[:,3,3,:] )) \
+                 - tLy @ ( self.H_perp * ( tLTy @ self.mesh.metrics[:,3,:] - self.mesh.bdy_metrics[:,2,3,:] )) \
+                 + tRz @ ( self.H_perp * ( tRTz @ self.mesh.metrics[:,6,:] - self.mesh.bdy_metrics[:,5,6,:] )) \
+                 - tLz @ ( self.H_perp * ( tLTz @ self.mesh.metrics[:,6,:] - self.mesh.bdy_metrics[:,4,6,:] ))
+            RHS2 = tRx @ ( self.H_perp * ( tRTx @ self.mesh.metrics[:,1,:] - self.mesh.bdy_metrics[:,1,1,:] )) \
+                 - tLx @ ( self.H_perp * ( tLTx @ self.mesh.metrics[:,1,:] - self.mesh.bdy_metrics[:,0,1,:] )) \
+                 + tRy @ ( self.H_perp * ( tRTy @ self.mesh.metrics[:,4,:] - self.mesh.bdy_metrics[:,3,4,:] )) \
+                 - tLy @ ( self.H_perp * ( tLTy @ self.mesh.metrics[:,4,:] - self.mesh.bdy_metrics[:,2,4,:] )) \
+                 + tRz @ ( self.H_perp * ( tRTz @ self.mesh.metrics[:,7,:] - self.mesh.bdy_metrics[:,5,7,:] )) \
+                 - tLz @ ( self.H_perp * ( tLTz @ self.mesh.metrics[:,7,:] - self.mesh.bdy_metrics[:,4,7,:] ))
+            RHS3 = tRx @ ( self.H_perp * ( tRTx @ self.mesh.metrics[:,2,:] - self.mesh.bdy_metrics[:,1,2,:] )) \
+                 - tLx @ ( self.H_perp * ( tLTx @ self.mesh.metrics[:,2,:] - self.mesh.bdy_metrics[:,0,2,:] )) \
+                 + tRy @ ( self.H_perp * ( tRTy @ self.mesh.metrics[:,5,:] - self.mesh.bdy_metrics[:,3,5,:] )) \
+                 - tLy @ ( self.H_perp * ( tLTy @ self.mesh.metrics[:,5,:] - self.mesh.bdy_metrics[:,2,5,:] )) \
+                 + tRz @ ( self.H_perp * ( tRTz @ self.mesh.metrics[:,8,:] - self.mesh.bdy_metrics[:,5,8,:] )) \
+                 - tLz @ ( self.H_perp * ( tLTz @ self.mesh.metrics[:,8,:] - self.mesh.bdy_metrics[:,4,8,:] ))
+            tot1 = LHS1 - Hinv @ RHS1
+            tot2 = LHS2 - Hinv @ RHS2
+            tot3 = LHS3 - Hinv @ RHS3
+            
+        if return_ers:
+            if self.dim==2:
+                return np.max(abs(LHS1)),np.mean(abs(LHS1)),np.max(abs(LHS2)),np.mean(abs(LHS2)),\
+                        np.max(abs(RHS1)),np.mean(abs(RHS1)),np.max(abs(RHS2)),np.mean(abs(RHS2)),\
+                        np.max(abs(tot1)),np.mean(abs(tot1)),np.max(abs(tot2)),np.mean(abs(tot2))
+            else:
+                return np.max(abs(LHS1)),np.mean(abs(LHS1)),np.max(abs(LHS2)),np.mean(abs(LHS2)),np.max(abs(LHS3)),np.mean(abs(LHS3)),\
+                        np.max(abs(RHS1)),np.mean(abs(RHS1)),np.max(abs(RHS2)),np.mean(abs(RHS2)),np.max(abs(RHS3)),np.mean(abs(RHS3)),\
+                        np.max(abs(tot1)),np.mean(abs(tot1)),np.max(abs(tot2)),np.mean(abs(tot2)),np.max(abs(tot3)),np.mean(abs(tot3))
+        else:
+            print('Max error on LHSx =', np.max(abs(LHS1)))
+            print('Avg error on LHSx =', np.mean(abs(LHS1)))
+            print('Max error on RHSx =', np.max(abs(RHS1)))
+            print('Avg error on RHSx =', np.mean(abs(RHS1)))
+            print('Max error on total x =', np.max(abs(tot1)))
+            print('Avg error on total x =', np.mean(abs(tot1)))
+            print('Max error on LHSy =', np.max(abs(LHS2)))
+            print('Avg error on LHSy =', np.mean(abs(LHS2)))
+            print('Max error on RHSy =', np.max(abs(RHS2)))
+            print('Avg error on RHSy =', np.mean(abs(RHS2)))
+            print('Max error on total y =', np.max(abs(tot2)))
+            print('Avg error on total y =', np.mean(abs(tot2)))
+            if self.dim==3:
+                print('Max error on LHSz =', np.max(abs(LHS3)))
+                print('Avg error on LHSz =', np.mean(abs(LHS3)))
+                print('Max error on RHSz =', np.max(abs(RHS3)))
+                print('Avg error on RHSz =', np.mean(abs(RHS3)))
+                print('Max error on total z =', np.max(abs(tot3)))
+                print('Avg error on total z =', np.mean(abs(tot3)))
+            
+        
+        
     def check_cons(self,q=None):
         ''' returns what I think is 1 @ H @ dqdt for 2D and 3D '''
         if q == None:
