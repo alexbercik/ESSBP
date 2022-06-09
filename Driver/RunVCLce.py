@@ -8,7 +8,6 @@ Created on Wed May 27 13:56:02 2020
 
 import os
 from sys import path
-from types import MethodType
 import numpy as np
 
 n_nested_folder = 1
@@ -19,16 +18,17 @@ for i in range(n_nested_folder):
 
 path.append(folder_path)
 
-from Source.DiffEq.VarCoeffLinearConv import LinearConvSbp
-from Source.DiffEq.VarCoeffLinearConv import LinearConvFd
-from Source.DiffEq.VarCoeffLinearConv import LinearConvDg
-from Source.Solvers.PdeSolver import PdeSolver
-from Source.DiffEq.DiffEqBase import DiffEqOverwrite
+from Source.DiffEq.VarCoeffLinearConv import LinearConv
+from Source.Solvers.PdeSolverFd import PdeSolverFd
+from Source.Solvers.PdeSolverSbp import PdeSolverSbp
+from Source.Solvers.PdeSolverDg import PdeSolverDg
 
 ''' Run code '''
 
 # Eq parameters
-para = None     # Variable coefficient wave speed a
+para = 2/3    # Variable coefficient splitting parameter (0 to 1)
+use_exact_der = True # whether to compute variable coefficient derivative exactly
+extrapolate_bdy_flux = True
 obj_name = None
 
 # Time marching
@@ -37,40 +37,72 @@ dt = 0.001
 # note: should set according to courant number C = a dt / dx
 dt_init = dt
 t_init = 0
-tf = 15.0
+tf = 20.
 
 # Domain
 xmin = -1
 xmax = 1
-isperiodic = True
+bc = 'periodic'
 
 # Spatial discretization
-disc_type = 'dg' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
-nn = 50
-p = 3
-nelem = 10 # optional, number of elements
+disc_type = 'div' # 'div', 'had', 'dg'
+disc_nodes = 'lgl' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
+p = 4
+nelem = 3 # optional, number of elements
 nen = 0 # optional, number of nodes per element
-sat_flux_type = 'central'
+surf_type = 'central'
+had_flux = 'central_fix' # 2-point numerical flux used in hadamard form
+diss_type = None
 
 # Initial solution
 q0 = None # can overwrite q0_type from DiffEq
-q0_type = 'GassnerSinWave_cont' # 'GaussWave', 'SinWave'
+q0_type = 'GaussWave' # 'GaussWave', 'SinWave'
+a_type = 'shifted Gaussian'
 
 # Other
 bool_plot_sol = False
 print_sol_norm = False
 
 obj_name = None
-cons_obj_name = ('Energy','Conservation') # 'Energy', 'Conservation', 'None'
+cons_obj_name = ('Energy','Conservation','A_Energy','Energy_der','Conservation_der','A_Energy_der') # 'Energy', 'Conservation', 'None'
+
+settings = {'warp_factor':0,               # Warps / stretches mesh.
+            'warp_type': 'default',         # Options: 'defualt', 'papers', 'quad'
+            'metric_method':'exact',   # Options: 'calculate', 'exact'
+            'jac_method':'exact'} 
 
 ''' Set diffeq and solve '''
 
 if disc_type == 'fd':
-    DiffEq = LinearConvFd
+    solver_c = PdeSolverFd
 elif disc_type == 'dg':
-    DiffEq = LinearConvDg
+    solver_c = PdeSolverDg
 else:
-    DiffEq = LinearConvSbp
+    solver_c = PdeSolverSbp
+    
+diffeq = LinearConv(para, obj_name, q0_type, a_type)
+diffeq.use_exact_der = use_exact_der
+diffeq.extrapolate_bdy_flux = extrapolate_bdy_flux
+
+solver1D = solver_c(diffeq, settings,                     # Diffeq
+                  tm_method, dt, tf,                    # Time marching
+                  q0,                                   # Initial solution
+                  p, disc_type,             # Discretization
+                  surf_type, diss_type, had_flux,
+                  nelem, nen, disc_nodes,
+                  bc, xmin, xmax,         # Domain
+                  obj_name, cons_obj_name,              # Other
+                  bool_plot_sol, print_sol_norm)
+
+solver1D.solve()
+solver1D.plot_sol()
+#solver1D.plot_cons_obj()
+#solver1D.plot_sol(savefile='alpha={0}_'.format(para)+surf_type)
+#solver1D.plot_cons_obj(savefile='alpha={0}_'.format(para)+surf_type)
+
+
+
+'''
 
 diffeq = DiffEq(para, obj_name, q0_type)
 diffeq.plt_style_exa_sol = {'color':'r','linestyle':'-','marker':'','linewidth':3}
@@ -140,3 +172,5 @@ solver.plot_cons_obj()
 
 #from Methods.Analysis import animate
 #animate(solver, plotargs={'display_time':True},skipsteps=100)
+
+'''

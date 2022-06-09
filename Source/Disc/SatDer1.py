@@ -555,6 +555,76 @@ class SatDer1:
         
         sat = vol + vol2 + vol3 + surfa - surfb + surfa2 - surfb2 - diss
         return sat
+    
+    ##########################################################################
+    ''' LINEARIZATIONS ''' 
+    ##########################################################################
+    
+    def dfdq_der1_complexstep_div_1d(self, q, E, q_bdyL=None, q_bdyR=None, eps_imag=1e-30):
+        '''
+        Purpose
+        ----------
+        Calculates the derivative of the SATs using complex step. This is
+        required for PDEs that are systems and nonlinear, such as the Euler eq.
+        This function only works to calculate the derivatives of SATs for
+        first derivatives but could be modified to handle higher derivatives.
+        More details are given below.
+        Parameters
+        ----------
+        eps_imag : float, optional
+            Size of the complex step
+        Returns
+        -------
+        The derivative of the SAT contribution to the elements on both sides
+        of the interface. shape (nen*neq_node,nen*neq_node,nelem)
+        '''
+        
+        neq_node,nelem = q.shape
+        assert neq_node == self.neq_node,'neq_node does not match'
+        sat_pert = np.zeros((self.nen*neq_node,neq_node,nelem),dtype=complex)
+        
+        for neq in range(neq_node):
+            pert = np.zeros((self.neq_node,nelem),dtype=complex)
+            pert[neq,:] = eps_imag * 1j
+            E_pert = self.diffeq.calcEx(q + pert)
+            sat_pert[:,neq,:] = self.calc(q + pert, E_pert, q_bdyL=None, q_bdyR=None)
+        
+        dSatdq = np.imag(sat_pert) / eps_imag
+
+        #TODO: This does not work. Need to differentiate the effects form either side of the boundary
+        
+        return dSatdq
+
+    ##########################################################################
+    ''' SPECIAL FUNCTIONS ''' 
+    ##########################################################################
+    
+    def llf_div_1d_varcoeff(self, q, E, q_bdyL=None, q_bdyR=None, sigma=1, extrapolate_flux=True):
+        '''
+        A Local Lax-Fridriechs dissipative flux in 1D, specific for the variable
+        coefficient linear convection equation. sigma=0 turns off dissipation.
+        '''
+
+        sat = self.alpha * self.Esurf @ E + (1 - self.alpha) * self.a * (self.Esurf @ q)
+        q_a = self.tLT @ q
+        q_b = self.tRT @ q
+        qf_L = fn.pad_1dL(q_b, q_b[:,-1])
+        qf_R = fn.pad_1dR(q_a, q_a[:,0])
+        x_f = fn.pad_1dR(self.bdy_x[[0],:], self.bdy_x[[1],-1])
+        a_f = self.afun(x_f)
+        qf_jump = qf_R - qf_L
+        if extrapolate_flux:
+            E_a = self.tLT @ E
+            E_b = self.tRT @ E
+            Ef_L = fn.pad_1dL(E_b, E_b[:,-1])
+            Ef_R = fn.pad_1dR(E_a, E_a[:,0])
+            f_avg = (Ef_L + Ef_R) / 2
+        else:
+            f_avg = a_f * (qf_L + qf_R) / 2
+        numflux = f_avg - sigma * abs(a_f) * qf_jump / 2
+        
+        sat = sat - self.tR @ numflux[:,1:] + self.tL @ numflux[:,:-1]
+        return sat
 
 
     ##########################################################################
@@ -733,38 +803,70 @@ class SatDer1:
 
         return dSatLdqL, dSatLdqR, dSatRdqL, dSatRdqR
 
-    def der1_burgers_ec(self, q_L, q_R, xy):
+# =============================================================================
+#     def der1_burgers_ec(self, q_L, q_R, xy):
+#         '''
+#         Purpose
+#         ----------
+#         Calculate the entropy conservative SAT for Burgers equation
+#         
+#         Parameters
+#         ----------
+#         q_fL : np array, shape (neq_node,nelem)
+#             The extrapolated solution of the left element(s) to the facet(s).
+#         q_fR : np array, shape (neq_node,nelem)
+#             The extrapolated solution of the left element(s) to the facet(s).
+# 
+#         Returns
+#         -------
+#         satL : np array
+#             The contribution of the SAT for the first derivative to the element(s)
+#             on the left.
+#         satR : np array
+#             The contribution of the SAT for the first derivative to the element(s)
+#             on the right.
+#         '''
+#         q_fL, q_fR = self.get_interface_sol(q_L, q_R)
+#         
+#         qLqR = q_fL * q_fR
+#         qL2 = q_fL**2
+#         qR2 = q_fR**2
+# 
+#         satL = self.tR @ (qL2/3 - qLqR/6 - qR2/6)    # SAT for the left of the interface
+#         satR = self.tL @ (-qR2/3 + qLqR/6 + qL2/6)    # SAT for the right of the interface
+# 
+#         return satL, satR
+# =============================================================================
+    
+    def der1_burgers_ec(self, q, E, q_bdyL=None, q_bdyR=None):
         '''
-        Purpose
-        ----------
-        Calculate the entropy conservative SAT for Burgers equation
-        
-        Parameters
-        ----------
-        q_fL : np array, shape (neq_node,nelem)
-            The extrapolated solution of the left element(s) to the facet(s).
-        q_fR : np array, shape (neq_node,nelem)
-            The extrapolated solution of the left element(s) to the facet(s).
-
-        Returns
-        -------
-        satL : np array
-            The contribution of the SAT for the first derivative to the element(s)
-            on the left.
-        satR : np array
-            The contribution of the SAT for the first derivative to the element(s)
-            on the right.
+        the entropy conservative SAT for Burgers equation (alpha=2/3)
         '''
-        q_fL, q_fR = self.get_interface_sol(q_L, q_R)
+        q_a = self.tLT @ q
+        q_b = self.tRT @ q
+        q2_a = self.tLT @ q**2
+        q2_b = self.tRT @ q**2
+
+        if q_bdyL is None:
+            q_b = fn.pad_1dL(q_b, q_b[:,-1])
+            q_a = fn.pad_1dR(q_a, q_a[:,0])
+            q2_b = fn.pad_1dL(q2_b, q_b[:,-1])
+            q2_a = fn.pad_1dR(q2_a, q_a[:,0])
+        else:
+            q_b = fn.pad_1dL(q_b, q_bdyL)
+            q_a = fn.pad_1dR(q_a, q_bdyR)
+            q2_b = fn.pad_1dL(q2_b, q_bdyL**2)
+            q2_a = fn.pad_1dR(q2_a, q_bdyR**2)
+            raise Exception('TODO: adding boundary condition.')
+
+        q_ab = q_a * q_b
+        q_b2 = q_b**2
+        q_a2 = q_a**2
+
+        sata = (self.tL @ (q2_a/3 - q_ab/6 - q_b2/6))[:,:-1]
+        satb = (self.tR @ (q2_b/3 - q_ab/6 - q_a2/6))[:,1:]  
         
-        qLqR = q_fL * q_fR
-        qL2 = q_fL**2
-        qR2 = q_fR**2
-
-        satL = self.tR @ (qL2/3 - qLqR/6 - qR2/6)    # SAT for the left of the interface
-        satR = self.tL @ (-qR2/3 + qLqR/6 + qL2/6)    # SAT for the right of the interface
-
-        return satL, satR
+        return satb - sata
 
     def dfdq_der1_burgers_ec(self, q_L, q_R, xy):
         '''
