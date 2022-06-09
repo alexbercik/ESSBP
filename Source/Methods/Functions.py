@@ -291,6 +291,34 @@ def gdiag_gv(H,q):
     return c
 
 @jit(nopython=True)
+def gm_gv_colmultiply(A,q):
+    '''
+    Takes a global matrix of shape (nen1,nen2,nelem) and a global vector of
+    shape (nen2,nelem) and returns a global matrix of shape (nen1,nen2,nelem),
+    where the columns of the matrix are multiplied by the entries of the 
+    vector i.e. res_ij = A_ij q_j
+
+    Parameters
+    ----------
+    A : numpy array of shape (nen1,nen2,nelem)
+    q : numpy array of shape (nen2,nelem)
+
+    Returns
+    -------
+    c : numpy array of shape (nen1,nen2,nelem)
+    ''' 
+    nen1,nen2,nelem = np.shape(A)
+    nen2b,nelemb = np.shape(q)
+    if nen2!=nen2b:
+        raise Exception('array shapes do not match')    
+    if nelem!=nelemb:
+        raise Exception('element shapes do not match')   
+    c = np.zeros((nen1,nen2,nelem))
+    for e in range(nelem):
+        c[:,:,e] = A[:,:,e] * q[:,e]
+    return c
+
+@jit(nopython=True)
 def diag(q):
     '''
     Takes a 2-dim numpy array q of shape (nen,nelem) and returns a 3-dim
