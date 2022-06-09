@@ -77,9 +77,9 @@ class PdeBase:
     plt_fig_size = (6,4)
     plt_style_exa_sol = {'color':'r','linestyle':'-','linewidth':2,'marker':''}
     plt_style_sol = [{'color':'b','linestyle':'-','linewidth':2,'marker':''},
-                     {'color':'k','linestyle':'','linewidth':2,'marker':''},
-                     {'color':'r','linestyle':'','linewidth':2,'marker':''},
-                     {'color':'g','linestyle':'','linewidth':2,'marker':''}]
+                     {'color':'k','linestyle':'--','linewidth':2,'marker':''},
+                     {'color':'r','linestyle':'-.','linewidth':2,'marker':''},
+                     {'color':'g','linestyle':':','linewidth':2,'marker':''}]
     plt_label_font_size = 15
     plt_var2plot_name = None
     plt_mesh_settings = {'label lines': True,   # if True, x and y ticks are based on grid lines
@@ -301,7 +301,7 @@ class PdeBase:
     
 
     # TODO: Make a separate function for interactive plots? is this even possible using free packages?
-    def plot_sol(self, q, time=None, plot_exa=True, plt_save_name=None,
+    def plot_sol(self, q, time=None, plot_exa=True, savefile=None,
                  show_fig=True, solmin=None, solmax=None, display_time=False, 
                  title=None, plot_mesh=False, save_format='png', dpi=1000,
                  plot_only_exa=False):
@@ -389,8 +389,8 @@ class PdeBase:
             if self.dim == 1:
                 plt.legend(loc='best',fontsize=self.plt_label_font_size-1)
         
-        if plt_save_name is not None:
-            filename = plt_save_name+'.'+save_format
+        if savefile is not None:
+            filename = savefile+'.'+save_format
             if path.exists(filename):
                 print('WARNING: File name already exists. Using a temporary name instead.')
                 plt.savefig(filename+'_RENAMEME', format=save_format, dpi=dpi)
@@ -402,12 +402,12 @@ class PdeBase:
         plt.close()
         
         if self.dim == 2 and plot_exa and not plot_only_exa:
-            if plt_save_name is not None:
-                plt_save_name = plt_save_name + '_exa'
+            if savefile is not None:
+                savefile = savefile + '_exa'
             if title is not None:
                 title = 'Exact Solution'
             exa_sol = self.var2plot(self.exact_sol(time))
-            self.plot_sol(exa_sol, time=time, plot_exa=True, plt_save_name=plt_save_name,
+            self.plot_sol(exa_sol, time=time, plot_exa=True, savefile=savefile,
                  show_fig=show_fig, solmin=solmin, solmax=solmax, display_time=display_time, 
                  title=title, plot_mesh=plot_mesh, save_format=save_format, dpi=dpi,
                  plot_only_exa=True)
@@ -515,7 +515,7 @@ class PdeBase:
         return 0
     
     ''' functions setting up operators '''
-    # TODO: Do I need these?
+    # TODO: Do I need these? At least for split forms, yes
     
     def set_sbp_op(self, H_inv, Dx, Dy=None, Dz=None):
         self.Dx = Dx
