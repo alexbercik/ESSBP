@@ -8,6 +8,8 @@ Created on Mon Jan 18 00:17:18 2021
 import subprocess # see https://www.youtube.com/watch?v=2Fp1N6dof0Y for tutorial
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import rc
+rc('text', usetex=True)
 from sympy import nsimplify
 from os import path
 import itertools
@@ -146,6 +148,19 @@ def animate(solver, file_name='animation', make_video=True, make_gif=False,
         assert(cmd.returncode==0),"Not able to create mp4. Error raised: "+cmd.stderr
     
     print('All Done! Results are saved in '+file_name+' folder.') 
+    
+def plot_sparsity(mat,savefile=None,markersize=2):
+    ''' prints the sparsity of the 2D matrix '''
+    plt.figure(figsize=(6,6))
+    #plt.spy(mat,precision=1e-14,markersize=markersize,color='black')
+    mat[abs(mat)<1e-14] = 0
+    mat[abs(mat)!=0] = 1
+    plt.rcParams['xtick.bottom'] = plt.rcParams['xtick.labelbottom'] = False
+    plt.rcParams['xtick.top'] = plt.rcParams['xtick.labeltop'] = True
+    plt.imshow(mat,origin='upper',cmap='binary')
+    if savefile != None:
+        plt.savefig(savefile,dpi=600)
+    
 
 
 def eigvec_history(solver, A=None, tfinal=None, save_file=None, window_size=1,
@@ -604,7 +619,10 @@ def calc_conv_rate(dof_vec, err_vec, dim, n_points=None,
 
     return conv_vec, avg_conv
 
-def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None, extra_marker=None):
+def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
+              extra_marker=None, skipfit=None, skip=None, ylabel=None, xlabel=None,
+              ylim=(None,None),xlim=(None,None),grid=False,legendloc=None,convunc=True,
+              figsize=(6,4)):
     '''
     Parameters
     ----------
@@ -620,6 +638,12 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None, 
         file name under which to save the plot. The default is None.
     extra_marker : list of lists, optional
         if True, mark the point with an additional marker X
+    skipfit : list of ints, optional
+        for each case, decide how many initial runs to skip in fit, AFTER skip
+        Note: does not account for the entries removed if nan
+    skip : list of ints, optional
+        for each case, decide how many initial runs to skip from plotting.
+        Note: does account for the entries removed
 
     Returns
     -------
@@ -637,16 +661,30 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None, 
     
     assert len(legend_strings)==n_cases,"ERROR: legend_strings do not match n_cases"
     
+    if skipfit == None:
+        skipfit = [0] * n_cases
+    else:
+        assert(len(skipfit)==n_cases),"ERROR: skipfit does not match n_cases"
+        
+    if skip == None:
+        skip = [0] * n_cases
+    else:
+        assert(len(skip)==n_cases),"ERROR: skipfit does not match n_cases"
+    
     if extra_marker != None:
         assert np.shape(extra_marker)==(n_cases,n_runs),"ERROR: extra_marker shape should match dof_vec and err_vec"
 
-    plt.figure(figsize=(6,4))
-    if title is not None:
+    plt.figure(figsize=figsize)
+    if title != None:
         plt.title(title,fontsize=18)
-    plt.ylabel(r"Error",fontsize=16)
-    if dim == 1: plt.xlabel(r"Degrees of Freedom",fontsize=16)
-    elif dim == 2: plt.xlabel(r"$\sqrt{}$ Degrees of Freedom",fontsize=16)
-    elif dim == 3: plt.xlabel(r"$\sqrt[3]{}$ Degrees of Freedom",fontsize=16)
+    if ylabel == None:
+        ylabel = r"Error"
+    if xlabel == None:
+        if dim == 1: xlabel = r"Degrees of Freedom"
+        elif dim == 2: xlabel = r"$\sqrt{} $ Degrees of Freedom"
+        elif dim == 3: xlabel = r"$\sqrt[3]{}$ Degrees of Freedom"      
+    plt.ylabel(ylabel,fontsize=16)
+    plt.xlabel(xlabel,fontsize=16)
     
     # Do a curve fit to find the slope on log-log plot (order of convergence)
     def fit_func(x, a, b): 
@@ -656,51 +694,62 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None, 
     marks=['o','^','s','D','>','<','8']
     
     for i in range(n_cases):
-        dof_mod = np.copy(dof_vec[i])
-        err_mod = np.copy(err_vec[i])
+        dof_mod = np.copy(dof_vec[i][skip[i]:])
+        err_mod = np.copy(err_vec[i][skip[i]:])
         ######### comment this out if you want to print things <1e-16 ########
         k = 0
-        for j in range(len(dof_vec[i])):
-            if err_mod[j-k] < 1e-16:
+        for j in range(len(dof_vec[i][skip[i]:])):
+            if (err_mod[j-k] < 1e-16) or np.isnan(err_mod[j-k]) or np.isinf(err_mod[j-k]):
                 dof_mod = np.delete(dof_mod,j-k)
                 err_mod = np.delete(err_mod,j-k)
                 k += 1
         ######################################################################
         string = legend_strings[i].replace("disc_nodes=","")
         if len(dof_mod) > 2:
-            p_opt, p_cov = sc.curve_fit(fit_func, np.log(dof_mod),np.log(err_mod),(2,1)) # fit
-            acc = int(np.floor(np.log10(np.sqrt(p_cov[0,0]))))
-            unc = np.round(np.sqrt(p_cov[0,0]),abs(acc))
-            acc = int(np.floor(np.log10(unc)))
-            if acc >=0:
-                slope = r": {0} $\pm$ {1}".format(int(p_opt[0]),int(unc))
-            elif acc==-1:
-                slope = r": {0:9.1f} $\pm$ {1:6.1f}".format(p_opt[0],unc)
-            elif acc==-2:
-                slope = r": {0:9.2f} $\pm$ {1:6.2f}".format(p_opt[0],unc)
-            elif acc==-3:
-                slope = r": {0:9.3f} $\pm$ {1:6.3f}".format(p_opt[0],unc)
+            p_opt, p_cov = sc.curve_fit(fit_func, np.log(dof_mod[skipfit[i]:]),
+                                        np.log(err_mod[skipfit[i]:]),(2,1)) # fit
+            if convunc:
+                acc = int(np.floor(np.log10(np.sqrt(p_cov[0,0]))))
+                unc = np.round(np.sqrt(p_cov[0,0]),abs(acc))
+                acc = int(np.floor(np.log10(unc)))
+                if acc >=0:
+                    slope = r": {0} $\pm$ {1}".format(int(p_opt[0]),int(unc))
+                elif acc==-1:
+                    slope = r": {0:9.1f} $\pm$ {1:6.1f}".format(p_opt[0],unc)
+                elif acc==-2:
+                    slope = r": {0:9.2f} $\pm$ {1:6.2f}".format(p_opt[0],unc)
+                elif acc==-3:
+                    slope = r": {0:9.3f} $\pm$ {1:6.3f}".format(p_opt[0],unc)
+                else:
+                    slope = r": {0:9.4f} $\pm$ {1:6.1g}".format(p_opt[0],unc)
             else:
-                slope = r": {0:9.4f} $\pm$ {1:6.1g}".format(p_opt[0],unc)
-            plt.loglog(dof_mod,err_mod,marks[i],markersize=8, color=colors[i],
+                slope = r": {0:9.2f}".format(p_opt[0])
+            plt.loglog(dof_mod,err_mod,marks[i%len(marks)],markersize=8, color=colors[i%len(colors)],
                        label=string+slope)
-            plt.loglog(np.linspace(dof_mod[0],dof_mod[-1]), # plot
-                       np.exp(fit_func(np.log(np.linspace(dof_mod[0],dof_mod[-1])), *p_opt)), 
-                       linewidth=1, linestyle = '--', color=colors[i])
-        else:
+            plt.loglog(np.linspace(dof_mod[skipfit[i]],dof_mod[-1]), # plot
+                       np.exp(fit_func(np.log(np.linspace(dof_mod[skipfit[i]],dof_mod[-1])), *p_opt)), 
+                       linewidth=1, linestyle = '--', color=colors[i%len(colors)])
+        elif len(dof_mod) == 2:
             slope = r": {0:9.3}".format(-(np.log(err_mod[1])-np.log(err_mod[0]))/(np.log(dof_mod[1])-np.log(dof_mod[0])))
-            plt.loglog(dof_mod,err_mod,marks[i],markersize=8, color=colors[i],
+            plt.loglog(dof_mod,err_mod,marks[i%len(marks)],markersize=8, color=colors[i%len(colors)],
                        label=string+slope)
-            plt.loglog(dof_mod, err_mod, linewidth=1, linestyle = '--', color=colors[i])
+            plt.loglog(dof_mod, err_mod, linewidth=1, linestyle = '--', color=colors[i%len(colors)])
         if extra_marker != None:
             for j in range(n_runs):
                 if extra_marker[i][j] == True:
                     plt.plot(dof_vec[i][j],err_vec[i][j],'x',color='black',markersize=12,linewidth=2)
-    plt.legend(loc='best', fontsize=12)
+    if legendloc == None:
+        legendloc = 'best'
+    plt.legend(loc=legendloc, fontsize=12)
+    if grid:
+        plt.grid(which='major',axis='y',linestyle='--',color='gray',linewidth='1')
+    plt.ylim(ylim)
+    plt.xlim(xlim)
     #plt.legend(loc='lower left', fontsize=12)
     #plt.subplots_adjust(left=0.2, right=0.8, top=0.8, bottom=0.2)
     #plt.gca().xaxis.set_major_formatter(tik.ScalarFormatter())
     #plt.gca().xaxis.set_minor_formatter(tik.ScalarFormatter())
+    plt.tight_layout()
     if savefile is not None:
         plt.savefig(savefile,dpi=600)
         
@@ -1280,4 +1329,78 @@ def run_invariants_convergence(solver, schedule_in=None, labels=None):
             print('Avg RHS: ', res[3])
             print('Max tot: ', res[4])
             print('Avg tot: ', res[5])
+            
+
+
+
+def read_from_diablo(filename=None):
+    'read data from diablo and turn it into something for plotting'
+    if filename == None:
+        filename = '../../../../jac_data.npz'
+    file = np.load(filename)
+    rho_er = file['rho']
+    rhou_er = file['rhou']
+    rhov_er = file['rhov']
+    e_er = file['e']
+    p_er = file['p']
+    ent_er = file['ent']
+    nodes = file['nodes']
+    nodes_verify = file['nodes_verify']
+    cases = file['cases']
+    ops = file['ops']
+    shape = file['shape']
     
+    ops = ops.tolist()
+    for i in range(len(ops)):
+        ops[i] = ops[i].decode("utf-8")
+        
+    cases = cases.tolist()
+    for i in range(len(cases)):
+        cases[i] = cases[i].decode("utf-8")
+        
+    shape = shape.tolist()
+    for i in range(len(shape)):
+        shape[i] = shape[i].decode("utf-8")
+    
+    dofs = np.sqrt(nodes)
+
+'''
+plot_conv(dofs[0,:,:], p_er[0,:,:], ops, 2, title=cases[0], ylabel=r'Pressure Error $\vert \vert p \vert \vert_H$', skip=[3,3,2,3,3,2])
+plot_conv(dofs[1,:,:], p_er[1,:,:], ops, 2, title=cases[1], ylabel=r'Pressure Error $\vert \vert p \vert \vert_H$', skip=[1,3,2,3,3,2])
+plot_conv(dofs[2,:,:], p_er[2,:,:], ops, 2, title=cases[2], ylabel=r'Pressure Error $\vert \vert p \vert \vert_H$', skip=[3,3,2,3,3,2])
+
+  
+      
+filename = '../../../../met_data.npz'
+file = np.load(filename)
+rho_er = file['rho']
+rhou_er = file['rhou']
+rhov_er = file['rhov']
+e_er = file['e']
+p_er = file['p']
+ent_er = file['ent']
+fun_er = file['fun']
+avg_met_er = file['avg_mets']
+max_met_er = file['max_mets']
+l2freestream = file['l2freestream']
+linf_surfgcl = file['linf_surfgcl']
+nodes = file['nodes']
+cases = file['cases']
+ops = file['ops']
+shape = file['shape']
+
+ops = ops.tolist()
+for i in range(len(ops)):
+    ops[i] = ops[i].decode("utf-8")
+    
+cases = cases.tolist()
+for i in range(len(cases)):
+    cases[i] = cases[i].decode("utf-8")
+    
+shape = shape.tolist()
+for i in range(len(shape)):
+    shape[i] = shape[i].decode("utf-8")
+
+dofs = np.sqrt(nodes)
+    
+'''
