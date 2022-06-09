@@ -148,6 +148,12 @@ class PdeSolver:
                 self.had_flux_Ey = None
             if self.dim > 2:
                 self.had_flux_Ez = None
+            if hasattr(self.diffeq, 'dExdx'):
+                print('Using dExdx defined in specific DiffEq file.')
+                self.use_diffeq_dExdx = True
+            else:
+                #TODO: Update this for 2D and 3D
+                self.use_diffeq_dExdx = False
         elif disc_type.lower() == 'had' or disc_type.lower() == 'hadamard':
             self.disc_type = 'had'       
             if hasattr(self.diffeq, had_flux.lower()+'_Ex'):
@@ -420,6 +426,12 @@ class PdeSolver:
                 cons_obj[i] = self.energy_der(q,dqdt)
             elif cons_obj_name_i == 'conservation_der':
                 cons_obj[i] = self.conservation_der(dqdt)
+            elif cons_obj_name_i == 'a_energy':
+                assert self.diffeq.diffeq_name == 'VariableCoefficientLinearConvection', 'A_Energy only defined for Variable Coefficient Linear Advection'
+                cons_obj[i] = self.diffeq.a_energy(q)
+            elif cons_obj_name_i == 'a_energy_der':
+                assert self.diffeq.diffeq_name == 'VariableCoefficientLinearConvection', 'A_Energy only defined for Variable Coefficient Linear Advection'
+                cons_obj[i] = self.diffeq.a_energy_der(q,dqdt)
             else:
                 raise Exception('Unknown conservation objective function')
 
@@ -662,6 +674,11 @@ class PdeSolver:
                 plt.ticklabel_format(axis='y',style='sci',scilimits=(0,1))
                 plt.plot(np.linspace(0,self.t_final,len(self.cons_obj[i])),self.cons_obj[i]-norm)              
             
+            elif cons_obj_name_i == 'a_energy':
+                plt.title(r'Change in A-norm Energy',fontsize=18)
+                plt.ylabel(r'$\vert \vert u(x,t)^2 \vert \vert_{AH}$ - $\vert \vert u_0(x)^2 \vert \vert_{AH}$',fontsize=16)
+                plt.plot(np.linspace(0,self.t_final,len(self.cons_obj[i])),self.cons_obj[i]-norm) 
+                
             else:
                 raise Exception('Unknown conservation objective function')
                 
@@ -690,8 +707,8 @@ class PdeSolver:
             rhs = self.diffeq.dqdt(q0)
             self.dqdt = lambda q: self.diffeq.dqdt(q) - rhs
         elif self.disc_type == 'div' or self.disc_type == 'had':
-            rhs = self.sbp_dqdt(q0)
-            self.dqdt = lambda q: self.sbp_dqdt(q) - rhs           
+            rhs = self.dqdt_1d_div(q0) #TODO: Fix for had and 2D and 3D
+            self.dqdt = lambda q: self.dqdt_1d_div(q) - rhs           
         elif self.disc_type == 'dg':
             if self.weak_form:
                 rhs = self.dg_dqdt_weak(q0)

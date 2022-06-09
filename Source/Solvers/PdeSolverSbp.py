@@ -130,15 +130,20 @@ class PdeSolverSbp(PdeSolver):
     def dqdt_1d_div(self, q):
         ''' the main dqdt function for divergence form in 1D '''
         E = self.diffeq.calcEx(q)
-        dEdx = fn.gm_gv(self.Dx_phys, E)
+        if self.use_diffeq_dExdx:
+            dEdx = self.diffeq.dExdx(q)
+        else:
+            dEdx = fn.gm_gv(self.Dx_phys, E)
         
         if self.periodic:
             sat = self.sat.calc(q,E)
         else:
             raise Exception('Not coded up yet')
+    
         
         dqdt = - dEdx + (self.H_inv_phys * sat) + self.diffeq.calcG(q)
         return dqdt
+    
     
     def dfdq_1d_div(self, q):
         ''' the main linearized RHS function for divergence form in 1D '''
@@ -306,37 +311,6 @@ class PdeSolverSbp(PdeSolver):
     '''' old functions '''
 
     
-    def sbp_dfdq_1D(self, q):
-        
-        dfdq_diffeq = self.diffeq.dfdq(q)
-        
-        if self.bc == 'periodic':
-            qpad = fn.pad_periodic_1D(q)
-            # notation is: given an element q, SatL and SatR correspond to L and R of element (NOT L and R of interface)
-            # SatL has derivatives with respect to q and qL, the element to L
-            # SatR has derivatives with respect to q and qR, the element to R
-            # note that this is slightly different notation than the interface based one used in Sat class
-            dSatRdq, dSatRdqR, dSatLdqL, dSatLdq = self.sat.calc_dfdq(qpad[:,:-1], qpad[:,1:])
-            dSatRdq = fn.fix_dsatL_1D(dSatRdq)
-            dSatRdqR = fn.fix_dsatL_1D(dSatRdqR)
-        else:
-            raise Exception('Linearization not coded up yet for boundary SATs')
-        
-        # global 2d matrix blocks acting on element q blocks
-        dfdq_q = dfdq_diffeq + fn.gdiag_gm(self.H_inv_phys, dSatLdq + dSatRdq)
-        # global 2d matrix blocks acting on element qL blocks (to the left of dfdq_q)
-        # length nelem if periodic (first goes to top right, remaining under main diagonal)
-        dfdq_qL = fn.gdiag_gm(self.H_inv_phys, dSatLdqL)
-        # global 2d matrix blocks acting on element qR blocks (to the right of dfdq_q)
-        # length nelem if periodic (last goes to bottom left, remaining above main diagonal)
-        dfdq_qR = fn.gdiag_gm(self.H_inv_phys, dSatRdqR)
-        
-        if self.bc == 'periodic':
-            dfdq = fn.gm_triblock_flat_periodic(dfdq_qL,dfdq_q,dfdq_qR)
-        else:
-            raise Exception('Linearization not coded up yet for boundary SATs')        
-            
-        return dfdq
 
     def sbp_dqdt_2D_mod(self, q):
         
