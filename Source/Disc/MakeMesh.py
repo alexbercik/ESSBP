@@ -352,7 +352,8 @@ class MakeMesh:
             return new_x , new_y
 
         def warp_dcp_der(x,y):
-            ''' the derivative of the function warp_dcp wrt x (i.e. dnew_x/dx) '''
+            ''' the derivative of the function warp_dcp wrt x (i.e. dnew_x/dx) 
+            Note: I think this is wrong, does not take into acount dargx/dy ? '''
             argx = (x-self.xmin[0])/self.dom_len[0]
             argy = (y-self.xmin[1])/self.dom_len[1]
             dxdx = 1 + self.warp_factor*np.pi*np.cos(np.pi*argx)*np.sin(np.pi*argy)
