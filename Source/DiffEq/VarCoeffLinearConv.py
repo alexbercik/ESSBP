@@ -8,284 +8,185 @@ Created on Mon May 18 13:16:51 2020
 
 import numpy as np
 
-from Source.DiffEq.DiffEqBase import PdeBaseCons
-from Source.DiffEq.SatBase import SatBaseCons
-from Source.DiffEq.NumFlux import NumFlux
+from Source.DiffEq.DiffEqBase import PdeBase
 import Source.Methods.Functions as fn
+from numba import njit
 
 
-class VarCoeffLinearConv(PdeBaseCons):
+class LinearConv(PdeBase):
     '''
     Purpose
     ----------
     This class provides the required functions to solve the variable coefficient
-    linear convection equation (in conservative form, u_t + (a(x)u)_x = 0 ):
+    linear convection equation:
     '''
 
     diffeq_name = 'VariableCoefficientLinearConvection'
     dim = 1
     neq_node = 1    # 1 equation in 1D
     npar = 0        # No. of design parameters
-    xy = None
-    has_exa_sol = False
-    para_names = ('a',)
+    pde_order = 1 # Order of the highest derivative in the PDE
+    x = None
+    has_exa_sol = False # TODO: can I put in an exact solution?
+    para_names = ('alpha',)
+    use_exact_der = True # whether to compute variable coefficient derivative exactly
+    extrapolate_bdy_flux = True # whether to extrapolate fluxes or use extrapolated solution in SAT
 
-    def __init__(self, para=None, obj_name=None, q0_type='SinWave'):
+    def __init__(self, para, obj_name=None, q0_type='SinWave', a_type='Gaussian'):
 
         super().__init__(para, obj_name, q0_type)
-        if self.para is None:
-            print('Setting initial condition as a(x) coefficient')
-            self.para = self.q0_type
-        else:
-            assert(isinstance(self.para, str)),'Set self.para as None or q0_type string'
+        self.alpha = self.para[0] # split form parameter
+        self.a_type = a_type
+        self.a = None # to be set later
+        self.ader = None
             
-    def set_mesh(self, mesh):
-        super(VarCoeffLinearConv, self).set_mesh(mesh)
-        self.a = lambda x: self.set_q0(q0_type=self.para, xy=x)
+    def afun(self, x):
+        if self.a_type == 'Gaussian':
+            q0_max_q = self.q0_max_q/2
+            k = (8*np.log(self.q0_gauss_wave_val_bc/q0_max_q))
+            mid_point = 0.5*(self.xmax + self.xmin) # mean
+            stdev2 = abs((self.xmax - self.xmin)**2/k) # standard deviation squared
+            exp = -0.5*(x-mid_point)**2/stdev2
+            a = q0_max_q * np.exp(exp)
+        elif self.a_type == 'shifted Gaussian':
+            q0_max_q = self.q0_max_q/2
+            k = (8*np.log(self.q0_gauss_wave_val_bc/q0_max_q))
+            mid_point = 0.5*(self.xmax + self.xmin) # mean
+            stdev2 = abs((self.xmax - self.xmin)**2/k) # standard deviation squared
+            exp = -0.5*(x-mid_point)**2/stdev2
+            a = q0_max_q * np.exp(exp) + 1
+        elif self.a_type == 'constant':
+            a = np.ones(np.shape(x)) 
+        else:
+            raise Exception('Variable coefficient not understood.')
+        return a
+    
+    def afunder(self, x):
+        if self.a_type == 'Gaussian' or self.a_type == 'shifted Gaussian':
+            q0_max_q = self.q0_max_q/2
+            k = (8*np.log(self.q0_gauss_wave_val_bc/q0_max_q))
+            mid_point = 0.5*(self.xmax + self.xmin) # mean
+            stdev2 = abs((self.xmax - self.xmin)**2/k) # standard deviation squared
+            exp = -0.5*(x-mid_point)**2/stdev2
+            ader = - q0_max_q * np.exp(exp) * (x-mid_point) / stdev2
+        elif self.a_type == 'constant':
+            ader = np.zeros(np.shape(x)) 
+        else:
+            raise Exception('Variable coefficient not understood.')
+        return ader
 
-    def dfdq(self, q, xy_idx0=None, xy_idx1=None):
-        raise Exception('Not coded up yet')
+    def exact_sol(self, time=0):
 
-    def calcE(self, q, xy):
+        assert self.dim==1, 'exact sol only setup for 1D'
+        # TODO
 
-        E = self.a(xy) * q
+        return None
+
+    def dfdq(self, q):
+        # TODO
+        
+        return None
+
+    def calcEx(self, q):
+
+        E = self.a * q
         return E
-
-    def dEdq(self, q, xy):
-
-        dEdq = fn.diag(self.a(xy))
-        return dEdq
     
-    def dEdx(self, q, xy):        
-        a = self.a(xy)      
-        dEdx = self.alpha*(self.der1 @ (a*q)) + (1-self.alpha)*(a*(self.der1 @ q) + q*(self.der1 @ a))
+    def dExdx(self, q):
+        ''' Overwrites default divergence form with a potentially split form '''
+        
+        E = self.calcEx(q)
+        
+        if self.use_exact_der:      
+            dEdx = self.alpha * fn.gm_gv(self.Dx, E) + \
+                (1 - self.alpha) * ( self.a * fn.gm_gv(self.Dx, q) + q * self.ader )
+        else:
+            dEdx = self.alpha * fn.gm_gv(self.Dx, E) + \
+                (1 - self.alpha) * ( self.a * fn.gm_gv(self.Dx, q) + \
+                                          q * fn.gm_gv(self.Dx, self.a) )
         return dEdx
+
+    def dEdq(self, q):
+        
+        #TODO
+        return None
     
-    def dqdt(self, q, xy):
+    def d2Edq2(self, q):
 
-        dEdx = self.dEdx(q, xy)
-
-        dqdt = -dEdx
-        return dqdt
+        #TODO
+        return None
     
-    def calc_LF_const(self,q=None,use_local=False,xy=None):
-        ''' Calculate the constant for the Lax-Friedrichs flux, also useful
-        to set the CFL number. Equal to max(dEdq). See Hesthaven pg. 33. 
-        If q is given, use that. If not, use the initial condition.
-        If use_local=True, uses a local lax-friedrichs flux constant, which is 
-        less dissipative, and returns a vector of shape (1,nelem). Otherwise 
-        it uses a global lax-friedrichs flux constant, and returns a float.'''
-        if q==None:
-            q = self.set_q0()
-        if self.neq_node == 1: # scalar
-            if use_local:
-                return np.max(np.abs(self.dEdq(q,xy)),axis=(0,1))
-            else:
-                return np.max(np.abs(self.dEdq(q,xy)))
-        else: # system
-            # TODO: Could save a variable containing dEdq, eigenvalues, eigenvectors
-            # so that I don't have to compute it multiple times for different
-            # parts of the code
-            dEdq_mod = np.transpose(self.dEdq(q,xy),axes=(2,0,1))
-            eig_val = np.linalg.eigvals(dEdq_mod)
-            if use_local:
-                return np.max(np.abs(eig_val),axis=1)
-            else:
-                return np.max(np.abs(eig_val))
-
-class LinearConvFd(VarCoeffLinearConv):
-    ''' Solve the linear convection eq with finite difference '''
-
-class LinearConvSbp(SatBaseCons, VarCoeffLinearConv):
-    ''' Solve the linear convection eq with SBP operators '''
-
     def dEdq_eig_abs(self, dEdq):
 
-        dEdq_eig_abs = np.abs(dEdq)
-        return dEdq_eig_abs
-
-    def d2Edq2(self, q):
-        n = q.size
-        return np.zeros((n,n))
+        #TODO
+        return None
     
-    def get_interface_sol(self, qelem, xy, is_left_of_facet):
-        '''
-        Parameters
-        ----------
-        qelem : np array
-            The solution at all the nodes in one element.
-        is_left_of_facet : bool
-            True if the solution is to be extrapolated to the left facet,
-            false for the right facet
+    def maxeig_dEdq(self, q):
+        ''' return the maximum eigenvalue - used for LF fluxes '''
+        # Note: Because I don't have access to x (usually q is actually a q_facet)
+        # I can not do a local LF. Instead I return an overly dissipative global LF
+        return np.ones(q.shape)*np.max(self.a)
 
-        Returns
-        -------
-        q_f : np array
-            Solution at the desired facet.
-        '''
-
-        # If qelem is of size self.neq_node, then q is evaluated at the facet
-        # already. This can be the case for boundary interfaces or when using
-        # the complex step method
-        if qelem.size == self.neq_node:
-            q_f = qelem
+    def calc_LF_const(self,xy,use_local=False):
+        ''' Constant for the Lax-Friedrichs flux'''
+        if use_local:
+            c = np.max(abs(self.a),axis=0)
         else:
-            if is_left_of_facet:
-                q_f = self.rrR.T @ qelem
-                x_f = self.rrR.T @ xy
-            else:
-                q_f = self.rrL.T @ qelem
-                x_f = self.rrL.T @ xy
-
-        return q_f , x_f
-
-    def sat_der1_upwind(self, q_fA, q_fB, xy_A, xy_B, sigma, avg='simple'):
+            c = np.max(abs(self.a))
+        return c
+    
+    def a_energy(self,q):
+        ''' compute the global A-norm SBP energy of global solution vector q '''
+        return np.tensordot(q, self.a * self.H * q)
+    
+    def a_energy_der(self,q,dqdt):
+        ''' compute the global A-norm SBP energy derivatve of global solution vector q '''
+        return 2 * np.tensordot(q, self.a * self.H * dqdt)
+    
+    def set_mesh(self, mesh):
         '''
         Purpose
         ----------
-        Calculate the upwind SAT for a first derivative term such as
-        \frac{dE}{dx}) where E can be nonlinear
-
-        Parameters
-        ----------
-        q_fA : np array
-            The solution to the left of the facet.
-        q_fB : np array
-            The solution to the right of the facet.
-        sigma: float
-            if sigma=1, creates upwinding SAT
-            if sigma=0, creates symmetric SAT
-
-        Returns
-        -------
-        satA : np array
-            The contribution of the SAT for the first derivative to the element
-            on the left.
-        satB : np array
-            The contribution of the SAT for the first derivative to the element
-            on the right.
+        Needed to calculate the initial solution and to calculate source terms,
+        must overwrite base case so we can set the variable coefficient
         '''
+
+        self.mesh = mesh
+
+        ''' Extract other parameters '''
+        assert self.dim == self.mesh.dim,'Dimensions of DiffEq and Solver do not match.'
+
+        self.x = self.mesh.x
+        self.x_elem = self.mesh.x_elem
+        self.x_ref = self.mesh.x_op
+        #self.dx = self.mesh.dx
+        self.xmin = self.mesh.xmin
+        self.xmax = self.mesh.xmax
+        self.dom_len = self.mesh.dom_len
+        self.nn = self.mesh.nn
+        self.nelem = self.mesh.nelem
+        self.nen = self.mesh.nen
+        self.qshape = (self.nen*self.neq_node,self.nelem)
+
+        self.a = self.afun(self.x_elem)
+        self.ader = self.afunder(self.x_elem)
+        assert (np.min(self.a) >= 0.),'Variable coefficient a(x) must be >=0'
         
-        if avg=='simple':
-            qfacet = (q_fA + q_fB)/2 # Alternatively, a Roe average can be used
-        elif avg=='roe':
-            raise Exception('Roe Average not coded up yet')
-        else:
-            raise Exception('Averaging method not understood.')
-            
-        x_facet = (xy_A + xy_B)/2
-        
-        A = self.dEdq(qfacet, x_facet)
-        A_abs = self.dEdq_eig_abs(A)
+    def set_sbp_op(self, H_inv, Dx, Dy=None, Dz=None):
+        self.Dx = Dx
+        self.Dy = Dy
+        self.Dz = Dz
+        self.H_inv = H_inv
+        self.H = 1./self.H_inv
 
-        # Upwinding flux
-        A_upwind = (A + sigma*A_abs)/2
-        A_downwind = (A - sigma*A_abs)/2
 
-        # Calculate the correction
-        k = q_fA - q_fB
-        # !!!!!!!! This part might be wrong.....
 
-        # SAT for the left of the interface (SAT_N)
-        satA = self.rrR @ fn.gm_gv(A_downwind, k)  # SAT for the left of the interface
-        satB = self.rrL @ fn.gm_gv(A_upwind, k)    # SAT for the right of the interface
 
-        return satA, satB
-    
-    def set_sat(self, method):
-        '''
-        Purpose
-        ----------
-        Set the method used to calculate the numerical flux.
 
-        Parameters
-        ----------
-        method : str
-            The desired method.
-        '''
-        #TODO: Not complete, only tested for scalar PDE
-        if method == 'central':
-             self.sat_der1 = lambda qA,qB,xA,xB: self.sat_der1_upwind(qA, qB, 0, xA, xB)
-             self.dfdq_sat_der1 = lambda qA,qB,xA,xB: self.dfdq_sat_der1_upwind_scalar(qA, qB, 0, xA,xB)
-        elif method == 'upwind':
-            self.sat_der1 = lambda qA,qB,xA,xB: self.sat_der1_upwind(qA, qB, 1, xA,xB) 
-            self.dfdq_sat_der1 = lambda qA,qB,xA,xB: self.self.dfdq_sat_der1_upwind_scalar(qA, qB, 1, xA,xB)
-        else:
-            raise Exception('Choice of SAT not understood.')
 
-    def calc_sat(self, qelemA, qelemB, xA, xB):
-        '''
-        Purpose
-        ----------
-        Default function to calculate the upwind SATs for a PDE with only
-        first derivatives.
 
-        Parameters
-        ----------
-        qelemA : np array
-            The solution at the nodes in the element to the left of the interface.
-        qelemB : np array
-           The solution at the nodes in the element to the right of the interface.
 
-        Returns
-        -------
-        The SAT contribution to the elements on both sides of the interface.
-        '''
 
-        q_fA, x_fA = self.get_interface_sol(qelemA, xA, is_left_of_facet=True)
-        q_fB, x_fB = self.get_interface_sol(qelemB, xB, is_left_of_facet=False)
 
-        return self.sat_der1(q_fA, q_fB, x_fA, x_fB)
 
-class LinearConvDg(VarCoeffLinearConv, NumFlux):
-    ''' Solve the linear convection eq with DG '''
 
-    def set_numflux(self, method):
-        '''
-        Purpose
-        ----------
-        Set the method used to calculate the numerical flux.
-
-        Parameters
-        ----------
-        method : str
-            The desired method.
-        '''
-
-        if method == 'central':
-            self.numflux = lambda qA,qB,xA,xB: self.LF(qA,qB,xA,xB,0,0)
-        elif method == 'upwind' or method == 'upwind_global' or method == 'LF_upwind_global':
-            C = self.calc_LF_const()
-            # TODO: global and local need to be defined better as I don't pass in q...
-            self.numflux = lambda qA,qB,xA,xB: self.LF(qA,qB,xA,xB,1,C)
-        else:
-            raise Exception('Choice of Numerical Flux not understood.')
-            
-    def LF(self, qA, qB,xA,xB, alpha, C):
-        '''
-        Lax-Friedrichs flux (works for scalar and 1D system).
-
-        Parameters
-        ----------
-        qA : np array
-            The solution at the flux node in the element to the left of the interface.
-        qB : np array
-           The solution at the flux node in the element to the right of the interface.
-        alpha : float
-            upwinding parameter. alpha=0 yields central flux, alpha=1 yields
-            upwind flux
-        C : float or np array
-            the constant that controls dissipation. This should be greater 
-            than max dEdq (either locally or globally).
-            
-        TODO: generalize for cases where qA and qB are not on the boundary
-
-        Returns
-        -------
-        The numerical flux on both sides of the interface.
-        '''
-        avgE = (self.calcE(qA,xA) + self.calcE(qB,xB))/2
-        # TODO: Do I want different kinds of averaging here? Then no longer LF...
-        flux = avgE + 0.5*C*alpha*(qA-qB)
-        return flux, -flux
-    

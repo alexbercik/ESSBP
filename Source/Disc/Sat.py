@@ -245,8 +245,24 @@ class Sat(SatDer1, SatDer2):
                     self.calc = lambda qL,qR: self.der1_upwind(qL, qR, 1) # use Roe average?
                     self.calc_dfdq = self.dfdq_der1_complexstep
             elif (self.method.lower()=='ec' and self.diffeq_name=='Burgers') or self.method.lower()=='burgers ec':
-                    self.calc = self.der1_burgers_ec
-                    self.calc_dfdq = self.dfdq_der1_burgers_ec
+                if self.disc_type == 'div':
+                    if self.dim == 1:
+                        self.calc = self.der1_burgers_ec
+                        self.calc_dfdq = self.dfdq_der1_burgers_ec
+                    elif self.dim == 2:
+                        self.calc = None
+                    elif self.dim == 3:
+                        self.calc = None
+                elif self.disc_type == 'had':
+                    if self.dim == 1:
+                        self.calc = self.base_had_1d
+                        self.diss = lambda *x: 0
+                    elif self.dim == 2:
+                        self.calc = self.base_had_2d
+                        self.diss = lambda *x: 0
+                    elif self.dim == 3:
+                        self.calc = self.base_had_3d
+                        self.diss = lambda *x: 0
             elif (self.method.lower()=='ec' and self.diffeq_name=='Quasi1dEuler') or self.method.lower()=='crean ec':
                     self.calc = self.der1_crean_ec
                     #self.calc_dfdq = complex step?
@@ -308,7 +324,23 @@ class Sat(SatDer1, SatDer2):
             self.taphysy2 = [fn.lm_gdiag((self.tL @ (self.Hperp * self.tRT)), metrics[:,1,:]) for metrics in metricsL]
             self.tbphysx2 = [fn.lm_gdiag((self.tR @ (self.Hperp * self.tLT)), metrics[:,0,:]) for metrics in metricsR]
             self.tbphysy2 = [fn.lm_gdiag((self.tR @ (self.Hperp * self.tLT)), metrics[:,1,:]) for metrics in metricsR]
-            
+    
+        ''' special cases '''
+        
+        if self.diffeq_name == 'VariableCoefficientLinearConvection':
+            self.alpha = solver.diffeq.alpha # splitting parameter
+            self.a = solver.diffeq.a # variable coefficient
+            self.afun = solver.diffeq.afun
+            self.bdy_x = solver.mesh.bdy_x
+            assert(self.dim == 1),'Only set up for 1D so far'
+            assert(self.disc_type == 'div'),'Not set up for Hadamard form yet'
+            if self.method == 'central' or self.method == 'nondissipative' or self.method == 'symmetric':
+                self.calc = lambda q,E: self.llf_div_1d_varcoeff(q, E, sigma=0, 
+                                                                 extrapolate_flux=solver.diffeq.extrapolate_bdy_flux)
+            elif self.method == 'lf' or self.method == 'llf' or self.method == 'lax_friedrichs':
+                self.calc = lambda q,E: self.llf_div_1d_varcoeff(q, E, sigma=1, 
+                                                                 extrapolate_flux=solver.diffeq.extrapolate_bdy_flux)
+        
         
     def set_metrics_2d_x(self, metrics, bdy_metrics):
         ''' create a list of metrics for each row '''  
