@@ -57,6 +57,18 @@ class LinearConv(PdeBase):
             a = q0_max_q * np.exp(exp) + 1
         elif self.a_type == 'constant':
             a = np.ones(np.shape(x)) 
+        elif self.a_type == 'linear1':
+            mid = 1
+            a = x/(self.xmin-self.xmax) + (self.xmin+self.xmax)/(self.xmax-self.xmin) + mid
+        elif self.a_type == 'linear2':
+            mid = 0.5 + 1e-8
+            a = x/(self.xmin-self.xmax) + (self.xmin+self.xmax)/(self.xmax-self.xmin) + mid
+        elif self.a_type == 'linear3':
+            mid = 0.5
+            a = x/(self.xmin-self.xmax) + (self.xmin+self.xmax)/(self.xmax-self.xmin) + mid
+        elif self.a_type == 'linear4':
+            mid = 0
+            a = x/(self.xmin-self.xmax) + (self.xmin+self.xmax)/(self.xmax-self.xmin) + mid
         else:
             raise Exception('Variable coefficient not understood.')
         return a
@@ -70,7 +82,9 @@ class LinearConv(PdeBase):
             exp = -0.5*(x-mid_point)**2/stdev2
             ader = - q0_max_q * np.exp(exp) * (x-mid_point) / stdev2
         elif self.a_type == 'constant':
-            ader = np.zeros(np.shape(x)) 
+            ader = np.zeros(np.shape(x))
+        elif 'linear' in self.a_type:
+            ader = np.ones(np.shape(x))/(self.xmin-self.xmax)
         else:
             raise Exception('Variable coefficient not understood.')
         return ader
@@ -170,7 +184,7 @@ class LinearConv(PdeBase):
 
         self.a = self.afun(self.x_elem)
         self.ader = self.afunder(self.x_elem)
-        assert (np.min(self.a) >= 0.),'Variable coefficient a(x) must be >=0'
+        if np.min(self.a) <= 0.: print('WARNING: Variable coefficient a(x) should be >=0')
         
     def set_sbp_op(self, H_inv, Dx, Dy=None, Dz=None):
         self.Dx = Dx

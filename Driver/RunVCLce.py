@@ -26,7 +26,7 @@ from Source.Solvers.PdeSolverDg import PdeSolverDg
 ''' Run code '''
 
 # Eq parameters
-para = 2/3    # Variable coefficient splitting parameter (0 to 1)
+para = 1    # Variable coefficient splitting parameter (0 to 1)
 use_exact_der = True # whether to compute variable coefficient derivative exactly
 extrapolate_bdy_flux = True
 obj_name = None
@@ -37,18 +37,18 @@ dt = 0.001
 # note: should set according to courant number C = a dt / dx
 dt_init = dt
 t_init = 0
-tf = 20.
+tf = 40.
 
 # Domain
 xmin = -1
 xmax = 1
-bc = 'periodic'
+bc = 'homogeneous' # 'periodic' or 'homogeneous'
 
 # Spatial discretization
 disc_type = 'div' # 'div', 'had', 'dg'
 disc_nodes = 'lgl' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
-p = 4
-nelem = 3 # optional, number of elements
+p = 3
+nelem = 10 # optional, number of elements
 nen = 0 # optional, number of nodes per element
 surf_type = 'central'
 had_flux = 'central_fix' # 2-point numerical flux used in hadamard form
@@ -57,14 +57,16 @@ diss_type = None
 # Initial solution
 q0 = None # can overwrite q0_type from DiffEq
 q0_type = 'GaussWave' # 'GaussWave', 'SinWave'
-a_type = 'shifted Gaussian'
+a_type = 'linear3'
 
 # Other
 bool_plot_sol = False
 print_sol_norm = False
 
 obj_name = None
-cons_obj_name = ('Energy','Conservation','A_Energy','Energy_der','Conservation_der','A_Energy_der') # 'Energy', 'Conservation', 'None'
+#cons_obj_name = ('Energy','Conservation','A_Energy','Energy_der','Conservation_der','A_Energy_der') # 'Energy', 'Conservation', 'None'
+cons_obj_name = ('Energy','Conservation','A_Energy')
+
 
 settings = {'warp_factor':0,               # Warps / stretches mesh.
             'warp_type': 'default',         # Options: 'defualt', 'papers', 'quad'
