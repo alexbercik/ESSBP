@@ -608,16 +608,28 @@ class SatDer1:
         sat = self.alpha * self.Esurf @ E + (1 - self.alpha) * self.a * (self.Esurf @ q)
         q_a = self.tLT @ q
         q_b = self.tRT @ q
-        qf_L = fn.pad_1dL(q_b, q_b[:,-1])
-        qf_R = fn.pad_1dR(q_a, q_a[:,0])
+        if q_bdyL is None:
+            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
+            qf_R = fn.pad_1dR(q_a, q_a[:,0])
+        else:
+            qf_L = fn.pad_1dL(q_b, q_bdyL)
+            qf_R = fn.pad_1dR(q_a, q_bdyR)
+            # make sure boundaries have upwind SATs
+            sigma = sigma * np.ones((1,self.nelem+1))
+            sigma[0] = 1
+            sigma[-1] = 1
         x_f = fn.pad_1dR(self.bdy_x[[0],:], self.bdy_x[[1],-1])
         a_f = self.afun(x_f)
         qf_jump = qf_R - qf_L
         if extrapolate_flux:
             E_a = self.tLT @ E
             E_b = self.tRT @ E
-            Ef_L = fn.pad_1dL(E_b, E_b[:,-1])
-            Ef_R = fn.pad_1dR(E_a, E_a[:,0])
+            if q_bdyL is None:
+                Ef_L = fn.pad_1dL(E_b, E_b[:,-1])
+                Ef_R = fn.pad_1dR(E_a, E_a[:,0])
+            else:
+                Ef_L = fn.pad_1dL(E_b, a_f[:,0] * q_bdyL)
+                Ef_R = fn.pad_1dR(E_a, a_f[:,-1] * q_bdyR)
             f_avg = (Ef_L + Ef_R) / 2
         else:
             f_avg = a_f * (qf_L + qf_R) / 2

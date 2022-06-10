@@ -335,10 +335,10 @@ class Sat(SatDer1, SatDer2):
             assert(self.dim == 1),'Only set up for 1D so far'
             assert(self.disc_type == 'div'),'Not set up for Hadamard form yet'
             if self.method == 'central' or self.method == 'nondissipative' or self.method == 'symmetric':
-                self.calc = lambda q,E: self.llf_div_1d_varcoeff(q, E, sigma=0, 
+                self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.llf_div_1d_varcoeff(q, E, sigma=0, q_bdyL=q_bdyL, q_bdyR=q_bdyR,
                                                                  extrapolate_flux=solver.diffeq.extrapolate_bdy_flux)
             elif self.method == 'lf' or self.method == 'llf' or self.method == 'lax_friedrichs':
-                self.calc = lambda q,E: self.llf_div_1d_varcoeff(q, E, sigma=1, 
+                self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.llf_div_1d_varcoeff(q, E, sigma=1, q_bdyL=q_bdyL, q_bdyR=q_bdyR,
                                                                  extrapolate_flux=solver.diffeq.extrapolate_bdy_flux)
         
         
