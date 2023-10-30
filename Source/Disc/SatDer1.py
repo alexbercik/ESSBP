@@ -637,6 +637,90 @@ class SatDer1:
         
         sat = sat - self.tR @ numflux[:,1:] + self.tL @ numflux[:,:-1]
         return sat
+    
+    def div_1d_burgers_split(self, q, E, q_bdyL=None, q_bdyR=None, sigma=1, extrapolate_flux=True):
+        '''
+        A general split form SAT for Burgers equation, treating it as a variable coefficient problem with a=u/2
+        Note: the entropy conservative SAT is NOT recovered with self.split_alpha=2/3
+        sigma=0 is conservative, sigma=1 is disspative
+        TODO: check metric terms for curvilinear transformation
+        '''
+        if q_bdyL is None: # periodic
+            EL = fn.shift_right(E) # = q^2/2
+            ER = fn.shift_left(E)
+        else:
+            raise Exception('TODO: adding boundary condition.')
+        
+        # this follows the general procedure for variable coefficient problems
+        # but we would have to use a special numerical flux that to recover the EC
+        # flux. I have to think about whether or not this is correct in general.
+        
+        sat = self.alpha * self.Esurf @ E + (1 - self.alpha) * 0.5 * q * (self.Esurf @ q)
+        q_a = self.tLT @ q
+        q_b = self.tRT @ q
+        if q_bdyL is None:
+            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
+            qf_R = fn.pad_1dR(q_a, q_a[:,0])
+        else:
+            qf_L = fn.pad_1dL(q_b, q_bdyL)
+            qf_R = fn.pad_1dR(q_a, q_bdyR)
+            # make sure boundaries have upwind SATs
+            sigma = sigma * np.ones((1,self.nelem+1))
+            sigma[0] = 1
+            sigma[-1] = 1
+        qf_jump = qf_R - qf_L
+        qf_avg = (qf_L + qf_R)/2
+
+        E_a = self.tLT @ E
+        E_b = self.tRT @ E
+        if q_bdyL is None:
+            Ef_L = fn.pad_1dL(E_b, E_b[:,-1])
+            Ef_R = fn.pad_1dR(E_a, E_a[:,0])
+        else:
+            Ef_L = fn.pad_1dL(E_b, 0.5 * q_bdyL**2)
+            Ef_R = fn.pad_1dR(E_a, 0.5 * q_bdyR**2)
+        if extrapolate_flux:
+            E_a = self.tLT @ E
+            E_b = self.tRT @ E
+            if q_bdyL is None:
+                Ef_L = fn.pad_1dL(E_b, E_b[:,-1])
+                Ef_R = fn.pad_1dR(E_a, E_a[:,0])
+            else:
+                Ef_L = fn.pad_1dL(E_b, 0.5 * q_bdyL**2)
+                Ef_R = fn.pad_1dR(E_a, 0.5 * q_bdyR**2)
+            f_avg = (Ef_L + Ef_R) / 2
+        else:  
+            f_avg = (qf_avg)**2 / 2
+        numflux = f_avg - sigma * abs(qf_avg) * qf_jump / 2
+        
+        sat = sat - self.tR @ numflux[:,1:] + self.tL @ numflux[:,:-1]
+        return sat
+            
+    def div_1d_burgers_es(self, q, E, q_bdyL=None, q_bdyR=None, sigma=1):
+        '''
+        Entropy-conservative/stable SATs for self.split_alpha=2/3
+        sigma=0 is conservative, sigma=1 is disspative
+        TODO: check metric terms for curvilinear transformation
+        '''
+        q_a = self.tLT @ q
+        q_b = self.tRT @ q
+        if q_bdyL is None: # periodic
+            q_L = fn.shift_right(q_b)
+            q_R = fn.shift_left(q_a)
+        else:
+            raise Exception('TODO: adding boundary condition.')
+
+        sat = (1./6.) * ( self.tR @ (4. * self.tRT @ E - q_b*q_R - q_R*q_R)
+                        - self.tL @ (4. * self.tLT @ E - q_a*q_L - q_L*q_L) )
+        
+        if sigma != 0.:
+            q_Rjump = q_b - q_R
+            q_Ljump = q_a - q_L
+            q_Rlambda = np.abs(q_b + q_R) / 2.
+            q_Llambda = np.abs(q_a + q_L) / 2.
+            sat -= sigma*(self.tR @ (q_Rlambda * q_Rjump) + self.tL @ (q_Llambda * q_Ljump))
+        
+        return sat
 
 
     ##########################################################################
@@ -850,35 +934,7 @@ class SatDer1:
 #         return satL, satR
 # =============================================================================
     
-    def der1_burgers_ec(self, q, E, q_bdyL=None, q_bdyR=None):
-        '''
-        the entropy conservative SAT for Burgers equation (alpha=2/3)
-        '''
-        q_a = self.tLT @ q
-        q_b = self.tRT @ q
-        q2_a = self.tLT @ q**2
-        q2_b = self.tRT @ q**2
 
-        if q_bdyL is None:
-            q_b = fn.pad_1dL(q_b, q_b[:,-1])
-            q_a = fn.pad_1dR(q_a, q_a[:,0])
-            q2_b = fn.pad_1dL(q2_b, q_b[:,-1])
-            q2_a = fn.pad_1dR(q2_a, q_a[:,0])
-        else:
-            q_b = fn.pad_1dL(q_b, q_bdyL)
-            q_a = fn.pad_1dR(q_a, q_bdyR)
-            q2_b = fn.pad_1dL(q2_b, q_bdyL**2)
-            q2_a = fn.pad_1dR(q2_a, q_bdyR**2)
-            raise Exception('TODO: adding boundary condition.')
-
-        q_ab = q_a * q_b
-        q_b2 = q_b**2
-        q_a2 = q_a**2
-
-        sata = (self.tL @ (q2_a/3 - q_ab/6 - q_b2/6))[:,:-1]
-        satb = (self.tR @ (q2_b/3 - q_ab/6 - q_a2/6))[:,1:]  
-        
-        return satb - sata
 
     def dfdq_der1_burgers_ec(self, q_L, q_R, xy):
         '''

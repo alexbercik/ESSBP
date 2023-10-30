@@ -44,8 +44,8 @@ bc = 'periodic'
 # Spatial discretization
 disc_type = 'div' # 'div', 'had', 'dg'
 disc_nodes = 'lgl' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
-p = 3
-nelem = (4,4,4) # optional, number of elements
+p = 4
+nelem = (3,3,3) # optional, number of elements
 nen = 0 # optional, number of nodes per element
 surf_type = 'lf'
 had_flux = 'central_fix' # 2-point numerical flux used in hadamard form
@@ -63,11 +63,11 @@ print_sol_norm = False
 obj_name = None
 cons_obj_name = ('Energy','Conservation') # 'Energy', 'Conservation', 'None'
 
-settings = {'warp_factor':0.15,               # Warps / stretches mesh.
+settings = {'warp_factor':0.9,               # Warps / stretches mesh.
             'warp_type':'strong',         # Options: 'defualt', 'papers', 'quad'
-            'metric_method':'exact',   # Options: 'VinokurYee','ThomasLombard','exact'
-            'bdy_metric_method':'exact',   # Options: 'VinokurYee','ThomasLombard','interpolate','exact'
-            'jac_method':'direct',      # Options: 'direct','match','deng','exact'
+            'metric_method':'ThomasLombard',   # Options: 'VinokurYee','ThomasLombard','exact'
+            'bdy_metric_method':'extrapolate',   # Options: 'VinokurYee','ThomasLombard','interpolate','exact'
+            'jac_method':'exact',      # Options: 'direct','match','deng','exact'
             'use_optz_metrics':False,        # Uses optimized metrics for free stream preservation.
             'calc_exact_metrics':True,      # calculate exact metrics alongside above choices.
             'metric_optz_method':'alex',    # Define the optimization procedure.
@@ -101,11 +101,12 @@ solver3D = solver_c(diffeq, settings,                     # Diffeq
 #solver3D.plot_cons_obj()
 #print('Final Error: ', solver3D.calc_error())
 
-from Source.Methods.Analysis import run_convergence, run_jacobian_convergence
+from Source.Methods.Analysis import run_convergence, run_jacobian_convergence, run_invariants_convergence
 #schedule = [['disc_nodes','lg','lgl'],['p',3,4],['nelem',12,15,20]]
 #run_convergence(solver,schedule_in=schedule)
-schedule = [['disc_nodes','lg', 'lgl'],['p',3,4],['nelem',3,6,12,24,40]]
+schedule = [['disc_nodes','lgl'],['p',2,3,4],['nelem',10,15,22,30,35]]
+#run_invariants_convergence(solver3D,schedule_in=schedule)
 #schedule = [['disc_nodes','lg'],['p',3,4],['nelem',3,6,12]]
-#run_convergence(solver2D,schedule_in=schedule)
-dofs, avg_jacs, max_jacs, legend_strings = run_jacobian_convergence(solver3D,
-                                schedule_in=schedule,return_conv=True,savefile='jac_deng_met_optz_3D')
+#dofs, avg_jacs, max_jacs, legend_strings = run_jacobian_convergence(solver3D,
+#            schedule_in=schedule,return_conv=True,savefile='cubic_direct_3D',
+#            vol_metrics=True,surf_metrics=True,jacs=False,jac_ratios=False,backout_jacs=False)

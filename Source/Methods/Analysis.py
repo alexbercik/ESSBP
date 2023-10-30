@@ -73,7 +73,7 @@ def animate(solver, file_name='animation', make_video=True, make_gif=False,
     # check other inputs for correct format
     assert(isinstance(plotfunc, str)),"plotfunc must be a string"
     assert(isinstance(plotargs, dict)),"plotargs must be a dictionary"
-    assert('plt_save_name' not in plotargs),"plt_save_name should not be set in plotargs"
+    assert('savefile' not in plotargs),"savefile should not be set in plotargs"
     assert(isinstance(skipsteps, int)),"skipsteps must be an integer"
     assert(isinstance(fps, int)),"fps must be an integer"
     
@@ -115,11 +115,11 @@ def animate(solver, file_name='animation', make_video=True, make_gif=False,
         
         # call plotting function from solver module
         plot(solver.q_sol[:,:,stepi], **plotargs, time=timei,
-             plt_save_name=file_name+'/'+'frame'+str(i).zfill(numfill))
+             savefile=file_name+'/'+'frame'+str(i).zfill(numfill))
     
     if last_frame:
         plot(solver.q_sol[:,:,-1], **plotargs, time=tfinal,
-             plt_save_name=file_name+'/'+'frame'+str(frames))
+             savefile=file_name+'/'+'frame'+str(frames))
 
     if (make_video or make_gif):
         # if images are saved as eps, convert to png with resolution given by -density (dpi)
@@ -392,7 +392,8 @@ def symbolic(A):
 
 
 def run_convergence(solver, schedule_in=None, error_type='SBP',
-             scale_dt=True, return_conv=False, savefile=None, labels=None):
+             scale_dt=True, return_conv=False, savefile=None, labels=None,
+             title=None, ylabel=None, xlabel=None, grid=False, convunc=True):
     '''
     Purpose
     ----------
@@ -549,8 +550,10 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
 
     ''' Plot Results '''
     # use diffeq.plot_obj?
-    title = r"Convergence of " + error_type + " Error"
-    plot_conv(dofs, errors, legend_strings, solver.dim, title, savefile)
+    if title == None:
+        title = r"Convergence of " + error_type + " Error"
+    plot_conv(dofs, errors, legend_strings, solver.dim, title, savefile,
+                  ylabel=ylabel,xlabel=xlabel,grid=grid,convunc=convunc)
     
     if return_conv:
         return dofs, errors, legend_strings

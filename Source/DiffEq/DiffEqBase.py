@@ -25,7 +25,7 @@ from Source.Disc.FiniteDiff import FiniteDiff
 from Source.Disc.MakeDgOp import MakeDgOp
 from Source.Disc.MakeMesh import MakeMesh
 import Source.Methods.Functions as fn
-import quadpy as qp
+#import quadpy as qp
 
 '''
 The classes in this file are inheritated by the classes for ODEs and PDEs.
@@ -251,10 +251,12 @@ class PdeBase:
             stdev2 = abs(self.dom_len[xyz]**2/k) # standard deviation squared
             exp = -0.5*((xy[:,xyz,:]-mid_pointx)**2/stdev2)
             q0 = self.q0_max_q * np.exp(exp)    
-        elif 'SinWave' in q0_type:
+        elif ('SinWave' in q0_type) and not ('Gassner' in q0_type):
             if self.dim == 1:
                 x_scaled = (xy + self.xmin) / self.dom_len
                 q0 = np.sin(2*np.pi * x_scaled) * self.q0_max_q
+                if 'shift' in q0_type.lower():
+                    q0 = q0+2
             elif self.dim == 2:
                 x_scaled = (xy[:,0,:] + self.xmin[0]) / self.dom_len[0]
                 y_scaled = (xy[:,1,:] + self.xmin[1]) / self.dom_len[1]
@@ -280,10 +282,13 @@ class PdeBase:
             q0 = np.sin(np.pi * xy - 0.7) + 2 # note in the paper it is incorrectly written (np.pi * (xy - 0.7))
         elif q0_type in ('GassnerSinWave','GassnerSinWave_coarse'): # discontinuous  
             assert self.dim == 1,'Chosen q0 shape only works for dim = 1.'
+            from Source.Disc.Quadratures.LG import LG_set # use this instead of quadpy
             if q0_type == 'GassnerSinWave_coarse':
-                xy_LG = qp.c1.gauss_legendre(2).points # coarse LG nodes
+                #xy_LG = qp.c1.gauss_legendre(2).points # coarse LG nodes
+                xy_LG = LG_set(2)[0]
             else:
-                xy_LG = qp.c1.gauss_legendre(self.nen).points # full degree LG nodes
+                #xy_LG = qp.c1.gauss_legendre(self.nen).points # full degree LG nodes
+                xy_LG = LG_set(self.nen)[0]
             xy_LG = 0.5*(xy_LG[:, None] + 1) # Convert from 1D to 2D array
             wBary_LG = MakeDgOp.BaryWeights(xy_LG) # Barycentric weights for LG nodes
             van = MakeDgOp.VandermondeLagrange1D(self.xy_ref,wBary_LG,xy_LG)
@@ -303,7 +308,7 @@ class PdeBase:
     # TODO: Make a separate function for interactive plots? is this even possible using free packages?
     def plot_sol(self, q, time=None, plot_exa=True, savefile=None,
                  show_fig=True, solmin=None, solmax=None, display_time=False, 
-                 title=None, plot_mesh=False, save_format='png', dpi=1000,
+                 title=None, plot_mesh=False, save_format='png', dpi=600,
                  plot_only_exa=False):
         '''
         Purpose
@@ -336,11 +341,25 @@ class PdeBase:
             fig = plt.figure(figsize=(6,5.5*self.dom_len[1]/self.dom_len[0])) # scale figure properly
             ax = plt.axes()
             
-            if plot_mesh:
-                ax = plt.axes(frameon=False) # turn off the frame
+            x = fn.reshape_to_meshgrid(self.xy_elem[:,0,:],self.nen,self.nelem[0],self.nelem[1])
+            y = fn.reshape_to_meshgrid(self.xy_elem[:,1,:],self.nen,self.nelem[0],self.nelem[1])
+            num_sol = fn.reshape_to_meshgrid(self.var2plot(q),self.nen,self.nelem[0],self.nelem[1])
+            
+            CS = ax.contourf(x,y,num_sol,levels=self.plt_contour_settings['levels'],
+                                 vmin=solmin, vmax=solmax,
+                                 cmap=self.plt_contour_settings['cmap'])
+            
+            cbar = fig.colorbar(CS)
+            if self.plt_var2plot_name is not None:
+                cbar.ax.set_ylabel(self.plt_var2plot_name)     
                 
-                ax.set_xlim(self.xmin[0]-self.dom_len[0]/100,self.xmax[0]+self.dom_len[0]/100)
-                ax.set_ylim(self.xmin[1]-self.dom_len[1]/100,self.xmax[1]+self.dom_len[1]/100)
+            if plot_mesh:
+                #ax = plt.axes(frameon=False) # turn off the frame
+                ax.spines.right.set_visible(False)
+                ax.spines.top.set_visible(False)
+                
+                #ax.set_xlim(self.xmin[0]-self.dom_len[0]/100,self.xmax[0]+self.dom_len[0]/100)
+                #ax.set_ylim(self.xmin[1]-self.dom_len[1]/100,self.xmax[1]+self.dom_len[1]/100)
                 
                 if self.plt_mesh_settings['plot nodes']:
                     ax.scatter(self.xy[:,0],self.xy[:,1],marker='o',
@@ -356,17 +375,6 @@ class PdeBase:
                     ax.set_xticks(edge_verticesx) # label element boundaries
                     ax.set_yticks(edge_verticesy)
             
-            x = fn.reshape_to_meshgrid(self.xy_elem[:,0,:],self.nen,self.nelem[0],self.nelem[1])
-            y = fn.reshape_to_meshgrid(self.xy_elem[:,1,:],self.nen,self.nelem[0],self.nelem[1])
-            num_sol = fn.reshape_to_meshgrid(self.var2plot(q),self.nen,self.nelem[0],self.nelem[1])
-            
-            CS = ax.contourf(x,y,num_sol,levels=self.plt_contour_settings['levels'],
-                                 vmin=solmin, vmax=solmax,
-                                 cmap=self.plt_contour_settings['cmap'])
-            
-            cbar = fig.colorbar(CS)
-            if self.plt_var2plot_name is not None:
-                cbar.ax.set_ylabel(self.plt_var2plot_name)                    
                 
             plt.xlabel(r'$x$',fontsize=self.plt_label_font_size)
             plt.ylabel(r'$y$',fontsize=self.plt_label_font_size,rotation=0,labelpad=15)
@@ -440,6 +448,7 @@ class PdeBase:
         If q is given, use that. If not, use the initial condition.'''
         print('WARNING: Using default maxeig_dEdq. Should not be used for main code.')
         if self.neq_node == 1: # scalar
+            # input q is shape (n,n,nelem), output is shape (nelem)
             return np.max(np.abs(self.dEdq(q)),axis=(0,1))
         else: # system
             dEdq_mod = np.transpose(self.dEdq(q),axes=(2,0,1))
@@ -522,6 +531,7 @@ class PdeBase:
         self.Dy = Dy
         self.Dz = Dz
         self.H_inv = H_inv
+        self.H = 1./H_inv
     
     def set_dg_strong_op(self, dd_phys):
         #TODO

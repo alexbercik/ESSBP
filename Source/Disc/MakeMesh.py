@@ -465,6 +465,32 @@ class MakeMesh:
             dydy = 1 + self.warp_factor*2*np.pi*np.sin(2*np.pi*argx)*np.cos(2*np.pi*argy)
             return dxdx, dxdy, dydx, dydy
         
+        def warp_skew(x,y):
+            ''' A function to purposely have near-zero jacobians '''
+            argx = (x-self.xmin[0])/self.dom_len[0]
+            argy = (y-self.xmin[1])/self.dom_len[1]
+            b1 = 0.01
+            b2 = 0.02
+            c1 = 2.4
+            c2 = 2.3
+            new_x = x + b1*(np.exp(c1*argy) - 1.)
+            new_y = y + b2*(np.exp(c2*argx) - 1.)
+            return new_x, new_y
+        
+        def warp_skew_der(x,y):
+            ''' A function to purposely have near-zero jacobians '''
+            argx = (x-self.xmin[0])/self.dom_len[0]
+            argy = (y-self.xmin[1])/self.dom_len[1]
+            b1 = 0.01
+            b2 = 0.02
+            c1 = 2.4
+            c2 = 2.3
+            dxdx = np.ones(np.shape(argx))
+            dxdy = b1*np.exp(c1*argy)*c1*argy/self.dom_len[1]
+            dydx = b2*np.exp(c2*argx)*c2*argx/self.dom_len[0]
+            dydy = np.ones(np.shape(argx))
+            return dxdx, dxdy, dydx, dydy
+        
         # switch between different mappings here
         if self.warp_type == 'default' or self.warp_type == 'papers':
             warp_fun = warp_rectangle
@@ -487,6 +513,9 @@ class MakeMesh:
         elif self.warp_type == 'bdy' or self.warp_type == 'strong':
             warp_fun = warp_bdy
             warp_der = warp_bdy_der
+        elif self.warp_type == 'skew':
+            warp_fun = warp_skew
+            warp_der = warp_skew_der
         else:
             print('WARNING: mesh.warp_type not understood. Reverting to default.')
             warp_fun = warp_rectangle
@@ -513,7 +542,8 @@ class MakeMesh:
         self.jac_exa[:,1,1,:] = dynewdy * dydyref
         for elem in range(self.nelem[0]*self.nelem[1]):
             self.det_jac_exa[:,elem] = np.linalg.det(self.jac_exa[:,:,:,elem])
-        assert np.all(self.det_jac_exa>0),"Not a valid coordinate transformation. Try using a lower warp_factor."
+        #TODO: temporary commenting out
+        #assert np.all(self.det_jac_exa>0),"Not a valid coordinate transformation. Try using a lower warp_factor."
         #for elem in range(self.nelem[0]*self.nelem[1]):
             #self.jac_inv_exa[:,:,:,elem] = np.linalg.inv(self.jac_exa[:,:,:,elem])
             #self.det_jac_inv_exa[:,elem] =  np.linalg.det(self.jac_inv_exa[:,:,:,elem])
@@ -957,9 +987,11 @@ class MakeMesh:
             
             if nodes:
                 ax.plot(self.x,0.35*np.ones(self.nn),'o',color='blue',ms=markersize)
+                #ax.plot(self.x[:-1],0.35*np.ones(self.nn-1),'o',color='blue',ms=markersize)
                 
             if bdy_nodes:
                 ax.plot(self.bdy_x,0.35*np.ones(self.bdy_x.shape),'s',color='red',ms=markersize)
+                #ax.plot(self.bdy_x[0],0.35,'s',color='red',ms=markersize)
             
             ax.axes.get_yaxis().set_visible(False) # turn off y axis 
             ax.plot(self.vertices,0.35*np.ones(self.nelem+1),'|',ms=20,color='black',lw=1)  # Plot a line at each location specified in a
@@ -1198,6 +1230,7 @@ class MakeMesh:
                 
             elif bdy_metric_method=='interpolate' or bdy_metric_method=='extrapolate' or bdy_metric_method=='project':
                 self.bdy_metrics = np.zeros((self.nen,4,4,self.nelem[0]*self.nelem[1])) 
+                self.bdy_metrics_err = np.zeros((self.nen,4,4,self.nelem[0]*self.nelem[1]))  #TODO: temp
                 eye = np.eye(self.nen)
                 txbT = np.kron(sbp.tR.reshape((self.nen,1)), eye).T
                 txaT = np.kron(sbp.tL.reshape((self.nen,1)), eye).T
@@ -1218,10 +1251,14 @@ class MakeMesh:
                                     maxdiff = max(maxdiff, np.max(abs(Lmetrics[:,:-1] - Rmetrics[:,1:])))
                                 self.bdy_metrics[:,0,i,row::self.nelem[1]][:,1:] = avgmetrics
                                 self.bdy_metrics[:,1,i,row::self.nelem[1]][:,:-1] = avgmetrics
+                                self.bdy_metrics_err[:,0,i,row::self.nelem[1]][:,1:] = abs(Lmetrics[:,:-1] - Rmetrics[:,1:])
+                                self.bdy_metrics_err[:,1,i,row::self.nelem[1]][:,:-1] = abs(Lmetrics[:,:-1] - Rmetrics[:,1:])
                             if periodic[0]:   
                                 avgmetrics = (Lmetrics[:,-1] + Rmetrics[:,0])/2
                                 self.bdy_metrics[:,0,i,row::self.nelem[1]][:,0] = avgmetrics
                                 self.bdy_metrics[:,1,i,row::self.nelem[1]][:,-1] = avgmetrics 
+                                self.bdy_metrics_err[:,0,i,row::self.nelem[1]][:,0] = abs(Lmetrics[:,-1] - Rmetrics[:,0])
+                                self.bdy_metrics_err[:,1,i,row::self.nelem[1]][:,-1] = abs(Lmetrics[:,-1] - Rmetrics[:,0])
                                 if print_diff:
                                     maxdiff = max(maxdiff, np.max(abs(Lmetrics[:,-1] - Rmetrics[:,0])))
                             else:
@@ -1240,10 +1277,14 @@ class MakeMesh:
                                     maxdiff = max(maxdiff, np.max(abs(Lmetrics[:,:-1] - Rmetrics[:,1:])))
                                 self.bdy_metrics[:,2,i,start:end][:,1:] = avgmetrics
                                 self.bdy_metrics[:,3,i,start:end][:,:-1] = avgmetrics
+                                self.bdy_metrics_err[:,2,i,start:end][:,1:] = abs(Lmetrics[:,:-1] - Rmetrics[:,1:])
+                                self.bdy_metrics_err[:,3,i,start:end][:,:-1] = abs(Lmetrics[:,:-1] - Rmetrics[:,1:])
                             if periodic[1]:
                                 avgmetrics = (Lmetrics[:,-1] + Rmetrics[:,0])/2
                                 self.bdy_metrics[:,2,i,start:end][:,0] = avgmetrics
                                 self.bdy_metrics[:,3,i,start:end][:,-1] = avgmetrics 
+                                self.bdy_metrics_err[:,2,i,start:end][:,0] = abs(Lmetrics[:,-1] - Rmetrics[:,0])
+                                self.bdy_metrics_err[:,3,i,start:end][:,-1] = abs(Lmetrics[:,-1] - Rmetrics[:,0])
                                 if print_diff:
                                     maxdiff = max(maxdiff, np.max(abs(Lmetrics[:,-1] - Rmetrics[:,0])))
                             else:
@@ -1262,7 +1303,91 @@ class MakeMesh:
                 # set unused components to None to avoid mistakes
                 self.ignore_surface_metrics()
                     
-                          
+            elif bdy_metric_method =='calculate_extrap_x':
+                print_diff = True
+                maxdiff = 0.
+                eye = np.eye(self.nen)
+                txbT = np.kron(sbp.tR.reshape((self.nen,1)), eye).T
+                txaT = np.kron(sbp.tL.reshape((self.nen,1)), eye).T
+                tybT = np.kron(eye, sbp.tR.reshape((self.nen,1))).T
+                tyaT = np.kron(eye, sbp.tL.reshape((self.nen,1))).T  
+                
+                bdy_xy = np.zeros((self.nen,4,2,self.nelem[0]*self.nelem[1]))
+                for row in range(self.nelem[1]): # starts at bottom left to bottom right, then next row up
+                    for i in [0,1]: # loop over x,y
+                        Lxy = txbT @ self.xy_elem[:,i,row::self.nelem[1]]
+                        Rxy = txaT @ self.xy_elem[:,i,row::self.nelem[1]]
+                        if self.nelem[0] != 1:
+                            avgxy = (Lxy[:,:-1] + Rxy[:,1:])/2
+                            if print_diff:
+                                maxdiff = max(maxdiff, np.max(abs(Lxy[:,:-1] - Rxy[:,1:])))
+                            bdy_xy[:,0,i,row::self.nelem[1]][:,1:] = avgxy
+                            bdy_xy[:,1,i,row::self.nelem[1]][:,:-1] = avgxy
+                        #if periodic[0]:   
+                        #    avgxy = (Lxy[:,-1] + Rxy[:,0])/2
+                        #    bdy_xy[:,0,i,row::self.nelem[1]][:,0] = avgxy
+                        #    bdy_xy[:,1,i,row::self.nelem[1]][:,-1] = avgxy
+                        #    if print_diff:
+                        #        maxdiff = max(maxdiff, np.max(abs(Lxy[:,-1] - Rxy[:,0])))
+                        #else:
+                        bdy_xy[:,0,i,row::self.nelem[1]][:,0] = Rxy[:,0]
+                        bdy_xy[:,1,i,row::self.nelem[1]][:,-1] = Lxy[:,-1]
+                    
+                for col in range(self.nelem[0]): # starts at bottom left to top left, then next column to right
+                    start = col*self.nelem[0]
+                    end = start + self.nelem[1]
+                    for i in [0,1]: # loop over x,y
+                        Lxy = tybT @ self.xy_elem[:,i,start:end]
+                        Rxy = tyaT @ self.xy_elem[:,i,start:end]
+                        if self.nelem[1] != 1:
+                            avgxy = (Lxy[:,:-1] + Rxy[:,1:])/2
+                            if print_diff:
+                                maxdiff = max(maxdiff, np.max(abs(Lxy[:,:-1] - Rxy[:,1:])))
+                            bdy_xy[:,2,i,start:end][:,1:] = avgxy
+                            bdy_xy[:,3,i,start:end][:,:-1] = avgxy
+                        #if periodic[1]:
+                        #    avgxy = (Lxy[:,-1] + Rxy[:,0])/2
+                        #    bdy_xy[:,2,i,start:end][:,0] = avgxy
+                        #    bdy_xy[:,3,i,start:end][:,-1] = avgxy
+                        #    if print_diff:
+                        #        maxdiff = max(maxdiff, np.max(abs(Lxy[:,-1] - Rxy[:,0])))
+                        #else:
+                        bdy_xy[:,2,i,start:end][:,0] = Rxy[:,0]
+                        bdy_xy[:,3,i,start:end][:,-1] = Lxy[:,-1]
+                
+                if print_diff:
+                    print('Maximum difference of surface xy when averaging =', maxdiff)
+                            
+                self.bdy_metrics = np.zeros((self.nen,4,4,self.nelem[0]*self.nelem[1])) 
+                for f in range(4): # loop over facets (left, right, lower, upper)
+                    if (f == 0) or (f == 1):
+                        self.bdy_metrics[:,f,0,:] = sbp.D @ bdy_xy[:,f,1,:]
+                        self.bdy_metrics[:,f,1,:] = - sbp.D @ bdy_xy[:,f,0,:]
+                        self.bdy_metrics[:,f,2,:] = None
+                        self.bdy_metrics[:,f,3,:] = None
+                    elif (f == 2) or (f == 3):
+                        self.bdy_metrics[:,f,0,:] = None
+                        self.bdy_metrics[:,f,1,:] = None
+                        self.bdy_metrics[:,f,2,:] = - sbp.D @ bdy_xy[:,f,1,:]
+                        self.bdy_metrics[:,f,3,:] = sbp.D @ bdy_xy[:,f,0,:]
+                        
+                for row in range(self.nelem[1]): # starts at bottom left to bottom right, then next row up
+                    for i in [0,1]: # loop over facets 1,2
+                        if periodic[0]:  
+                            avg_bdy_met = 0.5*(self.bdy_metrics[:,0,i,row::self.nelem[1]][:,0] +
+                                               self.bdy_metrics[:,1,i,row::self.nelem[1]][:,-1])
+                            self.bdy_metrics[:,0,i,row::self.nelem[1]][:,0] = avg_bdy_met
+                            self.bdy_metrics[:,1,i,row::self.nelem[1]][:,-1] = avg_bdy_met
+                for col in range(self.nelem[0]): # starts at bottom left to top left, then next column to right
+                    start = col*self.nelem[0]
+                    end = start + self.nelem[1]
+                    for i in [2,3]: # loop over facets 3,4
+                        if periodic[1]:
+                            avg_bdy_met = 0.5*(self.bdy_metrics[:,2,i,start:end][:,0] +
+                                               self.bdy_metrics[:,3,i,start:end][:,-1])
+                            self.bdy_metrics[:,2,i,start:end][:,0] = avg_bdy_met
+                            self.bdy_metrics[:,3,i,start:end][:,-1] = avg_bdy_met
+
             else: 
                 if bdy_metric_method!='calculate':
                     print("WARNING: Did not understand bdy_metric_method. For 2D, try 'exact', 'calculate', or 'interpolate'.")
@@ -1327,11 +1452,15 @@ class MakeMesh:
                             
                         RHS = -np.dot(Hperp, ( self.bdy_metrics[:,1,xm,:] - self.bdy_metrics[:,0,xm,:] \
                                              + self.bdy_metrics[:,3,ym,:] - self.bdy_metrics[:,2,ym,:] ))
-                    
+              
                         print('Metric Optz: '+term+' surface integral GCL constraints violated by a max of {0:.2g}'.format(np.max(abs(RHS))))
                         if np.max(abs(RHS)) < 2e-16:
                             print('... good enough already. skipping optimization.')
                         else:
+                            if fn.is_pos_def(A):
+                                print('Check: A is SPD')
+                            else:
+                                print('Check: A is NOT SPD')
                             if (periodic[0] and periodic[1]):
                                 lam = np.linalg.lstsq(A,RHS,rcond=-1)[0]
                             else:
@@ -1723,7 +1852,7 @@ class MakeMesh:
                 self.ignore_surface_metrics()
                             
             else: 
-                if not (bdy_metric_method.lower()=='thomaslombard' or bdy_metric_method.lower()=='vinokurYee'):
+                if not (bdy_metric_method.lower()=='thomaslombard' or bdy_metric_method.lower()=='vinokuryee'):
                     print("WARNING: Did not understand bdy_metric_method. For 3D, try 'exact', 'VinokurYee', 'ThomasLombard', or 'interpolate'.")
                     print("         Defaulting to 'VinokurYee'.")
                 self.bdy_metrics = np.zeros((self.nen**2,6,9,self.nelem[0]*self.nelem[1]*self.nelem[2]))
@@ -1850,7 +1979,14 @@ class MakeMesh:
                             print('... good enough already. skipping optimization.')
                         else:
                             if (periodic[0] and periodic[1] and periodic[2]):
+                                if fn.is_pos_def(A):
+                                    print('Check: A is SPD')
+                                else:
+                                    print('Check: A is NOT SPD')
+                                #print(np.linalg.eigvals(A))
                                 lam = np.linalg.lstsq(A,RHS,rcond=-1)[0]
+                                lam2 = np.linalg.solve(A,RHS)
+                                print('max difference in solve is ', np.max(abs(lam-lam2)))
                             else:
                                 lam = np.linalg.solve(A,RHS)
                             #print('... verify Ax-b=0 solution quality: ', np.max(A@lam - RHS))

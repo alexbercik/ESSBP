@@ -104,6 +104,34 @@ def gm_lm(A,B):
     return c
 
 @jit(nopython=True)
+def gm_lv(A,b):
+    '''
+    Equivalent to np.einsum('ijk,j->ik',A,b) where A is a 3-tensor of shape
+    (nen1,nen2,nelem) and b is a vector of shape (nen2). This can be 
+    thought of as a global matrix @ local vector.
+
+    Parameters
+    ----------
+    A : numpy array of shape (nen1,nen2,nelem)
+    b : numpy array of shape (nen2)
+
+    Returns
+    -------
+    c : numpy array of shape (nen1,nen3,nelem)
+    '''
+    nen1,nen2,nelem = np.shape(A)
+    #nen2b = np.shape(b) # throws an error for some reason
+    nen2b = len(b)
+    if nen2!=nen2b:
+        raise Exception('shapes do not match')
+    c = np.zeros((nen1,nelem))
+    for e in range(nelem):
+        for j in range(nen2):
+            for i in range(nen1):
+                c[i,e] += A[i,j,e] * b[j]
+    return c
+
+@jit(nopython=True)
 def lm_gm(A,B):
     '''
     NOTE: NOT equivalent to A @ B 
@@ -758,7 +786,9 @@ def reshape_to_meshgrid(q,nen,nelemx,nelemy):
     return Q
     
 # Don't use nopython @jit(nopython=True) in case we need to pass class objects in ec_flux
-@jit()
+# June 2023: I put it back in becuase the keyword default of False is being depreciated and 
+# it threw a warning. Maybe I can get away with this if it supports class functions?
+@jit(nopython=True)
 def build_F_vol(q, neq, flux):
     ''' builds a Flux differencing matrix (used for Hadamard form) given 1 
     solution vector q, the number of equations per node, and a 2-point 
@@ -789,7 +819,10 @@ def build_F_vol(q, neq, flux):
                         F[idxj:idxj2,idxi:idxi2,e] = diag
     return F
 
-@jit()
+# Don't use nopython @jit(nopython=True) in case we need to pass class objects in ec_flux
+# June 2023: I put it back in becuase the keyword default of False is being depreciated and 
+# it threw a warning. Maybe I can get away with this if it supports class functions?
+@jit(nopython=True)
 def build_F(q1, q2, neq, flux):
     ''' builds a Flux differencing matrix (used for Hadamard form) given 2 
     solution vectors q1, q2, the number of equations per node, and a 2-point 
@@ -842,6 +875,17 @@ def prod_mean(q1L,q2L,q1R,q2R):
     '''' product mean. Useful for split-form fluxes. '''
     q = (q1L*q2R+q2L*q1R)/2
     return q
+
+def is_pos_def(A):
+    ''' check if a matrix A is symmetric positive definite '''
+    if np.array_equal(A, A.T):
+        try:
+            np.linalg.cholesky(A)
+            return True
+        except np.linalg.LinAlgError:
+            return False
+    else:
+        return False
 
 
 

@@ -64,10 +64,11 @@ class PdeSolverSbp(PdeSolver):
         if self.settings['stop_after_metrics']:
             return
         
+        self.Dx_phys_nd, self.Dy_phys_nd = 0., 0.
         if self.dim == 1:
             self.H_phys, self.Dx_phys = self.sbp.ref_2_phys(self.mesh)
         elif self.dim == 2:
-            self.H_phys, self.Dx_phys, self.Dy_phys = self.sbp.ref_2_phys(self.mesh)
+            self.H_phys, self.Dx_phys, self.Dy_phys, self.Dx_phys_nd, self.Dy_phys_nd = self.sbp.ref_2_phys(self.mesh)
         elif self.dim == 3:
             self.H_phys, self.Dx_phys, self.Dy_phys, self.Dz_phys = self.sbp.ref_2_phys(self.mesh)
         self.H_inv_phys = 1/self.H_phys
@@ -85,9 +86,11 @@ class PdeSolverSbp(PdeSolver):
 
         self.Dx_phys_unkronned = self.Dx_phys
         self.Dx_phys = np.kron(self.Dx_phys, eye)
+        self.Dx_phys_nd = np.kron(self.Dx_phys_nd, eye)
         if self.dim == 2 or self.dim == 3:
             self.Dy_phys_unkronned = self.Dy_phys
             self.Dy_phys = np.kron(self.Dy_phys, eye)
+            self.Dy_phys_nd = np.kron(self.Dy_phys_nd, eye)
             self.H_perp = np.kron(self.H_perp, eye)
         if self.dim == 3:
             self.Dz_phys_unkronned = self.Dz_phys
@@ -137,10 +140,11 @@ class PdeSolverSbp(PdeSolver):
         
         if self.periodic:
             sat = self.sat.calc(q,E)
+        elif self.bc == 'homogeneous':
+            sat = self.sat.calc(q, E, q_bdyL=np.array([0]), q_bdyR=np.array([0]))
         else:
             raise Exception('Not coded up yet')
     
-        
         dqdt = - dEdx + (self.H_inv_phys * sat) + self.diffeq.calcG(q)
         return dqdt
     
@@ -537,8 +541,91 @@ class PdeSolverSbp(PdeSolver):
                 print('Avg error on RHSz =', np.mean(abs(RHS3)))
                 print('Max error on total z =', np.max(abs(tot3)))
                 print('Avg error on total z =', np.mean(abs(tot3)))
-            
+                
+    def check_surf_invariants(self):
+        if self.dim==2:
+            Hperp = np.diag(self.sbp.H)
+            for phys_dir in range(2):
+                if phys_dir == 0: # matrix entries for metric terms
+                    term = 'x'
+                    xm = 0 # l=x, m=x
+                    ym = 2 # l=y, m=x
+                else: 
+                    term = 'y'
+                    xm = 1 # l=x, m=y
+                    ym = 3 # l=y, m=y
+                    
+                RHS = np.dot(Hperp, ( self.mesh.bdy_metrics[:,1,xm,:] - self.mesh.bdy_metrics[:,0,xm,:] \
+                                     + self.mesh.bdy_metrics[:,3,ym,:] - self.mesh.bdy_metrics[:,2,ym,:] ))
+      
+                print('Metric Optz: '+term+' surface integral GCL constraints violated by a max of {0:.2g}'.format(np.max(abs(RHS))))
+        elif self.dim==3:
+            Hperp = np.diag(np.kron(self.sbp.H,self.sbp.H))
+            for phys_dir in range(3):
+                if phys_dir == 0: # matrix entries for metric terms
+                    term = 'x'
+                    xm = 0 # l=x, m=x
+                    ym = 3 # l=y, m=x
+                    zm = 6 # l=z, m=x
+                elif phys_dir == 1: 
+                    term = 'y'
+                    xm = 1 # l=x, m=y
+                    ym = 4 # l=y, m=y
+                    zm = 7 # l=z, m=x
+                else: 
+                    term = 'z'
+                    xm = 2 # l=x, m=z
+                    ym = 5 # l=y, m=z
+                    zm = 8 # l=z, m=z
+                    
+                RHS = np.dot(Hperp, ( self.mesh.bdy_metrics[:,1,xm,:] - self.mesh.bdy_metrics[:,0,xm,:] \
+                                     + self.mesh.bdy_metrics[:,3,ym,:] - self.mesh.bdy_metrics[:,2,ym,:] \
+                                     + self.mesh.bdy_metrics[:,5,zm,:] - self.mesh.bdy_metrics[:,4,zm,:] ))
+                
+                print('Metric Optz: '+term+' surface integral GCL constraints violated by a max of {0:.2g}'.format(np.max(abs(RHS))))
         
+            
+    ''' temporary functions '''
+    def check_chain_rule(self,theta, tau):
+        eye = np.eye(self.nen)
+        if self.dim==1:
+            pass
+        elif self.dim==2:
+            Dx = np.kron(self.sbp.D, eye)
+            Dy = np.kron(eye, self.sbp.D)
+            tLx = np.kron(self.tL, eye)
+            tRx = np.kron(self.tR, eye)
+            tLy = np.kron(eye, self.tL)
+            tRy = np.kron(eye, self.tR)
+            tLTx = tLx.T
+            tRTx = tRx.T
+            tLTy = tLy.T
+            tRTy = tRy.T
+            Ex = tRx @ (self.H_perp * tRTx) - tLx @ (self.H_perp * tLTx)
+            Ey = tRy @ (self.H_perp * tRTy) - tLy @ (self.H_perp * tLTy)
+            one = np.ones(self.qshape[0])
+            Hinv = np.linalg.inv(np.kron(self.sbp.H, self.sbp.H))
+            LHS1 = Dx @ self.mesh.metrics[:,0,:] + Dy @ self.mesh.metrics[:,2,:]
+            LHS2 = Dx @ self.mesh.metrics[:,1,:] + Dy @ self.mesh.metrics[:,3,:]    
+            RHS1 = tRx @ ( self.H_perp * ( tRTx @ self.mesh.metrics[:,0,:] - (1 - tau) * self.mesh.bdy_metrics[:,1,0,:] )) \
+                 - tLx @ ( self.H_perp * ( tLTx @ self.mesh.metrics[:,0,:] - (1 - tau) * self.mesh.bdy_metrics[:,0,0,:] )) \
+                 + tRy @ ( self.H_perp * ( tRTy @ self.mesh.metrics[:,2,:] - (1 - tau) * self.mesh.bdy_metrics[:,3,2,:] )) \
+                 - tLy @ ( self.H_perp * ( tLTy @ self.mesh.metrics[:,2,:] - (1 - tau) * self.mesh.bdy_metrics[:,2,2,:] )) \
+                 - tau * fn.gm_lv(fn.gdiag_lm(self.mesh.metrics[:,0,:], Ex), one) \
+                 - tau * fn.gm_lv(fn.gdiag_lm(self.mesh.metrics[:,2,:], Ey), one)
+            RHS2 = tRx @ ( self.H_perp * ( tRTx @ self.mesh.metrics[:,1,:] - (1 - tau) * self.mesh.bdy_metrics[:,1,1,:] )) \
+                 - tLx @ ( self.H_perp * ( tLTx @ self.mesh.metrics[:,1,:] - (1 - tau) * self.mesh.bdy_metrics[:,0,1,:] )) \
+                 + tRy @ ( self.H_perp * ( tRTy @ self.mesh.metrics[:,3,:] - (1 - tau) * self.mesh.bdy_metrics[:,3,3,:] )) \
+                 - tLy @ ( self.H_perp * ( tLTy @ self.mesh.metrics[:,3,:] - (1 - tau) * self.mesh.bdy_metrics[:,2,3,:] )) \
+                 - tau * fn.gm_lv(fn.gdiag_lm(self.mesh.metrics[:,1,:], Ex), one) \
+                 - tau * fn.gm_lv(fn.gdiag_lm(self.mesh.metrics[:,3,:], Ey), one)
+            tot1 = LHS1 - theta * Hinv @ RHS1
+            tot2 = LHS2 - theta * Hinv @ RHS2
+            print('Max Errors in x are:', np.max(abs(tot1)))
+            #print(tot1)
+            print('Max Errors in y are:', np.max(abs(tot2)))
+            #print(tot2)
+
         
     def check_cons(self,q=None):
         ''' returns what I think is 1 @ H @ dqdt for 2D and 3D '''

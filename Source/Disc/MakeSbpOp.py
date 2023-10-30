@@ -283,19 +283,44 @@ class MakeSbpOp:
             
             Dx = np.kron(self.D, eye) # shape (nen^2,nen^2)
             Dy = np.kron(eye, self.D)
+            
+            txb = np.kron(self.tR.reshape((mesh.nen,1)), eye)
+            txa = np.kron(self.tL.reshape((mesh.nen,1)), eye)
+            tyb = np.kron(eye, self.tR.reshape((mesh.nen,1)))
+            tya = np.kron(eye, self.tL.reshape((mesh.nen,1)))
+            
+            Ex = txb @ self.H @ txb.T - txa @ self.H @ txa.T
+            Ey = tyb @ self.H @ tyb.T - tya @ self.H @ tya.T
 
             if form == 'skew-sym':
                 Dx_phys = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,0,:]) + fn.gdiag_lm(mesh.metrics[:,0,:],Dx) 
                                                           + fn.lm_gdiag(Dy,mesh.metrics[:,2,:]) + fn.gdiag_lm(mesh.metrics[:,2,:],Dy)))
                 Dy_phys = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,1,:]) + fn.gdiag_lm(mesh.metrics[:,1,:],Dx) 
                                                           + fn.lm_gdiag(Dy,mesh.metrics[:,3,:]) + fn.gdiag_lm(mesh.metrics[:,3,:],Dy)))
+                # the below are the actual multi-d physical operators
+                xm = 0 # l=x, m=x
+                ym = 2 # l=y, m=x
+                Ebx = fn.gm_lm(fn.lm_gdiag((txb @ self.H), mesh.bdy_metrics[:,1,xm,:]), txb.T) - fn.gm_lm(fn.lm_gdiag((txa @ self.H), mesh.bdy_metrics[:,0,xm,:]), txa.T) \
+                    + fn.gm_lm(fn.lm_gdiag((tyb @ self.H), mesh.bdy_metrics[:,3,ym,:]), tyb.T) - fn.gm_lm(fn.lm_gdiag((tya @ self.H), mesh.bdy_metrics[:,2,ym,:]), tya.T) 
+                Dx_phys_nd = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,0,:]) + fn.gdiag_lm(mesh.metrics[:,0,:],Dx) 
+                                                          + fn.lm_gdiag(Dy,mesh.metrics[:,2,:]) + fn.gdiag_lm(mesh.metrics[:,2,:],Dy))) \
+                            +0.5*fn.gdiag_gm( (1/H_phys), ( Ebx - fn.lm_gdiag(Ex, mesh.metrics[:,xm,:]) - fn.lm_gdiag(Ey, mesh.metrics[:,ym,:]) ))
+                xm = 1 # l=x, m=y
+                ym = 3 # l=y, m=y
+                Eby = fn.gm_lm(fn.lm_gdiag((txb @ self.H), mesh.bdy_metrics[:,1,xm,:]), txb.T) - fn.gm_lm(fn.lm_gdiag((txa @ self.H), mesh.bdy_metrics[:,0,xm,:]), txa.T) \
+                    + fn.gm_lm(fn.lm_gdiag((tyb @ self.H), mesh.bdy_metrics[:,3,ym,:]), tyb.T) - fn.gm_lm(fn.lm_gdiag((tya @ self.H), mesh.bdy_metrics[:,2,ym,:]), tya.T) 
+                Dy_phys_nd = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,1,:]) + fn.gdiag_lm(mesh.metrics[:,1,:],Dx) 
+                                                          + fn.lm_gdiag(Dy,mesh.metrics[:,3,:]) + fn.gdiag_lm(mesh.metrics[:,3,:],Dy))) \
+                            +0.5*fn.gdiag_gm( (1/H_phys), ( Eby - fn.lm_gdiag(Ex, mesh.metrics[:,xm,:]) - fn.lm_gdiag(Ey, mesh.metrics[:,ym,:]) ))
             elif form == 'strong': # not provably stable
                 Dx_phys = fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,0,:]) + fn.lm_gdiag(Dy,mesh.metrics[:,2,:])))
                 Dy_phys = fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,1,:]) + fn.lm_gdiag(Dy,mesh.metrics[:,3,:])))
+                Dy_phys_nd = 0.
+                Dy_phys_nd = 0.
             else:
                 raise Exception('Physical operator form not understood.')
 
-            return H_phys, Dx_phys, Dy_phys
+            return H_phys, Dx_phys, Dy_phys, Dx_phys_nd, Dy_phys_nd#, Ebx, Eby
         
         elif mesh.dim == 3:
             
@@ -327,7 +352,6 @@ class MakeSbpOp:
                 raise Exception('Physical operator form not understood.')
 
             return H_phys, Dx_phys, Dy_phys, Dz_phys
-
 
     @staticmethod
     def check_diagH(x,H,tol=1e-10):

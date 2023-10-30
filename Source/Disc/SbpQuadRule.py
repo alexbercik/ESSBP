@@ -10,10 +10,10 @@ sys.path.append(root_folder_path)
 import numpy as np
 from sys import platform
 
-if platform == "linux" or platform == "linux2": # True if on SciNet
-    print('Need to install quadpy on SciNet before using this function')
-else:
-    import quadpy as qp
+#if platform == "linux" or platform == "linux2": # True if on SciNet
+#    print('Need to install quadpy on SciNet before using this function')
+#else:
+#    import quadpy as qp
 
 from Source.Disc.BasisFun import BasisFun
 from Source.Disc.Quadratures.LGL import LGL_set
