@@ -57,16 +57,16 @@ class LinearConv(PdeBase):
             a = q0_max_q * np.exp(exp) + 1
         elif self.a_type == 'constant':
             a = np.ones(np.shape(x)) 
-        elif self.a_type == 'linear1':
+        elif self.a_type == 'linear':
             mid = 1
             a = x/(self.xmin-self.xmax) + (self.xmin+self.xmax)/(self.xmax-self.xmin) + mid
-        elif self.a_type == 'linear2':
+        elif self.a_type == 'linear_eps':
             mid = 0.5 + 1e-8
             a = x/(self.xmin-self.xmax) + (self.xmin+self.xmax)/(self.xmax-self.xmin) + mid
-        elif self.a_type == 'linear3':
+        elif self.a_type == 'linear_0':
             mid = 0.5
             a = x/(self.xmin-self.xmax) + (self.xmin+self.xmax)/(self.xmax-self.xmin) + mid
-        elif self.a_type == 'linear4':
+        elif self.a_type == 'linear_neg':
             mid = 0
             a = x/(self.xmin-self.xmax) + (self.xmin+self.xmax)/(self.xmax-self.xmin) + mid
         else:
@@ -156,6 +156,10 @@ class LinearConv(PdeBase):
     def a_energy_der(self,q,dqdt):
         ''' compute the global A-norm SBP energy derivatve of global solution vector q '''
         return 2 * np.tensordot(q, self.a * self.H * dqdt)
+    
+    def a_cons(self,q):
+        ''' compute the global A-conservation SBP of global solution vector q '''
+        return np.sum(self.a * self.H * q)
     
     def set_mesh(self, mesh):
         '''

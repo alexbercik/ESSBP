@@ -35,21 +35,16 @@ class Burgers(PdeBaseCons):
         self.split_alpha = split_alpha
 
     def calcEx(self, q):
-
         E = 0.5*q**2
         return E
 
     def dExdx(self, q):
 
         if self.use_split_form:
-            #q_diag = fn.diag(q)
-            #dEdx = (1/3)*fn.gm_gv((fn.lm_gm(self.der1,q_diag) + fn.gm_lm(q_diag,self.der1)), q)
-            #dEdx = (1/3)*((self.der1 @ q**2) + (q * (self.der1 @ q)))
-            dEdx = (self.split_alpha/2)*fn.gm_gv(self.Dx, q**2) + (1-self.split_alpha)*(q * fn.gm_gv(self.Dx, q))
+            dEdx = (self.split_alpha/2.)*fn.gm_gv(self.Dx, q**2) + (1.-self.split_alpha)*fn.gdiag_gv(q,fn.gm_gv(self.Dx, q))
         else:
             E = self.calcEx(q)
             dEdx = fn.gm_gv(self.Dx, E)
-            #dEdx = self.Dx @ E
 
         return dEdx
 
@@ -90,9 +85,25 @@ class Burgers(PdeBaseCons):
         dEdq_eig_abs = abs(dEdq)
         return dEdq_eig_abs
     
+    def maxeig_dEdq(self, q):
+        ''' return the maximum eigenvalue - used for LF fluxes '''
+        return np.abs(q)
+    
     def entropy(self,q):
         e = q**2/2
         return e
+    
+    def a_energy(self,q):
+        ''' compute the global U-norm SBP energy of global solution vector q '''
+        return np.tensordot(q, q * self.H * q)
+    
+    def a_energy_der(self,q,dqdt):
+        ''' compute the global U-norm SBP energy derivatve of global solution vector q '''
+        return 2 * np.tensordot(q, q * self.H * dqdt)
+    
+    def a_conservation(self,q):
+        ''' compute the global A-conservation SBP of global solution vector q, equal to entropy/energy '''
+        return np.sum(q * self.H * q)
     
     @njit
     def ec_Ex(qL,qR):

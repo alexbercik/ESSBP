@@ -26,7 +26,7 @@ from Source.Solvers.PdeSolverDg import PdeSolverDg
 ''' Run code '''
 
 # Eq parameters
-para = 1    # Variable coefficient splitting parameter (0 to 1)
+para = 0.2    # Variable coefficient splitting parameter (0 to 1)
 use_exact_der = True # whether to compute variable coefficient derivative exactly
 extrapolate_bdy_flux = True
 obj_name = None
@@ -37,12 +37,12 @@ dt = 0.001
 # note: should set according to courant number C = a dt / dx
 dt_init = dt
 t_init = 0
-tf = 40.
+tf = 10
 
 # Domain
 xmin = -1
 xmax = 1
-bc = 'homogeneous' # 'periodic' or 'homogeneous'
+bc = 'periodic' # 'periodic' or 'homogeneous'
 
 # Spatial discretization
 disc_type = 'div' # 'div', 'had', 'dg'
@@ -57,7 +57,7 @@ diss_type = None
 # Initial solution
 q0 = None # can overwrite q0_type from DiffEq
 q0_type = 'GaussWave' # 'GaussWave', 'SinWave'
-a_type = 'linear3'
+a_type = 'shifted Gaussian'
 
 # Other
 bool_plot_sol = False
@@ -65,7 +65,7 @@ print_sol_norm = False
 
 obj_name = None
 #cons_obj_name = ('Energy','Conservation','A_Energy','Energy_der','Conservation_der','A_Energy_der') # 'Energy', 'Conservation', 'None'
-cons_obj_name = ('Energy','Conservation','A_Energy')
+cons_obj_name = ('Energy','Conservation','A_Energy','A_Conservation')
 
 
 settings = {'warp_factor':0,               # Warps / stretches mesh.
@@ -98,7 +98,7 @@ solver1D = solver_c(diffeq, settings,                     # Diffeq
 
 solver1D.solve()
 solver1D.plot_sol()
-#solver1D.plot_cons_obj()
+solver1D.plot_cons_obj()
 #solver1D.plot_sol(savefile='alpha={0}_'.format(para)+surf_type)
 #solver1D.plot_cons_obj(savefile='alpha={0}_'.format(para)+surf_type)
 

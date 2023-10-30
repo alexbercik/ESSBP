@@ -233,6 +233,31 @@ class Sat(SatDer1, SatDer2):
                         #self.calc_dfdq = self.llf_scalar_had_dfdq
                 else:
                     self.calc_dfdq = self.dfdq_complexstep
+            
+            elif self.diffeq_name=='Burgers':
+                if self.dim >= 2:
+                    raise Exception('Burgers equation SATs only set up for 1D!')
+                else:
+                    if self.disc_type == 'had':
+                        assert (self.method.lower()=='ec'),"Only entropy-conservative SATs set up for Hadamard formulation. Try surf_type='ec'."
+                        self.calc = self.base_had_1d
+                        self.diss = lambda *x: 0
+                    elif self.disc_type == 'div':
+                        print('WARNING: This is not set up yet for curvilinear transformations.')
+                        if self.method.lower()=='split':
+                            print('WARNING: The split form follows the Variable Coefficient formulation and is not entropy-stable.')
+                            self.alpha = solver.diffeq.split_alpha
+                            self.calc = lambda q,E: self.div_1d_burgers_split(q, E, q_bdyL=None, q_bdyR=None, sigma=0., extrapolate_flux=True)
+                        elif self.method.lower()=='split_diss':
+                            print('WARNING: The split form follows the Variable Coefficient formulation and is not entropy-stable.')
+                            self.alpha = solver.diffeq.split_alpha
+                            self.calc = lambda q,E: self.div_1d_burgers_split(q, E, q_bdyL=None, q_bdyR=None, sigma=1., extrapolate_flux=True)
+                        elif self.method.lower()=='ec':
+                            self.calc = lambda q,E: self.div_1d_burgers_es(q, E, q_bdyL=None, q_bdyR=None, sigma=0.)
+                        elif self.method.lower()=='es' or self.method.lower()=='diss':
+                            self.calc = lambda q,E: self.div_1d_burgers_es(q, E, q_bdyL=None, q_bdyR=None, sigma=1.)
+                        else:
+                            raise Exception("SAT type not understood. Try 'ec', 'es', 'split', or 'split_diss'.")
                     
                     
             ######### TO DO
@@ -244,25 +269,6 @@ class Sat(SatDer1, SatDer2):
                 else:
                     self.calc = lambda qL,qR: self.der1_upwind(qL, qR, 1) # use Roe average?
                     self.calc_dfdq = self.dfdq_der1_complexstep
-            elif (self.method.lower()=='ec' and self.diffeq_name=='Burgers') or self.method.lower()=='burgers ec':
-                if self.disc_type == 'div':
-                    if self.dim == 1:
-                        self.calc = self.der1_burgers_ec
-                        self.calc_dfdq = self.dfdq_der1_burgers_ec
-                    elif self.dim == 2:
-                        self.calc = None
-                    elif self.dim == 3:
-                        self.calc = None
-                elif self.disc_type == 'had':
-                    if self.dim == 1:
-                        self.calc = self.base_had_1d
-                        self.diss = lambda *x: 0
-                    elif self.dim == 2:
-                        self.calc = self.base_had_2d
-                        self.diss = lambda *x: 0
-                    elif self.dim == 3:
-                        self.calc = self.base_had_3d
-                        self.diss = lambda *x: 0
             elif (self.method.lower()=='ec' and self.diffeq_name=='Quasi1dEuler') or self.method.lower()=='crean ec':
                     self.calc = self.der1_crean_ec
                     #self.calc_dfdq = complex step?

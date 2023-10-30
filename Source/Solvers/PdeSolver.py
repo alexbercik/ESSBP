@@ -162,6 +162,8 @@ class PdeSolver:
                 print("WARNING: 2-point flux '"+had_flux+"' not available for this Diffeq. Reverting to Central flux.")
                 self.had_flux = 'central'
             self.had_flux_Ex = getattr(self.diffeq, self.had_flux+'_Ex')
+            if hasattr(self.diffeq, had_flux.lower()+'_fix_Ex'):
+                print("WARNING: 2-point flux '"+had_flux+"' may run faster if you use '"+had_flux+"'_fix instead.")
             if self.dim > 1:
                 self.had_flux_Ey = getattr(self.diffeq, self.had_flux+'_Ey')
             if self.dim > 2:
@@ -305,7 +307,10 @@ class PdeSolver:
         else: self.bc = bc
         if self.dim == 1:
             assert isinstance(self.bc, str), 'bc must be a string'
-            if self.bc == 'periodic': self.periodic = True
+            if self.bc == 'periodic': 
+                self.periodic = True
+            else:
+                self.periodic = False
         elif self.dim == 2:
             if isinstance(self.bc, str):
                 self.bc = (self.bc, self.bc)
@@ -427,11 +432,14 @@ class PdeSolver:
             elif cons_obj_name_i == 'conservation_der':
                 cons_obj[i] = self.conservation_der(dqdt)
             elif cons_obj_name_i == 'a_energy':
-                assert self.diffeq.diffeq_name == 'VariableCoefficientLinearConvection', 'A_Energy only defined for Variable Coefficient Linear Advection'
+                assert (self.diffeq.diffeq_name == 'VariableCoefficientLinearConvection' or self.diffeq.diffeq_name == 'Burgers'), 'A_Energy only defined for Variable Coefficient Problems'
                 cons_obj[i] = self.diffeq.a_energy(q)
             elif cons_obj_name_i == 'a_energy_der':
-                assert self.diffeq.diffeq_name == 'VariableCoefficientLinearConvection', 'A_Energy only defined for Variable Coefficient Linear Advection'
+                assert (self.diffeq.diffeq_name == 'VariableCoefficientLinearConvection' or self.diffeq.diffeq_name == 'Burgers'), 'A_Energy only defined for Variable Coefficient Problems'
                 cons_obj[i] = self.diffeq.a_energy_der(q,dqdt)
+            elif cons_obj_name_i == 'a_conservation':
+                assert (self.diffeq.diffeq_name == 'VariableCoefficientLinearConvection' or self.diffeq.diffeq_name == 'Burgers'), 'A_Conservation only defined for Variable Coefficient Problems'
+                cons_obj[i] = self.diffeq.a_conservation(q,dqdt)
             else:
                 raise Exception('Unknown conservation objective function')
 
@@ -538,6 +546,58 @@ class PdeSolver:
                       bc=self.bc, xmin=self.xmin, xmax=self.xmax,
                       obj_name=self.bool_calc_obj, cons_obj_name=self.cons_obj_name,
                       bool_plot_sol=self.bool_plot_sol, print_sol_norm=self.print_sol_norm)
+        
+    def get_LHS(self, q=None, exact_dfdq=True, step=1.0e-4):
+        '''
+        Either get the exact LHS operator on q if the problem is linear, or the
+        linearization (LHS) of it at a particular state q. Either done exactly with
+        self.dfdq(q) or approximately with finite differences, calling self.diffeq.dqdt 
+        A_ij \approx ( dqdt(q + e_j*tol) - dqdt(q - e_j*tol) ) / 2*tol
+
+        Parameters
+        ----------
+        q : numpy array, optional
+            Current state (must be compatible with self.diffeq.dqdt(q))
+            Default is last solution.
+        exact_dfdq : bool, optional
+            Get the LHS analytically or approximately. The default is True.
+        step : float, optional
+            the step size for the finite difference approx. The default is 1.0e-4.
+
+        Returns
+        -------
+        A : 2D numpy array
+            Approximate RHS spatial operator
+        '''
+        if q is None:
+            if hasattr(self, 'q_sol'):
+                if self.q_sol is not None:
+                    if self.q_sol.ndim == 2: q = self.q_sol
+                    elif self.q_sol.ndim == 3: q = self.q_sol[:,:,-1]
+                else:
+                    q = self.diffeq.set_q0()
+            else:
+                q = self.diffeq.set_q0()
+        
+        if exact_dfdq:
+            try:  
+                A = self.dfdq(q)
+            except:
+                exact_dfdq = False
+                print('WARNING: self.dfdq(q) returned errors. Using finite diff approximation')
+        if not exact_dfdq:
+            nen,nelem = q.shape    
+            A = np.zeros((nelem*nen,nelem*nen))      
+            assert(self.qshape==q.shape),"ERROR: sizes don't match"           
+            for i in range(nen):
+                for j in range(nelem):
+                    ei = np.zeros((nen,nelem))
+                    ei[i,j] = 1.*step
+                    q_r = self.dqdt(q+ei).flatten('F')
+                    q_l = self.dqdt(q-ei).flatten('F')
+                    idx = np.where(ei.flatten('F')>step/10)[0][0]
+                    A[:,idx] = (q_r - q_l)/(2*step)
+        return A
 
     
     def check_eigs(self, q=None, plot_eigs=True, returnA=False, exact_dfdq=True,
@@ -577,35 +637,7 @@ class PdeSolver:
             Approximate RHS spatial operator
 
         '''
-        if q is None:
-            if hasattr(self, 'q_sol'):
-                if self.q_sol is not None:
-                    if self.q_sol.ndim == 2: q = self.q_sol
-                    elif self.q_sol.ndim == 3: q = self.q_sol[:,:,-1]
-                else:
-                    q = self.diffeq.set_q0()
-            else:
-                q = self.diffeq.set_q0()
-        
-        if exact_dfdq:
-            try:  
-                A = self.dfdq(q)
-            except:
-                exact_dfdq = False
-                print('WARNING: self.dfdq(q) returned errors. Using finite diff approximation')
-        if not exact_dfdq:
-            nen,nelem = q.shape    
-            A = np.zeros((nelem*nen,nelem*nen))      
-            assert(self.qshape==q.shape),"ERROR: sizes don't match"           
-            for i in range(nen):
-                for j in range(nelem):
-                    ei = np.zeros((nen,nelem))
-                    ei[i,j] = 1.*step
-                    q_r = self.dqdt(q+ei).flatten('F')
-                    q_l = self.dqdt(q-ei).flatten('F')
-                    idx = np.where(ei.flatten('F')>step/10)[0][0]
-                    A[:,idx] = (q_r - q_l)/(2*step)
-        
+        A = self.get_LHS(q=q, exact_dfdq=exact_dfdq, step=step)
         eigs = np.linalg.eigvals(A)
         print('Max real component =',max(eigs.real))
         if max(eigs.real) < tol:
@@ -680,7 +712,9 @@ class PdeSolver:
                 plt.plot(np.linspace(0,self.t_final,len(self.cons_obj[i])),self.cons_obj[i]-norm) 
                 
             else:
-                raise Exception('Unknown conservation objective function')
+                print('WARNING: No default plotting set up for '+cons_obj_name_i)
+                plt.title(cons_obj_name_i,fontsize=18)
+                plt.plot(np.linspace(0,self.t_final,len(self.cons_obj[i])),self.cons_obj[i]) 
                 
             if savefile is not None:
                 plt.savefig(savefile+'_'+cons_obj_name_i+'.jpg',dpi=600)
@@ -745,7 +779,7 @@ class PdeSolver:
         
         # This part adds a pertubation based on the largest real eigenmode
         if eigmode:
-            A = self.check_eigs(q=q0, plot_eigs=False,returnA=True)
+            A = self.get_LHS(q=q0)
             eigvals, eigvecs = np.linalg.eig(A)
             idx = np.argmax(eigvals.real)
             eigmode = eigvecs[:,idx]
