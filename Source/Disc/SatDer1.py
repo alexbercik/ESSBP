@@ -721,6 +721,50 @@ class SatDer1:
             sat -= sigma*(self.tR @ (q_Rlambda * q_Rjump) + self.tL @ (q_Llambda * q_Ljump))
         
         return sat
+    
+    def div_1d_burgers_had(self, q, E, q_bdyL=None, q_bdyR=None, sigma=1):
+        '''
+        Entropy-conservative/stable SATs for self.split_alpha=2/3
+        sigma=0 is conservative, sigma=1 is disspative
+        But this is the SAT one recovers from the hadamard formulation
+        TODO: check metric terms for curvilinear transformation
+        '''
+        q_a = self.tLT @ q
+        q_b = self.tRT @ q
+        q2_a = self.tLT @ q**2
+        q2_b = self.tRT @ q**2
+        if q_bdyL is None: # periodic
+            q_L = fn.shift_right(q_b)
+            q_R = fn.shift_left(q_a)
+            q2_L = fn.shift_right(q2_b)
+            q2_R = fn.shift_left(q2_a)
+        else:
+            raise Exception('TODO: adding boundary condition.')
+
+        sat = (1./6.) * ( q * (self.tR @ ( q_b - q_R )) + self.tR @ ( q2_b - q2_R )
+                        - q * (self.tL @ ( q_a - q_L )) - self.tL @ ( q2_a - q2_L ) )
+        
+        # below is the volume term [ E \circ F(u,u) ] 1 you get from the Hadamard form fluxes
+        #vol = (1./6.) * ( q**2 * self.tR[:] + q * (self.tR @ q_b) + self.tR @ q2_b  
+        #                - q**2 * self.tL[:] - q * (self.tL @ q_a) - self.tL @ q2_a )  
+        
+        # below is the volume term you get from the divergence 2/3 split-form form fluxes
+        #vol = (1./6.) * ( tR @ ( 2. * q2_b + q_b*q_b ) - tL @ ( 2. * q2_a + q_a*q_a ) )
+        
+        # below is supposedly the 1st option you get from the SBP book, which seems to fail, as it mixes the volume term from 
+        # the Hadamard formulation but the coupling terms from the coupling terms from the divergence split formulation,
+        # which is just the entropy conservative 2-point flux using extrapolated q at the boundaries.
+        #sat2 = (1./6.) * ( q**2 * self.tR[:] + q * (self.tR @ q_b) + self.tR @ q2_b - self.tR @ (q_b*q_b + q_b*q_R + q_R*q_R)
+        #                 - q**2 * self.tL[:] - q * (self.tL @ q_a) - self.tL @ q2_a + self.tL @ (q_a*q_a + q_a*q_L + q_L*q_L) )
+        
+        if sigma != 0.:
+            q_Rjump = q_b - q_R
+            q_Ljump = q_a - q_L
+            q_Rlambda = np.abs(q_b + q_R) / 2.
+            q_Llambda = np.abs(q_a + q_L) / 2.
+            sat -= sigma*(self.tR @ (q_Rlambda * q_Rjump) + self.tL @ (q_Llambda * q_Ljump))
+        
+        return sat2
 
 
     ##########################################################################

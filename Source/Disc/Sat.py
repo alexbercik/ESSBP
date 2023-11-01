@@ -256,8 +256,12 @@ class Sat(SatDer1, SatDer2):
                             self.calc = lambda q,E: self.div_1d_burgers_es(q, E, q_bdyL=None, q_bdyR=None, sigma=0.)
                         elif self.method.lower()=='es' or self.method.lower()=='diss':
                             self.calc = lambda q,E: self.div_1d_burgers_es(q, E, q_bdyL=None, q_bdyR=None, sigma=1.)
+                        elif self.method.lower()=='ec_had':
+                            self.calc = lambda q,E: self.div_1d_burgers_had(q, E, q_bdyL=None, q_bdyR=None, sigma=0.)
+                        elif self.method.lower()=='es_had':
+                            self.calc = lambda q,E: self.div_1d_burgers_had(q, E, q_bdyL=None, q_bdyR=None, sigma=1.)
                         else:
-                            raise Exception("SAT type not understood. Try 'ec', 'es', 'split', or 'split_diss'.")
+                            raise Exception("SAT type not understood. Try 'ec', 'es', 'ec_had', 'es_had', 'split', or 'split_diss'.")
                     
                     
             ######### TO DO

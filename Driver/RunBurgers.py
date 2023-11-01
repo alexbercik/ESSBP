@@ -33,7 +33,7 @@ tm_method = 'rk4' # explicit_euler, rk4
 dt = 0.0001
 # note: should set according to courant number C = a dt / dx
 t_init = 0
-tf = 1.0
+tf = 0.5
 
 # Domain
 xmin = 0
@@ -46,7 +46,7 @@ disc_nodes = 'lg' # 'lg', 'lgl', 'nc', 'csbp'
 p = 3
 nelem = 20 # optional, number of elements
 nen = 0 # optional, number of nodes per element
-surf_type = 'es' # 'ec' / 'es' / 'split' / 'split_diss (es is a dissipative version of ec, split follows variable coefficient advection splitting)
+surf_type = 'ec_had' # 'ec' / 'es' / 'ec_had' / 'es_had' / 'split' / 'split_diss' (es is a dissipative version of ec, split follows variable coefficient advection splitting)
 had_flux = 'ec' # 2-point numerical flux used in hadamard form (only 'ec' set up)
 diss_type = None # not set up yet
 use_split_form = True
@@ -94,6 +94,7 @@ solver = PdeSolverSbp(diffeq, settings,                     # Diffeq
 #    return 0.001*np.exp(max_eig * time)
 
 solver.solve()
+solver.check_eigs()
 diffeq.plt_style_sol[0] = {'color':'b','linestyle':'-','marker':'','linewidth':3}
 #solver.plot_sol(plt_save_name=savefile+'_sol',title=title)
 solver.plot_sol()
