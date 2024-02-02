@@ -644,16 +644,7 @@ class SatDer1:
         Note: the entropy conservative SAT is NOT recovered with self.split_alpha=2/3
         sigma=0 is conservative, sigma=1 is disspative
         TODO: check metric terms for curvilinear transformation
-        '''
-        if q_bdyL is None: # periodic
-            EL = fn.shift_right(E) # = q^2/2
-            ER = fn.shift_left(E)
-        else:
-            raise Exception('TODO: adding boundary condition.')
-        
-        # this follows the general procedure for variable coefficient problems
-        # but we would have to use a special numerical flux that to recover the EC
-        # flux. I have to think about whether or not this is correct in general.
+        '''        
         
         sat = self.alpha * self.Esurf @ E + (1 - self.alpha) * 0.5 * q * (self.Esurf @ q)
         q_a = self.tLT @ q
@@ -671,14 +662,6 @@ class SatDer1:
         qf_jump = qf_R - qf_L
         qf_avg = (qf_L + qf_R)/2
 
-        E_a = self.tLT @ E
-        E_b = self.tRT @ E
-        if q_bdyL is None:
-            Ef_L = fn.pad_1dL(E_b, E_b[:,-1])
-            Ef_R = fn.pad_1dR(E_a, E_a[:,0])
-        else:
-            Ef_L = fn.pad_1dL(E_b, 0.5 * q_bdyL**2)
-            Ef_R = fn.pad_1dR(E_a, 0.5 * q_bdyR**2)
         if extrapolate_flux:
             E_a = self.tLT @ E
             E_b = self.tRT @ E
@@ -698,7 +681,8 @@ class SatDer1:
             
     def div_1d_burgers_es(self, q, E, q_bdyL=None, q_bdyR=None, sigma=1):
         '''
-        Entropy-conservative/stable SATs for self.split_alpha=2/3
+        Entropy-conservative/stable SATs for self.split_alpha=2/3 found in SBP book
+        (uses extrapolation of the solution from the coupled elements)
         sigma=0 is conservative, sigma=1 is disspative
         TODO: check metric terms for curvilinear transformation
         '''
@@ -708,7 +692,12 @@ class SatDer1:
             q_L = fn.shift_right(q_b)
             q_R = fn.shift_left(q_a)
         else:
-            raise Exception('TODO: adding boundary condition.')
+            q_L = fn.pad_1dL(q_b, q_bdyL)
+            q_R = fn.pad_1dR(q_a, q_bdyR)
+            # make sure boundaries have upwind SATs
+            sigma = sigma * np.ones((1,self.nelem+1))
+            sigma[0] = 1
+            sigma[-1] = 1
 
         sat = (1./6.) * ( self.tR @ (4. * self.tRT @ E - q_b*q_R - q_R*q_R)
                         - self.tL @ (4. * self.tLT @ E - q_a*q_L - q_L*q_L) )
@@ -727,6 +716,7 @@ class SatDer1:
         Entropy-conservative/stable SATs for self.split_alpha=2/3
         sigma=0 is conservative, sigma=1 is disspative
         But this is the SAT one recovers from the hadamard formulation
+        (uses extrapolation of the flux from the coupled elements)
         TODO: check metric terms for curvilinear transformation
         '''
         q_a = self.tLT @ q
@@ -741,6 +731,7 @@ class SatDer1:
         else:
             raise Exception('TODO: adding boundary condition.')
 
+        # this is the correct form you recover from the hadamard form (sec 9.3.2 in SBP book)
         sat = (1./6.) * ( q * (self.tR @ ( q_b - q_R )) + self.tR @ ( q2_b - q2_R )
                         - q * (self.tL @ ( q_a - q_L )) - self.tL @ ( q2_a - q2_L ) )
         
@@ -751,7 +742,7 @@ class SatDer1:
         # below is the volume term you get from the divergence 2/3 split-form form fluxes
         #vol = (1./6.) * ( tR @ ( 2. * q2_b + q_b*q_b ) - tL @ ( 2. * q2_a + q_a*q_a ) )
         
-        # below is supposedly the 1st option you get from the SBP book, which seems to fail, as it mixes the volume term from 
+        # below is supposedly the 1st option you get from the SBP book (sec 9.3.1), which seems to fail, as it mixes the volume term from 
         # the Hadamard formulation but the coupling terms from the coupling terms from the divergence split formulation,
         # which is just the entropy conservative 2-point flux using extrapolated q at the boundaries.
         #sat2 = (1./6.) * ( q**2 * self.tR[:] + q * (self.tR @ q_b) + self.tR @ q2_b - self.tR @ (q_b*q_b + q_b*q_R + q_R*q_R)
@@ -764,7 +755,7 @@ class SatDer1:
             q_Llambda = np.abs(q_a + q_L) / 2.
             sat -= sigma*(self.tR @ (q_Rlambda * q_Rjump) + self.tL @ (q_Llambda * q_Ljump))
         
-        return sat2
+        return sat
 
 
     ##########################################################################

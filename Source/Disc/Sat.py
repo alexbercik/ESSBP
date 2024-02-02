@@ -240,25 +240,32 @@ class Sat(SatDer1, SatDer2):
                 else:
                     if self.disc_type == 'had':
                         assert (self.method.lower()=='ec'),"Only entropy-conservative SATs set up for Hadamard formulation. Try surf_type='ec'."
+                        print('Using base EC Hadamard SAT.')
                         self.calc = self.base_had_1d
                         self.diss = lambda *x: 0
                     elif self.disc_type == 'div':
                         print('WARNING: This is not set up yet for curvilinear transformations.')
                         if self.method.lower()=='split':
+                            print('Using a split form SAT mimicking the variable coefficient advection formulation.')
                             print('WARNING: The split form follows the Variable Coefficient formulation and is not entropy-stable.')
                             self.alpha = solver.diffeq.split_alpha
                             self.calc = lambda q,E: self.div_1d_burgers_split(q, E, q_bdyL=None, q_bdyR=None, sigma=0., extrapolate_flux=True)
                         elif self.method.lower()=='split_diss':
+                            print('Using a split form SAT mimicking the variable coefficient advection formulation.')
                             print('WARNING: The split form follows the Variable Coefficient formulation and is not entropy-stable.')
                             self.alpha = solver.diffeq.split_alpha
                             self.calc = lambda q,E: self.div_1d_burgers_split(q, E, q_bdyL=None, q_bdyR=None, sigma=1., extrapolate_flux=True)
                         elif self.method.lower()=='ec':
+                            print('Using an entropy-conservative SAT found in the SBP book (not the one recovered from the Hadamard form).')
                             self.calc = lambda q,E: self.div_1d_burgers_es(q, E, q_bdyL=None, q_bdyR=None, sigma=0.)
                         elif self.method.lower()=='es' or self.method.lower()=='diss':
+                            print('Using an entropy-dissipative SAT found in the SBP book (not the one recovered from the Hadamard form).')
                             self.calc = lambda q,E: self.div_1d_burgers_es(q, E, q_bdyL=None, q_bdyR=None, sigma=1.)
                         elif self.method.lower()=='ec_had':
+                            print('Using the entropy-conservative SAT recovered from the Hadamard form.')
                             self.calc = lambda q,E: self.div_1d_burgers_had(q, E, q_bdyL=None, q_bdyR=None, sigma=0.)
                         elif self.method.lower()=='es_had':
+                            print('Using the entropy-dissipative SAT recovered from the Hadamard form.')
                             self.calc = lambda q,E: self.div_1d_burgers_had(q, E, q_bdyL=None, q_bdyR=None, sigma=1.)
                         else:
                             raise Exception("SAT type not understood. Try 'ec', 'es', 'ec_had', 'es_had', 'split', or 'split_diss'.")
