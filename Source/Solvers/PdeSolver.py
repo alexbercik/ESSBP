@@ -128,6 +128,8 @@ class PdeSolver:
         # Modifies the SAT terms in the Hadamard form. See ESSBP documentation.
         self.settings.setdefault('stop_after_metrics', False) 
         # Do not set up physical operators, SATs, etc. only Mesh setup.
+        self.settings.setdefault('skew_sym', True)
+        # determines whether to use a split-form or divergence form for metrics
 
         # Time marching
         self.tm_method = tm_method.lower()
@@ -155,19 +157,29 @@ class PdeSolver:
                 #TODO: Update this for 2D and 3D
                 self.use_diffeq_dExdx = False
         elif disc_type.lower() == 'had' or disc_type.lower() == 'hadamard':
+            assert self.settings['skew_sym'],"If hadamard scheme must also use skew-sym metrics. Set settings['skew_sym']=True"
             self.disc_type = 'had'       
             if hasattr(self.diffeq, had_flux.lower()+'_Ex'):
                 self.had_flux = had_flux.lower()
             else:
                 print("WARNING: 2-point flux '"+had_flux+"' not available for this Diffeq. Reverting to Central flux.")
                 self.had_flux = 'central'
-            self.had_flux_Ex = getattr(self.diffeq, self.had_flux+'_Ex')
-            if hasattr(self.diffeq, had_flux.lower()+'_fix_Ex'):
-                print("WARNING: 2-point flux '"+had_flux+"' may run faster if you use '"+had_flux+"'_fix instead.")
-            if self.dim > 1:
-                self.had_flux_Ey = getattr(self.diffeq, self.had_flux+'_Ey')
-            if self.dim > 2:
-                self.had_flux_Ez = getattr(self.diffeq, self.had_flux+'_Ez')
+            if self.diffeq.para == self.diffeq.para_fix:
+                print('Using jitted (_fix) 2-point flux instead since params match.')
+                # has all the standard parameters - used fixed jit functions
+                self.had_flux_Ex = getattr(self.diffeq, self.had_flux+'_fix_Ex')
+                if self.dim > 1:
+                    self.had_flux_Ey = getattr(self.diffeq, self.had_flux+'_fix_Ey')
+                if self.dim > 2:
+                    self.had_flux_Ez = getattr(self.diffeq, self.had_flux+'_fix_Ez')
+            else:
+                self.had_flux_Ex = getattr(self.diffeq, self.had_flux+'_Ex')
+                if hasattr(self.diffeq, had_flux.lower()+'_fix_Ex'):
+                    print("WARNING: 2-point flux '"+had_flux+"' may run faster if you use '"+had_flux+"'_fix instead (though params different).")
+                if self.dim > 1:
+                    self.had_flux_Ey = getattr(self.diffeq, self.had_flux+'_Ey')
+                if self.dim > 2:
+                    self.had_flux_Ez = getattr(self.diffeq, self.had_flux+'_Ez')
             # quick test
             import sys
             from io import StringIO 

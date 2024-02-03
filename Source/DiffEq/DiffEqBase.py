@@ -111,6 +111,7 @@ class PdeBase:
         ''' Add inputs to the class '''
 
         self.para = para
+        if not hasattr(self, 'para_fix'): self.para_fix = None
         self.obj_name = obj_name
         self.q0_type = q0_type
 

@@ -34,7 +34,7 @@ dt = 0.001
 # note: should set according to courant number C = a dt / dx
 dt_init = dt
 t_init = 0
-tf = 0.01
+tf = 1.00
 
 # Domain
 xmin = (0,0)
@@ -42,14 +42,14 @@ xmax = (1,1)
 bc = 'periodic'
 
 # Spatial discretization
-disc_type = 'had' # 'div', 'had', 'dg'
-disc_nodes = 'lgl' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
+disc_type = 'div' # 'div', 'had', 'dg'
+disc_nodes = 'lg' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
 p = 2
-nelem = (5,5) # optional, number of elements
+nelem = (50,50) # optional, number of elements
 # TODO: Error when nelem not equal sizes
 nen = 0 # optional, number of nodes per element
 surf_type = 'lf'
-had_flux = 'central_fix' # 2-point numerical flux used in hadamard form
+had_flux = 'central' # 2-point numerical flux used in hadamard form
 diss_type = None
 
 # Initial solution
@@ -72,7 +72,7 @@ settings = {'warp_factor':0.1,               # Warps / stretches mesh.
             'use_optz_metrics':True,        # Uses optimized metrics for free stream preservation.
             'calc_exact_metrics':True,      # Calculates the exact metrics (useless if metric_method=exact).
             'metric_optz_method':'alex',   # Define the optimization procedure.
-            'stop_after_metrics': False } 
+            'stop_after_metrics': False} 
 
 ''' Set diffeq and solve '''
 
@@ -103,8 +103,8 @@ solver2D = solver_c(diffeq, settings,                     # Diffeq
 
 solver2D.solve()
 solver2D.plot_sol(plot_exa=bool_plot_exa)
-#solver2D.plot_cons_obj()
-#print('Final Error: ', solver2D.calc_error())
+solver2D.plot_cons_obj()
+print('Final Error: ', solver2D.calc_error())
 
 from Source.Methods.Analysis import run_convergence, run_jacobian_convergence, run_invariants_convergence
 #schedule = [['disc_nodes','lg','lgl'],['p',3,4],['nelem',12,15,20,25,40]]

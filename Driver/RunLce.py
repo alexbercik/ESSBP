@@ -34,7 +34,7 @@ dt = 0.0001
 # note: should set according to courant number C = a dt / dx
 dt_init = dt
 t_init = 0
-tf = 1.00
+tf = 5.00
 
 # Domain
 xmin = 0
@@ -42,12 +42,12 @@ xmax = 1
 bc = 'periodic'
 
 # Spatial discretization
-disc_type = 'div' # 'div', 'had', 'dg'
-disc_nodes = 'lgl' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
+disc_type = 'div' # 'div', 'had'
+disc_nodes = 'lg' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
 p = 4
-nelem = 10 # optional, number of elements
+nelem = 50 # optional, number of elements
 nen = 0 # optional, number of nodes per element
-surf_type = 'lf'
+surf_type = 'central'
 had_flux = 'central_fix' # 2-point numerical flux used in hadamard form. 
 # note: use 'central_fix' instead of 'central' for speed, but then fixes a=1
 diss_type = None
@@ -63,7 +63,7 @@ print_sol_norm = False
 obj_name = None
 cons_obj_name = ('Energy','Conservation') # 'Energy', 'Conservation', 'None'
 
-settings = {'warp_factor':0.2,               # Warps / stretches mesh.
+settings = {'warp_factor':0.0,               # Warps / stretches mesh.
             'warp_type': 'default',         # Options: 'defualt', 'papers', 'quad'
             'metric_method':'exact',   # Options: 'VinokurYee' and 'ThomasLombard'
             'use_optz_metrics':True,        # Uses optimized metrics for free stream preservation.
@@ -95,9 +95,12 @@ solver1D = solver_c(diffeq, settings,                     # Diffeq
 
 solver1D.solve()
 solver1D.plot_sol()
-#solver1D.plot_cons_obj()
+solver1D.plot_cons_obj()
 #print('Final Error: ', solver1D.calc_error())
 
-from Source.Methods.Analysis import run_convergence
-schedule = [['disc_nodes','lg','lgl'],['p',3,4],['nelem',12,15,20,25,40]]
-#run_convergence(solver1D,schedule_in=schedule)
+#from Source.Methods.Analysis import run_convergence
+#schedule = [['disc_nodes','csbp'],['p',1,2,3,4],['nen',100,200,300,400]]
+#dofs, errors, labels = run_convergence(solver1D,schedule_in=schedule,savefile='convergence.png',
+#                title=r'Error Convergence', xlabel=r'Nodes',grid=True,return_conv=True,
+#                ylabel=r'$\vert \vert u - u_{ex} \vert \vert_H$',convunc=False,
+#                labels=[r'$p=1$ SBP',r'$p=2$ SBP',r'$p=3$ SBP',r'$p=4$ SBP'])
