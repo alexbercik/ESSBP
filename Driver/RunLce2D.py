@@ -26,7 +26,6 @@ from Source.Solvers.PdeSolverDg import PdeSolverDg
 
 # Eq parameters
 para = [1,1]     # Wave speed ax, ay
-obj_name = None
 
 # Time marching
 tm_method = 'rk4' # explicit_euler, rk4
@@ -42,7 +41,7 @@ xmax = (1,1)
 bc = 'periodic'
 
 # Spatial discretization
-disc_type = 'div' # 'div', 'had', 'dg'
+disc_type = 'div' # 'div', 'had'
 disc_nodes = 'lg' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
 p = 2
 nelem = (50,50) # optional, number of elements
@@ -61,7 +60,6 @@ bool_plot_sol = False
 bool_plot_exa = True
 print_sol_norm = False
 
-obj_name = None
 cons_obj_name = ('Energy','Conservation') # 'Energy', 'Conservation', 'None'
 
 settings = {'warp_factor':0.1,               # Warps / stretches mesh.
@@ -83,7 +81,7 @@ elif disc_type == 'dg':
 else:
     solver_c = PdeSolverSbp
 
-diffeq = LinearConv(para, obj_name, q0_type)
+diffeq = LinearConv(para, q0_type)
 
 solver2D = solver_c(diffeq, settings,                     # Diffeq
                   tm_method, dt, tf,                    # Time marching

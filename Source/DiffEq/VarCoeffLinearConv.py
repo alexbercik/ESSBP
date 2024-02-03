@@ -32,9 +32,9 @@ class LinearConv(PdeBase):
     use_exact_der = True # whether to compute variable coefficient derivative exactly
     extrapolate_bdy_flux = True # whether to extrapolate fluxes or use extrapolated solution in SAT
 
-    def __init__(self, para, obj_name=None, q0_type='SinWave', a_type='Gaussian'):
+    def __init__(self, para, q0_type='SinWave', a_type='Gaussian'):
 
-        super().__init__(para, obj_name, q0_type)
+        super().__init__(para, q0_type)
         self.alpha = self.para[0] # split form parameter
         self.a_type = a_type
         self.a = None # to be set later
@@ -112,30 +112,30 @@ class LinearConv(PdeBase):
         E = self.calcEx(q)
         
         if self.use_exact_der:      
-            dEdx = self.alpha * fn.gm_gv(self.Dx, E) + \
+            dExdx = self.alpha * fn.gm_gv(self.Dx, E) + \
                 (1 - self.alpha) * ( self.a * fn.gm_gv(self.Dx, q) + q * self.ader )
         else:
-            dEdx = self.alpha * fn.gm_gv(self.Dx, E) + \
+            dExdx = self.alpha * fn.gm_gv(self.Dx, E) + \
                 (1 - self.alpha) * ( self.a * fn.gm_gv(self.Dx, q) + \
                                           q * fn.gm_gv(self.Dx, self.a) )
-        return dEdx
+        return dExdx
 
-    def dEdq(self, q):
+    def dExdq(self, q):
         
         #TODO
         return None
     
-    def d2Edq2(self, q):
+    def d2Exdq2(self, q):
 
         #TODO
         return None
     
-    def dEdq_eig_abs(self, dEdq):
+    def dExdq_eig_abs(self, dExdq):
 
         #TODO
         return None
     
-    def maxeig_dEdq(self, q):
+    def maxeig_dExdq(self, q):
         ''' return the maximum eigenvalue - used for LF fluxes '''
         # Note: Because I don't have access to x (usually q is actually a q_facet)
         # I can not do a local LF. Instead I return an overly dissipative global LF

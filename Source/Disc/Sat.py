@@ -52,10 +52,10 @@ class Sat(SatDer1, SatDer2):
         if self.dim == 1:
             self.tL = solver.tL
             self.tR = solver.tR
-            self.dEdq = solver.diffeq.dEdq
-            self.d2Edq2 = solver.diffeq.d2Edq2
-            self.dEdq_eig_abs = solver.diffeq.dEdq_eig_abs
-            self.maxeig_dEdq = solver.diffeq.maxeig_dEdq
+            self.dExdq = solver.diffeq.dExdq
+            self.d2Exdq2 = solver.diffeq.d2Exdq2
+            self.dExdq_eig_abs = solver.diffeq.dExdq_eig_abs
+            self.maxeig_dExdq = solver.diffeq.maxeig_dExdq
             self.metrics = solver.mesh.metrics[:,0,:]
             self.bdy_metrics = np.reshape(solver.mesh.bdy_metrics, (1,2,self.nelem))
             self.had_flux_Ex = solver.had_flux_Ex
@@ -440,7 +440,7 @@ class Sat(SatDer1, SatDer2):
         else:
             raise Exception('Averaging method not understood.')
         
-        maxeigs = self.maxeig_dEdq(q_avg)
+        maxeigs = self.maxeig_dExdq(q_avg)
         metrics = fn.pad_1dR(self.bdy_metrics[:,0,:], self.bdy_metrics[:,1,-1])
         Lambda = np.abs(maxeigs * metrics)
         Lambda_q_jump = fn.gdiag_gv(Lambda, q_jump)

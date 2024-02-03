@@ -26,7 +26,6 @@ from Source.Solvers.PdeSolverDg import PdeSolverDg
 
 # Eq parameters
 para = [1,1,1]     # Wave speed ax, ay, az
-obj_name = None
 
 # Time marching
 tm_method = 'rk4' # explicit_euler, rk4
@@ -60,7 +59,6 @@ bool_plot_sol = False
 bool_plot_exa = True
 print_sol_norm = False
 
-obj_name = None
 cons_obj_name = ('Energy','Conservation') # 'Energy', 'Conservation', 'None'
 
 settings = {'warp_factor':0.9,               # Warps / stretches mesh.
@@ -82,7 +80,7 @@ elif disc_type == 'dg':
 else:
     solver_c = PdeSolverSbp
 
-diffeq = LinearConv(para, obj_name, q0_type)
+diffeq = LinearConv(para, q0_type)
 
 solver3D = solver_c(diffeq, settings,                     # Diffeq
                   tm_method, dt, tf,                    # Time marching

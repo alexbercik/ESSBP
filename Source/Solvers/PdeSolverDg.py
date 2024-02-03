@@ -121,7 +121,7 @@ class PdeSolverDg(PdeSolver, NumFlux):
             nfluxA[:,[-1]] = self.numflux(self.diffeq.qL, q_facB[:,[0]])
             nfluxB[:,[0]] = self.numflux(q_facA[:,[-1]], self.diffeq.qR)
             
-        flux = self.diffeq.calcE(q_flux)
+        flux = self.diffeq.calcEx(q_flux)
         dqdt_out -= self.mass_inv @ ( self.surf_num[1]@nfluxA - self.surf_flux[1]@flux \
                                     + self.surf_num[0]@nfluxB - self.surf_flux[0]@flux )
 
@@ -145,7 +145,7 @@ class PdeSolverDg(PdeSolver, NumFlux):
             nfluxA[:,[-1]] = self.numflux(self.diffeq.qL, q_facB[:,[0]])
             nfluxB[:,[0]] = self.numflux(q_facA[:,[-1]], self.diffeq.qR)
             
-        flux = self.diffeq.calcE(q_flux)
+        flux = self.diffeq.calcEx(q_flux)
         dqdt_out -= self.mass_inv @ ( self.surf_num[1]@nfluxA - self.surf_flux[1]@flux \
                                     + self.surf_num[0]@nfluxB - self.surf_flux[0]@flux )
 
@@ -207,9 +207,9 @@ class PdeSolverDg(PdeSolver, NumFlux):
         q_flux = self.van @ q
         q_facB = self.vanf[0] @ q
         q_facA = self.vanf[1] @ q
-        # TODO: Generalize calcE to handle cases when passed x (physical flux nodes)
-        # TODO: Gereralize calcE and vol to handle multiple dimensions
-        dqdt_out = self.mass_inv @ (self.vol @ self.diffeq.calcE(q_flux) + self.proj @ self.diffeq.calcG(q_flux))
+        # TODO: Generalize calcEx to handle cases when passed x (physical flux nodes)
+        # TODO: Gereralize calcEx and vol to handle multiple dimensions
+        dqdt_out = self.mass_inv @ (self.vol @ self.diffeq.calcEx(q_flux) + self.proj @ self.diffeq.calcG(q_flux))
 
         nfluxA, nfluxB = np.empty((1,self.nelem)) , np.empty((1,self.nelem))
         nfluxA[:,:-1] , nfluxB[:,1:] = self.numflux(q_facA[:,:-1], q_facB[:,1:])

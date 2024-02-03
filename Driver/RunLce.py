@@ -26,7 +26,6 @@ from Source.Solvers.PdeSolverDg import PdeSolverDg
 
 # Eq parameters
 para = 1      # Wave speed a
-obj_name = None
 
 # Time marching
 tm_method = 'rk4' # explicit_euler, rk4
@@ -42,7 +41,7 @@ xmax = 1
 bc = 'periodic'
 
 # Spatial discretization
-disc_type = 'div' # 'div', 'had'
+disc_type = 'had' # 'div', 'had'
 disc_nodes = 'lg' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
 p = 4
 nelem = 50 # optional, number of elements
@@ -60,7 +59,6 @@ q0_type = 'GaussWave' # 'GaussWave', 'SinWave'
 bool_plot_sol = False
 print_sol_norm = False
 
-obj_name = None
 cons_obj_name = ('Energy','Conservation') # 'Energy', 'Conservation', 'None'
 
 settings = {'warp_factor':0.0,               # Warps / stretches mesh.
@@ -78,7 +76,7 @@ elif disc_type == 'dg':
 else:
     solver_c = PdeSolverSbp
 
-diffeq = LinearConv(para, obj_name, q0_type)
+diffeq = LinearConv(para, q0_type)
 
 solver1D = solver_c(diffeq, settings,                     # Diffeq
                   tm_method, dt, tf,                    # Time marching

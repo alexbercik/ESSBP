@@ -40,19 +40,19 @@ PdeBase:
     -Provides an updated init file with more inputs
     -Provides functions required for all PDEs such as set_xy, set_q0
     -Has a function to plot the solution of 1D PDEs
-    -Sets default methods to calculate dEdx as well as the source term and
+    -Sets default methods to calculate dExdx as well as the source term and
     its derivative
 PdeBaseCons:
     -Builds from PdeBase by adding methods for PDEs that are of the
-    form dqdt + dEdx = G, ie no second or higher derivatives
+    form dqdt + dExdx = G, ie no second or higher derivatives
 PdeBasePar:
     -Builds from PdeBase by adding methods for PDEs that are of the
-    form dqdt + dEdx = d^2EVdx^2 + G, ie with second derivatives
+    form dqdt + dExdx = d^2EVdx^2 + G, ie with second derivatives
 The PDEs are solved in this form:
-    The Diffeq:             dqdt = -dEdx + G + diss = f
+    The Diffeq:             dqdt = -dExdx + G + diss = f
     Time marching methods:  dqdt = f(q) = rhs(q)
     Linearization:          f(q) = dfdq @ q 
-        * note: dfdq \neq dEdq , analytic flux jacobian
+        * note: dfdq \neq dExdq , analytic flux jacobian
     Implicit Euler:         dq = q^{n+1} - q^{n}
                             dq = h*f(q^{n+1}) = h*(f(q^{n}) + dfdq(q^{n})@dq) + O(h^2)
         * note: of course if f(q) is linear (i.e. dfdq is constant), this time 
@@ -94,7 +94,7 @@ class PdeBase:
     q0_gauss_wave_val_bc = 1e-10    # Value at the boundary for Gauss wave
 
 
-    def __init__(self, para, obj_name=None, q0_type=None):
+    def __init__(self, para, q0_type=None):
         '''
         Parameters
         ----------
@@ -442,78 +442,78 @@ class PdeBase:
         fz = fn.arith_mean(self.calcEz(qL),self.calcEz(qR))
         return fz
 
-    def maxeig_dEdq(self,q):
+    def maxeig_dExdq(self,q):
         ''' Calculate the constant for the Lax-Friedrichs flux, useful to set 
         the CFL number but should not be used for computations in the code
-        since this is slow. Equal to max(abs(eigval(dEdq))). See Hesthaven pg. 33. 
+        since this is slow. Equal to max(abs(eigval(dExdq))). See Hesthaven pg. 33. 
         If q is given, use that. If not, use the initial condition.'''
-        print('WARNING: Using default maxeig_dEdq. Should not be used for main code.')
+        print('WARNING: Using default maxeig_dExdq. Should not be used for main code.')
         if self.neq_node == 1: # scalar
             # input q is shape (n,n,nelem), output is shape (nelem)
-            return np.max(np.abs(self.dEdq(q)),axis=(0,1))
+            return np.max(np.abs(self.dExdq(q)),axis=(0,1))
         else: # system
-            dEdq_mod = np.transpose(self.dEdq(q),axes=(2,0,1))
-            eig_val = np.linalg.eigvals(dEdq_mod)
+            dExdq_mod = np.transpose(self.dExdq(q),axes=(2,0,1))
+            eig_val = np.linalg.eigvals(dExdq_mod)
             return np.max(np.abs(eig_val),axis=1)
         
     def maxeig_dExdq(self,q):
         print('WARNING: Using default maxeig_dExdq. Should not be used for main code.')
-        if self.neq_node == 1: # scalar, so diagonal dEdq matrix
+        if self.neq_node == 1: # scalar, so diagonal dExdq matrix
             return np.max(np.abs(self.dExdq(q)),axis=(0,1))
         else: # system
-            dEdq_mod = np.transpose(self.dExdq(q),axes=(2,0,1))
-            eig_val = np.linalg.eigvals(dEdq_mod)
+            dExdq_mod = np.transpose(self.dExdq(q),axes=(2,0,1))
+            eig_val = np.linalg.eigvals(dExdq_mod)
             return np.max(np.abs(eig_val),axis=1)
         
     def maxeig_dEydq(self,q):
         print('WARNING: Using default maxeig_dEydq. Should not be used for main code.')
-        if self.neq_node == 1: # scalar, so diagonal dEdq matrix
+        if self.neq_node == 1: # scalar, so diagonal dEydq matrix
             return np.max(np.abs(self.dEydq(q)),axis=(0,1))
         else: # system
-            dEdq_mod = np.transpose(self.dEydq(q),axes=(2,0,1))
-            eig_val = np.linalg.eigvals(dEdq_mod)
+            dEydq_mod = np.transpose(self.dEydq(q),axes=(2,0,1))
+            eig_val = np.linalg.eigvals(dEydq_mod)
             return np.max(np.abs(eig_val),axis=1)
         
     def maxeig_dEzdq(self,q):
         print('WARNING: Using default maxeig_dEzdq. Should not be used for main code.')
-        if self.neq_node == 1: # scalar, so diagonal dEdq matrix
+        if self.neq_node == 1: # scalar, so diagonal dEzdq matrix
             return np.max(np.abs(self.dEzdq(q)),axis=(0,1))
         else: # system
-            dEdq_mod = np.transpose(self.dEzdq(q),axes=(2,0,1))
-            eig_val = np.linalg.eigvals(dEdq_mod)
+            dEzdq_mod = np.transpose(self.dEzdq(q),axes=(2,0,1))
+            eig_val = np.linalg.eigvals(dEzdq_mod)
             return np.max(np.abs(eig_val),axis=1)
         
     # TODO: I dont think I need these
     
     def dExdx_div(self, q):
         E = self.calcEx(q)
-        dEdx = fn.gm_gv(self.Dx, E)
-        return dEdx
+        dExdx = fn.gm_gv(self.Dx, E)
+        return dExdx
     
     def dEydy_div(self,q):
         E = self.calcEy(q)
-        dEdx = fn.gm_gv(self.Dy, E)
-        return dEdx  
+        dEydx = fn.gm_gv(self.Dy, E)
+        return dEydx  
 
     def dEzdz_div(self,q):
         E = self.calcEz(q)
-        dEdx = fn.gm_gv(self.Dz, E)
-        return dEdx 
+        dEzdx = fn.gm_gv(self.Dz, E)
+        return dEzdx 
 
     def dExdx_had(self, q):
         F = self.Fx_mat(q) 
-        dEdx = 2*np.sum(fn.lm_gm_hadamard(self.Dx, F),axis=1)
-        return dEdx
+        dExdx = 2*np.sum(fn.lm_gm_hadamard(self.Dx, F),axis=1)
+        return dExdx
     
     def dEydy_had(self,q):
         F = self.Fx_mat(q) 
-        dEdx = 2*np.sum(fn.lm_gm_hadamard(self.Dy, F),axis=1)
-        return dEdx  
+        dEydx = 2*np.sum(fn.lm_gm_hadamard(self.Dy, F),axis=1)
+        return dEydx  
 
     def dEzdz_had(self,q):
         F = self.Fx_mat(q) 
-        dEdx = 2*np.sum(fn.lm_gm_hadamard(self.Dz, F),axis=1)
-        return dEdx 
+        dEzdx = 2*np.sum(fn.lm_gm_hadamard(self.Dz, F),axis=1)
+        return dEzdx 
             
 
     ''' Source term '''
@@ -612,10 +612,10 @@ class PdeBaseCons(PdeBase):
 
     def dqdt_1D(self, q):
 
-        dEdx = self.dExdx(q)
+        dExdx = self.dExdx(q)
         G = self.calcG(q)
 
-        dqdt = -dEdx + G
+        dqdt = -dExdx + G
         return dqdt
 
     def dfdq_1D_div(self, q):
