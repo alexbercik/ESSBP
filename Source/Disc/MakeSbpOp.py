@@ -248,11 +248,12 @@ class MakeSbpOp:
 
 
 
-    def ref_2_phys(self, mesh):
+    def ref_2_phys(self, mesh, form):
         '''
         Parameters
         ----------
         mesh : class instance of MakeMesh.py defining mesh
+        form : skew_sym' or 'div'
 
         Returns
         -------
@@ -264,8 +265,6 @@ class MakeSbpOp:
             SBP physical derivative operator, size (nen,nen,nelem) or (nen^2,nen^2,nelem).
         '''
         print('... Creating physical operators')
-        
-        form = 'skew-sym' # 'skew-sym' or 'strong'
         
         assert fn.isDiag(self.H), 'H matrix is not diagonal!'
 
@@ -292,7 +291,7 @@ class MakeSbpOp:
             Ex = txb @ self.H @ txb.T - txa @ self.H @ txa.T
             Ey = tyb @ self.H @ tyb.T - tya @ self.H @ tya.T
 
-            if form == 'skew-sym':
+            if form == 'skew_sym':
                 Dx_phys = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,0,:]) + fn.gdiag_lm(mesh.metrics[:,0,:],Dx) 
                                                           + fn.lm_gdiag(Dy,mesh.metrics[:,2,:]) + fn.gdiag_lm(mesh.metrics[:,2,:],Dy)))
                 Dy_phys = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,1,:]) + fn.gdiag_lm(mesh.metrics[:,1,:],Dx) 
@@ -312,7 +311,7 @@ class MakeSbpOp:
                 Dy_phys_nd = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,1,:]) + fn.gdiag_lm(mesh.metrics[:,1,:],Dx) 
                                                           + fn.lm_gdiag(Dy,mesh.metrics[:,3,:]) + fn.gdiag_lm(mesh.metrics[:,3,:],Dy))) \
                             +0.5*fn.gdiag_gm( (1/H_phys), ( Eby - fn.lm_gdiag(Ex, mesh.metrics[:,xm,:]) - fn.lm_gdiag(Ey, mesh.metrics[:,ym,:]) ))
-            elif form == 'strong': # not provably stable
+            elif form == 'div': # not provably stable
                 Dx_phys = fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,0,:]) + fn.lm_gdiag(Dy,mesh.metrics[:,2,:])))
                 Dy_phys = fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,1,:]) + fn.lm_gdiag(Dy,mesh.metrics[:,3,:])))
                 Dy_phys_nd = 0.
@@ -331,7 +330,7 @@ class MakeSbpOp:
             Dy = np.kron(np.kron(eye, self.D), eye)
             Dz = np.kron(np.kron(eye, eye), self.D)
 
-            if form == 'skew-sym':
+            if form == 'skew_sym':
                 Dx_phys = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,0,:]) + fn.gdiag_lm(mesh.metrics[:,0,:],Dx) 
                                                           + fn.lm_gdiag(Dy,mesh.metrics[:,3,:]) + fn.gdiag_lm(mesh.metrics[:,3,:],Dy)
                                                           + fn.lm_gdiag(Dz,mesh.metrics[:,6,:]) + fn.gdiag_lm(mesh.metrics[:,6,:],Dz)))
@@ -341,7 +340,7 @@ class MakeSbpOp:
                 Dz_phys = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,2,:]) + fn.gdiag_lm(mesh.metrics[:,2,:],Dx) 
                                                           + fn.lm_gdiag(Dy,mesh.metrics[:,5,:]) + fn.gdiag_lm(mesh.metrics[:,5,:],Dy)
                                                           + fn.lm_gdiag(Dz,mesh.metrics[:,8,:]) + fn.gdiag_lm(mesh.metrics[:,8,:],Dz)))
-            elif form == 'strong': # not provably stable
+            elif form == 'div': # not provably stable
                 Dx_phys = fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,0,:]) + fn.lm_gdiag(Dy,mesh.metrics[:,3,:])
                                                          + fn.lm_gdiag(Dz,mesh.metrics[:,6,:])))
                 Dy_phys = fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,1,:]) + fn.lm_gdiag(Dy,mesh.metrics[:,4,:])

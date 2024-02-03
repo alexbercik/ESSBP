@@ -18,6 +18,7 @@ class SatDer1:
     def central_div_1d(self, q, E, q_bdyL=None, q_bdyR=None):
         '''
         A non-dissipative central flux in 1D
+        Assumes skew-symmetric form metrics.
         '''
         if q_bdyL is None: # periodic
             EL = fn.shift_right(E)
@@ -25,19 +26,28 @@ class SatDer1:
         else:
             raise Exception('TODO: adding boundary condition.')
         
-        Ephys = self.metrics * E
-        EphysL = self.tLT @ Ephys
-        EphysR = self.tRT @ Ephys
+# =============================================================================
+#         # This is equivalent to below, but tested to be slightly slower
+#         Ephys = self.metrics * E
+#         EphysL = self.tLT @ Ephys
+#         EphysR = self.tRT @ Ephys
+#         
+#         EnumL = 0.5*(self.bdy_metrics[:,0,:] * (self.tRT @ EL) + EphysL)
+#         EnumR = 0.5*(self.bdy_metrics[:,1,:] * (self.tLT @ ER) + EphysR)
+#         
+#         sat = self.tR @ (EphysR - EnumR) - self.tL @ (EphysL - EnumL)
+# =============================================================================
         
-        EnumL = 0.5*(self.bdy_metrics[:,0,:] * (self.tRT @ EL) + EphysL)
-        EnumR = 0.5*(self.bdy_metrics[:,1,:] * (self.tLT @ ER) + EphysR)
+        # This is equivalent to above, but tested to be slightly faster
+        sat = 0.5*( fn.gm_gv(self.vol_mat, E) 
+                  - fn.gm_gv(self.tbphys, ER)
+                  + fn.gm_gv(self.taphys, EL) )
         
-        sat = self.tR @ (EphysR - EnumR) - self.tL @ (EphysL - EnumL)
         return sat
     
     def central_div_2d(self, q, Ex, Ey, idx, q_bdyL=None, q_bdyR=None):
         '''
-        A non-dissipative central flux in 2D. 
+        A non-dissipative central flux in 2D.
         '''
         
         if q_bdyL is None: # periodic
@@ -48,44 +58,41 @@ class SatDer1:
         else:
             raise Exception('TODO: adding boundary condition.')
         
-        Ephys = self.metrics[idx][:,0,:] * Ex + self.metrics[idx][:,1,:] * Ey
-        EphysL = self.tLT @ Ephys
-        EphysR = self.tRT @ Ephys
+# =============================================================================
+#         # Option 1: equivalent to below, but tested to be slowest of 3
+#         Ephys = self.metrics[idx][:,0,:] * Ex + self.metrics[idx][:,1,:] * Ey
+#         EphysL = self.tLT @ Ephys
+#         EphysR = self.tRT @ Ephys
+#         EnumL = 0.5*(self.bdy_metrics[idx][:,0,0,:] * (self.tRT @ ExL) \
+#                    + self.bdy_metrics[idx][:,0,1,:] * (self.tRT @ EyL) + EphysL)
+#         EnumR = 0.5*(self.bdy_metrics[idx][:,1,0,:] * (self.tLT @ ExR) \
+#                    + self.bdy_metrics[idx][:,1,1,:] * (self.tLT @ EyR) + EphysR)
+#         
+#         sat = self.tR @ (self.Hperp * (EphysR - EnumR)) - self.tL @ (self.Hperp * (EphysL - EnumL))
+# =============================================================================
         
-        EnumL = 0.5*(self.bdy_metrics[idx][:,0,0,:] * (self.tRT @ ExL) \
-                   + self.bdy_metrics[idx][:,0,1,:] * (self.tRT @ EyL) + EphysL)
-        EnumR = 0.5*(self.bdy_metrics[idx][:,1,0,:] * (self.tLT @ ExR) \
-                   + self.bdy_metrics[idx][:,1,1,:] * (self.tLT @ EyR) + EphysR)
+        # Option 2: equivalent to above and below, but tested to be fastest of 3
+        sat = 0.5*( fn.gm_gv(self.vol_x_mat[idx], Ex) + fn.gm_gv(self.vol_y_mat[idx], Ey) 
+                  - fn.gm_gv(self.tbphysx[idx], ExR) - fn.gm_gv(self.tbphysy[idx], EyR)
+                  + fn.gm_gv(self.taphysx[idx], ExL) + fn.gm_gv(self.taphysy[idx], EyL))
         
-        sat = self.tR @ (self.Hperp * (EphysR - EnumR)) - self.tL @ (self.Hperp * (EphysL - EnumL))
+# =============================================================================
+#         # Option 3: equivalent to above, but tested to be slower than 2
+#         Ephys = self.metrics[idx][:,0,:] * Ex + self.metrics[idx][:,1,:] * Ey
+#         ExphysL = self.bdy_metrics[idx][:,0,0,:] * (self.tRT @ ExL)
+#         ExphysR = self.bdy_metrics[idx][:,1,0,:] * (self.tLT @ ExR)
+#         EyphysL = self.bdy_metrics[idx][:,0,1,:] * (self.tRT @ EyL)
+#         EyphysR = self.bdy_metrics[idx][:,1,1,:] * (self.tLT @ EyR)
+#         sat = 0.5*(self.Esurf @ Ephys - (self.tR @ (self.Hperp * (ExphysR + EyphysR)) - self.tL @ (self.Hperp * (ExphysL + EyphysL))))
+# =============================================================================
+        
         return sat
     
-    def central_div_2d_alt(self, q, Ex, Ey, idx, q_bdyL=None, q_bdyR=None):
-        '''
-        A non-dissipative central flux in 2D written in alternative form. 
-        '''
-        
-        if q_bdyL is None: # periodic
-            ExL = fn.shift_right(Ex)
-            ExR = fn.shift_left(Ex)
-            EyL = fn.shift_right(Ey)
-            EyR = fn.shift_left(Ey)
-        else:
-            raise Exception('TODO: adding boundary condition.')
-        
-        Ephys = self.metrics[idx][:,0,:] * Ex + self.metrics[idx][:,1,:] * Ey
-        
-        ExphysL = self.bdy_metrics[idx][:,0,0,:] * (self.tRT @ ExL)
-        ExphysR = self.bdy_metrics[idx][:,1,0,:] * (self.tLT @ ExR)
-        EyphysL = self.bdy_metrics[idx][:,0,1,:] * (self.tRT @ EyL)
-        EyphysR = self.bdy_metrics[idx][:,1,1,:] * (self.tLT @ EyR)
-        
-        sat = 0.5*(self.Esurf @ Ephys - (self.tR @ (self.Hperp * (ExphysR + EyphysR)) - self.tL @ (self.Hperp * (ExphysL + EyphysL))))
-        return sat
     
     def central_div_3d(self, q, Ex, Ey, Ez, idx, q_bdyL=None, q_bdyR=None):
         '''
         A non-dissipative central flux in 3D. 
+        TODO: copy faster form from above
         '''
         
         if q_bdyL is None: # periodic
@@ -118,8 +125,10 @@ class SatDer1:
     
     def llf_div_1d(self, q, E, q_bdyL=None, q_bdyR=None, sigma=1, avg='simple'):
         '''
-        A Local Lax-Fridriechs dissipative flux in 1D. sigma=0 turns off dissipation.
+        A Local Lax-Fridriechs dissipative flux in 1D. 
+        sigma=0 turns off dissipation, recovering central_div_1d.
         '''
+
         q_a = self.tLT @ q
         q_b = self.tRT @ q
         # Here we work in terms of facets, starting from the left-most facet.
@@ -142,21 +151,39 @@ class SatDer1:
             raise Exception('Roe Average not coded up yet')
         else:
             raise Exception('Averaging method not understood.')
-        
-        Ephys = self.metrics * E
-        EphysL = self.tLT @ Ephys
-        EphysR = self.tRT @ Ephys
-        
+            
         maxeigs = self.maxeig_dEdq(qf_avg)
-        dissL = np.abs(maxeigs[:,:-1] * self.bdy_metrics[:,0,:])
-        dissR = np.abs(maxeigs[:,1:] * self.bdy_metrics[:,1,:])
         
-        EnumL = 0.5*((self.bdy_metrics[:,0,:] * (self.tRT @ EL) + EphysL) \
-                     - sigma*dissL*qf_jump[:,:-1])
-        EnumR = 0.5*((self.bdy_metrics[:,1,:] * (self.tLT @ ER) + EphysR) \
-                     - sigma*dissR*qf_jump[:,1:])
+# =============================================================================
+#         # This is equivalent to below, but tested to be slightly slower
+#         dissL = sigma* (self.tL @ np.abs(maxeigs[:,:-1] * self.bdy_metrics[:,0,:])*qf_jump[:,:-1])
+#         dissR = sigma* (self.tR @ np.abs(maxeigs[:,1:] * self.bdy_metrics[:,1,:])*qf_jump[:,1:])
+# =============================================================================
         
-        sat = self.tR @ (EphysR - EnumR) - self.tL @ (EphysL - EnumL)
+        # This is equivalent to above, but tested to be slightly faster
+        metrics = fn.pad_1dR(self.bdy_metrics[:,0,:], self.bdy_metrics[:,1,-1])
+        Lambda = np.abs(maxeigs * metrics)
+        Lambda_q_jump = fn.gdiag_gv(Lambda, qf_jump)
+        dissL = self.tL @ Lambda_q_jump[:,:-1]
+        dissR = self.tR @ Lambda_q_jump[:,1:]
+        
+# =============================================================================
+#         # This is equivalent to below, but tested to be slightly slower
+#         Ephys = self.metrics * E
+#         EphysL = self.tLT @ Ephys
+#         EphysR = self.tRT @ Ephys
+#         
+#         EnumL = 0.5*((self.bdy_metrics[:,0,:] * (self.tRT @ EL) + EphysL) - dissL)
+#         EnumR = 0.5*((self.bdy_metrics[:,1,:] * (self.tLT @ ER) + EphysR) - dissR)
+#         
+#         sat = self.tR @ (EphysR - EnumR) - self.tL @ (EphysL - EnumL)
+# =============================================================================
+        
+        # This is equivalent to above, but tested to be slightly faster
+        sat = 0.5*( fn.gm_gv(self.vol_mat, E) 
+                  - fn.gm_gv(self.tbphys, ER)
+                  + fn.gm_gv(self.taphys, EL) 
+                  + dissR - dissL )
         return sat
     
     
@@ -164,7 +191,7 @@ class SatDer1:
         '''
         A Local Lax-Fridriechs dissipative flux in 2D. sigma=0 turns off dissipation.
         '''
-        
+
         q_a = self.tLT @ q
         q_b = self.tRT @ q
         # Here we work in terms of facets, starting from the left-most facet.
@@ -189,26 +216,46 @@ class SatDer1:
             raise Exception('Roe Average not coded up yet')
         else:
             raise Exception('Averaging method not understood.')
-        
-        Ephys = self.metrics[idx][:,0,:] * Ex + self.metrics[idx][:,1,:] * Ey
-        EphysL = self.tLT @ Ephys
-        EphysR = self.tRT @ Ephys
-        
+            
         maxeigsx = self.maxeig_dExdq(qf_avg)
         maxeigsy = self.maxeig_dEydq(qf_avg)
-        dissL = np.abs(maxeigsx[:,:-1] * self.bdy_metrics[idx][:,0,0,:]) \
-              + np.abs(maxeigsy[:,:-1] * self.bdy_metrics[idx][:,0,1,:])
-        dissR = np.abs(maxeigsx[:,1:] * self.bdy_metrics[idx][:,1,0,:]) \
-              + np.abs(maxeigsy[:,1:] * self.bdy_metrics[idx][:,1,1,:])
         
-        EnumL = 0.5*(self.bdy_metrics[idx][:,0,0,:] * (self.tRT @ ExL) \
-                   + self.bdy_metrics[idx][:,0,1,:] * (self.tRT @ EyL) + EphysL \
-                   - sigma*dissL*qf_jump[:,:-1])
-        EnumR = 0.5*(self.bdy_metrics[idx][:,1,0,:] * (self.tLT @ ExR) \
-                   + self.bdy_metrics[idx][:,1,1,:] * (self.tLT @ EyR) + EphysR \
-                   - sigma*dissR*qf_jump[:,1:])
+# =============================================================================
+#         # This is equivalent to below, but tested to be slower
+#         dissL = sigma* self.tL @ ( self.Hperp * (np.abs(maxeigsx[:,:-1] * self.bdy_metrics[idx][:,0,0,:]) \
+#               + np.abs( maxeigsy[:,:-1] * self.bdy_metrics[idx][:,0,1,:])) * qf_jump[:,:-1])
+#         dissR = sigma* self.tR @ ( self.Hperp * (np.abs(maxeigsx[:,1:] * self.bdy_metrics[idx][:,1,0,:]) \
+#               + np.abs( maxeigsy[:,1:] * self.bdy_metrics[idx][:,1,1,:])) * qf_jump[:,1:])
+# =============================================================================
+            
+        # This is equivalent to above, but tested to be slightly faster
+        metricsx = fn.pad_1dR(self.bdy_metrics[idx][:,0,0,:], self.bdy_metrics[idx][:,1,0,-1])
+        metricsy = fn.pad_1dR(self.bdy_metrics[idx][:,0,1,:], self.bdy_metrics[idx][:,1,1,-1])
+        H_Lambda = self.Hperp * np.abs(maxeigsx * metricsx + maxeigsy * metricsy)
+        Lambda_q_jump = fn.gdiag_gv(H_Lambda, qf_jump)
+        dissL = self.tL @ Lambda_q_jump[:,:-1]
+        dissR = self.tR @ Lambda_q_jump[:,1:]
         
-        sat = self.tR @ (self.Hperp * (EphysR - EnumR)) - self.tL @ (self.Hperp * (EphysL - EnumL))
+# =============================================================================
+#         # This is equivalent to below, but tested to be slightly slower
+#         Ephys = self.metrics[idx][:,0,:] * Ex + self.metrics[idx][:,1,:] * Ey
+#         EphysL = self.tLT @ Ephys
+#         EphysR = self.tRT @ Ephys
+#         
+#         EnumL = 0.5*(self.bdy_metrics[idx][:,0,0,:] * (self.tRT @ ExL) \
+#                    + self.bdy_metrics[idx][:,0,1,:] * (self.tRT @ EyL) + EphysL - dissL)
+#         EnumR = 0.5*(self.bdy_metrics[idx][:,1,0,:] * (self.tLT @ ExR) \
+#                    + self.bdy_metrics[idx][:,1,1,:] * (self.tLT @ EyR) + EphysR - dissR)
+#         
+#         sat = self.tR @ (self.Hperp * (EphysR - EnumR)) - self.tL @ (self.Hperp * (EphysL - EnumL))
+# =============================================================================
+        
+        # This is equivalent to above, but tested to be slightly faster
+        sat = 0.5*( fn.gm_gv(self.vol_x_mat[idx], Ex) + fn.gm_gv(self.vol_y_mat[idx], Ey) 
+                  - fn.gm_gv(self.tbphysx[idx], ExR) - fn.gm_gv(self.tbphysy[idx], EyR)
+                  + fn.gm_gv(self.taphysx[idx], ExL) + fn.gm_gv(self.taphysy[idx], EyL)
+                  + dissR - dissL )
+        
         return sat
     
     def llf_div_3d(self, q, Ex, Ey, Ez, idx, q_bdyL=None, q_bdyR=None, sigma=1, avg='simple'):
@@ -270,7 +317,8 @@ class SatDer1:
         return sat
 
     ##########################################################################
-    ''' UPWIND FLUXES ''' # note: the same as llf for scalar case
+    ''' UPWIND FLUXES ''' # note: the same as llf for scalar case without mesh warping
+    # in general, these are NOT stable because of the treatment of metric terms
     ##########################################################################
     
     def upwind_div_1d(self, q, E, q_bdyL=None, q_bdyR=None, sigma=1, avg='simple'):
@@ -315,7 +363,7 @@ class SatDer1:
         '''
         An upwind dissipative flux in 2D. sigma=0 turns off dissipation.
         '''
-        
+        sigma = 0
         q_a = self.tLT @ q
         q_b = self.tRT @ q
         # Here we work in terms of facets, starting from the left-most facet.
@@ -452,12 +500,12 @@ class SatDer1:
         if q_bdyL is None:
             qL = fn.pad_1dL(q, q[:,-1])
         else:
-            qL = fn.pad_1dL(q, q_bdyL) # TODO: this definitely does not work
+            qL = fn.pad_1dL(q, q_bdyL) # TODO: this definitely does not work (needs entire q, not extrapolation)
             raise Exception('TODO: adding boundary condition.')
         if q_bdyR is None:
             qR = fn.pad_1dR(q, q[:,0])
         else:
-            qR = fn.pad_1dL(q, q_bdyR)  # TODO: this definitely does not work
+            qR = fn.pad_1dL(q, q_bdyR)  # TODO: this definitely does not work (needs entire q, not extrapolation)
             raise Exception('TODO: adding boundary condition.')
         
         Fsurfx = fn.build_F(qL, qR, self.neq_node, self.had_flux_Ex)

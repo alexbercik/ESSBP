@@ -65,12 +65,16 @@ class PdeSolverSbp(PdeSolver):
             return
         
         self.Dx_phys_nd, self.Dy_phys_nd = 0., 0.
+        if self.settings['skew_sym']:
+            form = 'skew_sym'
+        else:
+            form = 'div'
         if self.dim == 1:
-            self.H_phys, self.Dx_phys = self.sbp.ref_2_phys(self.mesh)
+            self.H_phys, self.Dx_phys = self.sbp.ref_2_phys(self.mesh, form)
         elif self.dim == 2:
-            self.H_phys, self.Dx_phys, self.Dy_phys, self.Dx_phys_nd, self.Dy_phys_nd = self.sbp.ref_2_phys(self.mesh)
+            self.H_phys, self.Dx_phys, self.Dy_phys, self.Dx_phys_nd, self.Dy_phys_nd = self.sbp.ref_2_phys(self.mesh, form)
         elif self.dim == 3:
-            self.H_phys, self.Dx_phys, self.Dy_phys, self.Dz_phys = self.sbp.ref_2_phys(self.mesh)
+            self.H_phys, self.Dx_phys, self.Dy_phys, self.Dz_phys = self.sbp.ref_2_phys(self.mesh, form)
         self.H_inv_phys = 1/self.H_phys
 
 
@@ -107,7 +111,7 @@ class PdeSolverSbp(PdeSolver):
             elif self.disc_type == 'had':
                 self.dqdt = self.dqdt_1d_had
                 self.dfdq = self.dfdq_1d_had  
-            self.sat = Sat(self, None)
+            self.sat = Sat(self, None, form)
         elif self.dim == 2:
             self.diffeq.set_sbp_op(self.H_inv_phys, self.Dx_phys, self.Dy_phys)
             if self.disc_type == 'div':
@@ -116,8 +120,8 @@ class PdeSolverSbp(PdeSolver):
             elif self.disc_type == 'had':
                 self.dqdt = self.dqdt_2d_had
                 self.dfdq = self.dfdq_2d_had  
-            self.satx = Sat(self, 'x')
-            self.saty = Sat(self, 'y')
+            self.satx = Sat(self, 'x', form)
+            self.saty = Sat(self, 'y', form)
         elif self.dim == 3:
             self.diffeq.set_sbp_op(self.H_inv_phys, self.Dx_phys, self.Dy_phys, self.Dz_phys)
             if self.disc_type == 'div':
@@ -126,9 +130,9 @@ class PdeSolverSbp(PdeSolver):
             elif self.disc_type == 'had':
                 self.dqdt = self.dqdt_3d_had
                 self.dfdq = self.dfdq_3d_had  
-            self.satx = Sat(self, 'x')
-            self.saty = Sat(self, 'y')
-            self.satz = Sat(self, 'z')
+            self.satx = Sat(self, 'x', form)
+            self.saty = Sat(self, 'y', form)
+            self.satz = Sat(self, 'z', form)
 
     def dqdt_1d_div(self, q):
         ''' the main dqdt function for divergence form in 1D '''

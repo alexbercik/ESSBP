@@ -20,7 +20,7 @@ class Sat(SatDer1, SatDer2):
     The methods calc_sat_unstruc,
     '''
 
-    def __init__(self, solver, direction):
+    def __init__(self, solver, direction, met_form):
         '''
         Sets up the SAT for a particular direction used in solver 
 
@@ -30,6 +30,8 @@ class Sat(SatDer1, SatDer2):
             The solver class which contains all the important functions.
         direction : str
             the direction in computational space for SAT (xi).
+        met_form: str
+            metrics formulation. Either 'skew_sym' or 'div'
         '''
         
         print('... Setting up SATs')
@@ -43,6 +45,8 @@ class Sat(SatDer1, SatDer2):
         self.neq_node = solver.neq_node
         self.nelem = solver.nelem
         self.direction = direction
+        self.met_form = met_form
+        assert met_form=='skew_sym','SATs not currently set up for divergence form metrics'
         eye = np.eye(self.nen*self.neq_node)
         
         if self.dim == 1:
@@ -57,7 +61,7 @@ class Sat(SatDer1, SatDer2):
             self.had_flux_Ex = solver.had_flux_Ex
             
         elif self.dim == 2:
-            self.Hperp = solver.H_perp #TODO: Flatten this
+            self.Hperp = solver.H_perp #TODO: Flatten this?
             if self.direction == 'x': # computational direction, not physical direction
                 self.tL = np.kron(solver.tL, eye)
                 self.tR = np.kron(solver.tR, eye)
@@ -114,37 +118,36 @@ class Sat(SatDer1, SatDer2):
         self.tRT = self.tR.T
         if self.dim == 1:
             self.Esurf = self.tR @ self.tRT - self.tL @ self.tLT
-        else:
+            self.vol_mat = fn.lm_gdiag(self.Esurf,self.metrics)
+            self.taphys = fn.lm_gm(self.tL, fn.gdiag_lm(self.bdy_metrics[:,0,:],self.tRT))
+            self.tbphys = fn.lm_gm(self.tR, fn.gdiag_lm(self.bdy_metrics[:,1,:],self.tLT))
+    
+        elif self.dim == 2:
             self.Esurf = self.tR @ np.diag(self.Hperp[:,0]) @ self.tRT - self.tL @ np.diag(self.Hperp[:,0]) @ self.tLT
+            # for volume terms, matrices to contract with x_phys and y_phys flux matrices
+            self.vol_x_mat = [fn.lm_gdiag(self.Esurf,metrics[:,0,:]) for metrics in self.metrics]
+            self.vol_y_mat = [fn.lm_gdiag(self.Esurf,metrics[:,1,:]) for metrics in self.metrics]
+            # for surface terms, matrices to contract with x_phys and y_phys flux matrices on a and b facets
+            self.taphysx = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp * bdy_metrics[:,0,0,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
+            self.taphysy = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp * bdy_metrics[:,0,1,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
+            self.tbphysx = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp * bdy_metrics[:,1,0,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
+            self.tbphysy = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp * bdy_metrics[:,1,1,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
         
-        if self.disc_type == 'had':
-            if self.dim == 1:
-                self.vol_mat = fn.lm_gdiag(self.Esurf,self.metrics)
-                self.taphys = fn.lm_gm(self.tL, fn.gdiag_lm(self.bdy_metrics[:,0,:],self.tRT))
-                self.tbphys = fn.lm_gm(self.tR, fn.gdiag_lm(self.bdy_metrics[:,1,:],self.tLT))
-        
-            elif self.dim == 2:
-                # for volume terms, matrices to contract with x_phys and y_phys flux matrices
-                self.vol_x_mat = [fn.lm_gdiag(self.Esurf,metrics[:,0,:]) for metrics in self.metrics]
-                self.vol_y_mat = [fn.lm_gdiag(self.Esurf,metrics[:,1,:]) for metrics in self.metrics]
-                # for surface terms, matrices to contract with x_phys and y_phys flux matrices on a and b facets
-                self.taphysx = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp * bdy_metrics[:,0,0,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
-                self.taphysy = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp * bdy_metrics[:,0,1,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
-                self.tbphysx = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp * bdy_metrics[:,1,0,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
-                self.tbphysy = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp * bdy_metrics[:,1,1,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
+        elif self.dim == 3:
+            self.Esurf = self.tR @ np.diag(self.Hperp[:,0]) @ self.tRT - self.tL @ np.diag(self.Hperp[:,0]) @ self.tLT
+            # for volume terms, matrices to contract with x_phys, y_phys, and z_phys flux matrices
+            self.vol_x_mat = [fn.lm_gdiag(self.Esurf,metrics[:,0,:]) for metrics in self.metrics]
+            self.vol_y_mat = [fn.lm_gdiag(self.Esurf,metrics[:,1,:]) for metrics in self.metrics]
+            self.vol_z_mat = [fn.lm_gdiag(self.Esurf,metrics[:,2,:]) for metrics in self.metrics]
+            # for surface terms, matrices to contract with x_phys, y_phys, and z_phys flux matrices on a and b facets
+            self.taphysx = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp * bdy_metrics[:,0,0,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
+            self.taphysy = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp * bdy_metrics[:,0,1,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
+            self.taphysz = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp * bdy_metrics[:,0,2,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
+            self.tbphysx = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp * bdy_metrics[:,1,0,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
+            self.tbphysy = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp * bdy_metrics[:,1,1,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
+            self.tbphysz = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp * bdy_metrics[:,1,2,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
             
-            elif self.dim == 3:
-                # for volume terms, matrices to contract with x_phys, y_phys, and z_phys flux matrices
-                self.vol_x_mat = [fn.lm_gdiag(self.Esurf,metrics[:,0,:]) for metrics in self.metrics]
-                self.vol_y_mat = [fn.lm_gdiag(self.Esurf,metrics[:,1,:]) for metrics in self.metrics]
-                self.vol_z_mat = [fn.lm_gdiag(self.Esurf,metrics[:,2,:]) for metrics in self.metrics]
-                # for surface terms, matrices to contract with x_phys, y_phys, and z_phys flux matrices on a and b facets
-                self.taphysx = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp * bdy_metrics[:,0,0,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
-                self.taphysy = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp * bdy_metrics[:,0,1,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
-                self.taphysz = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp * bdy_metrics[:,0,2,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
-                self.tbphysx = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp * bdy_metrics[:,1,0,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
-                self.tbphysy = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp * bdy_metrics[:,1,1,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
-                self.tbphysz = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp * bdy_metrics[:,1,2,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
+
 
         ''' Set the methods that will be used to calculate the SATs '''
 
@@ -183,6 +186,7 @@ class Sat(SatDer1, SatDer2):
                     self.calc_dfdq = self.dfdq_complexstep
                     
             elif self.method == 'upwind':
+                print('WARNING: upwind SATs are not provably stable because of metric terms. Use for example lf instead.')
                 if self.disc_type == 'div':
                     if self.dim == 1:
                         self.calc = self.upwind_div_1d
@@ -191,18 +195,23 @@ class Sat(SatDer1, SatDer2):
                     elif self.dim == 3:
                         self.calc = self.upwind_div_3d
                 elif self.disc_type == 'had':
+                    raise Exception("upwind dissipation not coded up yet for Hadamard. Try surf_type='lf' instead")
                     if self.dim == 1:
                         self.calc = self.base_had_1d
+                        self.diss = self.upwind_diss_cons_1d
                     elif self.dim == 2:
                         self.calc = self.base_had_2d
+                        self.diss = self.upwind_diss_cons_2d
                     elif self.dim == 3:
                         self.calc = self.base_had_3d
+                        self.diss = self.upwind_diss_cons_3d
                 if self.neq_node == 1:
                     if self.disc_type == 'div':
                         pass
                         #self.calc_dfdq = self.upwind_scalar_div_dfdq
                     elif self.disc_type == 'had':
-                        self.calc_dfdq = self.upwind_scalar_had_dfdq
+                        #self.calc_dfdq = self.upwind_scalar_had_dfdq
+                        pass
                 else:
                     self.calc_dfdq = self.dfdq_complexstep
                     
@@ -272,14 +281,6 @@ class Sat(SatDer1, SatDer2):
                     
                     
             ######### TO DO
-            
-            elif self.method == 'upwind':
-                if self.neq_node == 1:
-                    self.calc = lambda qL,qR: self.der1_upwind(qL, qR, 1) 
-                    self.calc_dfdq = lambda qL,qR: self.dfdq_der1_upwind_scalar(qL, qR, 1)
-                else:
-                    self.calc = lambda qL,qR: self.der1_upwind(qL, qR, 1) # use Roe average?
-                    self.calc_dfdq = self.dfdq_der1_complexstep
             elif (self.method.lower()=='ec' and self.diffeq_name=='Quasi1dEuler') or self.method.lower()=='crean ec':
                     self.calc = self.der1_crean_ec
                     #self.calc_dfdq = complex step?
@@ -429,14 +430,15 @@ class Sat(SatDer1, SatDer2):
         ''' lax-friedrichs dissipation in conservative variables '''
         qLf = self.tRT @ qL
         qRf = self.tLT @ qR
+        
+        q_jump = qRf - qLf
+        
         if avg=='simple': # Alternatively, a Roe average can be used
             q_avg = (qLf + qRf)/2
         elif avg=='roe':
             raise Exception('Roe Average not coded up yet')
         else:
             raise Exception('Averaging method not understood.')
-        
-        q_jump = qRf - qLf
         
         maxeigs = self.maxeig_dEdq(q_avg)
         metrics = fn.pad_1dR(self.bdy_metrics[:,0,:], self.bdy_metrics[:,1,-1])

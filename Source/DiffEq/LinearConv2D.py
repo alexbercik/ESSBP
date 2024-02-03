@@ -29,12 +29,27 @@ class LinearConv(PdeBase):
     xy = None
     has_exa_sol = True
     para_names = ('ax','ay')
+    ax_fix = 1
+    ay_fix = 1
+    para_fix = [ax_fix,ay_fix]
 
     def __init__(self, para=None, obj_name=None, q0_type='SinWave'):
 
         super().__init__(para, obj_name, q0_type)
         self.ax = self.para[0]
         self.ay = self.para[1]
+        
+        if self.ax == self.ax_fix:
+            print('Using the fixed ax={} diffeq functions since params match.'.format(self.ax_fix))
+            self.maxeig_dExdq = lambda q : np.ones(q.shape)
+            self.dExdq = lambda q : fn.diag(np.ones(q.shape))
+            self.dExdq_eig_abs = self.dExdq
+        
+        if self.ay == self.ay_fix:
+            print('Using the fixed ay={} diffeq functions since params match.'.format(self.ax_fix))
+            self.maxeig_dExdq = lambda q : np.ones(q.shape)
+            self.dExdq = lambda q : fn.diag(np.ones(q.shape))
+            self.dExdq_eig_abs = self.dExdq
 
     def exact_sol(self, time=0):
 

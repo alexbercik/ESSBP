@@ -12,7 +12,6 @@ from Source.DiffEq.DiffEqBase import PdeBase
 import Source.Methods.Functions as fn
 from numba import njit
 
-
 class LinearConv(PdeBase):
     '''
     Purpose
@@ -29,11 +28,20 @@ class LinearConv(PdeBase):
     x = None
     has_exa_sol = True
     para_names = ('a',)
+    a_fix = 1
+    para_fix = [a_fix]
 
     def __init__(self, para, obj_name=None, q0_type='SinWave'):
 
         super().__init__(para, obj_name, q0_type)
         self.a = self.para[0]
+        
+        if self.a == self.a_fix:
+            print('Using the fixed a={} diffeq functions since params match.'.format(self.a_fix))
+            self.maxeig_dEdq = lambda q : np.ones(q.shape)
+            self.dEdq = lambda q : fn.diag(np.ones(q.shape))
+            self.dEdq_eig_abs = self.dEdq
+            
 
     def exact_sol(self, time=0):
 
@@ -72,11 +80,13 @@ class LinearConv(PdeBase):
 
         dEdq_eig_abs = np.abs(dEdq)
         return dEdq_eig_abs
-    
+
     def maxeig_dEdq(self, q):
         ''' return the maximum eigenvalue - used for LF fluxes '''
         maxeig = np.ones(q.shape)*self.a
+        # this is actually slower: np.ones_like(qf_avg)*self.a
         return maxeig
+    
 
     def calc_LF_const(self,xy):
         ''' Constant for the Lax-Friedrichs flux'''
