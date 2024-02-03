@@ -350,7 +350,7 @@ class PdeSolver:
         # time step stability
         q = self.diffeq.set_q0()
         if self.dim==1:
-            LFconst = np.max(self.diffeq.maxeig_dEdq(q))
+            LFconst = np.max(self.diffeq.maxeig_dExdq(q))
             dt = 0.1*(self.xmax-self.xmin)/self.nn/LFconst
             if self.dt > dt:
                 print('WARNING: time step dt may not be small enough to remain stable.')

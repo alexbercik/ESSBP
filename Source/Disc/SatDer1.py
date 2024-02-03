@@ -152,7 +152,7 @@ class SatDer1:
         else:
             raise Exception('Averaging method not understood.')
             
-        maxeigs = self.maxeig_dEdq(qf_avg)
+        maxeigs = self.maxeig_dExdq(qf_avg)
         
 # =============================================================================
 #         # This is equivalent to below, but tested to be slightly slower
@@ -347,8 +347,8 @@ class SatDer1:
         else:
             raise Exception('Averaging method not understood.')
         
-        A = self.dEdq(qf_avg)            
-        A_abs = self.dEdq_eig_abs(A)
+        A = self.dExdq(qf_avg)            
+        A_abs = self.dExdq_eig_abs(A)
         
         # Upwinding flux
         A_upwind = (A + sigma*A_abs)/2 * bdy_metrics
@@ -847,8 +847,8 @@ class SatDer1:
             
         qf_diff = q_fL - q_fR
 
-        A = self.dEdq(qfacet)            
-        A_abs = self.dEdq_eig_abs(A)
+        A = self.dExdq(qfacet)            
+        A_abs = self.dExdq_eig_abs(A)
         
         # Upwinding flux
         A_upwind = (A + sigma*A_abs)/2
@@ -902,11 +902,11 @@ class SatDer1:
         qf_diff = q_fL - q_fR
 
         # First derivative of the flux wrt q
-        A = self.dEdq(qfacet)
+        A = self.dExdq(qfacet)
         # second derivative of the flux wrt q
-        dAdq = self.d2Edq2(qfacet)
+        dAdq = self.d2Exdq2(qfacet)
 
-        #A_abs = self.diffeq.dEdq_eig_abs(A) # actually just absolute value (scalar in 3d format)
+        #A_abs = self.diffeq.dExdq_eig_abs(A) # actually just absolute value (scalar in 3d format)
         A_abs = abs(A)
         sign_A = np.sign(A)
         
@@ -1082,8 +1082,8 @@ class SatDer1:
         for e in range(nelem):
             numflux[:,e] = self.ec_flux(q_fL[:,e], q_fR[:,e])
         
-        satL = self.tR @ ( self.calcE(q_fL) - numflux )
-        satR = self.tR @ ( numflux - self.calcE(q_fR) )
+        satL = self.tR @ ( self.calcEx(q_fL) - numflux )
+        satR = self.tR @ ( numflux - self.calcEx(q_fR) )
         
         #F_vol = build_F_vol(q, self.neq_node, self.diffeq.ec_flux)
         #build_F_int(q1, q2, neq, ec_flux)
@@ -1140,7 +1140,7 @@ class SatDer1:
         w_fL= self.tRT @ self.diffeq.entropy_var(qL) 
         w_fR= self.tLT @ self.diffeq.entropy_var(qR)
         
-        satL = self.tR @ ( self.diffeq.calcE(q_fL) - numflux - fn.gm_gv(Lambda, w_fL - w_fR))
-        satR = self.tR @ ( numflux - self.diffeq.calcE(q_fR) - fn.gm_gv(Lambda, w_fR - w_fL))
+        satL = self.tR @ ( self.diffeq.calcEx(q_fL) - numflux - fn.gm_gv(Lambda, w_fL - w_fR))
+        satR = self.tR @ ( numflux - self.diffeq.calcEx(q_fR) - fn.gm_gv(Lambda, w_fR - w_fL))
 
         return satL, satR 

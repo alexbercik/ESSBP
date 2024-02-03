@@ -27,10 +27,10 @@ class Burgers(PdeBaseCons):
     eq_type = 'pde'
     pde_order = 1
 
-    def __init__(self, para=None, obj_name=None, q0_type='SinWave',
+    def __init__(self, para=None, q0_type='SinWave',
                  use_split_form=False, split_alpha=2/3):
 
-        super().__init__(para, obj_name, q0_type)
+        super().__init__(para, q0_type)
         self.use_split_form = use_split_form
         self.split_alpha = split_alpha
 
@@ -41,25 +41,25 @@ class Burgers(PdeBaseCons):
     def dExdx(self, q):
 
         if self.use_split_form:
-            dEdx = (self.split_alpha/2.)*fn.gm_gv(self.Dx, q**2) + (1.-self.split_alpha)*fn.gdiag_gv(q,fn.gm_gv(self.Dx, q))
+            dExdx = (self.split_alpha/2.)*fn.gm_gv(self.Dx, q**2) + (1.-self.split_alpha)*fn.gdiag_gv(q,fn.gm_gv(self.Dx, q))
         else:
             E = self.calcEx(q)
-            dEdx = fn.gm_gv(self.Dx, E)
+            dExdx = fn.gm_gv(self.Dx, E)
 
-        return dEdx
+        return dExdx
 
-    def dEdq(self, q):
+    def dExdq(self, q):
 
-        dEdq = fn.diag(q)
-        return dEdq
+        dExdq = fn.diag(q)
+        return dExdq
     
-    def d2Edq2(self, q):
+    def d2Exdq2(self, q):
         
-        d2Edq2 = fn.diag(np.ones(q.shape))
-        return d2Edq2
+        d2Exdq2 = fn.diag(np.ones(q.shape))
+        return d2Exdq2
 
     def dfdq(self, q):
-        # take dEdx as a vector a_i(q) and find matrix d(a_i)/d(q_j)
+        # take dExdx as a vector a_i(q) and find matrix d(a_i)/d(q_j)
 
         if self.use_split_form:
             # these both do the same, but the second is a bit faster
@@ -80,12 +80,12 @@ class Burgers(PdeBaseCons):
         q = fn.check_q_shape(self.set_q0())
         return np.max(np.abs(q))
 
-    def dEdq_eig_abs(self, dEdq):
+    def dExdq_eig_abs(self, dExdq):
 
-        dEdq_eig_abs = abs(dEdq)
-        return dEdq_eig_abs
+        dExdq_eig_abs = abs(dExdq)
+        return dExdq_eig_abs
     
-    def maxeig_dEdq(self, q):
+    def maxeig_dExdq(self, q):
         ''' return the maximum eigenvalue - used for LF fluxes '''
         return np.abs(q)
     

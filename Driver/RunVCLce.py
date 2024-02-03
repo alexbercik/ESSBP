@@ -29,7 +29,6 @@ from Source.Solvers.PdeSolverDg import PdeSolverDg
 para = 0.2    # Variable coefficient splitting parameter (0 to 1)
 use_exact_der = True # whether to compute variable coefficient derivative exactly
 extrapolate_bdy_flux = True
-obj_name = None
 
 # Time marching
 tm_method = 'rk4' # explicit_euler, rk4
@@ -63,7 +62,6 @@ a_type = 'shifted Gaussian'
 bool_plot_sol = False
 print_sol_norm = False
 
-obj_name = None
 #cons_obj_name = ('Energy','Conservation','A_Energy','Energy_der','Conservation_der','A_Energy_der') # 'Energy', 'Conservation', 'None'
 cons_obj_name = ('Energy','Conservation','A_Energy','A_Conservation')
 
@@ -82,7 +80,7 @@ elif disc_type == 'dg':
 else:
     solver_c = PdeSolverSbp
     
-diffeq = LinearConv(para, obj_name, q0_type, a_type)
+diffeq = LinearConv(para, q0_type, a_type)
 diffeq.use_exact_der = use_exact_der
 diffeq.extrapolate_bdy_flux = extrapolate_bdy_flux
 
@@ -137,7 +135,7 @@ if disc_type =='dg':
         nfluxA[:,:-1] , nfluxB[:,1:] = self.diffeq_in.numflux(q_facA[:,:-1], q_facB[:,1:],x_facA[:,:-1],x_facB[:,1:])
         nfluxA[:,[-1]] , nfluxB[:,[0]] = self.diffeq_in.numflux(q_facA[:,[-1]], q_facB[:,[0]],x_facA[:,[-1]],x_facB[:,[0]])
 
-        flux = self.diffeq_in.calcE(q_flux,x_flux)
+        flux = self.diffeq_in.calcF(q_flux,x_flux)
         dqdt_out -= self.mass_inv @ ( self.surf_num[1]@nfluxA - self.surf_flux[1]@flux \
                                     + self.surf_num[0]@nfluxB - self.surf_flux[0]@flux )
 

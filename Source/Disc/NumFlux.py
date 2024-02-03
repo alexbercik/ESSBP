@@ -73,7 +73,7 @@ class NumFlux:
             upwind flux
         C : float or np array
             the constant that controls dissipation. This should be greater 
-            than max dEdq (either locally or globally).
+            than max dExdq (either locally or globally).
             
         TODO: generalize for cases where qA and qB are not on the boundary
 
@@ -81,7 +81,7 @@ class NumFlux:
         -------
         The numerical flux on both sides of the interface.
         '''
-        avgE = (self.diffeq.calcE(qA) + self.diffeq.calcE(qB))/2
+        avgE = (self.diffeq.calcEx(qA) + self.diffeq.calcEx(qB))/2
         # TODO: Do I want different kinds of averaging here? Then no longer LF...
         flux = avgE + 0.5*C*alpha*(qA-qB)
         return flux, -flux
@@ -104,9 +104,9 @@ class NumFlux:
         '''
         assert(self.diffeq.diffeq_name == 'Burgers'),'Not set up for other equation types'
         if avg=='simple':
-            avgE = self.diffeq.calcE((qA + qB)/2)
+            avgE = self.diffeq.calcEx((qA + qB)/2)
         elif avg=='simple_E':
-            avgE = (self.diffeq.calcE(qA) + self.diffeq.calcE(qB))/2
+            avgE = (self.diffeq.calcEx(qA) + self.diffeq.calcEx(qB))/2
         elif avg=='roe':
             raise Exception('Roe Average not coded up yet')
         else:
@@ -134,7 +134,7 @@ class NumFlux:
             constant used to determine split form. use alpha=2/3 for Burgers.
         '''
         assert(self.diffeq.diffeq_name == 'Burgers'),'Not set up for other equation types'
-        avgE = (self.diffeq.calcE(qA) + self.diffeq.calcE(qB))/2
+        avgE = (self.diffeq.calcEx(qA) + self.diffeq.calcEx(qB))/2
         diffq = qB - qA
         coeff = np.maximum((1-alpha)*diffq/2,0)
         flux = avgE - coeff*diffq/2
@@ -145,7 +145,7 @@ class NumFlux:
         The standard Rusanov flux function, see Gassner 2020 or Toro, E.F. 2009
         '''
         assert(self.diffeq.diffeq_name == 'Burgers'),'Not set up for other equation types'
-        avgE = (self.diffeq.calcE(qA) + self.diffeq.calcE(qB))/2
+        avgE = (self.diffeq.calcEx(qA) + self.diffeq.calcEx(qB))/2
         diffq = qB - qA
         coeff = np.maximum(abs(qA),abs(qB))
         flux = avgE - coeff*diffq/2
@@ -157,7 +157,7 @@ class NumFlux:
         This should probably only be used for Burgers equation
         '''
         assert(self.diffeq.diffeq_name == 'Burgers'),'Not set up for other equation types'
-        avgE = (self.diffeq.calcE(qA) + self.diffeq.calcE(qB))/2
+        avgE = (self.diffeq.calcEx(qA) + self.diffeq.calcEx(qB))/2
         diffq = qB - qA
         coeff = diffq/6 + np.maximum(abs(qA),abs(qB))
         flux = avgE - coeff*diffq/2

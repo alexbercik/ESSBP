@@ -24,7 +24,6 @@ class LinearConv(PdeBase):
     diffeq_name = 'LinearConvection'
     dim = 2
     neq_node = 1    # 1 equation in 1D
-    npar = 0        # No. of design parameters
     pde_order = 1 # Order of the highest derivative in the PDE
     xy = None
     has_exa_sol = True
@@ -33,9 +32,9 @@ class LinearConv(PdeBase):
     ay_fix = 1
     para_fix = [ax_fix,ay_fix]
 
-    def __init__(self, para=None, obj_name=None, q0_type='SinWave'):
+    def __init__(self, para=None, q0_type='SinWave'):
 
-        super().__init__(para, obj_name, q0_type)
+        super().__init__(para, q0_type)
         self.ax = self.para[0]
         self.ay = self.para[1]
         
@@ -74,9 +73,9 @@ class LinearConv(PdeBase):
 
     def dExdq(self, q):
         
-        #dEdq = np.array(self.a,ndmin=(q.ndim+1)) DO NOT USE!
-        dEdq = fn.diag(np.ones(q.shape)*self.ax)
-        return dEdq
+        #dExdq = np.array(self.a,ndmin=(q.ndim+1)) DO NOT USE!
+        dExdq = fn.diag(np.ones(q.shape)*self.ax)
+        return dExdq
     
     def dEydq(self, q):
 
@@ -85,13 +84,13 @@ class LinearConv(PdeBase):
 
     def dExdq_eig_abs(self, dExdq):
 
-        dEdq_eig_abs = np.abs(dExdq)
-        return dEdq_eig_abs
+        dExdq_eig_abs = np.abs(dExdq)
+        return dExdq_eig_abs
     
     def dEydq_eig_abs(self, dEydq):
 
-        dEdq_eig_abs = np.abs(dEydq)
-        return dEdq_eig_abs
+        dEydq_eig_abs = np.abs(dEydq)
+        return dEydq_eig_abs
     
     def maxeig_dExdq(self, q):
         ''' return the maximum eigenvalue - used for LF fluxes '''
@@ -105,13 +104,13 @@ class LinearConv(PdeBase):
     
     def d2Exdq2(self, q):
 
-        dEdq = fn.diag(np.zeros(q.shape))
-        return dEdq
+        dExdq = fn.diag(np.zeros(q.shape))
+        return dExdq
     
     def d2Eydq2(self, q):
 
-        dEdq = fn.diag(np.zeros(q.shape))
-        return dEdq
+        dEydq = fn.diag(np.zeros(q.shape))
+        return dEydq
 
     @njit   
     def central_fix_Ex(qL,qR):

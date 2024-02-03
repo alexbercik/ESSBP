@@ -23,7 +23,6 @@ class LinearConv(PdeBase):
     diffeq_name = 'LinearConvection'
     dim = 1
     neq_node = 1    # 1 equation in 1D
-    npar = 0        # No. of design parameters
     pde_order = 1 # Order of the highest derivative in the PDE
     x = None
     has_exa_sol = True
@@ -31,16 +30,16 @@ class LinearConv(PdeBase):
     a_fix = 1
     para_fix = [a_fix]
 
-    def __init__(self, para, obj_name=None, q0_type='SinWave'):
+    def __init__(self, para, q0_type='SinWave'):
 
-        super().__init__(para, obj_name, q0_type)
+        super().__init__(para, q0_type)
         self.a = self.para[0]
         
         if self.a == self.a_fix:
             print('Using the fixed a={} diffeq functions since params match.'.format(self.a_fix))
-            self.maxeig_dEdq = lambda q : np.ones(q.shape)
-            self.dEdq = lambda q : fn.diag(np.ones(q.shape))
-            self.dEdq_eig_abs = self.dEdq
+            self.maxeig_dExdq = lambda q : np.ones(q.shape)
+            self.dExdq = lambda q : fn.diag(np.ones(q.shape))
+            self.dExdq_eig_abs = self.dExdq
             
 
     def exact_sol(self, time=0):
@@ -66,22 +65,22 @@ class LinearConv(PdeBase):
         E = self.a * q
         return E
 
-    def dEdq(self, q):
+    def dExdq(self, q):
         
-        dEdq = fn.diag(np.ones(q.shape)*self.a)
-        return dEdq
+        dExdq = fn.diag(np.ones(q.shape)*self.a)
+        return dExdq
 
-    def d2Edq2(self, q):
+    def d2Exdq2(self, q):
 
-        dEdq = fn.diag(np.zeros(q.shape))
-        return dEdq
+        dExdq = fn.diag(np.zeros(q.shape))
+        return dExdq
 
-    def dEdq_eig_abs(self, dEdq):
+    def dExdq_eig_abs(self, dExdq):
 
-        dEdq_eig_abs = np.abs(dEdq)
-        return dEdq_eig_abs
+        dExdq_eig_abs = np.abs(dExdq)
+        return dExdq_eig_abs
 
-    def maxeig_dEdq(self, q):
+    def maxeig_dExdq(self, q):
         ''' return the maximum eigenvalue - used for LF fluxes '''
         maxeig = np.ones(q.shape)*self.a
         # this is actually slower: np.ones_like(qf_avg)*self.a

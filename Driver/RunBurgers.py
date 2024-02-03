@@ -26,7 +26,6 @@ from Source.Solvers.PdeSolverSbp import PdeSolverSbp
 
 # Eq parameters
 para = None
-obj_name = None
 
 # Time marching
 tm_method = 'rk4' # explicit_euler, rk4
@@ -61,7 +60,6 @@ bool_plot_sol = False
 bool_plot_exa = True
 print_sol_norm = False
 
-obj_name = None
 cons_obj_name = ('Energy','Conservation','Entropy','Energy_der','A_Energy') # 'Energy', 'Conservation', 'None'
 settings = {'warp_factor':0.0,               # Warps / stretches mesh.
             'warp_type': 'none',             # Options: 'defualt', 'papers', 'quad'
@@ -70,7 +68,7 @@ settings = {'warp_factor':0.0,               # Warps / stretches mesh.
 
 
 ''' Set diffeq and solve '''
-diffeq = Burgers(para, obj_name, q0_type, use_split_form, split_alpha)
+diffeq = Burgers(para, q0_type, use_split_form, split_alpha)
 diffeq.plt_style_exa_sol = {'color':'r','linestyle':'-','marker':'','linewidth':2}
 savefile = 'burgers_alpha1_symSAT'
 title=r'Burgers Eqn, $\alpha={0:1.2}$, sym flux'.format(split_alpha)

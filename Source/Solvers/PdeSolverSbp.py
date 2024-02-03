@@ -138,9 +138,9 @@ class PdeSolverSbp(PdeSolver):
         ''' the main dqdt function for divergence form in 1D '''
         E = self.diffeq.calcEx(q)
         if self.use_diffeq_dExdx:
-            dEdx = self.diffeq.dExdx(q)
+            dExdx = self.diffeq.dExdx(q)
         else:
-            dEdx = fn.gm_gv(self.Dx_phys, E)
+            dExdx = fn.gm_gv(self.Dx_phys, E)
         
         if self.periodic:
             sat = self.sat.calc(q,E)
@@ -149,7 +149,7 @@ class PdeSolverSbp(PdeSolver):
         else:
             raise Exception('Not coded up yet')
     
-        dqdt = - dEdx + (self.H_inv_phys * sat) + self.diffeq.calcG(q)
+        dqdt = - dExdx + (self.H_inv_phys * sat) + self.diffeq.calcG(q)
         return dqdt
     
     
@@ -230,14 +230,14 @@ class PdeSolverSbp(PdeSolver):
     def dqdt_1d_had(self, q):
         ''' the main dqdt function for hadamard form in 1D '''
         Fvol = fn.build_F_vol(q, self.neq_node, self.had_flux_Ex)
-        dEdx = 2*fn.gm_gm_had_diff(self.Dx_phys, Fvol)
+        dExdx = 2*fn.gm_gm_had_diff(self.Dx_phys, Fvol)
         
         if self.periodic:
             sat = self.sat.calc(q,Fvol)
         else:
             raise Exception('Not coded up yet')
         
-        dqdt = - dEdx + (self.H_inv_phys * sat) + self.diffeq.calcG(q)
+        dqdt = - dExdx + (self.H_inv_phys * sat) + self.diffeq.calcG(q)
         return dqdt
     
     def dfdq_1d_had(self, q):
