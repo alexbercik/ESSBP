@@ -72,9 +72,6 @@ class Burgers(PdeBaseCons):
             
         return dfdq
 
-    def calc_obj(self, *argv):
-        return None
-
     def calc_LF_const(self):
         ''' Constant for the Lax-Friedrichs flux'''
         q = fn.check_q_shape(self.set_q0())

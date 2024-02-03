@@ -98,12 +98,8 @@ class PdeBase:
         '''
         Parameters
         ----------
-        s : np array or float
-            Parameters of the differential equation that derivatives can be
-            calculated with respect to.
-        obj_name : str or tuple, optional
-            The name or names of objectives to calculate.
-            The default is None.
+        para : np array or float
+            Parameters of the differential equation
         q0_type : str
             The type of initial solution for the DiffEq.
         '''
@@ -112,7 +108,6 @@ class PdeBase:
 
         self.para = para
         if not hasattr(self, 'para_fix'): self.para_fix = None
-        self.obj_name = obj_name
         self.q0_type = q0_type
 
         ''' Modify type for inputs '''
@@ -120,21 +115,6 @@ class PdeBase:
         # Make sure that para is stored as a numpy array
         if isinstance(self.para, int) or isinstance(self.para, float):
             self.para = np.atleast_1d(np.asarray(self.para))
-
-        # Store the objective name(s) in a tuple
-        if obj_name is None:
-            self.n_obj = 0
-            self.obj_name = None
-        else:
-            # Standardize format for the name of the objective(s)
-            if isinstance(obj_name, str):
-                self.n_obj = 1
-                self.obj_name = (obj_name,)
-            elif isinstance(obj_name, tuple):
-                self.n_obj = len(obj_name)
-                self.obj_name = obj_name
-            else:
-                raise Exception('The variable obj_name has to be either a string or a tuple of strings')
             
         
     def var2plot(self,q):
@@ -559,9 +539,9 @@ class PdeBase:
 # TODO: I dont think I need this
 class PdeBaseCons(PdeBase):
     
-    def __init__(self, para=None, obj_name=None, q0_type='SinWave'):
+    def __init__(self, para=None, q0_type='SinWave'):
 
-        super().__init__(para, obj_name, q0_type)
+        super().__init__(para, q0_type)
         if self.dim == 1:
             if not hasattr(self, 'dqdt'):
                 print('Using default 1D dqdt')
@@ -718,8 +698,6 @@ class DiffEqOverwrite:
 
         self.set_q0 = diffeq_in.set_q0
         self.plot_sol = diffeq_in.plot_sol
-        self.calc_obj = diffeq_in.calc_obj
         self.calc_cons_obj = f_cons_obj
 
-        self.n_obj = diffeq_in.n_obj
         self.n_cons_obj = n_cons_obj

@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Mon May 18 13:06:42 2020
+Created on Fri Jan 29 21:25:19 2021
 
-@author: andremarchildon
+@author: bercik
 """
-
 import os
 from sys import path
 
@@ -17,9 +16,8 @@ for i in range(n_nested_folder):
 
 path.append(folder_path)
 
-from Source.DiffEq.Quasi1dEuler import Quasi1dEulerFd
-from Source.DiffEq.Quasi1dEuler import Quasi1dEulerSbp
-from Source.Solvers.PdeSolver import PdeSolver
+from Source.DiffEq.Quasi1dEuler import Quasi1dEuler
+from Source.Solvers.PdeSolverSbp import PdeSolverSbp
 
 
 '''
@@ -29,83 +27,83 @@ The exact solution is available along with the algorithm from Chapter 4.
 '''
 
 # Eq parameters
-para = None
-obj_name = None
-flow_is_subsonic = True
+para = [287,1.4] # [R, gamma]
+test_case = 'density wave' # subsonic, transonic, shock tube, density wave
+nozzle_shape = 'constant' # book, constant, linear, smooth
 
 # Time marching
-tm_method = 'rk4' # 'implicit_euler', 'explicit_euler', 'trapezoidal', 'rk4', 'bdf2'
-dt = 0.01
+tm_method = 'explicit euler' # 'implicit_euler', 'explicit_euler', 'trapezoidal', 'rk4', 'bdf2'
+dt = 0.0001
 dt_init = dt
 nts = 500
 t_init = 0
-tf = nts * dt # set to None to do automatically or use a convergence criterion
+tf = 0.5 #nts * dt # set to None to do automatically or use a convergence criterion
 # note: can add option to pass None, then that triggers it to check diffeq, if not can pass 'steady' in which case it uses converged criteria
 
+# TODO: Add flag that stops sim when it hits negative pressures
+
+# Domain
+xmin = 0
+xmax = 1
+bc = 'periodic' # 'periodic', 'dirichlet', 'riemann'
+
 # Spatial discretization
-disc_type = 'FD' # 'FD', 'Rd', 'Rdn1', 'R0'
-nn = 99
-nelem = 0 # optional, number of elements
-nen = 0 # optional, number of nodes per element
+disc_type = 'div' # 'div', 'had'
+disc_nodes = 'lg' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
 p = 2
-isperiodic = None # set to none so it is done automatically
+nelem = 50 # number of elements
+nen = 0 # optional, number of nodes per element
+surf_type = 'lf'
+had_flux = 'central' # 2-point numerical flux used in hadamard form
+diss_type = None
+
+# output
+savefile = None
+title=r'1D Euler'
 
 # Initial solution
 q0 = None
-n_q0 = 1
-q0_type = None
+q0_type = 'linear'
 
 # Other
-bool_plot_sol = True
-print_sol_norm = True
-cons_obj_name=('Energy','Conservation') # note: should I modify this for systems?
+bool_plot_sol = False
+print_sol_norm = False
+cons_obj_name=('Energy','Conservation','Entropy') # note: should I modify this for systems?
 
-bool_norm_var = True
-
-if flow_is_subsonic:
-    sc = 0.8
-    k2 = 1/2
-    k4 = 1/50
-else:
-    sc = 1
-    k2 = 1/2
-    k4 = 1/50
-
-''' Setup diffeq and solve '''
-
-if disc_type == 'FD':
-    DiffEq = Quasi1dEulerFd
-else:
-    DiffEq = Quasi1dEulerSbp
-
-diffeq = DiffEq(para, obj_name, q0_type, flow_is_subsonic)
+bool_norm_var = False # what is this??
 
 
-solver = PdeSolver(diffeq,
-                   tm_method, dt, tf, t_init,
-                   q0, n_q0, dt_init,
-                   p, disc_type, nn, nelem, nen,
-                   isperiodic,
-                   cons_obj_name=cons_obj_name,
-                   bool_plot_sol = bool_plot_sol,
-                   print_sol_norm = print_sol_norm)
+''' Set diffeq and solve '''
+c_solver = PdeSolverSbp
 
+diffeq = Quasi1dEuler(para, q0_type, test_case, nozzle_shape, bool_norm_var, bc)
+
+diffeq.plt_style_exa_sol = {'color':'r','linestyle':'-','marker':'','linewidth':2}
+
+solver = PdeSolverSbp(diffeq,                               # Diffeq
+                      tm_method, dt, tf,                    # Time marching
+                      q0,                                   # Initial solution
+                      p, disc_type, nn,                     # Discretization
+                      nelem, nen, sat_flux_type,
+                      xmin, xmax,               # Domain
+                      cons_obj_name,              # Other
+                      bool_plot_sol, print_sol_norm)
+
+A = solver.check_eigs(plt_save_name=savefile+'_eigs',returnA=True,title='Eigenvalues: ' + title)
+#import numpy as np
+#eigs = np.linalg.eigvals(A)
+#max_eig = max(eigs.real)
+#def theory_fn(time):
+#    return 0.001*np.exp(max_eig * time)
+
+diffeq.plt_style_sol[0] = {'color':'b','linestyle':'-','marker':'','linewidth':3}
 solver.solve()
+solver.plot_sol(plt_save_name=savefile+'_sol',title=title,display_time=True)
+solver.plot_error(method='max diff',savefile=savefile+'_error', title=title)
+solver.plot_cons_obj(savefile=savefile)
+#from Methods.Analysis import animate
+#animate(solver, plotargs={'display_time':True},skipsteps=100)
 
-# if disc_type == 'FD':
-
-#     diffeq = Quasi1dEulerFd(para, obj_name, nn,
-#                             flow_is_subsonic = flow_is_subsonic)
-
-#     # Solve with internal solve method
-#     q_sol, res_norm = diffeq.solve(nts, 'implicit_euler', cn=50)
-
-#     # Initial solution
-#     rho_init, u_init, e_init, p_init, a_init = diffeq.cons2prim(diffeq.q_init, diffeq.svec)
-
-#     # Plot the numerical solution
-#     rho_sol, u_sol, e_sol, p_sol, a_sol = diffeq.cons2prim(q_sol, diffeq.svec)
-
-#     diffeq.plot_fun(q_sol)
-
-
+#solver.solve()
+#solver.plot_sol()
+#solver.plot_cons_obj()

@@ -21,7 +21,6 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
     def __init__(self, diffeq, tm_method,
                  keep_all_ts=True,
                  bool_plot_sol=False, fun_plot_sol=None,
-                 bool_calc_obj=True, fun_calc_obj=None,
                  bool_calc_cons_obj=False, fun_calc_cons_obj=None,
                  print_sol_norm=False, print_residual=False,
                  dqdt=None, dfdq=None):
@@ -40,12 +39,6 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
             The default is False.
         fun_plot_sol : method, optional
             If not provided, the default solution plotter from diffeq is used.
-            The default is None.
-        bool_calc_obj : bool, optional
-            The objective is calculated if this flag is set to true.
-            The default is True, unless n_obj=0.
-        fun_calc_obj : method, optional
-            If not povided, the method from diffeq is used to calc the obj.
             The default is None.
         bool_calc_cons_obj : bool, optional
             Quantities like conservation, energy norms, and entropy are
@@ -70,8 +63,6 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
         self.keep_all_ts = keep_all_ts
         self.bool_plot_sol = bool_plot_sol
         self.fun_plot_sol = fun_plot_sol
-        self.bool_calc_obj = bool_calc_obj
-        self.fun_calc_obj = fun_calc_obj
         self.print_sol_norm = print_sol_norm
         self.print_residual = print_residual
         self.bool_calc_cons_obj = bool_calc_cons_obj
@@ -92,14 +83,8 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
         else:
             self.f_dfdq = dfdq
 
-        self.n_obj = self.diffeq.n_obj
-        if self.n_obj == 0: self.bool_calc_obj = False
-
         if self.bool_plot_sol and self.fun_plot_sol is None:
             self.fun_plot_sol = self.diffeq.plot_sol
-
-        if self.bool_calc_obj and self.fun_calc_obj is None:
-            self.fun_calc_obj = self.diffeq.calc_obj
 
         if self.bool_calc_cons_obj:
             self.n_cons_obj = self.diffeq.n_cons_obj
@@ -110,8 +95,6 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
 
         ''' Initiate variables '''
 
-        self.obj = None
-        self.obj_all_iter = None
         self.cons_obj = None
 
         ''' Set the solver '''
@@ -137,10 +120,6 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
             One or all time steps, where each time step is a column in the
             2D array.
         '''
-
-        if self.bool_calc_obj:
-            self.obj = np.zeros(self.n_obj)
-            self.obj_all_iter = np.zeros((self.n_obj, n_ts+1))
 
         if self.bool_calc_cons_obj:
             self.cons_obj = np.zeros((self.n_cons_obj, n_ts+1))
@@ -172,13 +151,6 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
             if (t_idx % self.idx_print == 0) or (t_idx == n_ts):
                 norm_q = np.linalg.norm(q) / np.sqrt(np.size(q))
                 print(f'i = {t_idx:4}, ||q|| = {norm_q:3.4}')
-
-        if self.bool_calc_obj:
-            self.obj_all_iter[:, t_idx] = self.fun_calc_obj(q, n_ts, dt)
-
-            # self.obj += self.obj_all_iter[:, t_idx]
-            if t_idx == n_ts:
-                self.obj = np.sum(self.obj_all_iter, axis=1)
 
         if self.bool_calc_cons_obj:
             self.cons_obj[:, t_idx] = self.fun_calc_cons_obj(q)

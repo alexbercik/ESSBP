@@ -20,9 +20,6 @@ class OdeSolver:
     This class is used to solve ODEs and is also the base class for PdeSolver,
     which is the base class to solve PDEs using various discretizations.
 
-    Once this class is initiated the only methods that should be called from
-    outside of this class are solve or calc_obj, and calc_grad.
-
     Method: solve
     --------------------------------------------------------------------------
     The method solve will be set to either calc_obj_w_para or

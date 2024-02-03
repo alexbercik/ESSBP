@@ -19,7 +19,6 @@ class PdeSolver:
     
     # Initialize parameters
     q_sol = None        # Solution of the Diffeq
-    obj = None          # Objective(s)
     cons_obj = None     # Conservation Objective(s)
     keep_all_ts = True  # whether to keep all time steps on solve
 
@@ -30,7 +29,7 @@ class PdeSolver:
                  surf_type='upwind', diss_type=None, had_flux='central',
                  nelem=0, nen=0,  disc_nodes='lgl',
                  bc=None, xmin=0, xmax=1,     # Domain
-                 obj_name=None, cons_obj_name=None,         # Other
+                 cons_obj_name=None,         # Other
                  bool_plot_sol=False, print_sol_norm=False):
         '''
         Parameters
@@ -82,9 +81,6 @@ class PdeSolver:
         xmax : float
              Factor by which to warp the 2D mesh. Typically use 0.2
              The defualt is 0.
-        bool_calc_obj : bool, optional
-            The objective(s) is calculated if this is set to True.
-            The default is True, unless n_obj=0.
         cons_obj_name : str or tuple, optional
             The name or names of the conservation objective(s) to calculate.
             If None, no conservation objectives are calculated.
@@ -256,20 +252,11 @@ class PdeSolver:
         else: raise Exception('Only set up currently for 1D, 2D, and 3D')
 
         # Other
-        self.obj_name = obj_name
         self.cons_obj_name = cons_obj_name
         self.bool_plot_sol = bool_plot_sol
         self.print_sol_norm = print_sol_norm
 
         ''' Extract other attributes '''
-
-        self.n_obj = self.diffeq.n_obj
-        if self.n_obj == 0: self.obj_name = None
-        
-        if self.obj_name == None:
-            self.bool_calc_obj = False
-        else:
-            self.bool_calc_obj = True
 
         if self.cons_obj_name is None:
             self.n_cons_obj = 0
@@ -394,14 +381,11 @@ class PdeSolver:
         
         tm_class = TimeMarching(self.diffeq, self.tm_method, self.keep_all_ts,
                         bool_plot_sol = self.bool_plot_sol,
-                        bool_calc_obj = self.bool_calc_obj,
                         bool_calc_cons_obj = self.bool_calc_cons_obj,
                         print_sol_norm = self.print_sol_norm,
                         dqdt=self.dqdt, dfdq=self.dfdq)
         
         self.q_sol =  tm_class.solve(q0, self.dt, self.n_ts)
-        self.obj = tm_class.obj
-        self.obj_all_iter = tm_class.obj_all_iter
         self.cons_obj = tm_class.cons_obj
 
         end_time = time.time()
@@ -556,7 +540,7 @@ class PdeSolver:
                       surf_type=self.surf_type, diss_type=self.diss_type,
                       nelem=self.nelem, nen=self.nen, disc_nodes=self.disc_nodes,
                       bc=self.bc, xmin=self.xmin, xmax=self.xmax,
-                      obj_name=self.bool_calc_obj, cons_obj_name=self.cons_obj_name,
+                      cons_obj_name=self.cons_obj_name,
                       bool_plot_sol=self.bool_plot_sol, print_sol_norm=self.print_sol_norm)
         
     def get_LHS(self, q=None, exact_dfdq=True, step=1.0e-4):

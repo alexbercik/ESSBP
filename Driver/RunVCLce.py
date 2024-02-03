@@ -91,7 +91,7 @@ solver1D = solver_c(diffeq, settings,                     # Diffeq
                   surf_type, diss_type, had_flux,
                   nelem, nen, disc_nodes,
                   bc, xmin, xmax,         # Domain
-                  obj_name, cons_obj_name,              # Other
+                  cons_obj_name,              # Other
                   bool_plot_sol, print_sol_norm)
 
 solver1D.solve()
@@ -104,7 +104,7 @@ solver1D.plot_cons_obj()
 
 '''
 
-diffeq = DiffEq(para, obj_name, q0_type)
+diffeq = DiffEq(para, q0_type)
 diffeq.plt_style_exa_sol = {'color':'r','linestyle':'-','marker':'','linewidth':3}
 diffeq.alpha = 2/3 # constant to determine split form (1 conservative, 1/2 skeq symmetric, 2/3 mimics burgers eqn)
 savefile = 'var_coeff_alpha_23'
@@ -116,7 +116,7 @@ solver = PdeSolver(diffeq,                              # Diffeq
                   p, disc_type, nn,                     # Discretization
                   nelem, nen, sat_flux_type,
                   isperiodic, xmin, xmax,               # Domain
-                  obj_name, cons_obj_name,              # Other
+                  cons_obj_name,              # Other
                   bool_plot_sol, print_sol_norm)
 
 if disc_type =='dg':
