@@ -12,8 +12,28 @@ import Source.Methods.Functions as fn
 ''' A collection of numerical 2-point fluxes for the Inviscid fluxes of the 
     Euler and Navier-Stokes equations. All jitted for speed '''
 
+@njit 
+def calcEx_1D(q):
+    ''' the flux vector in 1D, hard coded with g=1.4 '''
+    # decompose_q
+    q_0 = q[0::3]
+    q_1 = q[1::3]
+    q_2 = q[2::3]
+    u = q_1 / q_0
+
+    k = u*q_1                    # Common term: rho * u^2 * S
+    ps = 0.4*(q_2 - k/2)  # p * S
+
+    e0 = q_1
+    e1 = k + ps
+    e2 = u*(q_2 + ps)
+
+    # assemble_vec
+    E = np.stack((e0,e1,e2)).reshape(q.shape, order='F')
+    return E
+
 @njit    
-def dEdq_1D(q):
+def dExdq_1D(q):
     ''' the flux jacobian A in 1D. Note: can NOT handle complex values '''
     g = 1.4 # hard coded throughout
     rho = q[::3,:]
@@ -35,7 +55,7 @@ def dEdq_1D(q):
     return dEdq
 
 @njit    
-def dEdq_1D_complex(q):
+def dExdq_1D_complex(q):
     ''' the flux jacobian A in 1D. Note: intended for use with complex step '''
     g = 1.4 # hard coded throughout
     rho = q[::3,:]
@@ -1306,7 +1326,53 @@ def log_mean(qL,qR):
     q = (qL+qR)/F
     return q
 
+@njit 
+def Ismail_Roe(qL,qR):
+    '''
+    Return the ismail roe flux given two states qL and qR where each is
+    of shape (neq=3,), and returns a numerical flux of shape (neq=3,)
+    note subroutine defined in ismail-roe appendix B for logarithmic mean
+    '''
+    g = 1.4 # hard coded!
+    
+    rhoL, rhoR = qL[0], qR[0]
+    uL, uR = qL[1]/rhoL, qR[1]/rhoR
+    pL, pR = (g-1)*(qL[2] - (rhoL * uL**2)/2), (g-1)*(qR[2] - (rhoR * uR**2)/2)
 
+    alphaL = np.sqrt(rhoL/pL)
+    alphaR = np.sqrt(rhoR/pR)
+    betaL = np.sqrt(rhoL*pL)
+    betaR = np.sqrt(rhoR*pR)
+
+    xi_alpha = alphaL/alphaR
+    zeta_alpha = (1-xi_alpha)/(1+xi_alpha)
+    zeta_alpha2 = zeta_alpha**2
+    if zeta_alpha2 < 0.01:
+        F_alpha = 2*(1. + zeta_alpha2/3. + zeta_alpha2**2/5. + zeta_alpha2**3/7.)
+    else:
+        F_alpha = - np.log(xi_alpha)/zeta_alpha
+    alpha_ln = (alphaL+alphaR)/F_alpha
+
+    xi_beta = betaL/betaR
+    zeta_beta = (1-xi_beta)/(1+xi_beta)
+    zeta_beta2 = zeta_beta**2
+    if zeta_beta2 < 0.01:
+        F_beta = 2*(1. + zeta_beta2/3. + zeta_beta2**2/5. + zeta_beta2**3/7.)
+    else:
+        F_beta = - np.log(xi_beta) / zeta_beta
+    beta_ln = (betaL+betaR)/F_beta
+
+    alpha_avg = 0.5*(alphaL+alphaR)
+    beta_avg = 0.5*(betaL+betaR)
+
+    rho_avg = alpha_avg * beta_ln
+    a_avg2 = (0.5/rho_avg)*((g+1)*beta_ln/alpha_ln + (g-1)*beta_avg/alpha_avg)
+    u_avg = 0.5 * (uL*alphaL + uR*alphaR) / alpha_avg
+    p_avg = beta_avg / alpha_avg
+    H_avg = a_avg2/(g - 1) + 0.5*u_avg**2
+    
+    rhou_avg = rho_avg*u_avg
+    return np.array([rhou_avg, rhou_avg*u_avg + p_avg, rhou_avg*H_avg]) 
 
 
 

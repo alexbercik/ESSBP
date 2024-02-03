@@ -146,7 +146,6 @@ class Convergence:
                                                         legend_strings=legend_strings)
 
         ''' Plot Results '''
-        # use diffeq.plot_obj?
         title = r"Convergence of " + error_type + " Error"
         Convergence.plot_conv(dofs, errors,legend_strings,title,savefile)
         

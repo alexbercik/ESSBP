@@ -89,7 +89,7 @@ solver3D = solver_c(diffeq, settings,                     # Diffeq
                   surf_type, diss_type, had_flux,
                   nelem, nen, disc_nodes,
                   bc, xmin, xmax,         # Domain
-                  obj_name, cons_obj_name,              # Other
+                  cons_obj_name,              # Other
                   bool_plot_sol, print_sol_norm)
 
 
