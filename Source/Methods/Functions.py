@@ -6,7 +6,7 @@ Created on Mon Nov  9 00:26:34 2020
 @author: bercik
 """
 
-from numba import jit, literal_unroll
+from numba import jit, njit, literal_unroll
 import numpy as np
 from contextlib import contextmanager
 import sys, os
@@ -15,7 +15,7 @@ import sys, os
 # The useful functions are defined first, the others are shoved to the bottom
 
 # TODO: This is the function to speed up (is approximately 40% of total code runtime)
-@jit(nopython=True)
+@njit
 def gm_gv(A,b):
     '''
     Equivalent to np.einsum('ijk,jk->ik',A,b) where A is a 3-tensor of shape
@@ -45,7 +45,7 @@ def gm_gv(A,b):
                 c[i,e] += A[i,j,e]*b[j,e]
     return c
 
-@jit(nopython=True)
+@njit
 def gm_gm(A,B):
     '''
     Equivalent to np.einsum('ijk,jlk->ilk',A,B) where A is a 3-tensor of shape
@@ -75,7 +75,7 @@ def gm_gm(A,B):
                     c[i,l,e] += A[i,j,e]*B[j,l,e]
     return c  
 
-@jit(nopython=True)
+@njit
 def gm_lm(A,B):
     '''
     Equivalent to np.einsum('ijk,jl->ilk',A,B) where A is a 3-tensor of shape
@@ -103,7 +103,7 @@ def gm_lm(A,B):
                     c[i,l,e] += A[i,j,e]*B[j,l]
     return c
 
-@jit(nopython=True)
+@njit
 def gm_lv(A,b):
     '''
     Equivalent to np.einsum('ijk,j->ik',A,b) where A is a 3-tensor of shape
@@ -131,7 +131,7 @@ def gm_lv(A,b):
                 c[i,e] += A[i,j,e] * b[j]
     return c
 
-@jit(nopython=True)
+@njit
 def lm_gm(A,B):
     '''
     NOTE: NOT equivalent to A @ B 
@@ -161,7 +161,7 @@ def lm_gm(A,B):
                     c[i,l,e] += A[i,j]*B[j,l,e]
     return c
 
-@jit(nopython=True)
+@njit
 def gs_lm(A,B):
     '''
     Takes a global scalar of shape either (nelem,) or (1,nelem) and a local
@@ -190,7 +190,7 @@ def gs_lm(A,B):
 
     return c
 
-@jit(nopython=True)
+@njit
 def gv_lm(A,B):
     '''
     Takes a global vector of shape (nen1,nelem) and a local matrix of shape (nen1,nen2) 
@@ -215,7 +215,7 @@ def gv_lm(A,B):
 
     return c
 
-@jit(nopython=True)
+@njit
 def gdiag_lm(H,D):
     '''
     Takes a global array of shape (nen1,nelem) that simulates a global diagonal
@@ -240,7 +240,7 @@ def gdiag_lm(H,D):
         c[:,:,e] = (D.T * H[:,e]).T
     return c
 
-@jit(nopython=True)
+@njit
 def lm_gdiag(D,H):
     '''
     Takes a a local matrix of shape (nen1,nen2) and a global array of shape 
@@ -265,7 +265,7 @@ def lm_gdiag(D,H):
         c[:,:,e] = D * H[:,e]
     return c
 
-@jit(nopython=True)
+@njit
 def gdiag_gm(H,D):
     '''
     Takes a global array of shape (nen1,nelem) that simulates a global diagonal
@@ -292,7 +292,7 @@ def gdiag_gm(H,D):
         c[:,:,e] = (D[:,:,e].T * H[:,e]).T
     return c
 
-@jit(nopython=True)
+@njit
 def gdiag_gv(H,q):
     '''
     NOTE: Faster to directly use H * q
@@ -318,7 +318,7 @@ def gdiag_gv(H,q):
     c = H * q
     return c
 
-@jit(nopython=True)
+@njit
 def gm_gv_colmultiply(A,q):
     '''
     Takes a global matrix of shape (nen1,nen2,nelem) and a global vector of
@@ -346,7 +346,7 @@ def gm_gv_colmultiply(A,q):
         c[:,:,e] = A[:,:,e] * q[:,e]
     return c
 
-@jit(nopython=True)
+@njit
 def diag(q):
     '''
     Takes a 2-dim numpy array q of shape (nen,nelem) and returns a 3-dim
@@ -376,7 +376,7 @@ def check_q_shape(q):
     assert(q.ndim==2),'ERROR: q is the wrong shape.'
     return q
 
-@jit(nopython=True)
+@njit
 def block_diag(*entries):
     '''
     Takes neq_node^2 2-dim numpy arrays q of shape (nen,nelem) and returns a 3-dim
@@ -412,7 +412,7 @@ def block_diag(*entries):
         mat[a:b,a:b,:] = blocks[i,:,:,:]    
     return mat
 
-@jit(nopython=True)
+@njit
 def abs_eig_mat(mat):
     '''
     Given a 3d array in the shape (nen*neq_node,nen*neq_node,nelem), return
@@ -439,7 +439,7 @@ def abs_eig_mat(mat):
     return mat_abs
 
 
-@jit(nopython=True)
+@njit
 def gm_triblock_flat(blockL,blockM,blockR):
     '''
     Takes 3 global matrices, blockL and blockR arrays of shape (nen,nen,nelem-1) and 
@@ -476,7 +476,7 @@ def gm_triblock_flat(blockL,blockM,blockR):
     return mat
                 
 
-@jit(nopython=True)
+@njit
 def gm_triblock_flat_periodic(blockL,blockM,blockR):
     '''
     Takes 3 global matrices of shape (nen,nen,nelem) and returns a 2d array 
@@ -513,7 +513,7 @@ def gm_triblock_flat_periodic(blockL,blockM,blockR):
             
     return mat
 
-@jit(nopython=True)
+@njit
 def gm_triblock_2D_flat_periodic(blockL,blockM,blockR,blockD,blockU,nelemy):
     '''
     Takes 5 global matrices of shape (nen^2,nen^2,nelemx*nelemy) and returns a 2d array 
@@ -560,7 +560,7 @@ def gm_triblock_2D_flat_periodic(blockL,blockM,blockR,blockD,blockU,nelemy):
             
     return mat
 
-@jit(nopython=True)
+@njit
 def lm_gm_had(A,B):
     '''
     Compute the hadamard product between a local matrix (nen1,nen2) and 
@@ -577,7 +577,7 @@ def lm_gm_had(A,B):
             
     return C
 
-@jit(nopython=True)
+@njit
 def lm_gm_had_diff(A,B):
     '''
     Compute the hadamard product between a local matrix (nen1,nen2) and 
@@ -595,7 +595,7 @@ def lm_gm_had_diff(A,B):
     c = np.sum(C,axis=1)
     return c
 
-@jit(nopython=True)
+@njit
 def gm_gm_had(A,B):
     '''
     Compute the hadamard product between a local matrix (nen1,nen2) and 
@@ -612,7 +612,7 @@ def gm_gm_had(A,B):
             
     return C
 
-@jit(nopython=True)
+@njit
 def gm_gm_had_diff(A,B):
     '''
     Compute the hadamard product between a local matrix (nen1,nen2) and 
@@ -645,7 +645,7 @@ def isDiag(M):
     else:
         raise Exception('Inputted shape not understood.')
         
-@jit(nopython=True)
+@njit
 def pad_periodic_1d(q):
     '''
     Take a global vector (nen,nelem) and pad it so that it becomes a global
@@ -663,7 +663,7 @@ def pad_periodic_1d(q):
     qpad[:,-1] = q[:,0]           
     return qpad
 
-@jit(nopython=True)
+@njit
 def pad_1d(q,qL,qR):
     '''
     Take a global vector (nen,nelem) and pad it so that it becomes a global
@@ -683,7 +683,7 @@ def pad_1d(q,qL,qR):
     qpad[:,-1] = qR          
     return qpad
 
-@jit(nopython=True)
+@njit
 def pad_1dL(q,qL):
     '''
     Take a global vector (nen,nelem) and pad it so that it becomes a global
@@ -701,7 +701,7 @@ def pad_1dL(q,qL):
     qpad[:,0] = qL         
     return qpad
 
-@jit(nopython=True)
+@njit
 def pad_1dR(q,qR):
     '''
     Take a global vector (nen,nelem) and pad it so that it becomes a global
@@ -719,7 +719,7 @@ def pad_1dR(q,qR):
     qpad[:,-1] = qR          
     return qpad
 
-@jit(nopython=True) # TODO: renamed from fix_satL_1D
+@njit # TODO: renamed from fix_satL_1D
 def shift_left(q):
     '''
     Take a global vector (nen,nelem) and move the first elem to the last elem.
@@ -735,7 +735,7 @@ def shift_left(q):
     qfix[:,-1] = q[:,0]            
     return qfix
 
-@jit(nopython=True)
+@njit
 def shift_right(q):
     '''
     Take a global vector (nen,nelem) and move the first elem to the last elem.
@@ -751,7 +751,7 @@ def shift_right(q):
     qfix[:,0] = q[:,-1]            
     return qfix
 
-@jit(nopython=True)
+@njit
 def fix_dsatL_1D(q):
     '''
     Take a global matrix (nen,nen,nelem) and move the first elem to the last elem.
@@ -768,7 +768,7 @@ def fix_dsatL_1D(q):
     qfix[:,:,-1] = q[:,:,0]            
     return qfix
 
-@jit(nopython=True)
+@njit
 def reshape_to_meshgrid(q,nen,nelemx,nelemy):
     ''' take a 2D vector q in the shape (nen**2,nelemx*nelemy) and reshape
     to a 2D mesh in the shape (nen*nelem, nen*nelemy) as would be created
@@ -785,10 +785,10 @@ def reshape_to_meshgrid(q,nen,nelemx,nelemy):
                     Q[ex*nen + nx, ey*nen + ny] = q[nx*nen + ny,ex*nelemy + ey]
     return Q
     
-# Don't use nopython @jit(nopython=True) in case we need to pass class objects in ec_flux
+# Don't use nopython @njit in case we need to pass class objects in ec_flux
 # June 2023: I put it back in becuase the keyword default of False is being depreciated and 
 # it threw a warning. Maybe I can get away with this if it supports class functions?
-@jit(nopython=True)
+@njit
 def build_F_vol(q, neq, flux):
     ''' builds a Flux differencing matrix (used for Hadamard form) given 1 
     solution vector q, the number of equations per node, and a 2-point 
@@ -819,10 +819,10 @@ def build_F_vol(q, neq, flux):
                         F[idxj:idxj2,idxi:idxi2,e] = diag
     return F
 
-# Don't use nopython @jit(nopython=True) in case we need to pass class objects in ec_flux
+# Don't use nopython @njit in case we need to pass class objects in ec_flux
 # June 2023: I put it back in becuase the keyword default of False is being depreciated and 
 # it threw a warning. Maybe I can get away with this if it supports class functions?
-@jit(nopython=True)
+@njit
 def build_F(q1, q2, neq, flux):
     ''' builds a Flux differencing matrix (used for Hadamard form) given 2 
     solution vectors q1, q2, the number of equations per node, and a 2-point 
@@ -851,13 +851,13 @@ def build_F(q1, q2, neq, flux):
 
 
 
-@jit(nopython=True)
+@njit
 def arith_mean(qL,qR):
     ''' arithmetic mean. When used in Hadamard, equivalent to divergence form. '''
     q = (qL+qR)/2
     return q
 
-@jit(nopython=True)
+@njit
 def log_mean(qL,qR):
     ''' logarithmic mean. Useful for EC fluxes. '''
     xi = qL/qR
@@ -870,7 +870,7 @@ def log_mean(qL,qR):
     q = (qL+qR)/F
     return q
 
-@jit(nopython=True)
+@njit
 def prod_mean(q1L,q2L,q1R,q2R):
     '''' product mean. Useful for split-form fluxes. '''
     q = (q1L*q2R+q2L*q1R)/2
@@ -887,6 +887,19 @@ def is_pos_def(A):
     else:
         return False
 
+@njit
+def repeat_neq(q,neq_node):
+    ''' take array of shape (nen,nelem) and return (nen*neq_node,nelem)
+        where the value on each node is repeat neq_node times. 
+        Note: shockingly just as fast as np.repeat(q,neq_node,0) but this 
+              is not compatible with jit (axis argument not supported)'''
+    nen, nelem = q.shape
+    qn = np.zeros((nen*neq_node,nelem)) 
+    for e in range(nelem):
+        for i in range(nen):
+            for j in range(i*neq_node,i*neq_node+neq_node):
+                qn[j,e] = q[i,e]
+    return qn
 
 
 """ Old functions (no longer useful)
@@ -910,7 +923,7 @@ def ldiag_gdiag2(l,g):
     ''' 
     return l[:,None] * g
 
-@jit(nopython=True)
+@njit
 def gv_lvT(A,B):
     '''
     Takes a global vector of shape (nen1,nelem) and a local vector of shape 
@@ -940,7 +953,7 @@ def gv_lvT(A,B):
 
     return c
 
-@jit(nopython=True)
+@njit
 def gm_triblock_flat(blockL,blockM,blockR):
     '''
     Takes 3 3d arrays, blockL and blockR of shape (nen,nen,nelem-1) and 
@@ -978,7 +991,7 @@ def gm_triblock_flat(blockL,blockM,blockR):
         
     return mat
 
-@jit(nopython=True)
+@njit
 def lm_lv(A,b):
     '''
     Equivalent to np.einsum('ij,j->i',A,b) where A is a 2-tensor of shape
@@ -998,7 +1011,7 @@ def lm_lv(A,b):
     '''
     return A@b
 
-@jit(nopython=True)
+@njit
 def lm_lm(A,B):
     '''
     Equivalent to np.einsum('ij,jk->ik',A,B) where A is a 2-tensor of shape
@@ -1035,7 +1048,7 @@ def dot(A,B):
     '''
     return A.dot(B)
 
-@jit(nopython=True)
+@njit
 def diag_1d(q):
     '''
     Takes a 2-dim numpy array q of shape (nen,1) and returns a 2-dim
@@ -1105,7 +1118,7 @@ def chk_q_unstr(q):
     else:
         print('ERROR: Unrecognized q shape.')
         
-@jit(nopython=True)       
+@njit       
 def block_diag_1d(*entries):
     '''
     Takes neq_node^2 2-dim numpy arrays q of shape (nen,1) and returns a 2-dim
