@@ -75,9 +75,9 @@ class LinearConv(PdeBase):
         dExdq = fn.diag(np.zeros(q.shape))
         return dExdq
 
-    def dExdq_eig_abs(self, dExdq):
+    def dExdq_eig_abs(self, q):
 
-        dExdq_eig_abs = np.abs(dExdq)
+        dExdq_eig_abs = fn.diag(np.ones(q.shape)*abs(self.a))
         return dExdq_eig_abs
 
     def maxeig_dExdq(self, q):
