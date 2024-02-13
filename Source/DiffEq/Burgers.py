@@ -8,11 +8,11 @@ Created on Wed Jun 17 12:41:26 2020
 
 import numpy as np
 
-from Source.DiffEq.DiffEqBase import PdeBaseCons
+from Source.DiffEq.DiffEqBase import PdeBase
 import Source.Methods.Functions as fn
 from numba import njit
 
-class Burgers(PdeBaseCons):
+class Burgers(PdeBase):
     '''
     Purpose
     ----------
@@ -73,13 +73,13 @@ class Burgers(PdeBaseCons):
         return dfdq
 
     def calc_LF_const(self):
-        ''' Constant for the Lax-Friedrichs flux'''
+        ''' Constant for the Lax-Friedrichs flux. Not needed for SBP.'''
         q = fn.check_q_shape(self.set_q0())
         return np.max(np.abs(q))
 
-    def dExdq_eig_abs(self, dExdq):
+    def dExdq_eig_abs(self, q):
 
-        dExdq_eig_abs = abs(dExdq)
+        dExdq_eig_abs = fn.diag(abs(q))
         return dExdq_eig_abs
     
     def maxeig_dExdq(self, q):
