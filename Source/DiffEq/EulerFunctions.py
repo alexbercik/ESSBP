@@ -5,6 +5,17 @@ Created on Thu Aug 12 11:07:16 2021
 
 @author: bercik
 """
+import os
+from sys import path
+
+n_nested_folder = 2
+folder_path, _ = os.path.split(__file__)
+
+for i in range(n_nested_folder):
+    folder_path, _ = os.path.split(folder_path)
+
+path.append(folder_path)
+
 from numba import njit
 import numpy as np
 import Source.Methods.Functions as fn
@@ -15,22 +26,95 @@ import Source.Methods.Functions as fn
 @njit 
 def calcEx_1D(q):
     ''' the flux vector in 1D, hard coded with g=1.4 '''
+    g = 1.4 # hard coded throughout
+
     # decompose_q
-    q_0 = q[0::3]
+    fac = 1./q[0::3]
     q_1 = q[1::3]
     q_2 = q[2::3]
-    u = q_1 / q_0
-
-    k = u*q_1                    # Common term: rho * u^2 * S
-    ps = 0.4*(q_2 - k/2)  # p * S
-
-    e0 = q_1
-    e1 = k + ps
-    e2 = u*(q_2 + ps)
+    u = q_1 * fac
+    k = u*q_1   
+    p = (g-1)*(q_2 - 0.5*k) 
 
     # assemble_vec
-    E = np.stack((e0,e1,e2)).reshape(q.shape, order='F')
+    E = np.zeros(q.shape)
+    E[::3,:] = q_1
+    E[1::3,:] = k + p
+    E[2::3,:] = u*(q_2 + p)
     return E
+
+@njit 
+def calcEx_2D(q):
+    ''' the flux vector in 2D, hard coded with g=1.4 '''
+    g = 1.4 # hard coded throughout
+
+    # decompose_q
+    fac = 1./q[0::4]
+    q_1 = q[1::4]
+    q_2 = q[2::4]
+    q_3 = q[3::4]
+    u = q_1 * fac
+    v = q_2 * fac
+    p = (g-1)*(q_3 - 0.5*(u*q_1 + v*q_2))  
+
+    # assemble_vec
+    E = np.zeros(q.shape)
+    E[::4,:] = q_1
+    E[1::4,:] = q_1*u + p
+    E[2::4,:] = q_1*v
+    E[3::4,:] = u*(q_3 + p)
+    return E
+
+@njit 
+def calcEy_2D(q):
+    ''' the flux vector in 2D, hard coded with g=1.4 '''
+    g = 1.4 # hard coded throughout
+
+    # decompose_q
+    fac = 1./q[0::4]
+    q_1 = q[1::4]
+    q_2 = q[2::4]
+    q_3 = q[3::4]
+    u = q_1 * fac
+    v = q_2 * fac
+    p = (g-1)*(q_3 - 0.5*(u*q_1 + v*q_2))  
+
+    # assemble_vec
+    E = np.zeros(q.shape)
+    E[::4,:] = q_2
+    E[1::4,:] = q_2*u
+    E[2::4,:] = q_2*v + p
+    E[3::4,:] = v*(q_3 + p)
+    return E
+
+@njit 
+def calcExEy_2D(q):
+    ''' the flux vector in 2D, hard coded with g=1.4 '''
+    g = 1.4 # hard coded throughout
+
+    # decompose_q
+    fac = 1./q[0::4]
+    q_1 = q[1::4]
+    q_2 = q[2::4]
+    q_3 = q[3::4]
+    u = q_1 * fac
+    v = q_2 * fac
+    p = (g-1)*(q_3 - 0.5*(u*q_1 + v*q_2))  
+
+    #assemble_xvec
+    Ex = np.zeros(q.shape)
+    Ex[::4,:] = q_1
+    Ex[1::4,:] = q_1*u + p
+    Ex[2::4,:] = q_1*v
+    Ex[3::4,:] = u*(q_3 + p)
+
+    # assemble_yvec
+    Ey = np.zeros(q.shape)
+    Ey[::4,:] = q_2
+    Ey[1::4,:] = q_2*u
+    Ey[2::4,:] = q_2*v + p
+    Ey[3::4,:] = v*(q_3 + p)
+    return Ex, Ey
 
 @njit    
 def dExdq_1D(q):
@@ -47,11 +131,61 @@ def dExdq_1D(q):
     r21 = (g-3) * k
     r22 = (3-g) * u
     r23 = r1*(g-1)
-    r31 = (g-1) * (u**3) - u * g_e_rho
-    r32 = g_e_rho - 3*(g-1) * k
+    r31 = ((2 * (g-1)) * k - g_e_rho) * u
+    r32 = g_e_rho - (3*(g-1)) * k
     r33 = g * u
     
     dEdq = fn.block_diag(r0,r1,r0,r21,r22,r23,r31,r32,r33)
+    return dEdq
+
+@njit    
+def dEndq_1D(q,dxidx):
+    ''' the flux jacobian A in 1D including metric scaling. Note: can NOT handle complex values
+    INPUTS: q : array of shape (nen*neq_node,nelem)
+            dxidx : metrics of shape (nen,nelem) corresponding to a single xi '''
+    g = 1.4 # hard coded throughout
+    g1 = g-1
+    rho = q[::3,:]
+    u = q[1::3,:]/rho
+    k = (u*u)/2
+    g_e_rho = g * q[2::3,:]/rho
+    un = dxidx*u
+
+    # entries of the dEdq (A) matrix
+    r0 = np.zeros(np.shape(rho))
+    r21 = (g-3) * dxidx * k 
+    r22 = (3-g) * un
+    r23 = g1 * dxidx
+    r31 = ((2 * g1) * k - g_e_rho) * un
+    r32 = dxidx*(g_e_rho - (3 * g1) * k) 
+    r33 = g * un
+    
+    dEdq = fn.block_diag(r0,dxidx,r0,r21,r22,r23,r31,r32,r33)
+    return dEdq
+
+@njit    
+def dEndq_1D_complex(q,dxidx):
+    ''' the flux jacobian A in 1D including metric scaling. Note: can NOT handle complex values
+    INPUTS: q : array of shape (nen*neq_node,nelem)
+            dxidx : metrics of shape (nen,nelem) corresponding to a single xi '''
+    g = 1.4 # hard coded throughout
+    g1 = g-1
+    rho = q[::3,:]
+    u = q[1::3,:]/rho
+    k = (u*u)/2
+    g_e_rho = g * q[2::3,:]/rho
+    un = dxidx*u
+
+    # entries of the dEdq (A) matrix
+    r0 = np.zeros(np.shape(rho),dtype=np.complex128)
+    r21 = (g-3) * dxidx * k 
+    r22 = (3-g) * un
+    r23 = g1 * dxidx
+    r31 = ((2 * g1) * k - g_e_rho) * un
+    r32 = dxidx*(g_e_rho - (3 * g1) * k) 
+    r33 = g * un
+    
+    dEdq = fn.block_diag(r0,dxidx,r0,r21,r22,r23,r31,r32,r33)
     return dEdq
 
 @njit    
@@ -134,15 +268,17 @@ def dEydq_2D(q):
 
 @njit    
 def dEndq_2D(q,n):
-    ''' the n-direction flux jacobian A in 2D. Note: can NOT handle complex values '''
+    ''' the n-direction flux jacobian A in 2D. Note: can NOT handle complex values 
+    INPUTS: q : array of shape (nen*neq_node,nelem)
+            n : metrics of shape (nen,2,nelem) corresponding to a single xi '''
     g = 1.4 # hard coded throughout
     g1 = g-1
     rho = q[::4,:]
     u = q[1::4,:]/rho
     v = q[2::4,:]/rho
     uv = u*v
-    u2 = u**2
-    v2 = v**2
+    u2 = u*u
+    v2 = v*v
     k = (u2+v2)/2
     g_e_rho = g * q[3::4,:]/rho
     nx = n[:,0,:]
@@ -150,35 +286,36 @@ def dEndq_2D(q,n):
     uvn = nx*u + ny*v
 
     # entries of the dEdq (A) matrix
-    r1 = np.ones(np.shape(rho))
     r0 = np.zeros(np.shape(rho))
     r21 = nx*(g1 * k - u2) - ny*uv
-    r22 = (nx*(3-g)) * u + ny*v
-    r23 = nx*(-g1 * v) + ny*u
-    r24 = (nx*g1)*r1
+    r22 = (2-g)*nx*u + uvn
+    r23 = -g1*nx*v + ny*u
+    r24 = nx*g1
     r31 = -nx*uv + ny*(g1 * k - v2)
-    r32 = nx*v + ny*(-g1 * u)
-    r33 = nx*u + ny*((3-g) * v)
-    r34 = (ny*g1)*r1
-    r41 = ((2 * g1) * k - g_e_rho) * uvn
-    r42 = nx*(g_e_rho - g1*(k + u2)) + ny*(-g1 * uv)
-    r43 = nx*(-g1 * uv) + ny*(g_e_rho - g1*(k + v2))
+    r32 = nx*v - g1*ny*u
+    r33 = uvn + (2-g)*ny*v
+    r34 = ny*g1
+    r41 = ((2*g1) * k - g_e_rho) * uvn
+    r42 = nx*(g_e_rho - g1*(k + u2)) - g1*ny*uv
+    r43 = ny*(g_e_rho - g1*(k + v2)) - g1*nx*uv
     r44 = g * uvn
     
-    dEdq = fn.block_diag(r0,r1*nx,r1*ny,r0,r21,r22,r23,r24,r31,r32,r33,r34,r41,r42,r43,r44)
+    dEdq = fn.block_diag(r0,nx,ny,r0,r21,r22,r23,r24,r31,r32,r33,r34,r41,r42,r43,r44)
     return dEdq
 
 @njit    
 def dEndq_2D_complex(q,n):
-    ''' the n-direction flux jacobian A in 2D. Note: intended for use with complex step '''
+    ''' the n-direction flux jacobian A in 2D. Note: intended for use with complex step 
+    INPUTS: q : array of shape (nen*neq_node,nelem)
+            n : metrics of shape (nen,2,nelem) corresponding to a single xi '''
     g = 1.4 # hard coded throughout
     g1 = g-1
     rho = q[::4,:]
     u = q[1::4,:]/rho
     v = q[2::4,:]/rho
     uv = u*v
-    u2 = u**2
-    v2 = v**2
+    u2 = u*u
+    v2 = v*v
     k = (u2+v2)/2
     g_e_rho = g * q[3::4,:]/rho
     nx = n[:,0,:]
@@ -186,22 +323,21 @@ def dEndq_2D_complex(q,n):
     uvn = nx*u + ny*v
 
     # entries of the dEdq (A) matrix
-    r1 = np.ones_like(rho,dtype=np.complex128)
-    r0 = np.zeros_like(rho,dtype=np.complex128)
+    r0 = np.zeros(np.shape(rho),dtype=np.complex128)
     r21 = nx*(g1 * k - u2) - ny*uv
-    r22 = (nx*(3-g)) * u + ny*v
-    r23 = nx*(-g1 * v) + ny*u
-    r24 = (nx*g1)*r1
+    r22 = (2-g)*nx*u + uvn
+    r23 = -g1*nx*v + ny*u
+    r24 = nx*g1
     r31 = -nx*uv + ny*(g1 * k - v2)
-    r32 = nx*v + ny*(-g1 * u)
-    r33 = nx*u + ny*((3-g) * v)
-    r34 = (ny*g1)*r1
-    r41 = ((2 * g1) * k - g_e_rho) * uvn
-    r42 = nx*(g_e_rho - g1*(k + u2)) + ny*(-g1 * uv)
-    r43 = nx*(-g1 * uv) + ny*(g_e_rho - g1*(k + v2))
+    r32 = nx*v - g1*ny*u
+    r33 = uvn + (2-g)*ny*v
+    r34 = ny*g1
+    r41 = ((2*g1) * k - g_e_rho) * uvn
+    r42 = nx*(g_e_rho - g1*(k + u2)) - g1*ny*uv
+    r43 = ny*(g_e_rho - g1*(k + v2)) - g1*nx*uv
     r44 = g * uvn
     
-    dEdq = fn.block_diag(r0,r1*nx,r1*ny,r0,r21,r22,r23,r24,r31,r32,r33,r34,r41,r42,r43,r44)
+    dEdq = fn.block_diag(r0,nx,ny,r0,r21,r22,r23,r24,r31,r32,r33,r34,r41,r42,r43,r44)
     return dEdq
 
 @njit    
@@ -362,16 +498,21 @@ def dEzdq_3D(q):
 
 @njit    
 def dEndq_3D(q,n):
-    ''' the n-direction flux jacobian A in 3D. Note: can NOT handle complex values '''
+    ''' the n-direction flux jacobian A in 3D. Note: can NOT handle complex values 
+    INPUTS: q : array of shape (nen*neq_node,nelem)
+            n : metrics of shape (nen,3,nelem) corresponding to a single xi '''
     g = 1.4 # hard coded throughout
     g1 = g-1
     rho = q[::5,:]
     u = q[1::5,:]/rho
     v = q[2::5,:]/rho
     w = q[3::5,:]/rho
-    u2 = u**2
-    v2 = v**2
-    w2 = w**2
+    u2 = u*u
+    v2 = v*v
+    w2 = w*w
+    uv = u * v
+    uw = u * w
+    vw = v * w
     k = (u2+v2+w2)/2
     g_e_rho = g * q[4::5,:]/rho
     nx = n[:,0,:]
@@ -380,30 +521,29 @@ def dEndq_3D(q,n):
     uvwn = nx*u + ny*v + nz*w
     
     # entries of the dEdq (A) matrix
-    r1 = np.ones(np.shape(rho))
     r0 = np.zeros(np.shape(rho))
-    r21 = nx*(g1 * k - u2) - ny*(u * v) - nz*(u * w)
+    r21 = nx*(g1 * k - u2) - ny*uv - nz*uw
     r22 = uvwn + (nx*(2-g))*u
     r23 = -(nx*g1) * v + ny*u
     r24 = -(nx*g1) * w + nz*u
-    r25 = (nx*g1)*r1
-    r31 = - nx*(u * v) + ny*(g1 * k - v2) - nz*(v * w)
+    r25 = nx*g1
+    r31 = - nx*uv + ny*(g1 * k - v2) - nz*vw
     r32 = -(ny*g1) * u + nx*v
     r33 = uvwn + (ny*(2-g))*v
     r34 = -(ny*g1) * w + nz*v
-    r35 = (ny*g1)*r1
-    r41 = - nx*(u * w) - ny*(w * v) + nz*(g1 * k - w2)
+    r35 = ny*g1
+    r41 = - nx*uw - ny*vw + nz*(g1 * k - w2)
     r42 = -(nz*g1) * u + nx*w
     r43 = -(nz*g1) * v + ny*w
     r44 = uvwn + (nz*(2-g))*w
-    r45 = (nz*g1)*r1
+    r45 = nz*g1
     r51 = ((2 * g1) * k - g_e_rho)*uvwn
-    r52 = nx*(g_e_rho - g1*(k + u2)) - ((ny*g1) * u * v) - ((nz*g1) * u * w)
-    r53 = -((nx*g1) * u * v) + ny*(g_e_rho - g1*(k + v2)) - ((nz*g1) * v * w)
-    r54 = -((nx*g1) * u * w) - ((ny*g1) * v * w) + nz*(g_e_rho - g1*(k + w2))
+    r52 = nx*(g_e_rho - g1*(k + u2)) - (ny * g1 * uv) - (nz * g1 * uw)
+    r53 = -(nx*g1 * uv) + ny*(g_e_rho - g1*(k + v2)) - (nz*g1 * vw)
+    r54 = -(nx * g1 * uw) - (ny * g1 * vw) + nz*(g_e_rho - g1*(k + w2))
     r55 = g * uvwn
     
-    dEdq = fn.block_diag(r0,nx*r1,ny*r1,nz*r1,r0,r21,r22,r23,r24,r25,r31,r32,r33,r34,r35,r41,r42,r43,r44,r45,r51,r52,r53,r54,r55)
+    dEdq = fn.block_diag(r0,nx,ny,nz,r0,r21,r22,r23,r24,r25,r31,r32,r33,r34,r35,r41,r42,r43,r44,r45,r51,r52,r53,r54,r55)
     return dEdq
 
 @njit    
@@ -418,6 +558,9 @@ def dEndq_3D_complex(q,n):
     u2 = u**2
     v2 = v**2
     w2 = w**2
+    uv = u * v
+    uw = u * w
+    vw = v * w
     k = (u2+v2+w2)/2
     g_e_rho = g * q[4::5,:]/rho
     nx = n[:,0,:]
@@ -426,30 +569,29 @@ def dEndq_3D_complex(q,n):
     uvwn = nx*u + ny*v + nz*w
     
     # entries of the dEdq (A) matrix
-    r1 = np.ones_like(rho,dtype=np.complex128)
-    r0 = np.zeros_like(rho,dtype=np.complex128)
-    r21 = nx*(g1 * k - u2) - ny*(u * v) - nz*(u * w)
+    r0 = np.zeros(np.shape(rho),dtype=np.complex128)
+    r21 = nx*(g1 * k - u2) - ny*uv - nz*uw
     r22 = uvwn + (nx*(2-g))*u
     r23 = -(nx*g1) * v + ny*u
     r24 = -(nx*g1) * w + nz*u
-    r25 = (nx*g1)*r1
-    r31 = - nx*(u * v) + ny*(g1 * k - v2) - nz*(v * w)
+    r25 = nx*g1
+    r31 = - nx*uv + ny*(g1 * k - v2) - nz*vw
     r32 = -(ny*g1) * u + nx*v
     r33 = uvwn + (ny*(2-g))*v
     r34 = -(ny*g1) * w + nz*v
-    r35 = (ny*g1)*r1
-    r41 = - nx*(u * w) - ny*(w * v) + nz*(g1 * k - w2)
+    r35 = ny*g1
+    r41 = - nx*uw - ny*vw + nz*(g1 * k - w2)
     r42 = -(nz*g1) * u + nx*w
     r43 = -(nz*g1) * v + ny*w
     r44 = uvwn + (nz*(2-g))*w
-    r45 = (nz*g1)*r1
+    r45 = nz*g1
     r51 = ((2 * g1) * k - g_e_rho)*uvwn
-    r52 = nx*(g_e_rho - g1*(k + u2)) - ((ny*g1) * u * v) - ((nz*g1) * u * w)
-    r53 = -((nx*g1) * u * v) + ny*(g_e_rho - g1*(k + v2)) - ((nz*g1) * v * w)
-    r54 = -((nx*g1) * u * w) - ((ny*g1) * v * w) + nz*(g_e_rho - g1*(k + w2))
+    r52 = nx*(g_e_rho - g1*(k + u2)) - (ny * g1 * uv) - (nz * g1 * uw)
+    r53 = -(nx*g1 * uv) + ny*(g_e_rho - g1*(k + v2)) - (nz*g1 * vw)
+    r54 = -(nx * g1 * uw) - (ny * g1 * vw) + nz*(g_e_rho - g1*(k + w2))
     r55 = g * uvwn
     
-    dEdq = fn.block_diag(r0,nx*r1,ny*r1,nz*r1,r0,r21,r22,r23,r24,r25,r31,r32,r33,r34,r35,r41,r42,r43,r44,r45,r51,r52,r53,r54,r55)
+    dEdq = fn.block_diag(r0,nx,ny,nz,r0,r21,r22,r23,r24,r25,r31,r32,r33,r34,r35,r41,r42,r43,r44,r45,r51,r52,r53,r54,r55)
     return dEdq
 
 @njit    
@@ -612,7 +754,7 @@ def dEdq_eigs_1D(q,val=True,vec=True,inv=True,trans=False):
         
 @njit    
 def dExdq_eigs_2D(q,val=True,vec=True,inv=True,trans=False):
-    ''' take a q of shape (nen*3,nelem) and performs an eigendecomposition,
+    ''' take a q of shape (nen*4,nelem) and performs an eigendecomposition,
     returns the eigenvectors, eigenvalues, inverse or transpose. Use the scaling
     from Merriam 1989 / Barth 1999  to coincide with entropy variable identity.
     Y : columns are the n linearly independent eigenvectors of flux jacobian A
@@ -639,45 +781,47 @@ def dExdq_eigs_2D(q,val=True,vec=True,inv=True,trans=False):
         Lam = None
         
     if vec:
-        a = np.sqrt(rho*(g1/g)) # useful constants
-        b = np.sqrt(rho/(2*g))
-        c = -np.sqrt(p)   
-        # entries of the eigenvector (Y) matrix
+        r11 = np.sqrt(rho*(g1/g))
+        r13 = np.sqrt(rho/(2*g))
+        r32 = -np.sqrt(p)   
         r0 = np.zeros(np.shape(rho))
-        r21 = u*a
-        r23 = u*b - c/np.sqrt(2)
-        r24 = u*b + c/np.sqrt(2)
-        r31 = v*a
-        r33 = v*b
-        r41 = k*a
-        r42 = v*c
-        r43 = k*b - u*c/np.sqrt(2) + p/((2*g1)*b)
-        r44 = k*b + u*c/np.sqrt(2) + p/((2*g1)*b)
-        Y = fn.block_diag(a,r0,b,b,r21,r0,r23,r24,r31,c,r33,r33,r41,r42,r43,r44)
+        r21 = u*r11
+        r23 = u*r13 - r32/np.sqrt(2)
+        r24 = u*r13 + r32/np.sqrt(2)
+        r31 = v*r11 + r32
+        r33 = v*r13
+        r41 = k*r11 + v*r32
+        r42 = v*r32
+        r43 = k*r13 - u*r32/np.sqrt(2) + p/((2*g1)*r13)
+        r44 = k*r13 + u*r32/np.sqrt(2) + p/((2*g1)*r13)
+        Y = fn.block_diag(r11,r0,r13,r13,r21,r0,r23,r24,r31,r32,r33,r33,r41,r42,r43,r44)
         if trans:
-            YT = fn.block_diag(a,r21,r31,r41,r0,r0,c,r42,b,r23,r33,r43,b,r24,r33,r44)
+            YT = fn.block_diag(r11,r21,r31,r41,r0,r0,r32,r42,r13,r23,r33,r43,r13,r24,r33,r44)
         else:
             YT = None 
     else:
         Y = None
         YT = None
     if inv:
-        ap = -np.sqrt(rho*(g1/g))/p # useful constants
-        b = g1 * (np.sqrt(rho/(2*g)) / p)
-        c = -1/np.sqrt(2*p)
-        # entries of the eigenvector (Y) matrix
+        c1 = 1/np.sqrt(p)
+        c2 = -c1/np.sqrt(2)
+        c3 = np.sqrt((g/g1)/rho)
+        r24 = np.sqrt(rho*(g1/g))/p
+        r14 = -r24
+        r34 = np.sqrt(g1/2) * r24
         r0 = np.zeros(np.shape(rho))
-        r11 = (g+1)*k*ap - g*e*ap/rho
-        r12 = -u*ap
-        r13 = -v*ap
-        r23 = np.sqrt(2)*c
-        r21 = -r23*v
-        r31 = k*b + u*c
-        r32 = -u*b - c
-        r33 = -v*b
-        r41 = k*b - u*c
-        r42 = -u*b + c
-        Yinv = fn.block_diag(r11,r12,r13,ap,r21,r0,r23,r0,r31,r32,r33,b,r41,r42,r33,b)
+        r11 = c3 + r14*k
+        r12 = -u*r14
+        r13 = -v*r14
+        r21 = v*c1 - c3 + r24*k
+        r22 = -r24*u
+        r23 = -c1 - r24*v
+        r31 = k*r34 + u*c2
+        r32 = -u*r34 - c2
+        r33 = -v*r34
+        r41 = k*r34 - u*c2
+        r42 = -u*r34 + c2
+        Yinv = fn.block_diag(r11,r12,r13,r14,r21,r22,r23,r24,r31,r32,r33,r34,r41,r42,r33,r34)
     else:
         Yinv = None
     
@@ -716,40 +860,55 @@ def dEydq_eigs_2D(q,val=True,vec=True,inv=True,trans=False):
         c = np.sqrt(p)   
         # entries of the eigenvector (Y) matrix
         r0 = np.zeros(np.shape(rho))
-        r21 = u*a
-        r23 = u*b
-        r31 = v*a
-        r33 = v*b + c/np.sqrt(2)
-        r34 = v*b - c/np.sqrt(2)
-        r41 = k*a
-        r42 = u*c
-        r43 = k*b + v*c/np.sqrt(2) + p/((2*g1)*b)
-        r44 = k*b - v*c/np.sqrt(2) + p/((2*g1)*b)
-        Y = fn.block_diag(a,r0,b,b,r21,c,r23,r23,r31,r0,r33,r34,r41,r42,r43,r44)
+        c1 = np.sqrt(rho/g)
+        c2 = 1/np.sqrt(2*g*rho)
+        a = np.sqrt(g*p/rho)
+        r12 = c1*np.sqrt(g1)
+        r13 = c2*rho
+        r21 = c1*a
+        r22 = r12*u + r21
+        r32 = r12*v
+        r41 = r21*u
+        r42 = r12*k + r41
+        r23 = r13*u
+        r33 = r13*(v + a)
+        r34 = r13*(v - a)
+        t2 = a*v
+        t1 = (g/g1)*(p/rho) + k
+        r43 = r13*(t1 + t2)
+        r44 = r13*(t1 - t2)
+        Y = fn.block_diag(r0,r12,r13,r13,r21,r22,r23,r23,r0,r32,r33,r34,r41,r42,r43,r44)
         if trans:
-            YT = fn.block_diag(a,r21,r31,r41,r0,c,r0,r42,b,r23,r33,r43,b,r23,r34,r44)
+            YT = fn.block_diag(r0,r21,r0,r41,r12,r22,r32,r42,r13,r23,r33,r43,r13,r23,r34,r44)
         else:
             YT = None 
     else:
         Y = None
         YT = None
-    if inv:
-        ap = -np.sqrt(rho*(g1/g))/p # useful constants
-        b = g1 * (np.sqrt(rho/(2*g)) / p)
-        c = 1/np.sqrt(2*p)
-        # entries of the eigenvector (Y) matrix
-        r0 = np.zeros(np.shape(rho))
-        r11 = (g+1)*k*ap - g*e*ap/rho
-        r12 = -u*ap
-        r13 = -v*ap
-        r22 = np.sqrt(2)*c
-        r21 = -r22*u
-        r31 = k*b - v*c
-        r32 = -u*b 
-        r33 = -v*b + c
-        r41 = k*b + v*c
-        r43 = -v*b - c
-        Yinv = fn.block_diag(r11,r12,r13,ap,r21,r22,r0,r0,r31,r32,r33,b,r41,r32,r43,b)
+    if inv:        
+        c1 = np.sqrt(g/g1)/np.sqrt(rho)
+        r24 = -1/(c1*p) 
+        r14 = -r24
+        r44 = np.sqrt(g1)/(np.sqrt(2)*c1*p) 
+        t1 = -1/np.sqrt(p)
+        r13 = r24*v
+        r22 = r14*u
+        r12 = -t1 - r22
+        r23 = -r13
+        t2 = r24*k
+        r11 = t1*u -c1 - t2
+        r21 = c1 + t2
+        t1 = -t1/np.sqrt(2)
+        r32 = -r44*u
+        t2 = r44*v
+        r33 =  t1 - t2
+        r43 = -t1 - t2
+        t2 = t1*v
+        t1 = r44*k
+        r31 = -t2 + t1
+        r41 =  t2 + t1
+        Yinv = fn.block_diag(r11,r12,r13,r14,r21,r22,r23,r24,r31,r32,r33,r44,r41,r32,r43,r44)
+        
     else:
         Yinv = None
     
@@ -757,9 +916,10 @@ def dEydq_eigs_2D(q,val=True,vec=True,inv=True,trans=False):
 
 @njit    
 def dEndq_eigs_2D(q,n,val=True,vec=True,inv=True,trans=False):
-    ''' take a q of shape (nen*3,nelem) and performs an eigendecomposition,
+    ''' take a q of shape (nen*4,nelem) and performs an eigendecomposition,
     returns the eigenvectors, eigenvalues, inverse or transpose. Use the scaling
     from Merriam 1989 / Barth 1999  to coincide with entropy variable identity.
+    Note: Barth assumes n is normalized, this does not (worked out in maple doc).
     Y : columns are the n linearly independent eigenvectors of flux jacobian A
     Lam : eigenvalues of the flux jacobian (gdiag shape)
     Yinv : inverse of Y
@@ -769,16 +929,20 @@ def dEndq_eigs_2D(q,n,val=True,vec=True,inv=True,trans=False):
     rho = q[::4,:]
     u = q[1::4,:]/rho
     v = q[2::4,:]/rho
-    k = (u**2+v**2)/2
-    e = q[3::4,:]
-    p = g1*(e-rho*k) # pressure
+    k = (u*u+v*v)/2
+    #e = q[3::4,:]
+    #p = g1*(q[3::4,:]-rho*k) # pressure
     nx = n[:,0,:]
     ny = n[:,1,:]
+    norm2 = nx*nx + ny*ny
+    norm = np.sqrt(norm2)
+    a2_norm2g1 = g*(q[3::4,:]/rho-k) # = (g*p)/(rho*g1)
+    a = np.sqrt(a2_norm2g1*(g1*norm2)) # sound speed = norm*np.sqrt(g*p/rho)
     uvn = nx*u + ny*v
+    uvn2 = ny*u -nx*v
     
     if val:
         Lam = np.zeros(np.shape(q))
-        a = np.sqrt(g*p/rho) # sound speed
         Lam[::4,:] = uvn
         Lam[1::4,:] = uvn
         Lam[2::4,:] = uvn + a
@@ -786,50 +950,76 @@ def dEndq_eigs_2D(q,n,val=True,vec=True,inv=True,trans=False):
     else:
         Lam = None
     if vec:
-        a = np.sqrt(rho*(g1/g)) # useful constants
-        b = np.sqrt(rho/(2*g))
-        c = np.sqrt(p)   
-        # entries of the eigenvector (Y) matrix
-        r0 = np.zeros(np.shape(rho))
-        r21 = u*a
-        r22 = ny*c
-        r32 = -nx*c
-        r23 = u*b - r32/np.sqrt(2)
-        r24 = u*b + r32/np.sqrt(2)
-        r31 = v*a
-        r33 = v*b + r22/np.sqrt(2)
-        r34 = v*b - r22/np.sqrt(2)
-        r41 = k*a
-        r42 = (ny*u-nx*v)*c
-        r43 = k*b + uvn*c/np.sqrt(2) + p/((2*g1)*b)
-        r44 = k*b - uvn*c/np.sqrt(2) + p/((2*g1)*b)
-        Y = fn.block_diag(a,r0,b,b,r21,r22,r23,r24,r31,r32,r33,r34,r41,r42,r43,r44)
+        t3 = 1./np.sqrt(nx*nx + 2.*ny*ny)
+        t4 = np.sign(nx-ny)
+        t2 = np.sqrt(rho/g)
+        r11 = t2*(norm*t3*np.sqrt(g1))
+        r12 = t2*(ny*t4*t3*np.sqrt(g1))
+        r13 = t2/np.sqrt(2)
+        t1 = t2*a*t3
+        t3 = t4/norm
+        t4 = ny/norm2
+        t2 = t1*ny
+        r21 = r11*u - t2*t4
+        r22 = r12*u + t2*t3
+        t2 = t1*nx
+        r31 = r11*v + t2*t4
+        r32 = r12*v - t2*t3
+        t2 = t1*uvn2
+        r41 = r11*k - t2*t4
+        r42 = r12*k + t2*t3
+        t1 = a*(nx/norm2)
+        r23 = r13*(u + t1)
+        r24 = r13*(u - t1)
+        t1 = a*(ny/norm2)
+        r33 = r13*(v + t1)
+        r34 = r13*(v - t1)
+        t2 = a*uvn/norm2
+        t1 = a2_norm2g1 + k
+        r43 = r13*(t1 + t2)
+        r44 = r13*(t1 - t2)
+        Y = fn.block_diag(r11,r12,r13,r13,r21,r22,r23,r24,r31,r32,r33,r34,r41,r42,r43,r44)
         if trans:
-            YT = fn.block_diag(a,r21,r31,r41,r0,r22,r32,r42,b,r23,r33,r43,b,r24,r34,r44)
+            YT = fn.block_diag(r11,r21,r31,r41,r12,r22,r32,r42,r13,r23,r33,r43,r13,r24,r34,r44)
         else:
             YT = None        
     else:
         Y = None
         YT = None
     if inv:
-        ap = -np.sqrt(rho*(g1/g))/p # useful constants
-        b = g1 * (np.sqrt(rho/(2*g)) / p)
-        c = 1/np.sqrt(2*p)
-        # entries of the eigenvector (Y) matrix
-        r0 = np.zeros(np.shape(rho))
-        r11 = (g+1)*k*ap - g*e*ap/rho
-        r12 = -u*ap
-        r13 = -v*ap
-        r21 = np.sqrt(2)*c*(nx*v-ny*u)
-        r22 = np.sqrt(2)*c*ny
-        r23 = -np.sqrt(2)*c*nx
-        r31 = k*b - uvn*c
-        r32 = -u*b + nx*c
-        r33 = -v*b + ny*c
-        r41 = k*b + uvn*c
-        r42 = -u*b - nx*c
-        r43 = -v*b - ny*c
-        Yinv = fn.block_diag(r11,r12,r13,ap,r21,r22,r23,r0,r31,r32,r33,b,r41,r42,r43,b)
+        t4 = np.sqrt(g/rho)
+        r44 = t4/a2_norm2g1/np.sqrt(2)
+        t1 =  t4/a/np.sqrt(2)
+        t2 = r44*k
+        t3 = t1*uvn
+        r31 = t2 - t3
+        r41 = t2 + t3
+        t2 = -r44*u
+        t3 = t1*nx
+        r32 = t2 + t3
+        r42 = t2 - t3
+        t2 = -r44*v
+        t3 = t1*ny
+        r33 = t2 + t3
+        r43 = t2 - t3
+        t3 = np.sign(nx-ny)
+        t4 = t4/np.sqrt(nx*nx + 2.*ny*ny)
+        t1 = -t4/a2_norm2g1/np.sqrt(g1)
+        r24 = t1*(ny*t3)
+        r14 = t1*norm
+        t2 = t4/np.sqrt(g1)
+        t4 = t4/a
+        t1 = t4*uvn2
+        r11 = r14*k + t1*ny + t2*norm
+        r21 = r24*k - t1*(norm*t3) + t2*(ny*t3)
+        t1 = t4*ny
+        t3 = norm*t3
+        r12 = -r14*u - t1*ny
+        r22 = -r24*u + t1*t3
+        t1 = t4*nx
+        r13 = -r14*v + t1*ny
+        r23 = -r24*v - t1*t3
+        Yinv = fn.block_diag(r11,r12,r13,r14,r21,r22,r23,r24,r31,r32,r33,r44,r41,r42,r43,r44)
     else:
         Yinv = None
     
@@ -862,7 +1052,8 @@ def symmetrizer_2D(q):
     P is the symmetric positive definite matrix that symmetrizes the flux
     jacobian A=dEndq upon multiplication from the right. This is equal to the
     derivative of conservative variables with respect to entropy variables,
-    or the Hessian of the entropy potential. '''
+    or the Hessian of the entropy potential. 
+    Although this does symmetrize the  '''
     g = 1.4 # hard coded throughout
     rho = q[::4,:]
     rhou = q[1::4,:]
@@ -877,7 +1068,7 @@ def symmetrizer_2D(q):
     r24 = rhou*(p+e)/rho
     r33 = rhov2 + p
     r34 = rhov*(p+e)/rho
-    r44 = g*e**2/rho - (g-1)*(rhou2+rhov2)**2/4/rho # TODO: can i reduce the error here???
+    r44 = g*e**2/rho - (g-1)*(rhou2+rhov2)**2/4/rho
     
     P = fn.block_diag(rho,rhou,rhov,e,rhou,r22,r23,r24,rhov,r23,r33,r34,e,r24,r34,r44)
     return P
@@ -999,7 +1190,7 @@ def dExdq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
         
 @njit    
 def dEydq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
-    ''' take a q of shape (nen*3,nelem) and performs an eigendecomposition,
+    ''' take a q of shape (nen*5,nelem) and performs an eigendecomposition,
     returns the eigenvectors, eigenvalues, inverse or transpose. Use the scaling
     from Merriam 1989 / Barth 1999  to coincide with entropy variable identity.
     Y : columns are the n linearly independent eigenvectors of flux jacobian A
@@ -1177,8 +1368,7 @@ def dEndq_eigs_3D(q,n,val=True,vec=True,inv=True,trans=False):
     v = q[2::5,:]/rho
     w = q[3::5,:]/rho
     k = (u**2+v**2+w**2)/2
-    e = q[4::5,:]
-    p = g1*(e-rho*k) # pressure
+    p = g1*(q[4::5,:]-rho*k) # pressure
     nx = n[:,0,:]
     ny = n[:,1,:]
     nz = n[:,2,:]
@@ -1197,7 +1387,8 @@ def dEndq_eigs_3D(q,n,val=True,vec=True,inv=True,trans=False):
     if vec:
         a = np.sqrt(rho*(g1/g)) # useful constants
         b = np.sqrt(rho/(2*g))
-        c = np.sqrt(p)   
+        c = np.sqrt(p) 
+        fac = 1./np.sqrt(2)  
         # entries of the eigenvector (Y) matrix
         r11 = nx*a
         r12 = ny*a
@@ -1205,23 +1396,23 @@ def dEndq_eigs_3D(q,n,val=True,vec=True,inv=True,trans=False):
         r21 = u*r11
         r22 = u*r12 + nz*c
         r23 = u*r13 - ny*c
-        r24 = u*b + nx*c/np.sqrt(2)
-        r25 = u*b - nx*c/np.sqrt(2)
+        r24 = u*b + nx*c*fac
+        r25 = u*b - nx*c*fac
         r31 = v*r11 - nz*c
         r32 = v*r12
         r33 = v*r13 + nx*c
-        r34 = v*b + ny*c/np.sqrt(2)
-        r35 = v*b - ny*c/np.sqrt(2)
+        r34 = v*b + ny*c*fac
+        r35 = v*b - ny*c*fac
         r41 = w*r11 + ny*c
         r42 = w*r12 - nx*c
         r43 = w*r13
-        r44 = w*b + nz*c/np.sqrt(2)
-        r45 = w*b - nz*c/np.sqrt(2)
+        r44 = w*b + nz*c*fac
+        r45 = w*b - nz*c*fac
         r51 = nx*k*a + (ny*w-nz*v)*c
         r52 = ny*k*a + (nz*u-nx*w)*c
         r53 = nz*k*a + (nx*v-ny*u)*c
-        r54 = k*b + uvwn*c/np.sqrt(2) + p/((2*g1)*b)
-        r55 = k*b - uvwn*c/np.sqrt(2) + p/((2*g1)*b)     
+        r54 = k*b + uvwn*c*fac + p/((2*g1)*b)
+        r55 = k*b - uvwn*c*fac + p/((2*g1)*b)     
         Y = fn.block_diag(r11,r12,r13,b,b,r21,r22,r23,r24,r25,r31,r32,r33,r34,r35,r41,r42,r43,r44,r45,r51,r52,r53,r54,r55)
         if trans:
             YT = fn.block_diag(r11,r21,r31,r41,r51,r12,r22,r32,r42,r52,r13,r23,r33,r43,r53,b,r24,r34,r44,r54,b,r25,r35,r45,r55)
@@ -1266,115 +1457,781 @@ def dEndq_eigs_3D(q,n,val=True,vec=True,inv=True,trans=False):
     return Lam, Y, Yinv, YT   
 
 @njit 
-def abs_Roe_fix_1D(Lam):
-    ''' Take eigenvalue matrix (actually flat), return absolute value with entropy fix '''
-    Lam_abs = np.abs(Lam)
-    d = 0.1 * np.maximum(Lam_abs[1::3,:],Lam_abs[2::3,:]) # Like Zingg textbook, but smooth cutoff
-    x,y = np.shape(Lam)
-    Lam_fix = np.zeros((x,y))
-    for xi in range(x):
-        dxi = xi//3
-        for yi in range(y):
-            if Lam_abs[xi,yi] < d[dxi,yi]:
-                Lam_fix[xi,yi] = 0.5*(Lam_abs[xi,yi]**2/d[dxi,yi] + d[dxi,yi])
-            else:
-                Lam_fix[xi,yi] = Lam_abs[xi,yi]
-    return Lam_fix
-                
-@njit     
-def abs_Roe_fix_2D(Lam):
-    ''' Take eigenvalue matrix (actually flat), return absolute value with entropy fix '''
-    Lam_abs = np.abs(Lam)
-    d = 0.1 * np.maximum(Lam_abs[2::4,:],Lam_abs[3::4,:]) # Like Zingg textbook, but smooth cutoff
-    x,y = np.shape(Lam)
-    Lam_fix = np.zeros((x,y))
-    for xi in range(x):
-        dxi = xi//4
-        for yi in range(y):
-            if Lam_abs[xi,yi] < d[dxi,yi]:
-                Lam_fix[xi,yi] = 0.5*(Lam_abs[xi,yi]**2/d[dxi,yi] + d[dxi,yi])
-            else:
-                Lam_fix[xi,yi] = Lam_abs[xi,yi]
-    return Lam_fix
+def Ismail_Roe_flux_1D(qL,qR):
+    '''
+    Return the ismail roe flux given two states qL and qR where each is
+    of shape (3,), and returns a numerical flux of shape (3,)
+    note subroutine defined in ismail-roe appendix B for logarithmic mean
+    '''
+    g = 1.4 # hard coded!
+    
+    rhoL = qL[0]
+    rhoR = qR[0]
+    uL = qL[1]/rhoL
+    uR = qR[1]/rhoR
+    pL = (g-1)*(qL[2] - (rhoL * uL*uL)/2)
+    pR = (g-1)*(qR[2] - (rhoR * uR*uR)/2)
 
-@njit     
-def abs_Roe_fix_3D(Lam):
-    ''' Take eigenvalue matrix (actually flat), return absolute value with entropy fix '''
-    Lam_abs = np.abs(Lam)
-    d = 0.1 * np.maximum(Lam_abs[3::5,:],Lam_abs[4::5,:]) # Like Zingg textbook, but smooth cutoff
-    x,y = np.shape(Lam)
-    Lam_fix = np.zeros((x,y))
-    for xi in range(x):
-        dxi = xi//5
-        for yi in range(y):
-            if Lam_abs[xi,yi] < d[dxi,yi]:
-                Lam_fix[xi,yi] = 0.5*(Lam_abs[xi,yi]**2/d[dxi,yi] + d[dxi,yi])
-            else:
-                Lam_fix[xi,yi] = Lam_abs[xi,yi]
-    return Lam_fix
+    alphaL = np.sqrt(rhoL/pL) # z1 in paper
+    alphaR = np.sqrt(rhoR/pR)
+    betaL = np.sqrt(rhoL*pL) # z3 in paper
+    betaR = np.sqrt(rhoR*pR)
 
-@njit
-def log_mean(qL,qR):
-    # logarithmic mean. Useful for EC fluxes like Ismail-Roe.
-    xi = qL/qR
+    # logarithmic mean of alpha, or z1
+    xi = alphaL/alphaR
     zeta = (1-xi)/(1+xi)
     zeta2 = zeta**2
     if zeta2 < 0.01:
         F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
     else:
         F = - np.log(xi)/zeta
-    q = (qL+qR)/F
-    return q
+    alpha_ln = (alphaL+alphaR)/F
+
+    # logarithmic mean of beta, or z3
+    xi = betaL/betaR
+    zeta = (1-xi)/(1+xi)
+    zeta2 = zeta**2
+    if zeta2 < 0.01:
+        F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
+    else:
+        F = - np.log(xi)/zeta
+    beta_ln = (betaL+betaR)/F
+
+    # arithmetic means of alpha and beta
+    alpha_avg = 0.5*(alphaL+alphaR) # z1 in paper
+    beta_avg = 0.5*(betaL+betaR) # z3 in paper
+
+    # determine final quantities using averaged values
+    rho_avg = alpha_avg * beta_ln
+    a_avg2 = (0.5/rho_avg)*((g+1)*beta_ln/alpha_ln + (g-1)*beta_avg/alpha_avg)
+    u_avg = 0.5 * (uL*alphaL + uR*alphaR) / alpha_avg
+    p_avg = beta_avg / alpha_avg
+    H_avg = a_avg2/(g - 1) + 0.5*u_avg**2
+    rhou_avg = rho_avg*u_avg
+
+    E = np.zeros(3)
+    E[0] = rhou_avg
+    E[1] = rhou_avg*u_avg + p_avg
+    E[2] = rhou_avg*H_avg
+    return E
 
 @njit 
-def Ismail_Roe(qL,qR):
+def Ismail_Roe_fluxes_2D(qL,qR):
     '''
-    Return the ismail roe flux given two states qL and qR where each is
-    of shape (neq=3,), and returns a numerical flux of shape (neq=3,)
+    Return the ismail roe fluxes given two states qL and qR where each is
+    of shape (4,), and returns a numerical flux of shape (4,)
     note subroutine defined in ismail-roe appendix B for logarithmic mean
     '''
     g = 1.4 # hard coded!
     
-    rhoL, rhoR = qL[0], qR[0]
-    uL, uR = qL[1]/rhoL, qR[1]/rhoR
-    pL, pR = (g-1)*(qL[2] - (rhoL * uL**2)/2), (g-1)*(qR[2] - (rhoR * uR**2)/2)
+    rhoL = qL[0]
+    rhoR = qR[0]
+    uL = qL[1]/rhoL
+    uR = qR[1]/rhoR
+    vL = qL[2]/rhoL
+    vR = qR[2]/rhoR
+    pL = (g-1)*(qL[3] - (rhoL * (uL*uL + vL*vL))/2)
+    pR = (g-1)*(qR[3] - (rhoR * (uR*uR + vR*vR))/2)
 
     alphaL = np.sqrt(rhoL/pL)
     alphaR = np.sqrt(rhoR/pR)
     betaL = np.sqrt(rhoL*pL)
     betaR = np.sqrt(rhoR*pR)
 
-    xi_alpha = alphaL/alphaR
-    zeta_alpha = (1-xi_alpha)/(1+xi_alpha)
-    zeta_alpha2 = zeta_alpha**2
-    if zeta_alpha2 < 0.01:
-        F_alpha = 2*(1. + zeta_alpha2/3. + zeta_alpha2**2/5. + zeta_alpha2**3/7.)
+    # logarithmic mean of alpha, or z1
+    xi = alphaL/alphaR
+    zeta = (1-xi)/(1+xi)
+    zeta2 = zeta**2
+    if zeta2 < 0.01:
+        F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
     else:
-        F_alpha = - np.log(xi_alpha)/zeta_alpha
-    alpha_ln = (alphaL+alphaR)/F_alpha
+        F = - np.log(xi)/zeta
+    alpha_ln = (alphaL+alphaR)/F
 
-    xi_beta = betaL/betaR
-    zeta_beta = (1-xi_beta)/(1+xi_beta)
-    zeta_beta2 = zeta_beta**2
-    if zeta_beta2 < 0.01:
-        F_beta = 2*(1. + zeta_beta2/3. + zeta_beta2**2/5. + zeta_beta2**3/7.)
+    # logarithmic mean of beta, or z3
+    xi = betaL/betaR
+    zeta = (1-xi)/(1+xi)
+    zeta2 = zeta**2
+    if zeta2 < 0.01:
+        F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
     else:
-        F_beta = - np.log(xi_beta) / zeta_beta
-    beta_ln = (betaL+betaR)/F_beta
+        F = - np.log(xi)/zeta
+    beta_ln = (betaL+betaR)/F
 
-    alpha_avg = 0.5*(alphaL+alphaR)
-    beta_avg = 0.5*(betaL+betaR)
+    # arithmetic means of alpha and beta
+    alpha_avg = 0.5*(alphaL+alphaR) # z1 in paper
+    beta_avg = 0.5*(betaL+betaR) # z3 in paper
 
+    # determine final quantities using averaged values
     rho_avg = alpha_avg * beta_ln
     a_avg2 = (0.5/rho_avg)*((g+1)*beta_ln/alpha_ln + (g-1)*beta_avg/alpha_avg)
     u_avg = 0.5 * (uL*alphaL + uR*alphaR) / alpha_avg
+    v_avg = 0.5 * (vL*alphaL + vR*alphaR) / alpha_avg
     p_avg = beta_avg / alpha_avg
-    H_avg = a_avg2/(g - 1) + 0.5*u_avg**2
-    
+    H_avg = a_avg2/(g - 1) + 0.5*(u_avg*u_avg + v_avg*v_avg)
     rhou_avg = rho_avg*u_avg
-    return np.array([rhou_avg, rhou_avg*u_avg + p_avg, rhou_avg*H_avg]) 
+    rhov_avg = rho_avg*v_avg
 
+    Fx = np.zeros(qL.shape)
+    Fx[0] = rhou_avg
+    Fx[1] = rhou_avg*u_avg + p_avg
+    Fx[2] = rhou_avg*v_avg
+    Fx[3] = rhou_avg*H_avg
 
+    Fy = np.zeros(qL.shape)
+    Fy[0] = rhov_avg
+    Fy[1] = rhov_avg*u_avg
+    Fy[2] = rhov_avg*v_avg + p_avg
+    Fy[3] = rhov_avg*H_avg
+    return Fx, Fy
+
+@njit 
+def Central_flux_1D(qL,qR):
+    '''
+    Return the central flux given two states qL and qR where each is
+    of shape (3,), and returns a numerical flux of shape (3,)
+    '''
+    g = 1.4 # hard coded!
+    
+    # decompose_q
+    fac = 1./qL[0]
+    q_1L = qL[1]
+    q_2L = qL[2]
+    uL = q_1L * fac
+    kL = uL*q_1L  
+    pL = (g-1)*(q_2L - 0.5*kL)  
+
+    fac = 1./qR[0]
+    q_1R = qR[1]
+    q_2R = qR[2]
+    uR = q_1R * fac
+    kR = uR*q_1R  
+    pR = (g-1)*(q_2R - 0.5*kR)   
+
+    #assemble_vec
+    E = np.zeros(3)
+    E[0] = 0.5*(q_1L + q_1R)
+    E[1] = 0.5*(kL + pL + kR + pR)
+    E[2] = 0.5*(uL*(q_2L + pL) + uR*(q_2R + pR))
+    return E
+
+@njit 
+def Central_fluxes_2D(qL,qR):
+    '''
+    Return the central flux given two states qL and qR where each is
+    of shape (4,), and returns a numerical flux of shape (4,)
+    '''
+    g = 1.4 # hard coded!
+    
+    # decompose_q
+    fac = 1./qL[0]
+    q_1L = qL[1]
+    q_2L = qL[2]
+    q_3L = qL[3]
+    uL = q_1L * fac
+    vL = q_2L * fac
+    pL = (g-1)*(q_3L - 0.5*(uL*q_1L + vL*q_2L))  
+
+    fac = 1./qR[0]
+    q_1R = qR[1]
+    q_2R = qR[2]
+    q_3R = qR[3]
+    uR = q_1R * fac
+    vR = q_2R * fac
+    pR = (g-1)*(q_3R - 0.5*(uR*q_1R + vR*q_2R))  
+
+    #assemble_xvec
+    Ex = np.zeros(4)
+    Ex[0] = 0.5*(q_1L + q_1R)
+    Ex[1] = 0.5*(q_1L*uL + pL + q_1R*uR + pR)
+    Ex[2] = 0.5*(q_1L*vL + q_1R*vR)
+    Ex[3] = 0.5*(uL*(q_3L + pL) + uR*(q_3R + pR))
+
+    # assemble_yvec
+    Ey = np.zeros(4)
+    Ey[0] = 0.5*(q_2L + q_2R)
+    Ey[1] = 0.5*(q_2L*uL + q_2R*uR)
+    Ey[2] = 0.5*(q_2L*vL + pL + q_2R*vR + pR)
+    Ey[3] = 0.5*(vL*(q_3L + pL) + vR*(q_3R + pR))
+    return Ex, Ey
+
+@njit 
+def Ranocha_flux_1D(qL,qR):
+    '''
+    Return the Ranocha flux given two states qL and qR where each is
+    of shape (1,), and returns a numerical flux of shape (4,)
+    '''
+    g = 1.4 # hard coded!
+    
+    # decompose_q
+    q_0L = qL[0]
+    q_1L = qL[1]
+    q_2L = qL[2]
+    uL = q_1L / q_0L
+    pL = (g-1)*(q_2L - 0.5*uL*q_1L)  
+
+    q_0R = qR[0]
+    q_1R = qR[1]
+    q_2R = qR[2]
+    uR = q_1R / q_0R
+    pR = (g-1)*(q_2R - 0.5*uR*q_1R)  
+
+    # logarithmic mean of density
+    xi = q_0L/q_0R
+    zeta = (1-xi)/(1+xi)
+    zeta2 = zeta**2
+    if zeta2 < 0.01:
+        F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
+    else:
+        F = - np.log(xi)/zeta
+    rho_ln = (q_0L+q_0R)/F
+
+    # logarithmic mean of density / pressure
+    xi = q_0L*pR/(q_0R*pL)
+    zeta = (1-xi)/(1+xi)
+    zeta2 = zeta**2
+    if zeta2 < 0.01:
+        F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
+    else:
+        F = - np.log(xi)/zeta
+    rhop_ln = (q_0L/pL+q_0R/pR)/F
+
+    # arithmetic means
+    u_avg = 0.5*(uL+uR)
+    #p_avg = 0.5*(pL+pR)
+
+    # product means
+    #u2_pavg = uL*uR
+    #pu_pavg = 0.5*(pL*uR + pR*uL)
+
+    #assemble_xvec
+    fac = rho_ln*(1./(rhop_ln*(g-1)) + 0.5*uL*uR)
+    E = np.zeros(3)
+    E[0] = rho_ln*u_avg
+    E[1] = E[0]*u_avg + 0.5*(pL+pR)
+    E[2] = fac*u_avg + 0.5*(pL*uR + pR*uL)
+    return E
+
+@njit 
+def Ranocha_fluxes_2D(qL,qR):
+    '''
+    Return the Ranocha flux given two states qL and qR where each is
+    of shape (4,), and returns a numerical flux of shape (4,)
+    '''
+    g = 1.4 # hard coded!
+    
+    # decompose_q
+    q_0L = qL[0]
+    q_1L = qL[1]
+    q_2L = qL[2]
+    q_3L = qL[3]
+    uL = q_1L / q_0L
+    vL = q_2L / q_0L
+    pL = (g-1)*(q_3L - 0.5*(uL*q_1L + vL*q_2L))  
+
+    q_0R = qR[0]
+    q_1R = qR[1]
+    q_2R = qR[2]
+    q_3R = qR[3]
+    uR = q_1R / q_0R
+    vR = q_2R / q_0R
+    pR = (g-1)*(q_3R - 0.5*(uR*q_1R + vR*q_2R))  
+
+    # logarithmic mean of density
+    xi = q_0L/q_0R
+    zeta = (1-xi)/(1+xi)
+    zeta2 = zeta**2
+    if zeta2 < 0.01:
+        F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
+    else:
+        F = - np.log(xi)/zeta
+    rho_ln = (q_0L+q_0R)/F
+
+    # logarithmic mean of density / pressure
+    xi = q_0L*pR/(q_0R*pL)
+    zeta = (1-xi)/(1+xi)
+    zeta2 = zeta**2
+    if zeta2 < 0.01:
+        F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
+    else:
+        F = - np.log(xi)/zeta
+    rhop_ln = (q_0L/pL+q_0R/pR)/F
+
+    # arithmetic means
+    u_avg = 0.5*(uL+uR)
+    v_avg = 0.5*(vL+vR)
+    p_avg = 0.5*(pL+pR)
+
+    # product means
+    #u2_pavg = uL*uR
+    #v2_pavg = vL*vR
+    #pu_pavg = 0.5*(pL*uR + pR*uL)
+    #pv_pavg = 0.5*(pL*vR + pR*vL)
+
+    #assemble_xvec
+    fac = rho_ln*(1./(rhop_ln*(g-1)) + 0.5*(uL*uR + vL*vR))
+    Ex = np.zeros(4)
+    Ex[0] = rho_ln*u_avg
+    Ex[1] = Ex[0]*u_avg + p_avg
+    Ex[2] = Ex[0]*v_avg
+    Ex[3] = fac*u_avg + 0.5*(pL*uR + pR*uL)
+
+    # assemble_yvec
+    Ey = np.zeros(4)
+    Ey[0] = rho_ln*v_avg
+    Ey[1] = Ex[2]
+    Ey[2] = Ey[0]*v_avg + p_avg
+    Ey[3] = fac*v_avg + 0.5*(pL*vR + pR*vL)
+    return Ex, Ey
+
+@njit
+def dEndq_eig_abs_dq_1D(dxidx, q, qg, flux_type):
+    '''
+    calculates abs(A)@(q-qg) according to the implentation in diablo. Used in SATs.
+    INPUTS:
+    dxidx = the metric terms in the desired direction (indpendent of J), shape(nen,nelem)
+    q = the flow state of the "local" node, shape (nen*3,nelem)
+    qg = the flow state of the "ghost" node, shape (nen*3,nelem)
+    '''
+
+    gamma = 1.4 # hard coded throughout
+    gami = 0.4
+    tau = 1.
+    sat_Vl = 0.025
+    sat_Vn = 0.025
+
+    rhoL = q[::3,:]
+    fac = 1.0/rhoL
+    uL = q[1::3,:]*fac
+    phi = 0.5*(uL*uL)
+    eL = q[2::3,:]
+    HL = gamma*eL*fac - gami*phi
+
+    dA = np.abs(dxidx)
+
+    rhoR = qg[::3,:] 
+    fac = 1.0/rhoR
+    uR = qg[1::3,:]*fac
+    phi = 0.5*(uR*uR)
+    eR = qg[2::3,:]
+    HR = gamma*eR*fac - gami*phi
+
+    # Rho average
+    sqL = np.sqrt(rhoL)
+    sqR = np.sqrt(rhoR)
+    fac = 1.0/(sqL + sqR)
+    u = (sqL*uL + sqR*uR)*fac
+    H = (sqL*HL + sqR*HR)*fac
+    phi = 0.5*(u*u)
+    a = np.sqrt(gami*(H - phi))
+    Un = u*dxidx
+
+    lambda1 = np.abs(Un + dA*a)
+    lambda2 = np.abs(Un - dA*a)
+    lambda3 = np.abs(Un)
+    rhoA = lambda3 + dA*a
+
+    # The structure here follows exactly Swanson & Turkel 1992 to construct |A|*dq
+    # BUT this should be multiplied by -tau/2 at the end. Since E_i do not use lambda_i,
+    # this is equivalent to multiplying lambda_i by -tau/2, hence we do this below.
+    if (flux_type == 1):
+        # Roe average flux with Hicken's fix
+        lambda1 = -0.5*(np.maximum(lambda1,sat_Vn *rhoA))
+        lambda2 = -0.5*(np.maximum(lambda2,sat_Vn *rhoA))
+        lambda3 = -0.5*(np.maximum(lambda3,sat_Vl *rhoA))
+    elif (flux_type == 2):
+        # Roe average flux with entropy fix
+        lmax = np.maximum(np.maximum(lambda1,lambda2),lambda3)
+        d = 0.2 * lmax
+        ilen,jlen = lambda1.shape
+        for j in range(jlen):
+            for i in range(ilen):
+                dij = d[i,j]
+                if (lambda1[i,j] < dij): 
+                    lambda1[i,j] = (lambda1[i,j]**2 + dij*dij)/(2.*dij)
+                if (lambda2[i,j] < dij): 
+                    lambda2[i,j] = (lambda2[i,j]**2 + dij*dij)/(2.*dij)
+                if (lambda3[i,j] < dij): 
+                    lambda3[i,j] = (lambda3[i,j]**2 + dij*dij)/(2.*dij)
+        lambda1 = (-0.5*tau)*lambda1
+        lambda2 = (-0.5*tau)*lambda2
+        lambda3 = (-0.5*tau)*lambda3
+    elif (flux_type == 3):
+        # local Lax-Friedrichs flux
+        lmax = np.maximum(np.maximum(lambda1,lambda2),lambda3)
+        lambda1 = -0.5*(tau*np.maximum(lmax,sat_Vn *rhoA))
+        lambda2 = -0.5*(tau*np.maximum(lmax,sat_Vn *rhoA))
+        lambda3 = -0.5*(tau*np.maximum(lmax,sat_Vl *rhoA))
+    elif (flux_type == 4):
+        # Alex Bercik's local Lax-Friedrichs flux (more simple & dissipative)
+        lambda1 = np.abs(u) + a #max possible eigenvalue
+        rhoA = np.abs(lambda1*dxidx)
+        fi = - 0.5*tau*fn.repeat_neq(rhoA,3)*(q - qg)
+        return fi
+    else:
+        return np.zeros(q.shape)
+
+    dq1 = rhoL - rhoR
+    dq2 = uL - uR
+    dq3 = eL - eR
+
+    # diagonal matrix multiply
+    fi = np.zeros(q.shape)
+    fi[::3,:] = lambda3*dq1
+    fi[1::3,:] = lambda3*dq2
+    fi[2::3,:] = lambda3*dq3
+
+    # get E1*dq
+    E1dq = np.zeros(q.shape)
+    fac = phi*dq1 - u*dq2 + dq3
+    E1dq[::3,:] = fac
+    E1dq[1::3,:] = fac*u
+    E1dq[2::3,:] = fac*H
+
+    # get E2*dq
+    E2dq = np.zeros(q.shape)
+    fac2 = -Un*dq1 + dxidx*dq2
+    E2dq[1::3,:] = fac2*dxidx
+    E2dq[2::3,:] = fac2*Un
+
+    # add to fi
+    tmp1 = fn.repeat_neq(0.5*(lambda1 + lambda2) - lambda3,3)
+    tmp2 = fn.repeat_neq(gami/(a*a),3)
+    tmp3 = fn.repeat_neq(1.0/(dA*dA),3)
+    fi = fi + tmp1*(tmp2*E1dq + tmp3*E2dq)
+
+    # get E3*dq
+    E1dq[::3,:] = fac2
+    E1dq[1::3,:] = fac2*u
+    E1dq[2::3,:] = fac2*H
+
+    # get E4*dq
+    E2dq[::3,:] = 0.0
+    E2dq[1::3,:] = fac*dxidx
+    E2dq[2::3,:] = fac*Un
+
+    # add to fi
+    tmp1 = fn.repeat_neq(0.5*(lambda1 - lambda2)/(dA*a),3)
+    fi = fi + tmp1*(E1dq + gami*E2dq)
+    return fi
+
+@njit
+def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
+    '''
+    calculates abs(An)@(q-qg) according to the implentation in diablo. Used in SATs.
+    INPUTS:
+    dxidx = the metric terms in the desired direction (indpendent of J), shape(nen,2,nelem)
+            these are the dxi_x, dxi_dy, where xi is a fixed computational direction
+    q = the flow state of the "local" node, shape (nen*4,nelem)
+    qg = the flow state of the "ghost" node, shape (nen*4,nelem)
+    '''
+
+    gamma = 1.4 # hard coded throughout
+    gami = 0.4
+    tau = 1.
+    sat_Vl = 0.025
+    sat_Vn = 0.025
+
+    rhoL = q[::4,:]
+    fac = 1.0/rhoL
+    uL = q[1::4,:]*fac
+    vL = q[2::4,:]*fac
+    phi = 0.5*(uL*uL + vL*vL)
+    eL = q[4::4,:]
+    HL = gamma*eL*fac - gami*phi
+
+    nx = dxidx[:,0,:]
+    ny = dxidx[:,1,:]
+    dA = np.sqrt(nx*nx + ny*ny)
+
+    rhoR = qg[::4,:] 
+    fac = 1.0/rhoR
+    uR = qg[1::4,:]*fac
+    vR = qg[2::4,:]*fac
+    phi = 0.5*(uR*uR + vR*vR)
+    eR = qg[3::4,:]
+    HR = gamma*eR*fac - gami*phi
+
+    # Rho average
+    sqL = np.sqrt(rhoL)
+    sqR = np.sqrt(rhoR)
+    fac = 1.0/(sqL + sqR)
+    u = (sqL*uL + sqR*uR)*fac
+    v = (sqL*vL + sqR*vR)*fac
+    H = (sqL*HL + sqR*HR)*fac
+    phi = 0.5*(u*u + v*v)
+    a = np.sqrt(gami*(H - phi))
+    Un = u*nx + v*ny
+
+    lambda1 = np.abs(Un + dA*a)
+    lambda2 = np.abs(Un - dA*a)
+    lambda3 = np.abs(Un)
+    rhoA = lambda3 + dA*a
+
+    # The structure here follows exactly Swanson & Turkel 1992 to construct |A|*dq
+    # BUT this should be multiplied by -tau/2 at the end. Since E_i do not use lambda_i,
+    # this is equivalent to multiplying lambda_i by -tau/2, hence we do this below.
+    if (flux_type == 1):
+        # Roe average flux with Hicken's fix
+        lambda1 = -0.5*(np.maximum(lambda1,sat_Vn *rhoA))
+        lambda2 = -0.5*(np.maximum(lambda2,sat_Vn *rhoA))
+        lambda3 = -0.5*(np.maximum(lambda3,sat_Vl *rhoA))
+    elif (flux_type == 2):
+        # Roe average flux with entropy fix
+        lmax = np.maximum(np.maximum(lambda1,lambda2),lambda3)
+        d = 0.2 * lmax
+        ilen,jlen = lambda1.shape
+        for j in range(jlen):
+            for i in range(ilen):
+                dij = d[i,j]
+                if (lambda1[i,j] < dij): 
+                    lambda1[i,j] = (lambda1[i,j]**2 + dij*dij)/(2.*dij)
+                if (lambda2[i,j] < dij): 
+                    lambda2[i,j] = (lambda2[i,j]**2 + dij*dij)/(2.*dij)
+                if (lambda3[i,j] < dij): 
+                    lambda3[i,j] = (lambda3[i,j]**2 + dij*dij)/(2.*dij)
+        lambda1 = (-0.5*tau)*lambda1
+        lambda2 = (-0.5*tau)*lambda2
+        lambda3 = (-0.5*tau)*lambda3
+    elif (flux_type == 3):
+        # local Lax-Friedrichs flux
+        lmax = np.maximum(np.maximum(lambda1,lambda2),lambda3)
+        lambda1 = -0.5*(tau*np.maximum(lmax,sat_Vn *rhoA))
+        lambda2 = -0.5*(tau*np.maximum(lmax,sat_Vn *rhoA))
+        lambda3 = -0.5*(tau*np.maximum(lmax,sat_Vl *rhoA))
+    elif (flux_type == 4):
+        # Alex Bercik's local Lax-Friedrichs flux (more simple & dissipative)
+        lambda1 = np.abs(u) + a #max eigenvalue in x
+        lambda2 = np.abs(v) + a #max eigenvalue in y
+        rhoA = np.abs(lambda1*nx + lambda2*ny)
+        # Note: definition of rhoA is very slightly different to above (L1 norm isntead of L2 on n_i)
+        fi = - 0.5*tau*fn.repeat_neq(rhoA,5)*(q - qg)
+        return fi
+    elif (flux_type == 5):
+        # Roe average flux with entropy fix like from Zingg textbook
+        # this is directly copied from the function abs_Roe_fix_2D
+        ilen,jlen = lambda1.shape
+        d = 0.1 * np.maximum(lambda1,lambda2) # Like Zingg textbook, but smooth cutoff
+        for j in range(jlen):
+            for i in range(ilen):
+                dij = d[i,j]
+
+    else:
+        return np.zeros(q.shape)
+
+    dq1 = rhoL - rhoR
+    dq2 = uL - uR
+    dq3 = vL - vR
+    dq4 = eL - eR
+
+    # diagonal matrix multiply
+    fi = np.zeros(q.shape)
+    fi[::4,:] = lambda3*dq1
+    fi[1::4,:] = lambda3*dq2
+    fi[2::4,:] = lambda3*dq3
+    fi[3::4,:] = lambda3*dq4
+
+    # get E1*dq
+    E1dq = np.zeros(q.shape)
+    fac = phi*dq1 - u*dq2 - v*dq3 + dq4
+    E1dq[::4,:] = fac
+    E1dq[1::4,:] = fac*u
+    E1dq[2::4,:] = fac*v
+    E1dq[3::4,:] = fac*H
+
+    # get E2*dq
+    E2dq = np.zeros(q.shape)
+    fac2 = -Un*dq1 + nx*dq2 + ny*dq3
+    E2dq[1::4,:] = fac2*nx
+    E2dq[2::4,:] = fac2*ny
+    E2dq[3::4,:] = fac2*Un
+
+    # add to fi
+    tmp1 = fn.repeat_neq(0.5*(lambda1 + lambda2) - lambda3,4)
+    tmp2 = fn.repeat_neq(gami/(a*a),4)
+    tmp3 = fn.repeat_neq(1.0/(dA*dA),4)
+    fi = fi + tmp1*(tmp2*E1dq + tmp3*E2dq)
+
+    # get E3*dq
+    E1dq[::4,:] = fac2
+    E1dq[1::4,:] = fac2*u
+    E1dq[2::4,:] = fac2*v
+    E1dq[3::4,:] = fac2*H
+
+    # get E4*dq
+    E2dq[::4,:] = 0.0
+    E2dq[1::4,:] = fac*nx
+    E2dq[2::4,:] = fac*ny
+    E2dq[3::4,:] = fac*Un
+
+    # add to fi
+    tmp1 = fn.repeat_neq(0.5*(lambda1 - lambda2)/(dA*a),4)
+    fi = fi + tmp1*(E1dq + gami*E2dq)
+    return fi
+
+@njit
+def dEndq_eig_abs_dq_3D(dxidx, q, qg, flux_type):
+    '''
+    calculates abs(An)@(q-qg) according to the implentation in diablo. Used in SATs.
+    INPUTS:
+    dxidx = the metric terms in the desired direction (indpendent of J), shape(nen,3,nelem)
+            these are the dxi_x, dxi_dy, dxi_dz, where xi is a fixed computational direction
+    q = the flow state of the "local" node, shape (nen*5,nelem)
+    qg = the flow state of the "ghost" node, shape (nen*5,nelem)
+    '''
+
+    gamma = 1.4 # hard coded throughout
+    gami = 0.4
+    tau = 1.
+    sat_Vl = 0.025
+    sat_Vn = 0.025
+
+    rhoL = q[::5,:]
+    fac = 1.0/rhoL
+    uL = q[1::5,:]*fac
+    vL = q[2::5,:]*fac
+    wL = q[3::5,:]*fac
+    phi = 0.5*(uL*uL + vL*vL + wL*wL)
+    eL = q[4::5,:]
+    HL = gamma*eL*fac - gami*phi
+
+    nx = dxidx[:,0,:]
+    ny = dxidx[:,1,:]
+    nz = dxidx[:,2,:]
+    dA = np.sqrt(nx*nx + ny*ny + nz*nz)
+
+    rhoR = qg[::5,:] 
+    fac = 1.0/rhoR
+    uR = qg[1::5,:]*fac
+    vR = qg[2::5,:]*fac
+    wR = qg[3::5,:]*fac
+    phi = 0.5*(uR*uR + vR*vR + wR*wR)
+    eR = qg[4::5,:]
+    HR = gamma*eR*fac - gami*phi
+
+    # Rho average
+    sqL = np.sqrt(rhoL)
+    sqR = np.sqrt(rhoR)
+    fac = 1.0/(sqL + sqR)
+    u = (sqL*uL + sqR*uR)*fac
+    v = (sqL*vL + sqR*vR)*fac
+    w = (sqL*wL + sqR*wR)*fac
+    H = (sqL*HL + sqR*HR)*fac
+    phi = 0.5*(u*u + v*v + w*w)
+    a = np.sqrt(gami*(H - phi))
+    Un = u*nx + v*ny + w*nz
+
+    lambda1 = np.abs(Un + dA*a)
+    lambda2 = np.abs(Un - dA*a)
+    lambda3 = np.abs(Un)
+    rhoA = lambda3 + dA*a
+
+    # The structure here follows exactly Swanson & Turkel 1992 to construct |A|*dq
+    # BUT this should be multiplied by -tau/2 at the end. Since E_i do not use lambda_i,
+    # this is equivalent to multiplying lambda_i by -tau/2, hence we do this below.
+    if (flux_type == 1):
+        # Roe average flux with Hicken's fix
+        lambda1 = -0.5*(np.maximum(lambda1,sat_Vn *rhoA))
+        lambda2 = -0.5*(np.maximum(lambda2,sat_Vn *rhoA))
+        lambda3 = -0.5*(np.maximum(lambda3,sat_Vl *rhoA))
+    elif (flux_type == 2):
+        # Roe average flux with entropy fix
+        lmax = np.maximum(np.maximum(lambda1,lambda2),lambda3)
+        d = 0.2 * lmax
+        ilen,jlen = lambda1.shape
+        for j in range(jlen):
+            for i in range(ilen):
+                dij = d[i,j]
+                if (lambda1[i,j] < dij): 
+                    lambda1[i,j] = (lambda1[i,j]**2 + dij*dij)/(2.*dij)
+                if (lambda2[i,j] < dij): 
+                    lambda2[i,j] = (lambda2[i,j]**2 + dij*dij)/(2.*dij)
+                if (lambda3[i,j] < dij): 
+                    lambda3[i,j] = (lambda3[i,j]**2 + dij*dij)/(2.*dij)
+        lambda1 = (-0.5*tau)*lambda1
+        lambda2 = (-0.5*tau)*lambda2
+        lambda3 = (-0.5*tau)*lambda3
+    elif (flux_type == 3):
+        # local Lax-Friedrichs flux
+        lmax = np.maximum(np.maximum(lambda1,lambda2),lambda3)
+        lambda1 = -0.5*(tau*np.maximum(lmax,sat_Vn *rhoA))
+        lambda2 = -0.5*(tau*np.maximum(lmax,sat_Vn *rhoA))
+        lambda3 = -0.5*(tau*np.maximum(lmax,sat_Vl *rhoA))
+    elif (flux_type == 4):
+        # Alex Bercik's local Lax-Friedrichs flux (more simple & dissipative)
+        lambda1 = np.abs(u) + a #max eigenvalue in x
+        lambda2 = np.abs(v) + a #max eigenvalue in y
+        lambda3 = np.abs(w) + a #max eigenvalue in z
+        rhoA = np.abs(lambda1*nx + lambda2*ny + lambda3*nz)
+        # Note: definition of rhoA is very slightly different to above (L1 norm isntead of L2 on n_i)
+        #if (skew_sym):
+        fi = - 0.5*tau*fn.repeat_neq(rhoA,5)*(q - qg)
+        #else:
+        #    fi(:) = sgn*d0_5*(eulerFlux(dxidx,q) + eulerFlux(dxidx,qg)) &
+        #        - d0_5*tau*rhoA*(q(:) - qg(:))
+        return fi
+    else:
+        return np.zeros(q.shape)
+
+    dq1 = rhoL - rhoR
+    dq2 = uL - uR
+    dq3 = vL - vR
+    dq4 = wL - wR
+    dq5 = eL - eR
+
+    # diagonal matrix multiply
+    fi = np.zeros(q.shape)
+    fi[::5,:] = lambda3*dq1
+    fi[1::5,:] = lambda3*dq2
+    fi[2::5,:] = lambda3*dq3
+    fi[3::5,:] = lambda3*dq4
+    fi[4::5,:] = lambda3*dq5
+
+    # get E1*dq
+    E1dq = np.zeros(q.shape)
+    fac = phi*dq1 - u*dq2 - v*dq3 - w*dq4 + dq5
+    E1dq[::5,:] = fac
+    E1dq[1::5,:] = fac*u
+    E1dq[2::5,:] = fac*v
+    E1dq[3::5,:] = fac*w
+    E1dq[4::5,:] = fac*H
+
+    # get E2*dq
+    E2dq = np.zeros(q.shape)
+    fac2 = -Un*dq1 + nx*dq2 + ny*dq3 + nz*dq4
+    E2dq[1::5,:] = fac2*nx
+    E2dq[2::5,:] = fac2*ny
+    E2dq[3::5,:] = fac2*nz
+    E2dq[4::5,:] = fac2*Un
+
+    # add to fi
+    tmp1 = fn.repeat_neq(0.5*(lambda1 + lambda2) - lambda3,5)
+    tmp2 = fn.repeat_neq(gami/(a*a),5)
+    tmp3 = fn.repeat_neq(1.0/(dA*dA),5)
+    fi = fi + tmp1*(tmp2*E1dq + tmp3*E2dq)
+
+    # get E3*dq
+    E1dq[::5,:] = fac2
+    E1dq[1::5,:] = fac2*u
+    E1dq[2::5,:] = fac2*v
+    E1dq[3::5,:] = fac2*w
+    E1dq[4::5,:] = fac2*H
+
+    # get E4*dq
+    E2dq[::5,:] = 0.0
+    E2dq[1::5,:] = fac*nx
+    E2dq[2::5,:] = fac*ny
+    E2dq[3::5,:] = fac*nz
+    E2dq[4::5,:] = fac*Un
+
+    # add to fi
+    tmp1 = fn.repeat_neq(0.5*(lambda1 - lambda2)/(dA*a),5)
+    fi = fi + tmp1*(E1dq + gami*E2dq)
+    #if (.not. skew_sym) then
+    #    !-- This is already taken care of for Skew Symmetric Fluxes
+    #    fi(:) = fi(:) + sgn*d0_5*(eulerFlux(dxidx,q) + eulerFlux(dxidx,qg))
+    #end if
+    return fi
 
 
 
@@ -1387,18 +2244,38 @@ if __name__ == "__main__":
     
     q1D = np.random.rand(nen*3,nelem) + 10
     q1D[2::3,:] *= 1000 # fix e to ensure pressure is positive
+
+    n1D = np.random.rand(nen,nelem)
     
     Lam1D, Y1D, Yinv1D, YT1D = dEdq_eigs_1D(q1D,val=True,vec=True,inv=True,trans=True)
-    A1D = dEdq_1D(q1D)
+    An1D = dEndq_1D(q1D,n1D)
+    A1D = dExdq_1D(q1D)
     P1D = symmetrizer_1D(q1D)
     AP1D = fn.gm_gm(A1D,P1D)
+    from scipy.linalg import block_diag
+    xblocks = []
+    for node in range(nen):
+        xblocks.append(np.ones((3,3))*n1D[node,0])
+    Nx = block_diag(*xblocks)
+    An21D = A1D[:,:,0]*Nx
+
+    q = q1D[:3,0]
+    F = calcEx_1D(q1D[:3,:1])[:,0]
+    F_IsmailRoe = Ismail_Roe_flux_1D(q,q)
+    F_Central = Central_flux_1D(q,q)
+    F_Ranocha = Ranocha_flux_1D(q,q)
     
     print('---- Testing 1D functions (all should be zero) ----')
+    print('An = nx*Ax: ', np.max(abs(An1D[:,:,0]-An21D)))
     print('eigenvector inverse: ', np.max(abs(np.linalg.inv(Y1D[:,:,0])-Yinv1D[:,:,0])))
     print('eigenvector transpose: ', np.max(abs(Y1D[:,:,0].T - YT1D[:,:,0])))
     print('eigendecomposition: ', np.max(abs(A1D - fn.gm_gm(Y1D,fn.gdiag_gm(Lam1D,Yinv1D)))))
     print('A @ P symmetrizer: ', np.max(abs(AP1D[:,:,0] - AP1D[:,:,0].T)))
-    print('P - eigenvector scaling: ', np.max(abs(P1D - fn.gm_gm(Y1D,YT1D))))
+    print('P = Y@Y.T symmetrizer: ', np.max(abs(P1D - fn.gm_gm(Y1D,YT1D))))
+    print('----')
+    print('Consistency of Ismail Roe flux: ', np.max(abs(F-F_IsmailRoe)))
+    print('Consistency of Central flux: ', np.max(abs(F-F_Central)))
+    print('Consistency of Ranocha flux: ', np.max(abs(F-F_Ranocha)))
     print('')
     
     q2D = np.random.rand(nen*4,nelem) + 10
@@ -1406,8 +2283,6 @@ if __name__ == "__main__":
     
     n2D = np.random.rand(nen,2,nelem)
     norm = np.sqrt(n2D[:,0,:]**2 + n2D[:,1,:]**2)
-    n2D[:,0,:] /= norm
-    n2D[:,1,:] /= norm
     nx2D = np.zeros((nen,2,nelem))
     nx2D[:,0,:] = 1
     ny2D = np.zeros((nen,2,nelem))
@@ -1422,6 +2297,7 @@ if __name__ == "__main__":
     Ax2D = dExdq_2D(q2D)
     Ay2D = dEydq_2D(q2D)
     P2D = symmetrizer_2D(q2D)
+    P22D = fn.gm_gm(Y2D,YT2D)
     AP2D = fn.gm_gm(An2D,P2D)
     from scipy.linalg import block_diag
     xblocks = []
@@ -1432,6 +2308,13 @@ if __name__ == "__main__":
     Nx = block_diag(*xblocks)
     Ny = block_diag(*yblocks)
     An22D = Ax2D[:,:,0]*Nx + Ay2D[:,:,0]*Ny
+
+    q = q2D[:4,0]
+    Fx, Fy = calcExEy_2D(q2D[:4,:1])
+    Fx, Fy = Fx[:,0], Fy[:,0]
+    Fx_IsmailRoe, Fy_IsmailRoe = Ismail_Roe_fluxes_2D(q,q)
+    Fx_Central, Fy_Central = Central_fluxes_2D(q,q)
+    Fx_Ranocha, Fy_Ranocha = Ranocha_fluxes_2D(q,q)
     
     print('---- Testing 2D functions (all should be zero) ----')
     print('An = nx*Ax + ny*Ay: ', np.max(abs(An2D[:,:,0]-An22D)))
@@ -1454,10 +2337,16 @@ if __name__ == "__main__":
     print('nx eigendecomposition: ', np.max(abs(Ax2D - fn.gm_gm(Yx22D,fn.gdiag_gm(Lamx22D,Yinvx22D)))))
     print('ny eigendecomposition: ', np.max(abs(Ay2D - fn.gm_gm(Yy22D,fn.gdiag_gm(Lamy22D,Yinvy22D)))))
     print('n eigendecomposition: ', np.max(abs(An2D - fn.gm_gm(Y2D,fn.gdiag_gm(Lam2D,Yinv2D)))))
-    print('An @ P symmetrizer: ', np.max(abs(AP2D[:,:,0] - AP2D[:,:,0].T)))
-    print('P - eigenvector scaling: ', np.max(abs(P2D - fn.gm_gm(Y2D,YT2D))))
+    print('P = Y@Y.T symmetrizer:', np.max(abs(P2D-P22D))) 
+    print('An @ P symmetry: ', np.max(abs(AP2D[:,:,0] - AP2D[:,:,0].T)))
+    print('----')
+    print('Consistency of Ismail Roe flux: ', np.max(abs(np.array([Fx-Fx_IsmailRoe,Fy-Fy_IsmailRoe]))))
+    print('Consistency of Central flux: ', np.max(abs(np.array([Fx-Fx_Central,Fy-Fy_Central]))))
+    print('Consistency of Ranocha flux: ', np.max(abs(np.array([Fx-Fx_Ranocha,Fy-Fy_Ranocha]))))
     print('')
-    
+
+    print('THERE ARE SOME ERRORS in 3D - MUST REDO SCALING AS FOR 2D')
+    """
     q3D = np.random.rand(nen*5,nelem) + 10
     q3D[4::5,:] *= 1000 # fix e to ensure pressure is positive
     
@@ -1500,6 +2389,7 @@ if __name__ == "__main__":
     An23D = Ax3D[:,:,0]*Nx + Ay3D[:,:,0]*Ny + Az3D[:,:,0]*Nz
     
     print('---- Testing 3D functions (all should be zero) ----')
+    print('THERE ARE SOME ERRORS: MUST REDO SCALING AS FOR 2D')
     print('An = nx*Ax + ny*Ay + nz*Az: ', np.max(abs(An3D[:,:,0]-An23D)))
     print('x/nx eigenvalues: ', np.max(abs(Lamx3D-Lamx23D)))
     print('y/ny eigenvalues: ', np.max(abs(Lamy3D-Lamy23D)))
@@ -1530,3 +2420,4 @@ if __name__ == "__main__":
     print('n eigendecomposition: ', np.max(abs(An3D - fn.gm_gm(Y3D,fn.gdiag_gm(Lam3D,Yinv3D)))))
     print('An @ P symmetrizer: ', np.max(abs(AP3D[:,:,0] - AP3D[:,:,0].T)))
     print('P - eigenvector scaling: ', np.max(abs(P3D - fn.gm_gm(Y3D,YT3D))))
+    """
