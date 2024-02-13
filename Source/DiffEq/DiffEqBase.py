@@ -28,10 +28,7 @@ import Source.Methods.Functions as fn
 #import quadpy as qp
 
 '''
-The classes in this file are inheritated by the classes for ODEs and PDEs.
-The order of inheritance is as follows:
-        PdeBaseCons       <- PdeBase
-        PdeBasePar       <- PdeBase
+The classes in this file are inheritated by the classes other PDEs.
 PdeBase:
     -Provides an init function for the parameter and the names of the
     objectives functions.
@@ -39,15 +36,9 @@ PdeBase:
     -Sets parameters for the initial solution (q0)
     -Provides an updated init file with more inputs
     -Provides functions required for all PDEs such as set_xy, set_q0
-    -Has a function to plot the solution of 1D PDEs
+    -Has a function to plot the solution
     -Sets default methods to calculate dExdx as well as the source term and
     its derivative
-PdeBaseCons:
-    -Builds from PdeBase by adding methods for PDEs that are of the
-    form dqdt + dExdx = G, ie no second or higher derivatives
-PdeBasePar:
-    -Builds from PdeBase by adding methods for PDEs that are of the
-    form dqdt + dExdx = d^2EVdx^2 + G, ie with second derivatives
 The PDEs are solved in this form:
     The Diffeq:             dqdt = -dExdx + G + diss = f
     Time marching methods:  dqdt = f(q) = rhs(q)
@@ -461,40 +452,22 @@ class PdeBase:
         else: # system
             dEzdq_mod = np.transpose(self.dEzdq(q),axes=(2,0,1))
             eig_val = np.linalg.eigvals(dEzdq_mod)
-            return np.max(np.abs(eig_val),axis=1)
-        
-    # TODO: I dont think I need these
-    
-    def dExdx_div(self, q):
-        E = self.calcEx(q)
-        dExdx = fn.gm_gv(self.Dx, E)
-        return dExdx
-    
-    def dEydy_div(self,q):
-        E = self.calcEy(q)
-        dEydx = fn.gm_gv(self.Dy, E)
-        return dEydx  
+            return np.max(np.abs(eig_val),axis=1)  
 
-    def dEzdz_div(self,q):
-        E = self.calcEz(q)
-        dEzdx = fn.gm_gv(self.Dz, E)
-        return dEzdx 
-
-    def dExdx_had(self, q):
-        F = self.Fx_mat(q) 
-        dExdx = 2*np.sum(fn.lm_gm_hadamard(self.Dx, F),axis=1)
-        return dExdx
+    def dExdq_eig_abs(self,q):
+        # This is a base method and should not be used, as it in general will be slow
+        dExdq = self.dExdq(q)
+        return fn.abs_eig_mat(dExdq)
     
-    def dEydy_had(self,q):
-        F = self.Fx_mat(q) 
-        dEydx = 2*np.sum(fn.lm_gm_hadamard(self.Dy, F),axis=1)
-        return dEydx  
-
-    def dEzdz_had(self,q):
-        F = self.Fx_mat(q) 
-        dEzdx = 2*np.sum(fn.lm_gm_hadamard(self.Dz, F),axis=1)
-        return dEzdx 
-            
+    def dEydq_eig_abs(self,q):
+        # This is a base method and should not be used, as it in general will be slow
+        dEydq = self.dEydq(q)
+        return fn.abs_eig_mat(dEydq) 
+    
+    def dEzdq_eig_abs(self,q):
+        # This is a base method and should not be used, as it in general will be slow
+        dEzdq = self.dEzdq(q)
+        return fn.abs_eig_mat(dEzdq) 
 
     ''' Source term '''
 
@@ -534,152 +507,6 @@ class PdeBase:
 #         self.der1_bcL = np.array(sp.kron(der1_bcL, eye).todense())
 #         self.der1_bcR = np.array(sp.kron(der1_bcR, eye).todense())
 # =============================================================================
-
-
-# TODO: I dont think I need this
-class PdeBaseCons(PdeBase):
-    
-    def __init__(self, para=None, q0_type='SinWave'):
-
-        super().__init__(para, q0_type)
-        if self.dim == 1:
-            if not hasattr(self, 'dqdt'):
-                print('Using default 1D dqdt')
-                self.dqdt = self.dqdt_1D
-            else:
-                print('Using dqdt defined in specific DiffEq file.')
-            if not hasattr(self, 'dfdq'):
-                if self.use_hadamard:
-                    print('Using default 1D hadamard form dfdq')
-                    self.dfdq = self.dfdq_1D_had
-                else:
-                    print('Using default 1D divergence form dfdq')
-                    self.dfdq = self.dfdq_1D_div
-            else:
-                print('Using dfdq defined in specific DiffEq file.')
-        elif self.dim == 2:
-            if not hasattr(self, 'dqdt'):
-                print('Using default 2D dqdt')
-                self.dqdt = self.dqdt_2D
-            else:
-                print('Using dqdt defined in specific DiffEq file.')
-            if not hasattr(self, 'dfdq'):
-                if self.use_hadamard:
-                    print('Using default 2D hadamard form dfdq')
-                    self.dfdq = self.dfdq_2D_had
-                else:
-                    print('Using default 2D divergence form dfdq')
-                    self.dfdq = self.dfdq_2D_div
-            else:
-                print('Using dfdq defined in specific DiffEq file.')
-        elif self.dim == 3:
-            if not hasattr(self, 'dqdt'):
-                print('Using default 3D dqdt')
-                self.dqdt = self.dqdt_3D
-            else:
-                print('Using dqdt defined in specific DiffEq file.')
-            if not hasattr(self, 'dfdq'):
-                if self.use_hadamard:
-                    print('Using default 3D hadamard form dfdq')
-                    self.dfdq = self.dfdq_3D_had
-                else:
-                    print('Using default 3D divergence form dfdq')
-                    self.dfdq = self.dfdq_3D_div
-            else:
-                print('Using dfdq defined in specific DiffEq file.')
-
-    ''' This base class is for PDEs of the form dqdt + dE_idx_i = G '''
-
-    def dqdt_1D(self, q):
-
-        dExdx = self.dExdx(q)
-        G = self.calcG(q)
-
-        dqdt = -dExdx + G
-        return dqdt
-
-    def dfdq_1D_div(self, q):
-        # WARNING: Does not apply for explicit split forms
-
-        A = self.dExdq(q)
-        dGdq = self.dGdq(q)
-
-        dfdq = - fn.gm_gm(self.Dx, A) + dGdq
-        return dfdq
-    
-    def dfdq_1D_had(self, q):
-
-        A = self.Ax_tens(q) 
-        dGdq = self.dGdq(q)
-
-        dfdq = - 2*np.sum(fn.lm_gt_hadamard(self.Dx, A),axis=1) + dGdq
-        return dfdq
-    
-    def dqdt_2D(self, q):
-
-        dExdx = self.dExdx(q)
-        dEydy = self.dEydy(q)
-        G = self.calcG(q)
-
-        dqdt = -dExdx -dEydy + G
-        return dqdt
-
-    def dfdq_2D_div(self, q):
-        # WARNING: Does not apply for explicit split forms
-
-        Ax = self.dExdq(q)
-        Ay = self.dEydq(q)
-        dGdq = self.dGdq(q)
-
-        dfdq = - fn.gm_gm(self.Dx, Ax) - fn.gm_gm(self.Dy, Ay) + dGdq
-        return dfdq
-    
-    def dfdq_2D_had(self, q):
-
-        Ax = self.Ax_tens(q) 
-        Ay = self.Ay_tens(q) 
-        dGdq = self.dGdq(q)
-
-        dfdq = - 2*np.sum(fn.lm_gt_hadamard(self.Dx, Ax),axis=1) \
-               - 2*np.sum(fn.lm_gt_hadamard(self.Dx, Ay),axis=1) + dGdq
-        return dfdq
-    
-    def dqdt_3D(self, q):
-
-        dExdx = self.dExdx(q)
-        dEydy = self.dEydy(q)
-        dEzdy = self.dEydy(q)
-        G = self.calcG(q)
-
-        dqdt = -dExdx -dEydy -dEzdy + G
-        return dqdt
-
-    def dfdq_3D_div(self, q):
-        # WARNING: Does not apply for explicit split forms
-
-        Ax = self.dExdq(q)
-        Ay = self.dEydq(q)
-        Az = self.dEzdq(q)
-        dGdq = self.dGdq(q)
-
-        dfdq = - fn.gm_gm(self.Dx, Ax) - fn.gm_gm(self.Dy, Ay) - fn.gm_gm(self.Dz, Az) + dGdq
-        return dfdq
-    
-    def dfdq_3D_had(self, q):
-
-        Ax = self.Ax_tens(q) 
-        Ay = self.Ay_tens(q) 
-        Az = self.Az_tens(q) 
-        dGdq = self.dGdq(q)
-
-        dfdq = - 2*np.sum(fn.lm_gt_hadamard(self.Dx, Ax),axis=1) \
-               - 2*np.sum(fn.lm_gt_hadamard(self.Dx, Ay),axis=1) \
-               - 2*np.sum(fn.lm_gt_hadamard(self.Dz, Az),axis=1) + dGdq
-        return dfdq
-    
-
-        
-
             
 class DiffEqOverwrite:
 # Allows you to overwrite the methods in the Diffeq class
