@@ -348,7 +348,7 @@ class SatDer1:
             raise Exception('Averaging method not understood.')
         
         A = self.dExdq(qf_avg)            
-        A_abs = self.dExdq_eig_abs(A)
+        A_abs = self.dExdq_eig_abs(qf_avg)
         
         # Upwinding flux
         A_upwind = (A + sigma*A_abs)/2 * bdy_metrics
@@ -388,9 +388,9 @@ class SatDer1:
             raise Exception('Averaging method not understood.')
         
         Ax = self.dExdq(qf_avg)            
-        Ax_abs = self.dExdq_eig_abs(Ax)
+        Ax_abs = self.dExdq_eig_abs(qf_avg)
         Ay = self.dExdq(qf_avg)            
-        Ay_abs = self.dEydq_eig_abs(Ay)
+        Ay_abs = self.dEydq_eig_abs(qf_avg)
         
         # Upwinding flux
         A_upwind = (Ax + sigma*Ax_abs)/2 * bdy_metricsx + (Ay + sigma*Ay_abs)/2 * bdy_metricsy
@@ -430,11 +430,11 @@ class SatDer1:
             raise Exception('Averaging method not understood.')
         
         Ax = self.dExdq(qf_avg)            
-        Ax_abs = self.dExdq_eig_abs(Ax)
+        Ax_abs = self.dExdq_eig_abs(qf_avg)
         Ay = self.dEydq(qf_avg)            
-        Ay_abs = self.dEydq_eig_abs(Ay)
+        Ay_abs = self.dEydq_eig_abs(qf_avg)
         Az = self.dEzdq(qf_avg)            
-        Az_abs = self.dEzdq_eig_abs(Az)
+        Az_abs = self.dEzdq_eig_abs(qf_avg)
         
         # Upwinding flux
         A_upwind = (Ax + sigma*Ax_abs)/2 * bdy_metricsx \
@@ -848,7 +848,7 @@ class SatDer1:
         qf_diff = q_fL - q_fR
 
         A = self.dExdq(qfacet)            
-        A_abs = self.dExdq_eig_abs(A)
+        A_abs = self.dExdq_eig_abs(qfacet)
         
         # Upwinding flux
         A_upwind = (A + sigma*A_abs)/2

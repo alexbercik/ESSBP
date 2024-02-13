@@ -82,14 +82,14 @@ class LinearConv(PdeBase):
         dFdq = fn.diag(np.ones(q.shape)*self.ay)
         return dFdq
 
-    def dExdq_eig_abs(self, dExdq):
+    def dExdq_eig_abs(self, q):
 
-        dExdq_eig_abs = np.abs(dExdq)
+        dExdq_eig_abs = fn.diag(np.ones(q.shape)*abs(self.ax))
         return dExdq_eig_abs
     
-    def dEydq_eig_abs(self, dEydq):
+    def dEydq_eig_abs(self, q):
 
-        dEydq_eig_abs = np.abs(dEydq)
+        dEydq_eig_abs = fn.diag(np.ones(q.shape)*abs(self.ay))
         return dEydq_eig_abs
     
     def maxeig_dExdq(self, q):
