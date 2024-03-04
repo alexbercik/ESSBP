@@ -30,7 +30,8 @@ class PdeSolver:
                  nelem=0, nen=0,  disc_nodes='lgl',
                  bc=None, xmin=0, xmax=1,     # Domain
                  cons_obj_name=None,         # Other
-                 bool_plot_sol=False, print_sol_norm=False):
+                 bool_plot_sol=False, print_sol_norm=False,
+                 print_residual=False, check_resid_conv=False):
         '''
         Parameters
         ----------
@@ -91,6 +92,12 @@ class PdeSolver:
         print_sol_norm : bool, optional
             The norm of the sol is printed at each time step if this is True.
             The default is False.
+        print_residual : bool, optional
+            The norm of the residual is printed if this flag is true.
+            The default is False.
+        check_resid_conv : bool, optional
+            Whether or not to check for residual convergence to exit.
+            The default is False (as it should be for unsteady)
         '''
 
         ''' Add all inputs to the class '''
@@ -281,23 +288,36 @@ class PdeSolver:
         self.diffeq.calc_cons_obj = self.calc_cons_obj
         self.diffeq.n_cons_obj = self.n_cons_obj
 
+        self.check_resid_conv = check_resid_conv
+        self.print_residual = print_residual
+
         ''' Check all inputs '''
 
         # Time marching data
         if self.t_final == None:
             print('No t_final given. Checking diffeq for a default t_final.')
             self.t_final = self.diffeq.t_final
+        
         if isinstance(self.t_final, int) or isinstance(self.t_final, float):
+            if (self.t_final != self.diffeq.t_final) and (self.diffeq.t_final is not None):
+                print('WARNING: The diffeq default is t_final= ',self.diffeq.t_final,', but you selected t_final =',t_final)
             self.n_ts = int(np.round(self.t_final / self.dt))
             if abs(self.n_ts - (self.t_final / self.dt)) > 1e-10:
                 dt_old = np.copy(self.dt)
                 self.dt = self.t_final/self.n_ts
                 print('WARNING: To ensure final time is exact, changing dt from {0} to {1}'.format(dt_old,self.dt))
         elif self.t_final == 'steady':
-            print('Indicated steady problem. Will use a convergence criteria to stop time march.')
-            raise Exception('Have not coded this up yet!')
+            self.n_ts = 100000
+            print('Indicated steady problem. Will use a convergence criteria to stop time march, or max {0} steps unless otherwise corrected.'.format(self.n_ts))
+            self.check_resid_conv = True
         else:
-            print('ERROR: No t_final found.') # unsure whether to throw exception error...
+            raise Exception('ERROR: t_final not understood,', self.t_final) 
+        
+        if self.diffeq.steady and not self.check_resid_conv:
+            print('WARNING: Doing a steady solve with no residual checking. Consider setting check_resid_conv=True.')
+        
+        if not self.diffeq.steady and self.check_resid_conv:
+            print('WARNING: set a convergence criteria for an unsteady solve. Manually fixing to check_resid_conv=False.')
 
         # Domain
         if bc == None:
@@ -363,10 +383,11 @@ class PdeSolver:
                 print('Assuming CFL = 0.1 and max wave speed = ({0:.2g}, {1:.2g}, {2:.2g}), try dt < {3:.2g}'.format(LFconstx, LFconsty, LFconstz, dt))
                 
         # Free Stream Preservation
-        test = self.free_stream(print_result=False)
-        if test>1e-12:
-            print('WARNING: Free Stream is not preserved. Check Metrics and/or SAT discretization.')
-            print('         Free Stream is violated by a maximum of {0:.2g}'.format(np.max(abs(test))))
+        if self.bc == 'periodic':
+            test = self.free_stream(print_result=False)
+            if test>1e-12:
+                print('WARNING: Free Stream is not preserved. Check Metrics and/or SAT discretization.')
+                print('         Free Stream is violated by a maximum of {0:.2g}'.format(np.max(abs(test))))
 
     def solve(self, q0_in=None, q0_idx=None):
 
@@ -383,6 +404,8 @@ class PdeSolver:
                         bool_plot_sol = self.bool_plot_sol,
                         bool_calc_cons_obj = self.bool_calc_cons_obj,
                         print_sol_norm = self.print_sol_norm,
+                        print_residual = self.print_residual,
+                        check_resid_conv = self.check_resid_conv,
                         dqdt=self.dqdt, dfdq=self.dfdq)
         
         self.q_sol =  tm_class.solve(q0, self.dt, self.n_ts)
@@ -731,7 +754,7 @@ class PdeSolver:
             DiffEq is used.
         '''
 
-        q0 = self.diffeq.set_q0(q0_type)
+        q0 = self.diffeq.set_q0(q0_type=q0_type)
         
         if self.disc_type == 'fd':
             rhs = self.diffeq.dqdt(q0)

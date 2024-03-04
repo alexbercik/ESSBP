@@ -21,8 +21,9 @@ class TimeMarchingOneStep:
     def explicit_euler(self, q0, dt, n_ts):
 
         def calc_time_step(q_in):
+            dqdt = self.f_dqdt(q_in)
             q_new = q_in + dt * self.f_dqdt(q_in)
-            return q_new
+            return q_new, dqdt
 
         q = np.copy(q0)
 
@@ -30,18 +31,19 @@ class TimeMarchingOneStep:
             q_vec = np.zeros([*self.shape_q, n_ts+1])
             q_vec[:, :, 0] = q
 
-        self.common(q, 0, n_ts, dt)
+        self.common(q, 0, n_ts, dt, -1)
 
         for i in range(1, n_ts+1):
-            q = calc_time_step(q)
+            q, dqdt = calc_time_step(q)
 
             if self.keep_all_ts:
                 q_vec[:,:,i] = q
 
-            self.common(q, i, n_ts, dt)
+            self.common(q, i, n_ts, dt, dqdt)
+            if self.quitsim: break
 
         if self.keep_all_ts:
-            return q_vec
+            return q_vec[:,:,:i+1]
         else:
             return q
 
@@ -66,10 +68,10 @@ class TimeMarchingOneStep:
 
             # self.M = self.M @ (I + dfdq)
 
-            return q_new
+            return q_new, ff
 
         q = np.copy(q0)
-        self.common(q, 0, n_ts, dt)
+        self.common(q, 0, n_ts, dt, -1)
 
         if self.keep_all_ts:
             q_vec = np.zeros([*self.shape_q, n_ts+1])
@@ -77,19 +79,20 @@ class TimeMarchingOneStep:
 
         for i in range(1, n_ts+1):
 
-            q = calc_time_step(q)
+            q, dqdt = calc_time_step(q)
 
             if self.keep_all_ts:
                 q_vec[:,:,i] = q
 
-            self.common(q, i, n_ts, dt)
+            self.common(q, i, n_ts, dt, dqdt)
+            if self.quitsim: break
 
         # qq, rr = np.linalg.qr(self.M)
         # lya = np.log(np.abs(np.diagonal(rr))) / (n_ts*dt)
         # print(f'lya = {lya}')
 
         if self.keep_all_ts:
-            return q_vec
+            return q_vec[:,:,:i+1]
         else:
             return q
 
@@ -111,24 +114,25 @@ class TimeMarchingOneStep:
 
             q_new = q_in + np.reshape(dq, shape, 'F')
 
-            return q_new
+            return q_new, ff
 
         q = np.copy(q0)
-        self.common(q, 0, n_ts, dt)
+        self.common(q, 0, n_ts, dt, -1)
 
         if self.keep_all_ts:
             q_vec = np.zeros([*self.shape_q, n_ts+1])
             q_vec[:, :, 0] = q
 
         for i in range(1, n_ts+1):
-            q = calc_time_step(q)
+            q, dqdt = calc_time_step(q)
 
             if self.keep_all_ts:
                 q_vec[:,:,i] = q
 
-            self.common(q, i, n_ts, dt)
+            self.common(q, i, n_ts, dt, dqdt)
+            if self.quitsim: break
 
         if self.keep_all_ts:
-            return q_vec
+            return q_vec[:,:,:i+1]
         else:
             return q

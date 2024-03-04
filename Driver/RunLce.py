@@ -41,13 +41,13 @@ xmax = 1
 bc = 'periodic'
 
 # Spatial discretization
-disc_type = 'had' # 'div', 'had'
+disc_type = 'div' # 'div', 'had'
 disc_nodes = 'lg' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
 p = 4
 nelem = 50 # optional, number of elements
 nen = 0 # optional, number of nodes per element
 surf_type = 'central'
-had_flux = 'central_fix' # 2-point numerical flux used in hadamard form. 
+had_flux = 'central' # 2-point numerical flux used in hadamard form. 
 # note: use 'central_fix' instead of 'central' for speed, but then fixes a=1
 diss_type = None
 

@@ -42,11 +42,10 @@ class LinearConv(PdeBase):
             self.dExdq_eig_abs = self.dExdq
             
 
-    def exact_sol(self, time=0):
+    def exact_sol(self, time=0, x=None):
 
-        assert self.dim==1, 'exact sol only setup for 1D'
-
-        x = self.x_elem
+        if x is None:
+            x = self.x_elem
 
         x_mod = np.mod((x - self.xmin) - self.a*time, self.dom_len) + self.xmin
         exa_sol = self.set_q0(xy=x_mod)

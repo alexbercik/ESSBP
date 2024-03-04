@@ -36,9 +36,10 @@ class LinearConv(PdeBase):
         self.ay = self.para[1]
         self.az = self.para[2]
 
-    def exact_sol(self, time=0):
+    def exact_sol(self, time=0, xyx=None):
 
-        xyz = self.xyz_elem
+        if xyz is None:
+            xyz = self.xyz_elem
         xyz_mod = np.empty(xyz.shape)
 
         xyz_mod[:,0,:] = np.mod((xyz[:,0,:] - self.xmin[0]) - self.ax*time, self.dom_len[0]) + self.xmin[0]

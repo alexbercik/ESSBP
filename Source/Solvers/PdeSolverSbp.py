@@ -64,7 +64,7 @@ class PdeSolverSbp(PdeSolver):
         if self.settings['stop_after_metrics']:
             return
         
-        self.Dx_phys_nd, self.Dy_phys_nd = 0., 0.
+        self.Dx_phys_nd, self.Dy_phys_nd = None, None
         if self.settings['skew_sym']:
             form = 'skew_sym'
         else:
@@ -79,32 +79,33 @@ class PdeSolverSbp(PdeSolver):
 
 
         # Apply kron products to SBP operators for nelem per node
-        eye = np.eye(self.neq_node)
         self.H_phys_unkronned = self.H_phys
-        self.H_phys = np.kron(self.H_phys, eye)
-        self.H_inv_phys = np.kron(self.H_inv_phys, eye)
-        self.tL = np.kron(self.tL, eye)
-        self.tR = np.kron(self.tR, eye)
-        self.tLT = np.kron(self.tLT, eye)
-        self.tRT = np.kron(self.tRT, eye)
+        self.H_phys = fn.repeat_neq_gv(self.H_phys,self.neq_node) 
+        self.H_inv_phys = fn.repeat_neq_gv(self.H_inv_phys,self.neq_node) 
+        self.tL = fn.kron_neq_lm(self.tL,self.neq_node)
+        self.tR = fn.kron_neq_lm(self.tR,self.neq_node)
+        self.tLT = fn.kron_neq_lm(self.tLT,self.neq_node)
+        self.tRT = fn.kron_neq_lm(self.tRT,self.neq_node)
 
         self.Dx_phys_unkronned = self.Dx_phys
-        self.Dx_phys = np.kron(self.Dx_phys, eye)
-        self.Dx_phys_nd = np.kron(self.Dx_phys_nd, eye)
+        self.Dx_phys = fn.kron_neq_gm(self.Dx_phys,self.neq_node)
+        if self.Dx_phys_nd is not None:
+            self.Dx_phys_nd = fn.kron_neq_gm(self.Dx_phys_nd,self.neq_node)
         if self.dim == 2 or self.dim == 3:
             self.Dy_phys_unkronned = self.Dy_phys
-            self.Dy_phys = np.kron(self.Dy_phys, eye)
-            self.Dy_phys_nd = np.kron(self.Dy_phys_nd, eye)
-            self.H_perp = np.kron(self.H_perp, eye)
+            self.Dy_phys = fn.kron_neq_gm(self.Dy_phys,self.neq_node)
+            if self.Dy_phys_nd is not None:
+                self.Dy_phys_nd = fn.kron_neq_gm(self.Dy_phys_nd,self.neq_node)
+            self.H_perp = fn.kron_neq_gm(self.H_perp,self.neq_node)
         if self.dim == 3:
             self.Dz_phys_unkronned = self.Dz_phys
-            self.Dz_phys = np.kron(self.Dz_phys, eye)
+            self.Dz_phys = fn.kron_neq_gm(self.Dz_phys,self.neq_node)
 
         ''' Modify solver approach '''
 
         self.diffeq.set_mesh(self.mesh)
         if self.dim == 1:
-            self.diffeq.set_sbp_op(self.H_inv_phys, self.Dx_phys) # do we need this any more?
+            self.diffeq.set_sbp_op(self.H_phys, self.H_inv_phys, self.Dx_phys) # do we need this any more?
             if self.disc_type == 'div':
                 self.dqdt = self.dqdt_1d_div
                 self.dfdq = self.dfdq_1d_div
@@ -113,7 +114,7 @@ class PdeSolverSbp(PdeSolver):
                 self.dfdq = self.dfdq_1d_had  
             self.sat = Sat(self, None, form)
         elif self.dim == 2:
-            self.diffeq.set_sbp_op(self.H_inv_phys, self.Dx_phys, self.Dy_phys)
+            self.diffeq.set_sbp_op(self.H_phys, self.H_inv_phys, self.Dx_phys, self.Dy_phys)
             if self.disc_type == 'div':
                 self.dqdt = self.dqdt_2d_div
                 self.dfdq = self.dfdq_2d_div
@@ -123,7 +124,7 @@ class PdeSolverSbp(PdeSolver):
             self.satx = Sat(self, 'x', form)
             self.saty = Sat(self, 'y', form)
         elif self.dim == 3:
-            self.diffeq.set_sbp_op(self.H_inv_phys, self.Dx_phys, self.Dy_phys, self.Dz_phys)
+            self.diffeq.set_sbp_op(self.H_phys, self.H_inv_phys, self.Dx_phys, self.Dy_phys, self.Dz_phys)
             if self.disc_type == 'div':
                 self.dqdt = self.dqdt_3d_div
                 self.dfdq = self.dfdq_3d_div
@@ -146,6 +147,8 @@ class PdeSolverSbp(PdeSolver):
             sat = self.sat.calc(q,E)
         elif self.bc == 'homogeneous':
             sat = self.sat.calc(q, E, q_bdyL=np.array([0]), q_bdyR=np.array([0]))
+        elif self.bc == 'dirichlet':
+            sat = self.sat.calc(q, E, q_bdyL=self.diffeq.qL, q_bdyR=self.diffeq.qR, E_bdyL=self.diffeq.EL, E_bdyR=self.diffeq.ER)
         else:
             raise Exception('Not coded up yet')
     

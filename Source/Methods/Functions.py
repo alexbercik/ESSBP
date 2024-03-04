@@ -769,7 +769,7 @@ def fix_dsatL_1D(q):
     return qfix
 
 @njit
-def reshape_to_meshgrid(q,nen,nelemx,nelemy):
+def reshape_to_meshgrid_2D(q,nen,nelemx,nelemy):
     ''' take a 2D vector q in the shape (nen**2,nelemx*nelemy) and reshape
     to a 2D mesh in the shape (nen*nelem, nen*nelemy) as would be created
     by meshgrid. Can think of this array ordering being the actual bird's 
@@ -792,7 +792,7 @@ def reshape_to_meshgrid(q,nen,nelemx,nelemy):
 def build_F_vol(q, neq, flux):
     ''' builds a Flux differencing matrix (used for Hadamard form) given 1 
     solution vector q, the number of equations per node, and a 2-point 
-    flux function '''
+    flux function. Takes advantage of symmetry since q1 = q2 = q '''
     nen_neq, nelem = q.shape 
     F = np.zeros((nen_neq,nen_neq,nelem))  
     if neq == 1:
@@ -888,17 +888,57 @@ def is_pos_def(A):
         return False
 
 @njit
-def repeat_neq(q,neq_node):
+def repeat_neq_gv(q,neq_node):
     ''' take array of shape (nen,nelem) and return (nen*neq_node,nelem)
         where the value on each node is repeat neq_node times. 
-        Note: shockingly just as fast as np.repeat(q,neq_node,0) but this 
+        Note: just as fast as np.repeat(q,neq_node,0) but this 
               is not compatible with jit (axis argument not supported)'''
     nen, nelem = q.shape
     qn = np.zeros((nen*neq_node,nelem)) 
     for e in range(nelem):
         for i in range(nen):
-            for j in range(i*neq_node,i*neq_node+neq_node):
-                qn[j,e] = q[i,e]
+            for i2 in range(i*neq_node,i*neq_node+neq_node):
+                qn[i2,e] = q[i,e]
+    return qn
+
+@njit
+def kron_neq_gm(A,neq_node):
+    ''' take array of shape (nen,nen2,nelem) and return (nen*neq_node,nen2*neq_node,nelem)
+        the proper kronecker product for the operator acting on a vector (nen2*neq_node,nelem). '''
+    nen, nen2, nelem = A.shape
+    An = np.zeros((nen*neq_node,nen2*neq_node,nelem)) 
+    for e in range(nelem):
+        for i in range(nen):
+            for n in range(neq_node):
+                i2 = i*neq_node + n
+                for j in range(nen2):
+                    An[i2,j*neq_node+n::neq_node,e] = A[i,j,e]
+    return An
+
+@njit
+def kron_neq_lm(A,neq_node):
+    ''' take array of shape (nen,nen2) and return (nen*neq_node,nen2*neq_node)
+        the proper kronecker product for the operator acting on a vector (nen2*neq_node,nelem). '''
+    nen, nen2 = A.shape
+    An = np.zeros((nen*neq_node,nen2*neq_node)) 
+    for i in range(nen):
+        for n in range(neq_node):
+            i2 = i*neq_node + n
+            for j in range(nen2):
+                An[i2,j*neq_node+n::neq_node] = A[i,j]
+    return An
+
+@njit
+def repeat_neq_lv(q,neq_node):
+    ''' take array of shape (nen) and return (nen*neq_node)
+        where the value on each node is repeat neq_node times. 
+        Note: just as fast as np.repeat(q,neq_node,0) but this 
+              is not compatible with jit (axis argument not supported)'''
+    nen = len(q)
+    qn = np.zeros(nen*neq_node) 
+    for i in range(nen):
+        for j in range(i*neq_node,i*neq_node+neq_node):
+            qn[j] = q[i]
     return qn
 
 

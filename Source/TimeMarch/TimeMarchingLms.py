@@ -130,10 +130,11 @@ class TimeMarchingLms:
             if self.keep_all_ts:
                 q_vec[:,i] = q_new
 
-            self.common(q_new, i, n_ts, dt)
+            self.common(q_new, i, n_ts, dt, f_mat[:,-1])
+            if self.quitsim: break
 
         if self.keep_all_ts:
-            return q_vec
+            return q_vec[:,:,:i+1]
         else:
             return q_new
 
@@ -156,10 +157,10 @@ class TimeMarchingLms:
 
             q_new = q_t + dq
 
-            return q_new
+            return q_new, ff
 
         q_old = np.copy(q0)
-        self.common(q_old, 0, n_ts, dt)
+        self.common(q_old, 0, n_ts, dt, ff)
 
         # For the first time step use trapezoidal
         ff = self.f_dqdt(q_old)
@@ -174,7 +175,7 @@ class TimeMarchingLms:
             dq = np.linalg.solve(lhs, rhs)
 
         q = q_old + dq
-        self.common(q, 1, n_ts, dt)
+        self.common(q, 1, n_ts, dt, ff)
 
         if self.keep_all_ts:
             q_vec = np.zeros([self.len_q, n_ts+1])
@@ -183,17 +184,18 @@ class TimeMarchingLms:
 
         for i in range(2, n_ts+1):
 
-            q_new = calc_time_step(q, q_old)
+            q_new, dqdt = calc_time_step(q, q_old)
             q_old = np.copy(q)
             q = np.copy(q_new)
 
             if self.keep_all_ts:
                 q_vec[:,i] = q
 
-            self.common(q, i, n_ts, dt)
+            self.common(q, i, n_ts, dt, dqdt)
+            if self.quitsim: break
 
         if self.keep_all_ts:
-            return q_vec
+            return q_vec[:,:,:i+1]
         else:
             return q
 

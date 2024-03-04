@@ -149,9 +149,10 @@ def animate(solver, file_name='animation', make_video=True, make_gif=False,
     
     print('All Done! Results are saved in '+file_name+' folder.') 
     
-def plot_sparsity(mat,savefile=None,markersize=2):
+def plot_sparsity(mat_in,savefile=None,markersize=2,figsize=(6,6)):
     ''' prints the sparsity of the 2D matrix '''
-    plt.figure(figsize=(6,6))
+    mat = np.copy(mat_in)
+    plt.figure(figsize=figsize)
     #plt.spy(mat,precision=1e-14,markersize=markersize,color='black')
     mat[abs(mat)<1e-14] = 0
     mat[abs(mat)!=0] = 1
@@ -444,22 +445,44 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
     ''' Unpack Schedule '''
     # Check that we either use 'nen' or 'nelem'
     # to refine. We can't use both.
+    runs_nen = []
     if any(i[0]=='nen' for i in schedule) and any(i[0]=='nelem' for i in schedule):
-        print('WARNING: Can not do a refinement specifying both nen and nelem. Using only nelem values.')
+        print('WARNING: Can not do a refinement specifying both nen and nelem.')
+        print('     ... Using only nelem values, and atempting to taking nen for each run or for each p.')
+        runs_nen = [x[1:] for x in schedule if x[0] == 'nen'][0]
         # remove 'nelem' and 'nen' lists
         schedule = [x for x in schedule if not ('nen' in x)]
 
     # Otherwise, we now have combinations of attributes to run, and we
     # calculate convergence according to either nn or nelem refinement.
     # Note that nen can be used both with nn or nelem refinement.
-    if any(i[0]=='nen' for i in schedule):
+    match_nen_to_nelem = False
+    match_nen_to_p = False
+    if any(i[0]=='nen' for i in schedule) and not any(i[0]=='nelem' for i in schedule):
+        print('Performing classical refinement.')
         runs_nen = [x[1:] for x in schedule if x[0] == 'nen'][0]
         schedule.remove([x for x in schedule if x[0] == 'nen'][0])
         runs_nelem = [solver.nelem] * len(runs_nen) # reset these as well
+        match_nen_to_nelem = True
     elif any(i[0]=='nelem' for i in schedule):
+        print('Performing element refinement.')
         runs_nelem = [x[1:] for x in schedule if x[0] == 'nelem'][0]
         schedule.remove([x for x in schedule if x[0] == 'nelem'][0])
-        runs_nen = [0] * len(runs_nelem) # reset these as well
+        runs_p = [x[1:] for x in schedule if x[0] == 'p'][0]
+        if len(runs_nen)==len(runs_nelem):
+            print('... Match nen to nelem for each run')
+            match_nen_to_nelem = True
+        elif len(runs_nen)==1:
+            print('... Set the same nen each run')
+            runs_nen = runs_nen * len(runs_nelem)
+            match_nen_to_nelem = True
+        elif len(runs_nen) == len(runs_p):
+            print('.. Match nen to p for each run')
+            match_nen_to_p = True
+        else:
+            print('.. Match nen to nelem for each run using default nen')
+            runs_nen = [solver.nen] * len(runs_nelem) # reset these as well
+            match_nen_to_nelem = True
     else:
         raise Exception('Convergence schedule must contain either nen or nelem refinement.')
     
@@ -482,13 +505,13 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
     if labels is not None:
         assert(len(labels)==n_cases),'labels must be a list of length = n_cases'
 
-    if scale_dt: variables = [None]*(3+n_attributes) # initiate list to pass to reset()
-    else: variables = [None]*(2+n_attributes)
+    if scale_dt: variables_base = [None]*(3+n_attributes) # initiate list to pass to reset()
+    else: variables_base = [None]*(2+n_attributes)
 
     n_toti = 1
     for casei in range(n_cases): # for each case
         for atti in range(n_attributes):
-            variables[atti+2] = (attributes[atti],cases[casei][atti]) # assign attributes
+            variables_base[atti+2] = (attributes[atti],cases[casei][atti]) # assign attributes
             legend_strings[casei] += '{0}={1}, '.format(attributes[atti],cases[casei][atti])
         legend_strings[casei] = legend_strings[casei].strip().strip(',') # formatting
         # if we change p, estimate that nen will also change by the same amount
@@ -496,12 +519,20 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
             diff_p = cases[casei][attributes.index('p')] - solver.p
         else:
             diff_p = 0
-        for runi in range(n_runs): # for each run (refinement)
+        for runi in range(n_runs):
+            variables = variables_base.copy() # for each run (refinement)
             variables[0] = ('nelem',runs_nelem[runi])
-            variables[1] = ('nen',runs_nen[runi])
+            if match_nen_to_nelem:
+                run_neni = runi
+            elif match_nen_to_p:
+                p = cases[casei][attributes.index('p')]
+                run_neni = runs_p.index(p)
+            else:
+                raise Exception('Something went wrong')
+            variables[1] = ('nen',runs_nen[run_neni])
             if scale_dt:
-                if runs_nen[runi] == 0: neni = solver.nen
-                else: neni = runs_nen[runi]
+                if runs_nen[run_neni] == 0: neni = solver.nen
+                else: neni = runs_nen[run_neni]
                 if solver.dim == 1:
                     xmin, xmax, nelem = solver.xmin, solver.xmax, runs_nelem[runi]
                 else:
@@ -520,6 +551,7 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
             variables.append(('cons_obj_name', None))
 
             ''' solve run for case, store results '''
+            print('Running for:', variables)
             solver.reset(variables=variables)
             solver.solve()
             errors[casei,runi] = solver.calc_error(method=error_type)
