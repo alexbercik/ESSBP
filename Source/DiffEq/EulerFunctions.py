@@ -26,6 +26,7 @@ import Source.Methods.Functions as fn
 @njit 
 def calcEx_1D(q):
     ''' the flux vector in 1D, hard coded with g=1.4 '''
+    # correctly returns S * Ex if quasi1D Euler
     g = 1.4 # hard coded throughout
 
     # decompose_q
@@ -33,10 +34,10 @@ def calcEx_1D(q):
     q_1 = q[1::3]
     q_2 = q[2::3]
     u = q_1 * fac
-    k = u*q_1   
-    p = (g-1)*(q_2 - 0.5*k) 
+    k = u*q_1   # = rho * u^2 * S if quasi1D Euler
+    p = (g-1)*(q_2 - 0.5*k) # = p * S if quasi1D Euler
 
-    # assemble_vec
+    # assemble_vec 
     E = np.zeros(q.shape)
     E[::3,:] = q_1
     E[1::3,:] = k + p
@@ -119,11 +120,12 @@ def calcExEy_2D(q):
 @njit    
 def dExdq_1D(q):
     ''' the flux jacobian A in 1D. Note: can NOT handle complex values '''
+    # correctly returns A if quasi1D Euler (no S)
     g = 1.4 # hard coded throughout
-    rho = q[::3,:]
-    u = q[1::3,:]/rho
-    k = u**2/2
-    g_e_rho = g * q[2::3,:]/rho
+    rho = q[::3,:] # = rho * S if quasi1D Euler
+    u = q[1::3,:]/rho # = u if quasi1D Euler
+    k = u*u/2 # = k if quasi1D Euler
+    g_e_rho = g * q[2::3,:]/rho # = g_e_rho if quasi1D Euler
 
     # entries of the dEdq (A) matrix
     r1 = np.ones(np.shape(rho))
@@ -143,6 +145,7 @@ def dEndq_1D(q,dxidx):
     ''' the flux jacobian A in 1D including metric scaling. Note: can NOT handle complex values
     INPUTS: q : array of shape (nen*neq_node,nelem)
             dxidx : metrics of shape (nen,nelem) corresponding to a single xi '''
+    # correctly returns An if quasi1D Euler (no S)
     g = 1.4 # hard coded throughout
     g1 = g-1
     rho = q[::3,:]
@@ -699,17 +702,18 @@ def dEdq_eigs_1D(q,val=True,vec=True,inv=True,trans=False):
     Lam : eigenvalues of the flux jacobian (gdiag shape)
     Yinv : inverse of Y
     YT : Transpose of Y '''
+    # Eigenvalues are the same for quasi1D Euler, but eigenvectors scaled by S to match P
     g = 1.4 # hard coded throughout
     g1 = g-1
-    rho = q[::3,:]
-    u = q[1::3,:]/rho
-    k = u**2/2
-    e = q[2::3,:]
-    p = g1*(e-rho*k) # pressure
+    rho = q[::3,:] # = rho * S if quasi1D Euler
+    u = q[1::3,:]/rho # = u if quasi1D Euler
+    k = 0.5*u*u # = k if quasi1D Euler
+    e = q[2::3,:] # = e * S if quasi1D Euler
+    p = g1*(e-rho*k) # pressure  = p * S if quasi1D Euler
     
     if val:
         Lam = np.zeros(np.shape(q))
-        a = np.sqrt(g*p/rho) # sound speed
+        a = np.sqrt(g*p/rho) # sound speed, = a if quasi1D Euler
         Lam[::3,:] = u
         Lam[1::3,:] = u + a
         Lam[2::3,:] = u - a
@@ -1032,16 +1036,17 @@ def symmetrizer_1D(q):
     jacobian A=dEdq upon multiplication from the right. This is equal to the
     derivative of conservative variables with respect to entropy variables,
     or the Hessian of the entropy potential. '''
+    # returns S * P if quasi1D Euler
     g = 1.4 # hard coded throughout
-    rho = q[::3,:]
-    rhou = q[1::3,:]
-    rhou2 = rhou**2/rho
-    e = q[2::3,:]
-    p = (g-1)*(e-rhou2/2) # pressure
+    rho = q[::3,:] # = rho * S if quasi1D Euler
+    rhou = q[1::3,:] # = rho * u * S if quasi1D Euler
+    rhou2 = rhou*rhou/rho # = rho * u^2 * S if quasi1D Euler
+    e = q[2::3,:] # = e * S if quasi1D Euler
+    p = (g-1)*(e-rhou2/2) # pressure = p * S if quasi1D Euler
     
     r22 = rhou2 + p
     r23 = rhou*(p+e)/rho
-    r33 = g*e**2/rho - (g-1)*rhou2**2/4/rho
+    r33 = g*e*e/rho - ((g-1)/4)*rhou2*rhou2/rho
     
     P = fn.block_diag(rho,rhou,e,rhou,r22,r23,e,r23,r33)
     return P
@@ -1454,7 +1459,189 @@ def dEndq_eigs_3D(q,n,val=True,vec=True,inv=True,trans=False):
     else:
         Yinv = None
     
-    return Lam, Y, Yinv, YT   
+    return Lam, Y, Yinv, YT  
+
+@njit
+def maxeig_dExdq_1D(q):
+    ''' return the maximum eigenvalue - used for LF fluxes. accepts q[:,:]'''
+    rhoS = q[::3,:] 
+    u = q[1::3,:]/rhoS 
+    e_rho = q[2::3,:]/rhoS 
+    p_rho = 0.4*(e_rho-0.5*u*u) # pressure / rho, even if quasi1D Euler
+    a = np.sqrt(1.4*p_rho) # sound speed, = a if quasi1D Euler
+    lam = np.maximum(np.abs(u+a),np.abs(u-a))
+    return lam 
+
+@njit
+def maxeig_dExdq_2D(q):
+    ''' return the maximum eigenvalue - used for LF fluxes. accepts q[:,:]'''
+    rho = q[::4,:] 
+    fac = 1/rho
+    u = q[1::4,:] * fac
+    v = q[2::4,:] * fac
+    e_rho = q[3::4,:] * fac
+    p_rho = 0.4*(e_rho-0.5*(u*u+v*v)) # pressure / rho
+    a = np.sqrt(1.4*p_rho) # sound speed
+    lam = np.maximum(np.abs(u+a),np.abs(u-a))
+    return lam 
+
+@njit
+def maxeig_dEydq_2D(q):
+    ''' return the maximum eigenvalue - used for LF fluxes. accepts q[:,:]'''
+    rho = q[::4,:] 
+    fac = 1/rho
+    u = q[1::4,:] * fac
+    v = q[2::4,:] * fac
+    e_rho = q[3::4,:] * fac
+    p_rho = 0.4*(e_rho-0.5*(u*u+v*v)) # pressure / rho
+    a = np.sqrt(1.4*p_rho) # sound speed
+    lam = np.maximum(np.abs(v+a),np.abs(v-a))
+    return lam 
+
+@njit
+def maxeig_dExdq_3D(q):
+    ''' return the maximum eigenvalue - used for LF fluxes. accepts q[:,:]'''
+    rho = q[::5,:] 
+    fac = 1/rho
+    u = q[1::5,:] * fac
+    v = q[2::5,:] * fac
+    w = q[3::5,:] * fac
+    e_rho = q[4::5,:] * fac
+    p_rho = 0.4*(e_rho-0.5*(u*u+v*v+w*w)) # pressure / rho
+    a = np.sqrt(1.4*p_rho) # sound speed
+    lam = np.maximum(np.abs(u+a),np.abs(u-a))
+    return lam 
+
+@njit
+def maxeig_dEydq_3D(q):
+    ''' return the maximum eigenvalue - used for LF fluxes. accepts q[:,:]'''
+    rho = q[::5,:] 
+    fac = 1/rho
+    u = q[1::5,:] * fac
+    v = q[2::5,:] * fac
+    w = q[3::5,:] * fac
+    e_rho = q[4::5,:] * fac
+    p_rho = 0.4*(e_rho-0.5*(u*u+v*v+w*w)) # pressure / rho
+    a = np.sqrt(1.4*p_rho) # sound speed
+    lam = np.maximum(np.abs(v+a),np.abs(v-a))
+    return lam 
+
+@njit
+def maxeig_dEzdq_3D(q):
+    ''' return the maximum eigenvalue - used for LF fluxes. accepts q[:,:]'''
+    rho = q[::5,:] 
+    fac = 1/rho
+    u = q[1::5,:] * fac
+    v = q[2::5,:] * fac
+    w = q[3::5,:] * fac
+    e_rho = q[4::5,:] * fac
+    p_rho = 0.4*(e_rho-0.5*(u*u+v*v+w*w)) # pressure / rho
+    a = np.sqrt(1.4*p_rho) # sound speed
+    lam = np.maximum(np.abs(w+a),np.abs(w-a))
+    return lam 
+
+@njit
+def entropy_1D(q):
+    ''' return the nodal values of the entropy s(q).
+     Note: this is not quite the "normal" entropy for quasi1D euler when svec \neq 1, but is a correct entropy '''
+    rho = q[::3,:] # actually rho * S
+    u = q[1::3,:]/rho
+    e = q[2::3,:] # actually e * S
+    p = 0.4*(e - 0.5*rho*u*u) # pressure * S
+    s = np.log(p/(rho**1.4)) # specific entropy
+    S = -rho*s/0.4
+    return S
+
+@njit
+def entropy_var_1D(q):
+    ''' return the nodal values of the entropy variables w(q). '''
+    # Note: the same entropy variables for quasi1D euler (no svec dependence)
+    g = 1.4 # hard coded throughout
+
+    rho = q[0::3] # = rho * S if quasi1D Euler
+    u = q[1::3,:]/rho
+    e = q[2::3] # = e * S if quasi1D Euler
+    k = rho*u*u # = rho * u^2 * S if quasi1D Euler
+    p = (g-1)*(e - 0.5*k) # = p * S if quasi1D Euler
+    s = np.log(p/(rho**1.4)) # specific entropy (not quite physical entropy if quasi1D Euler)
+    fac = rho/p 
+
+    # assemble_vec 
+    w = np.zeros(q.shape)
+    w[::3,:] = (g-s)/(g-1) - 0.5*fac*k
+    w[1::3,:] = fac*u
+    w[2::3,:] = -fac
+    return w
+
+@njit
+def entropy_2D(q):
+    ''' return the nodal values of the entropy s(q).'''
+    rho = q[::4,:] 
+    u = q[1::4,:]/rho
+    v = q[2::4,:]/rho
+    e = q[3::4,:]
+    p = 0.4*(e - 0.5*rho*(u*u+v*v)) # pressure
+    s = np.log(p/(rho**1.4)) # specific entropy
+    S = -rho*s/0.4
+    return S
+
+@njit
+def entropy_var_2D(q):
+    ''' return the nodal values of the entropy variables w(q). '''
+    g = 1.4 # hard coded throughout
+
+    rho = q[0::4] 
+    u = q[1::4,:]/rho
+    v = q[2::4,:]/rho
+    e = q[3::4] 
+    k = rho*(u*u + v*v)
+    p = (g-1)*(e - 0.5*k) 
+    s = np.log(p/(rho**1.4)) 
+    fac = rho/p 
+
+    # assemble_vec 
+    w = np.zeros(q.shape)
+    w[::4,:] = (g-s)/(g-1) - 0.5*fac*k
+    w[1::4,:] = fac*u
+    w[2::4,:] = fac*v
+    w[3::4,:] = -fac
+    return w
+
+@njit
+def entropy_3D(q):
+    ''' return the nodal values of the entropy s(q).'''
+    rho = q[::5,:] 
+    u = q[1::5,:]/rho
+    v = q[2::5,:]/rho
+    w = q[3::5,:]/rho
+    e = q[4::5,:]
+    p = 0.4*(e - 0.5*rho*(u*u+v*v+w*w)) # pressure
+    s = np.log(p/(rho**1.4)) # specific entropy
+    S = -rho*s/0.4
+    return S
+
+@njit
+def entropy_var_3D(q):
+    ''' return the nodal values of the entropy variables w(q). '''
+    g = 1.4 # hard coded throughout
+
+    rho = q[0::4] 
+    u = q[1::5,:]/rho
+    v = q[2::5,:]/rho
+    w = q[3::5,:]/rho
+    e = q[3::4] 
+    k = rho*(u*u + v*v + w*w)
+    p = (g-1)*(e - 0.5*k) 
+    s = np.log(p/(rho**1.4)) 
+    fac = rho/p 
+
+    # assemble_vec 
+    w = np.zeros(q.shape)
+    w[::4,:] = (g-s)/(g-1) - 0.5*fac*k
+    w[1::4,:] = fac*u
+    w[2::4,:] = fac*v
+    w[3::4,:] = -fac
+    return w
 
 @njit 
 def Ismail_Roe_flux_1D(qL,qR):
@@ -1866,7 +2053,7 @@ def dEndq_eig_abs_dq_1D(dxidx, q, qg, flux_type):
         # Alex Bercik's local Lax-Friedrichs flux (more simple & dissipative)
         lambda1 = np.abs(u) + a #max possible eigenvalue
         rhoA = np.abs(lambda1*dxidx)
-        fi = - 0.5*tau*fn.repeat_neq(rhoA,3)*(q - qg)
+        fi = - 0.5*tau*fn.repeat_neq_gv(rhoA,3)*(q - qg)
         return fi
     else:
         return np.zeros(q.shape)
@@ -1895,9 +2082,9 @@ def dEndq_eig_abs_dq_1D(dxidx, q, qg, flux_type):
     E2dq[2::3,:] = fac2*Un
 
     # add to fi
-    tmp1 = fn.repeat_neq(0.5*(lambda1 + lambda2) - lambda3,3)
-    tmp2 = fn.repeat_neq(gami/(a*a),3)
-    tmp3 = fn.repeat_neq(1.0/(dA*dA),3)
+    tmp1 = fn.repeat_neq_gv(0.5*(lambda1 + lambda2) - lambda3,3)
+    tmp2 = fn.repeat_neq_gv(gami/(a*a),3)
+    tmp3 = fn.repeat_neq_gv(1.0/(dA*dA),3)
     fi = fi + tmp1*(tmp2*E1dq + tmp3*E2dq)
 
     # get E3*dq
@@ -1911,7 +2098,7 @@ def dEndq_eig_abs_dq_1D(dxidx, q, qg, flux_type):
     E2dq[2::3,:] = fac*Un
 
     # add to fi
-    tmp1 = fn.repeat_neq(0.5*(lambda1 - lambda2)/(dA*a),3)
+    tmp1 = fn.repeat_neq_gv(0.5*(lambda1 - lambda2)/(dA*a),3)
     fi = fi + tmp1*(E1dq + gami*E2dq)
     return fi
 
@@ -2005,7 +2192,7 @@ def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
         lambda2 = np.abs(v) + a #max eigenvalue in y
         rhoA = np.abs(lambda1*nx + lambda2*ny)
         # Note: definition of rhoA is very slightly different to above (L1 norm isntead of L2 on n_i)
-        fi = - 0.5*tau*fn.repeat_neq(rhoA,5)*(q - qg)
+        fi = - 0.5*tau*fn.repeat_neq_gv(rhoA,5)*(q - qg)
         return fi
     elif (flux_type == 5):
         # Roe average flux with entropy fix like from Zingg textbook
@@ -2047,9 +2234,9 @@ def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
     E2dq[3::4,:] = fac2*Un
 
     # add to fi
-    tmp1 = fn.repeat_neq(0.5*(lambda1 + lambda2) - lambda3,4)
-    tmp2 = fn.repeat_neq(gami/(a*a),4)
-    tmp3 = fn.repeat_neq(1.0/(dA*dA),4)
+    tmp1 = fn.repeat_neq_gv(0.5*(lambda1 + lambda2) - lambda3,4)
+    tmp2 = fn.repeat_neq_gv(gami/(a*a),4)
+    tmp3 = fn.repeat_neq_gv(1.0/(dA*dA),4)
     fi = fi + tmp1*(tmp2*E1dq + tmp3*E2dq)
 
     # get E3*dq
@@ -2065,7 +2252,7 @@ def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
     E2dq[3::4,:] = fac*Un
 
     # add to fi
-    tmp1 = fn.repeat_neq(0.5*(lambda1 - lambda2)/(dA*a),4)
+    tmp1 = fn.repeat_neq_gv(0.5*(lambda1 - lambda2)/(dA*a),4)
     fi = fi + tmp1*(E1dq + gami*E2dq)
     return fi
 
@@ -2165,7 +2352,7 @@ def dEndq_eig_abs_dq_3D(dxidx, q, qg, flux_type):
         rhoA = np.abs(lambda1*nx + lambda2*ny + lambda3*nz)
         # Note: definition of rhoA is very slightly different to above (L1 norm isntead of L2 on n_i)
         #if (skew_sym):
-        fi = - 0.5*tau*fn.repeat_neq(rhoA,5)*(q - qg)
+        fi = - 0.5*tau*fn.repeat_neq_gv(rhoA,5)*(q - qg)
         #else:
         #    fi(:) = sgn*d0_5*(eulerFlux(dxidx,q) + eulerFlux(dxidx,qg)) &
         #        - d0_5*tau*rhoA*(q(:) - qg(:))
@@ -2205,9 +2392,9 @@ def dEndq_eig_abs_dq_3D(dxidx, q, qg, flux_type):
     E2dq[4::5,:] = fac2*Un
 
     # add to fi
-    tmp1 = fn.repeat_neq(0.5*(lambda1 + lambda2) - lambda3,5)
-    tmp2 = fn.repeat_neq(gami/(a*a),5)
-    tmp3 = fn.repeat_neq(1.0/(dA*dA),5)
+    tmp1 = fn.repeat_neq_gv(0.5*(lambda1 + lambda2) - lambda3,5)
+    tmp2 = fn.repeat_neq_gv(gami/(a*a),5)
+    tmp3 = fn.repeat_neq_gv(1.0/(dA*dA),5)
     fi = fi + tmp1*(tmp2*E1dq + tmp3*E2dq)
 
     # get E3*dq
@@ -2225,7 +2412,7 @@ def dEndq_eig_abs_dq_3D(dxidx, q, qg, flux_type):
     E2dq[4::5,:] = fac*Un
 
     # add to fi
-    tmp1 = fn.repeat_neq(0.5*(lambda1 - lambda2)/(dA*a),5)
+    tmp1 = fn.repeat_neq_gv(0.5*(lambda1 - lambda2)/(dA*a),5)
     fi = fi + tmp1*(E1dq + gami*E2dq)
     #if (.not. skew_sym) then
     #    !-- This is already taken care of for Skew Symmetric Fluxes

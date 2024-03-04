@@ -14,7 +14,7 @@ from scipy.optimize import newton, bisect
 
 from Source.DiffEq.DiffEqBase import PdeBase
 import Source.Methods.Functions as fn
-import EulerFunctions as efn
+import Source.DiffEq.EulerFunctions as efn
 
 class Quasi1dEuler(PdeBase):
     
@@ -34,15 +34,8 @@ class Quasi1dEuler(PdeBase):
     # Plotting constants
     plt_var2plot_name = r'$\rho$' # rho, u, e, p, a, mach    
 
-    # Normalizing the solution
-    norm_loc = 'left'
-
-    # TODO
-    #self.svec= flattened like xx.
-    #self.svec_elem = like q_sol # maybe not needed
-
-    def __init__(self, para, q0_type=None, test_case='subsonic',
-                 nozzle_shape='book', norm_var=True, bc='periodic'):
+    def __init__(self, para, q0_type=None, test_case='subsonic_nozzle',
+                 nozzle_shape='book', bc='periodic'):
 
         ''' Add inputs to the class '''
 
@@ -51,7 +44,6 @@ class Quasi1dEuler(PdeBase):
         self.g = para[1]
         self.test_case = test_case
         self.nozzle_shape = nozzle_shape
-        self.norm_var = norm_var
         
         if self.q0_type == None:
             self.q0_type = 'linear' # can be exact, linear
@@ -59,22 +51,21 @@ class Quasi1dEuler(PdeBase):
         ''' Set flow and problem dependent parameters  '''
         
         if self.test_case == 'subsonic_nozzle':
-            # TODO: add check for normalizing if xmin different
-            self.xmin_nozzle = 0  # may differ from self.x_min if normalizing
-            self.xmax_nozzle = 10 # may differ from self.x_max if normalizing
+            self.xmin_fix = 0  # should be the same as self.x_min
+            self.xmax_fix = 10 # should be the same as self.x_max
             self.T01 = 300         # Temperature in Kelvin at inlet
             self.p01 = 100*1000   # Total Pressure in Pa at inlet
             self.s_crit = 0.8     # critical nozzle area. mach=1 when svec=s_crit
             #self.k2 = 0.          # coefficient for first order FD dissipation, usually 0
             #self.k4 = 0.02        # coefficient for third order FD dissipation, usually 0.02
-            if bc != 'dirichlet' or bc != 'riemann':
-                raise Exception("Must use bc='dirichlet' or bc='riemann'.")
+            assert (bc == 'dirichlet' or bc == 'riemann'),\
+                "subsonic_nozzle must use bc='dirichlet' or bc='riemann'."
             self.steady = True
+            self.t_final = 'steady'
             
         elif self.test_case == 'transonic_nozzle':
-            # TODO: add check for normalizing if xmin different
-            self.xmin_nozzle = 0  # may differ from self.x_min if normalizing
-            self.xmax_nozzle = 10 # may differ from self.x_max if normalizing
+            self.xmin_fix = 0  # should be the same as self.x_min
+            self.xmax_fix = 10 # should be the same as self.x_max
             self.T01 = 300         # Temperature in Kelvin at inlet
             self.p01 = 100*1000   # Total Pressure in Pa at inlet
             self.s_crit = 1.0     # critical nozzle area. mach=1 when svec=s_crit
@@ -82,161 +73,87 @@ class Quasi1dEuler(PdeBase):
             self.transx = 5.      # x location of transition, svec=s_crit *not valid for all nozzle shapes*
             #self.k2 = 0.5         # coefficient for first order dissipation, usually 0.5
             #self.k4 = 0.02        # coefficient for third order dissipation, usually 0.02
-            if bc != 'dirichlet' or bc != 'riemann':
-                raise Exception("Must use bc='dirichlet' or bc='riemann'.")
+            assert (bc == 'dirichlet' or bc == 'riemann'),\
+                "transonic_nozzle must use bc='dirichlet' or bc='riemann'."
             self.steady = True
+            self.t_final = 'steady'
             
         elif self.test_case == 'shock_tube':
-            # TODO: add check for normalizing if xmin different
-            self.xmin_nozzle = 0  # may differ from self.x_min if normalizing
-            self.xmax_nozzle = 10 # may differ from self.x_max if normalizing
+            self.xmin_fix = 0  # should be the same as self.x_min
+            self.xmax_fix = 10 # should be the same as self.x_max
             self.xmembrane = 5    # membrane x point - for shock tube
             self.pL = 1e5         # initial pressire in Pa of left state
             self.rhoL = 1         # initial density in Kg/m^3 of left state
             self.pR = 1e4         # initial pressire in Pa of right state
             self.rhoR = 0.125     # initial density in Kg/m^3 of right state
-            self.t_final = 0.0061 # final time to run to, usually 0.0061. Set t_final=None in solver.
+            self.t_final = 0.0061 # final time to run to, usually 0.0061. Set t_final=None to use this default.
             #self.k2 = 0.5         # coefficient for first order FD dissipation, usually 0.5
             #self.k4 = 0.02        # coefficient for third order FD dissipation, usually 0.02
             self.nozzle_shape = 'constant'
-            if bc != 'dirichlet' or bc != 'riemann':
-                raise Exception("Must use bc='dirichlet' or bc='riemann'.")
+            self.q0_type = 'shock_tube'
+            assert (bc == 'dirichlet' or bc == 'riemann'),\
+                "shock_tube must use bc='dirichlet' or bc='riemann'."
             self.steady = False
             
         elif self.test_case == 'density_wave':
-            # TODO: add check for normalizing if xmin different
-            self.xmin_nozzle = -1 # may differ from self.x_min if normalizing
-            self.xmax_nozzle = 1  # may differ from self.x_max if normalizing
-            self.k2 = 0.          # coefficient for first order FD dissipation, usually 0
-            self.k4 = 0.02        # coefficient for third order FD dissipation, usually 0.02
             self.u0 = 0.1         # initial (ideally constant) velocity
             self.p0 = 10          # initial (ideally constant) pressure
             self.nozzle_shape = 'constant'
-            self.q0_type = 'density wave'
-            self.isperiodic = True
-            self.norm_var = False
+            self.q0_type = 'density_wave'
+            assert (bc == 'periodic'),\
+                "density_wave must use bc='dirichlet' or bc='riemann'."
             self.steady = False
             
-        else: raise Exception("Test case not understood. Try 'subsonic nozzle', 'transonic_nozzle', 'shock_tube', or 'density_wave'.")
-
-        self.length_nozzle = self.xmax_nozzle - self.xmin_nozzle
+        else: raise Exception("Test case not understood. Try 'subsonic_nozzle', 'transonic_nozzle', 'shock_tube', or 'density_wave'.")
         
         if self.g == self.g_fix:
-            print('Using the fixed g={} diffeq functions since params match.'.format(self.g_fix))
+            print('Using the fixed g={0} diffeq functions since params match.'.format(self.g_fix))
             self.calcEx = efn.calcEx_1D
             self.dExdq = efn.dExdq_1D
-            self.maxeig_dEdq = efn.efn.maxeig_dExdq_1D # TODO
-            self.dExdq_eig_abs = efn.efn.dExdq_eig_abs_1D #TODO
-            self.Ismail_Roe = efn.Ismail_Roe
-            # TODO the rest of them
-        
-        if self.vol_type == 'cons':
-            # use default dEdq and etc
-            self.dEdq = self.dEdq_cons
-            self.dissipation = lambda q : 0
-            self.dDdq = lambda q : 0
-            #pass
-        elif self.vol_type == 'ec':
-            # can general later for other flux types
-            assert self.g==1.4,'self.g=1.4 hard coded in Ismail_Roe. Change it there or remove numba use.'
-            self.ec_flux = Ismail_Roe # can generalize later for different self.vol_type
-            self.dEdx = self.dEdx_ec   
-            def dEdq_temp(q):
-                try:
-                    return self.dEdq_ec(q)
-                except:
-                    print('WARNING: Tried to get dEdq but failed. Using Conservation form. \n' \
-                          + '         Should NOT be used for time marching.')
-                    return self.dEdq_cons(q)
-            self.dEdq = dEdq_temp
-            self.dissipation = lambda q : 0
-            self.dDdq = lambda q : 0
-        elif self.vol_type == 'ediss':
-            raise Exception('not coded up yet')
-            # can general later for other flux types
-            assert self.g==1.4,'self.g=1.4 hard coded in Ismail_Roe. Change it there or remove numba use.'
-            self.ec_flux = Ismail_Roe # can generalize later for different self.vol_type
-            self.dEdx = self.dEdx_ec   
-            def dEdq_temp(q):
-                try:
-                    return self.dEdq_ec(q)
-                except:
-                    print('WARNING: Tried to get dEdq but failed. Using Conservation form. \n' \
-                          + '         Should NOT be used for time marching.')
-                    return self.dEdq_cons(q)
-            self.dEdq = dEdq_temp
-            self.dissipation = self.dissipation_something
-            self.dDdq = self.dDdq_something
-        else:
-            raise Exception("Volume type not understood. Try 'cons' or 'ec'")
-        
+            self.dEndq_eig_abs_dq = efn.dEndq_eig_abs_dq_1D #TODO: rewrite special Euler SAT to use this directly
+            self.dqdw = efn.symmetrizer_1D
+            self.Ismail_Roe_flux = efn.Ismail_Roe_flux_1D
+            self.Central_flux = efn.Central_flux_1D
+            self.Ranocha_flux = efn.Ranocha_flux_1D
+            self.maxeig_dExdq = efn.maxeig_dExdq_1D
+            self.entropy = efn.entropy_1D
+            self.entropy_var = efn.entropy_var_1D
 
-        if self.isperiodic == False:
+        if bc != 'periodic':
             
             ''' Calculate the exact solution at the boundary to apply the BC '''
-            xx_bdy = np.array([self.xmin_nozzle, self.xmax_nozzle])
-            q_exa_bdy = self.exact_sol(xx=xx_bdy, reshape=False, normalize=False)
-            self.qL_unnorm = q_exa_bdy[:3]
-            self.qR_unnorm = q_exa_bdy[-3:]
+            xx_test = np.linspace(self.xmin_fix, self.xmax_fix, num=50,endpoint=True)
+            q_exa_bdy = self.exact_sol(x=xx_test)
+            self.qL = q_exa_bdy[:3]
+            self.qR = q_exa_bdy[-3:]
     
             ''' Parameters at the boundaries '''   
-            self.s_at_qL = self.fun_s(np.array([self.xmin_nozzle]))[0]
-            self.s_at_qR = self.fun_s(np.array([self.xmax_nozzle]))[0]
-    
-            if self.norm_var:            
-                if self.norm_loc == 'left':
-                    self.q_ref_norm = self.qL_unnorm
-                    self.s_at_q_norm = self.s_at_qL
-                elif self.norm_loc == 'right':
-                    self.q_ref_norm = self.qR_unnorm
-                    self.s_at_q_norm = self.s_at_qR
-                else:
-                    raise Exception('Normalization location is not valid')
-        
-                self.len_norm = self.length_nozzle
-                self.qL = self.normalize_q(self.qL_unnorm)
-                self.qR = self.normalize_q(self.qR_unnorm)
-        
-                self.s_at_qL /= self.len_norm
-                self.s_at_qR /= self.len_norm
-            else:
-                self.qL = self.qL_unnorm
-                self.qR = self.qR_unnorm
+            self.s_at_qL = self.fun_s(np.array([self.xmin_fix]))[0]
+            self.s_at_qR = self.fun_s(np.array([self.xmax_fix]))[0]
                 
             self.rhoL, self.uL, self.eL, self.PL, self.aL = self.cons2prim(self.qL, self.s_at_qL)
             self.rhoR, self.uR, self.eR, self.PR, self.aR = self.cons2prim(self.qR, self.s_at_qR)
             
-            self.EL = self.calcEx(self.qL)
-            self.ER = self.calcEx(self.qR)
-                
-        else:
-            assert(self.norm_var == False),'Normalizing for periodic solutions not set up'
+            self.EL = self.calcEx(np.reshape(q_exa_bdy[:3],(3,1))).flatten()
+            self.ER = self.calcEx(np.reshape(q_exa_bdy[-3:],(3,1))).flatten()
 
-    def fun_s(self, xvec_in):
+
+
+    ######################################
+    ''' Begin  defining class functions'''
+    ######################################
+
+
+    def fun_s(self, xvec):
         ''' Defines the shape of the nozzle. '''
-        
-        if xvec_in.ndim == 1:
-            xvec = xvec_in
-        elif xvec_in.ndim == 2:
-            # if given x,y,z coordinate format, simply take x values
-            xvec = xvec_in[:,0]
-        else: raise Exception('Inputted x array not correct.')
         
         # Nozzle from Hirsch and Zingg
         def fun_s_book(xvec):
-            def fun_s_part1(x_in):
-                    return 1 + 1.5*(1-x_in/5)**2    
-            def fun_s_part2(x_in):
-                return 1 + 0.5*(1-x_in/5)**2    
-            if len(xvec) == 1:
-                if xvec < 5:
-                    return fun_s_part1(xvec)
-                else:
-                    return fun_s_part2(xvec)
-            else:
-                svec = fun_s_part1(xvec)
-                idx = np.argmax(xvec>5)
-                svec[idx:] = fun_s_part2(xvec[idx:])    
+            def fun_s_part1(x):
+                    return 1 + 1.5*(1-x/5)**2    
+            def fun_s_part2(x):
+                return 1 + 0.5*(1-x/5)**2    
+            svec = np.where(xvec<5,fun_s_part1(xvec),fun_s_part2(xvec))
             return svec
         
         # Nozzle with constantly changing shape (constant dsdx)
@@ -265,22 +182,16 @@ class Quasi1dEuler(PdeBase):
         else:
             raise Exception('Unknown nozzle shape')
 
-    def fun_der_s(self, xvec_in):
+    def fun_der_s(self, xvec):
         ''' Defines the derivative of the nozzle. '''
-        
-        if xvec_in.ndim == 1:
-            xvec = xvec_in
-        elif xvec_in.ndim == 2:
-            # if given x,y,z coordinate format, simply take x values
-            xvec = xvec_in[:,0]
-        else: raise Exception('Inputted x array not correct.')
         
         # Nozzle from Hirsch and Zingg
         def fun_der_s_book(xvec):
-            svec = -(3/5)*(1-xvec/5)
-            idx = np.argmax(xvec>5)
-            if len(xvec)>1:
-                svec[idx:] = -(1/5)*(1-xvec[idx:]/5)
+            def fun_der_s_part1(x):
+                return -(3/5)*(1-x/5)  
+            def fun_der_s_part2(x):
+                return -(1/5)*(1-x/5)   
+            svec = np.where(xvec<5,fun_der_s_part1(xvec),fun_der_s_part2(xvec))
             return svec
         
         # Nozzle with constantly changing shape (constant dsdx)
@@ -309,7 +220,7 @@ class Quasi1dEuler(PdeBase):
         else:
             raise Exception('Unknown nozzle shape')
 
-    """    
+      
     def calc_p(self,rho,rhou,e):
         ''' function to calculate the pressure given Q variables '''
         # Note: If fed in variables Q*S instead of Q, will return p*S instead of p, as desired
@@ -318,27 +229,7 @@ class Quasi1dEuler(PdeBase):
     def calc_a(self,rho,rhou,e):
         ''' function to calculate the sound speed given pressure and Q1 '''
         # Note: Regardless if fed Q*S or Q, will always return a, not a*S
-        return np.sqrt(self.g*self.calc_p(rho,rhou,e)/rho)
-    """    
-    def normalize_q(self, q, q_norm=[], s_at_q_norm=0, len_norm=0):
-        ''' normalize q according to reference q_norm, where q includes s
-        dependance. Normalize such that rho of normalized q is 1, and domain
-        goes from 0 to 1. q is a vector state whereas s_at_q_norm is float'''
-        
-        if len(q_norm) == 0: q_norm = self.q_ref_norm
-        if s_at_q_norm == 0: s_at_q_norm = self.s_at_q_norm
-        if len_norm == 0: len_norm = self.len_norm
-
-        rho_norm, _, _, p_norm, a_norm = self.cons2prim(q_norm, s_at_q_norm)
-
-        q_0, q_1, q_2 = np.copy(self.decompose_q(q))
-
-        q_0 /= rho_norm * len_norm
-        q_1 /= rho_norm * a_norm * len_norm
-        q_2 /= rho_norm * a_norm**2 * len_norm
-
-        q_normalized = self.assemble_vec((q_0, q_1, q_2))
-        return q_normalized
+        return np.sqrt(self.g*self.calc_p(rho,rhou,e)/rho)    
 
     def decompose_q(self, q):
         ''' splits q[nen*neq_node,nelem] or q[nen*neq_node] to q_i[nen,nelem] 
@@ -401,49 +292,35 @@ class Quasi1dEuler(PdeBase):
     
     def entropy(self, q):
         ''' return the nodal values of the entropy s(q). '''
-        # TODO: Make this work with variable svec
+        # Note: this is not quite the "normal" entropy for quasi1D euler when \neq 1, but is a correct entropy
         q_0, q_1, q_2 = self.decompose_q(q)
-        rho = q_0 
         u = q_1 / q_0
-        e = q_2 
-        p = (self.g-1)*(e - (rho * u**2)/2)
-        s = np.log(p/rho**self.g)
-        return (-rho*s/(self.g-1))
+        p = (self.g-1)*(q_2 - q_0*0.5*u*u) # p*S
+        s = np.log(p/(q_0**self.g))
+        return (-q_0*s/(self.g-1))
     
     def entropy_var(self, q):
         ''' return the nodal values of the entropy variables w(q). '''
-        # TODO: Make this work with variable svec
-        #TODO: Clean up
+        # Note: the same entropy variables for quasi1D euler (no svec dependence)
         q_0, q_1, q_2 = self.decompose_q(q)
-        rho = q_0 
         u = q_1 / q_0
         e = q_2 
-        p = (self.g-1)*(e - (rho * u**2)/2)
-        s = np.log(p/rho**self.g)
-        w = np.zeros(q.shape)
-        w[0::self.neq_node,:] = (self.g-s)/(self.g-1) - 0.5*rho*u**2/p
-        w[1::self.neq_node,:] = rho*u/p
-        w[2::self.neq_node,:] = -rho/p
+        p = (self.g-1)*(e - q_0*0.5*u*u) # = p*S
+        s = np.log(p/(q_0**self.g))
+        w = self.assemble_vec(((self.g-s)/(self.g-1) - 0.5*q_0*u**2/p, q_0*u/p, -q_0/p))
         return w
 
-    def exact_sol(self, time=0, xx=[], extra_vars=False, reshape=True, normalize=True):
+    def exact_sol(self, time=0, x=None, extra_vars=False):
         ''' Returns the exact solution at given time. Use default time=0 for
         steady solutions. if extra_vars=True, a dictionary with arrays for
-        mach, T, p, rho, a, u, and e is also returned along with exa_sol.
-        If reshape is True, the solution is returned in shape 
-        (self.nen*self.neq_node,self.nelem). If normalize is True and self.norm_var
-        is also True, the returned solution will be normalized'''
-
-        assert self.dim==1, 'exact sol only setup for 1D'
-
+        mach, T, p, rho, a, u, and e is also returned along with exa_sol. 
+        NOTE: some of these functions are not properly vectorized... I don't care.
+              I wrote them a long time ago and am too lazy to fix now. '''
         ntol=1e-14 # tolerance for numerical solution of equations
         
-        if len(xx)==0: # if no xx given, use unnormed mesh (will norm later if needed)
-            if self.xy_not_norm.ndim == 1:
-                xx = self.xy_not_norm
-            else:
-                xx = self.xy_not_norm[:,0]      
-        svec = self.fun_s(xx)
+        if x is None:
+            x = self.x_elem   
+        svec = self.fun_s(x)
             
         def calc_T(T_in, mach_in):
             ''' calculate temperature from isentropic relations. Zingg 3.46 '''
@@ -496,7 +373,7 @@ class Quasi1dEuler(PdeBase):
             the correct mach number for a given svec and s_crit. See Zingg 3.45
             Used for subsonic and transonic exact solutions.'''
             
-            guess = mach_in*np.ones(len(svec_in))
+            guess = mach_in*np.ones(svec_in.shape)
 
             def fun_mach(mach, s_vec=svec_in):
                 # Zingg 3.45
@@ -549,7 +426,7 @@ class Quasi1dEuler(PdeBase):
                 # Zingg 3.54
                 alpha = (self.g + 1) / (self.g - 1)
                 lhs = np.sqrt(2/(self.g *(self.g-1))) * (P-1)/np.sqrt(1+alpha*P)
-                rhs = (2/(self.g+1)) * (aL/aR) * (1 - (P*pR/pL)**((self.g-1)/2*self.g))
+                rhs = (2/(self.g-1)) * (aL/aR) * (1 - (P*pR/pL)**((self.g-1)/(2*self.g)))
                 return lhs - rhs
 
             press_calc, res = bisect(fun_press,1,10,xtol=ntol,maxiter=1000,
@@ -577,7 +454,6 @@ class Quasi1dEuler(PdeBase):
             mach = solve_mach(mach_guess, svec, s_crit)
             T = calc_T(T01, mach)
             p = calc_p(p01, mach)
-            rho, a, u, e = remaining_param(p,T,mach)
             return mach, T, p
 
         def transonic(svec):
@@ -588,9 +464,9 @@ class Quasi1dEuler(PdeBase):
                         self.R , self.g = flow variables
                         T01 , p01 = total temp and pressure at the inlet '''
             # get index for shock location, shockx. If is not exact, add it and delete later.
-            shocki = np.where((abs(xx-self.shockx))<1e-10)[0]
+            shocki = np.where((abs(x-self.shockx))<1e-10)[0]
             # get index for transition to supersonic flow (mach number = 1, or svec=s_crit).
-            transi = np.where((abs(xx-self.transx))<1e-10)[0]
+            transi = np.where((abs(x-self.transx))<1e-10)[0]
             
             ''' check returned indices. If no indices were given, svec must be
                 modidified by adding a node at the location, then later deleted.
@@ -599,7 +475,7 @@ class Quasi1dEuler(PdeBase):
                 If >2 nodes esist there, raise an Exception. '''
             del_shocki = False
             if shocki.size == 0:
-                shocki = np.where(xx>self.shockx)[0][0] + 1 # +1 because of slicing later on 
+                shocki = np.where(x>self.shockx)[0][0] + 1 # +1 because of slicing later on 
                 shocks = self.fun_s(np.array([self.shockx]))[0] # get svec value at shocki
                 svec = np.insert(svec,shocki-1,shocks) # insert shocks at shocki
                 del_shocki = True
@@ -611,7 +487,7 @@ class Quasi1dEuler(PdeBase):
             
             del_transi = False
             if transi.size == 0:                      
-                transi = np.where(xx>self.transx)[0][0] + 1 # +1 because of slicing later on 
+                transi = np.where(x>self.transx)[0][0] + 1 # +1 because of slicing later on 
                 transs = self.fun_s(np.array([self.transx]))[0] # get svec value at transi
                 svec = np.insert(svec,transi-1,transs) # insert transs at transi
                 del_transi = True
@@ -688,38 +564,38 @@ class Quasi1dEuler(PdeBase):
             x2R = self.xmembrane + C*tf
 
             # initialize arrays
-            mach = np.empty(len(xx))
-            p = np.empty(len(xx))
-            rho = np.empty(len(xx))
-            a = np.empty(len(xx))
-            u = np.empty(len(xx))
+            mach = np.empty(len(x))
+            p = np.empty(len(x))
+            rho = np.empty(len(x))
+            a = np.empty(len(x))
+            u = np.empty(len(x))
         
-            for i in range(len(xx)):
-                if xx[i] < xL5 + 1e-10: # region L
+            for i in range(len(x)):
+                if x[i] < xL5 + 1e-12: # region L
                     rho[i] = self.rhoL
                     mach[i] = 0
                     p[i] = self.pL
                     #a[i] = np.sqrt(self.g*self.pL/self.rhoL)
                     #u[i] = 0
-                elif xx[i] < x53 + 1e-10: # get pressure and density in region 5 (expansion fan)
-                    u[i] = 2*((xx[i]-self.xmembrane)/tf+aL)/(self.g+1)
-                    a[i] = u[i] - (xx[i]-self.xmembrane)/tf
+                elif x[i] < x53 + 1e-12: # get pressure and density in region 5 (expansion fan)
+                    u[i] = 2*((x[i]-self.xmembrane)/tf+aL)/(self.g+1)
+                    a[i] = u[i] - (x[i]-self.xmembrane)/tf
                     p[i] = self.pL*(a[i]/aL)**(2*self.g/(self.g-1))
                     rho[i] = self.g*p[i]/a[i]**2
                     mach[i] = u[i]/a[i]
-                elif xx[i] < x32 + 1e-10: # region 3 (between expansion fan and contact surface)
+                elif x[i] < x32 + 1e-12: # region 3 (between expansion fan and contact surface)
                     rho[i] = rho3
                     p[i] = p3
                     a[i] = np.sqrt(self.g*p3/rho3)
                     mach[i] = V/a[i]
                     #u[i] = V
-                elif xx[i] < x2R + 1e-10: # region 2 (between contact surface and shock)
+                elif x[i] < x2R + 1e-12: # region 2 (between contact surface and shock)
                     rho[i] = rho2
                     p[i] = p2
                     a[i] = np.sqrt(self.g*p2/rho2)
                     mach[i] = V/a[i]
                     #u[i] = V
-                elif xx[i] < xx[-1] + 1e-10: # region R
+                elif x[i] < x[-1] + 1e-12: # region R
                     rho[i] = self.rhoR
                     p[i] = self.pR
                     mach[i] = 0
@@ -741,34 +617,42 @@ class Quasi1dEuler(PdeBase):
                         self.R , self.gamma = flow variables '''
             
             assert(np.max(abs(svec-1))<1e-10),'svec must be =1 for wave solution'
-            assert(self.isperiodic),'Must be periodic domain'
-            assert(self.q0_type == 'density wave'),'Initial condition must be density wave'
+            assert(self.q0_type == 'density_wave'),"Initial condition must be density_wave, not '"+self.q0_type+"'"
             
             # just like linear convection equation. See Gassner et al 2020
-            xy_mod = np.mod((xx - self.xmin_nozzle) - self.u0*tf, self.length_nozzle) + self.xmin_nozzle
+            xy_mod = np.mod((x - self.xmin) - self.u0*tf, self.dom_len) + self.xmin
             q = self.set_q0(xy=xy_mod)
-            rho, u, e, p, a = self.cons2prim(q.flatten('F'), svec)
+            rho, u, e, p, a = self.cons2prim(q, svec)
             T = p / (rho * self.R)
             mach = u / a
             return mach, T, p
 
-        if self.test_case == 'subsonic':
+        reshape=False
+        if self.test_case == 'subsonic_nozzle':
+            if x.ndim >1: 
+                reshape=True
+                x = x.flatten('F')
             mach, T, p = channel_flow(self.T01, self.p01, svec, self.s_crit, 0.3)           
-        elif self.test_case == 'transonic':
+        elif self.test_case == 'transonic_nozzle':
+            if x.ndim >1: 
+                reshape=True
+                x = x.flatten('F')
             mach, T, p = transonic(svec)           
-        elif self.test_case == 'shock tube':
+        elif self.test_case == 'shock_tube':
+            if x.ndim >1: 
+                reshape=True
+                x = x.flatten('F')
             mach, T, p = shocktube(time)
-        elif self.test_case == 'density wave':
+        elif self.test_case == 'density_wave':
+            if x.ndim >1: 
+                reshape=True
+                x = x.flatten('F')
             mach, T, p = density_wave(time)
+        else:
+            raise Exception('Invalid test case.')
             
         rho, a, u, e = remaining_param(p,T,mach)
         exa_sol = self.prim2cons(rho, u, e, svec)
-        
-        if self.norm_var and normalize: # overwrite if I need to
-            exa_sol = self.normalize_q(exa_sol)        
-            rho, u, e, p, a = self.cons2prim(exa_sol, svec / self.len_norm)
-            T = p / (rho * self.R)
-            mach = u / a
 
         if reshape: exa_sol = np.reshape(exa_sol,(self.nen*self.neq_node,self.nelem),'F')
         
@@ -783,110 +667,97 @@ class Quasi1dEuler(PdeBase):
         else: return exa_sol
 
     def set_mesh(self, mesh):
+        ''' Overwrite base function in DiffEqBase '''
 
-        PdeBaseCons.set_mesh(self, mesh)
-
-        if self.norm_var:
-            assert self.xmin == 0 and self.xmax == 1, \
-                'For solve with normalized solution must have xmin=0 and xmax=1'
-            self.xy_not_norm = self.xy * self.length_nozzle + self.xmin_nozzle
-            self.xy_elem_not_norm = self.xy_elem * self.length_nozzle + self.xmin_nozzle
-        else:
-            assert self.xmin == self.xmin_nozzle and self.xmax == self.xmax_nozzle, \
-                'For solve without normalized solution must have xmin=xmin_nozzle={0} and xmax=xmax_nozzle={1}'.format(self.xmin_nozzle,self.xmax_nozzle)
-            self.xy_not_norm = self.xy
-            self.xy_elem_not_norm = self.xy_elem
+        PdeBase.set_mesh(self, mesh)
 
         # Calculate the shape of the nozzle at the mesh and boundary nodes
-        self.svec_not_norm = self.fun_s(self.xy_not_norm)
-        self.svec_der = self.fun_der_s(self.xy_not_norm) # does not need to be normalized (unitless)
-
-        if self.norm_var:
-            self.svec = self.svec_not_norm / self.len_norm
-        else:
-            self.svec = self.svec_not_norm
-            
+        self.svec = self.fun_s(self.x)
+        self.svec_der = self.fun_der_s(self.x)
         self.svec_elem = np.reshape(self.svec,(self.nen,self.nelem),'F')
         self.svec_der_elem = np.reshape(self.svec_der,(self.nen,self.nelem),'F')
             
 
-    def set_q0(self, xy=[]):
+    def set_q0(self, q0_type=None, xy=None):
+        # overwrite base function from PdeBase
         
-        if len(xy)==0:
-            xy = self.xy_not_norm[:,0]
-            svec = self.svec_not_norm
+        if q0_type is None:
+            q0_type = self.q0_type
+        q0_type = q0_type.lower()
+
+        if xy is None:
+            xy = self.x_elem
+            svec = self.svec_elem
         else:
             svec = self.fun_s(xy)
 
-        if self.test_case == 'density wave':
-            self.q0_type == 'exact'
-            rho = 1 + 0.98*np.sin(2*np.pi*xy)
-            u = self.u0 * np.ones(rho.shape)
-            p = self.p0 * np.ones(rho.shape)
-            e = p/(self.g-1) + rho * u**2 /2
-            q0 = self.prim2cons(rho, u, e, svec)
-            if self.norm_var:
-                q0 = self.normalize_q(q0)
+        if self.test_case == 'density_wave':
+            if q0_type != 'density_wave':
+                print("WARNING: Instead of using q0_type = '"+q0_type+", you should probably use q0_type = 'density_wave'.")
+                q0 = PdeBase.set_q0(self, q0_type=q0_type, xy=xy)
+            else:
+                rho = 1 + 0.98*np.sin(2*np.pi*xy)
+                u = self.u0 * np.ones(rho.shape)
+                p = self.p0 * np.ones(rho.shape)
+                e = p/(self.g-1) + rho * u**2 /2
+                q0 = self.prim2cons(rho, u, e, svec)
                 
-        elif self.test_case == 'shock tube':
-            self.q0_type == 'exact'
-            q0 = self.exact_sol() # also normalizes if needed
+        elif self.test_case == 'shock_tube':
+            if q0_type != 'shock_tube':
+                print('WARNING: Ignoring q0_type and setting initial conditions to shock_tube.')
+            q0 = self.exact_sol(time=0)
             
         else: # subsonic or transonic
             if self.q0_type == 'exact':
-                q0 = self.exact_sol() # also normalizes if needed
+                q0 = self.exact_sol(time=0)
     
             elif self.q0_type == 'linear':
-                assert(self.isperiodic == False),'Using boundary values to initialize. Must be non-periodic.'
-                rho = np.linspace(self.rhoL, self.rhoR, self.nn)
-                u = np.linspace(self.uL, self.uR, self.nn)
-                e = np.linspace(self.eL, self.eR, self.nn)
+                xnorm = (xy-self.xmin)/self.dom_len
+                rho = xnorm*(self.rhoR-self.rhoL) + self.rhoL
+                u = xnorm*(self.uR-self.uL) + self.uL
+                e = xnorm*(self.eR-self.eL) + self.eL
                 q0 = self.prim2cons(rho, u, e, svec)
-                if self.norm_var:
-                    q0 = self.normalize_q(q0)
+
             else:
-                raise Exception('Unknown init sol type')
+                print("WARNING: Instead of using q0_type = '"+q0_type+"', you should probably use q0_type = 'linear' or 'exact'.")
+                q0 = PdeBase.set_q0(self, q0_type=q0_type, xy=xy)
+        
+        return q0
 
-        # restructure in shape (nen,nelem), i.e. columns are each element
-        return np.reshape(q0,(self.nen*self.neq_node,self.nelem),'F')
 
-    def var2plot(self, q_in):
+    def var2plot(self, q_in, var2plot_name):
 
-        rho, u, e, P, a = self.cons2prim(q_in, self.svec)
+        svecfail = False
+        if q_in.ndim == 1:
+            svec = self.svec
+            if len(q_in) != self.nn: svecfail = True
+        else:
+            svec = self.svec_elem
+            if q_in.shape[1] != self.nelem: svecfail = True
+        if svecfail:
+            print('WARNING: q_in given to var2plot is not the same shape as self.svec_elem')
+            print('         will default to plotting q[0], which may be rho or rho*S')
+            print('         ', q_in.shape, self.svec.shape, self.svec_elem.shape)
+            return q_in[::self.neq_node]
+        
+        if var2plot_name is None:
+            var2plot_name = self.plt_var2plot_name
+        rho, u, e, P, a = self.cons2prim(q_in, svec)
 
-        if self.plt_var2plot_name == 'rho':
+        if var2plot_name == 'rho' or var2plot_name == r'$\rho$':
             return rho
-        elif self.plt_var2plot_name == 'u':
+        elif var2plot_name == 'u' or var2plot_name == r'$u$':
             return u
-        elif self.plt_var2plot_name == 'e':
+        elif var2plot_name == 'e' or var2plot_name == r'$e$':
             return e
-        elif self.plt_var2plot_name == 'p':
+        elif var2plot_name == 'p' or var2plot_name == r'$p$':
             return P
-        elif self.plt_var2plot_name == 'a':
+        elif var2plot_name == 'a' or var2plot_name == r'$a$':
             return a
-        elif self.plt_var2plot_name == 'mach':
+        elif var2plot_name == 'mach' or var2plot_name == r'$M$' or var2plot_name == 'Ma':
             return u / a
         else:
-            raise Exception('Requested variable to plot is not available')
-            
-    def dqdt(self, q):
-
-        dEdx = self.dEdx(q)
-        G = self.calcG(q)
-        D = self.dissipation(q)
-
-        dqdt = -dEdx + G + D
-        return dqdt
-    
-    def dfdq(self, q):
-        # warning, will have to modify dEdq term
-
-        A = self.dEdq(q)
-        dGdq = self.dGdq(q)
-        dDdq = self.dDdq(q)
-
-        dfdq = - fn.lm_gm(self.der1, A) + dGdq + dDdq
-        return dfdq
+            raise Exception('Requested variable to plot is not available, '+var2plot_name)
 
     def calcEx(self, q):
 
@@ -903,16 +774,8 @@ class Quasi1dEuler(PdeBase):
         E = self.assemble_vec((e0, e1, e2))
         return E
     
-    def dEdx_ec(self, q):
-        # uses forumaltion from Crean et al 2018 with Ismail Roe flux
+    def dExdq(self, q):
 
-        F = build_F_vol(q, self.neq_node, self.ec_flux)     
-        dEdx = 2*np.sum(fn.lm_gm_hadamard(self.der1, F),axis=1)
-     
-        return dEdx  
-    
-    def dEdq_cons(self, q):
-        ''' for the normal conservative form (as opposed to ec form) '''
         q_0, q_1, q_2 = self.decompose_q(q)
         u = q_1 / q_0        
         u2 = u**2
@@ -935,40 +798,29 @@ class Quasi1dEuler(PdeBase):
         dEdq = fn.block_diag(r0,r1,r0,r21,r22,r23,r31,r32,r33)
 
         return dEdq
-    
-    def dEdq_ec(self, q):
-        ''' for the entropy conservative form'''
-        raise Exception('Not coded up yet.')
         
     def dqdw(self,q):
         ''' return hessian P of potential phi wrt entropy variables w, or dqdw '''
-        q_0, q_1, q_2 = self.decompose_q(q)
-        r11 = q_0
-        r12 = q_1
-        r13 = q_2
-        r22 = (2*(self.g-1)*q_0*q_2-q_1**2*(self.g-3))/(2*q_0)
-        r23 = ((1-self.g)*q_1**2+2*q_0*q_2*self.g*q_1)/(2*q_0**2)
-        r33 = ((4*self.g*q_0**2*q_2**2+(1-self.g)*q_1**4))/(4*q_0**3)
+        # returns S * P if quasi1D Euler
+        rho, rhou, e = self.decompose_q(q) # = (rho, rho*u, e) * S if quasi1D Euler
+        rhou2 = rhou*rhou/rho # = rho * u^2 * S if quasi1D Euler
+        p = (self.g-1)*(e-rhou2/2) # pressure = p * S if quasi1D Euler
         
-        dqdw = fn.block_diag(r11,r12,r13,r12,r22,r23,r13,r23,r33)
-        return dqdw
+        r22 = rhou2 + p
+        r23 = rhou*(p+e)/rho
+        r33 = self.g*e*e/rho - ((self.g-1)/4)*rhou2*rhou2/rho
+        
+        P = fn.block_diag(rho,rhou,e,rhou,r22,r23,e,r23,r33)
+        return P
     
-    def calcG(self, q, elem_idx=None):
-
+    def calcG(self, q):
         q_0, q_1, q_2 = self.decompose_q(q)
-        
-        if elem_idx == None:
-            svec_der = self.svec_der_elem
-            svec = self.svec_elem
-        else:
-            svec_der = self.svec_der_elem[:,elem_idx]
-            svec = self.svec_elem[:,elem_idx]
-
-        p = (self.g-1)*(q_2 - 0.5*q_1**2 /q_0) /svec
-        g2 = p * svec_der
+        p = (self.g-1)*(q_2 - 0.5*q_1*q_1 /q_0) / self.svec_elem
+        g2 = p * self.svec_der_elem
         zero_vec = np.zeros((self.nen,self.nelem))
         G = self.assemble_vec((zero_vec, g2, zero_vec))
         return G
+    
     '''
     def dGdq(self, q=None, xy_idx0=None, xy_idx1=None):
         # TODO: Not sure about shape
@@ -1009,6 +861,19 @@ class Quasi1dEuler(PdeBase):
 
         return dGdq
     '''
+
+    def d2Exdq2(self, q):
+        return None
+
+    def maxeig_dExdq(self, q):
+        ''' return the maximum eigenvalue - used for LF fluxes. accepts q[:,:] and q[:] '''
+        rhoS = q[::3] 
+        u = q[1::3]/rhoS 
+        e_rho = q[2::3]/rhoS 
+        p_rho = (self.g-1)*(e_rho-0.5*u*u) # pressure / rho, even if quasi1D Euler
+        a = np.sqrt(self.g*p_rho) # sound speed, = a if quasi1D Euler
+        lam = np.maximum(np.abs(u+a),np.abs(u-a))
+        return lam
     
     def dissipation_something(self,q):
         ''' some entropy-stable volume dissipation '''
@@ -1018,9 +883,6 @@ class Quasi1dEuler(PdeBase):
         ''' linearization of volume dissipation '''
         raise Exception('Not coded up yet')
 
-    def dEdq_eig_abs(self, dEdq):
-
-        return fn.abs_eig_mat(dEdq)
     '''
     def dfdq(self, q,  xy_idx0=None, xy_idx1=None):
         A = self.dEdq(q)
@@ -1076,39 +938,3 @@ class Quasi1dEuler(PdeBase):
         
         rhou_avg = rho_avg*u_avg
         return np.array([rhou_avg, rhou_avg*u_avg + p_avg, rhou_avg*H_avg]) 
-    
-@jit(nopython=True)  
-def build_F_vol(q, neq, ec_flux):
-    # uses forumaltion from Crean et al 2018 with Ismail Roe flux
-    nen_neq, nelem = q.shape
-    nen = int(nen_neq / neq)
-    F = np.zeros((nen_neq,nen_neq,nelem))
-    for e in range(nelem):
-        for i in range(nen):
-            for j in range(i,nen):
-                idxi = i*neq
-                idxi2 = (i+1)*neq
-                idxj = j*neq
-                idxj2 = (j+1)*neq
-                diag = np.diag(ec_flux(q[idxi:idxi2,e],q[idxj:idxj2,e]))
-                F[idxi:idxi2,idxj:idxj2,e] = diag
-                if i != j:
-                    F[idxj:idxj2,idxi:idxi2,e] = diag
-    return F
-
-@jit(nopython=True)  
-def build_F_int(q1, q2, neq, ec_flux):
-    ''' just like build_F_vol but now does not take advantage of symmetry '''
-    # uses forumaltion from Crean et al 2018 with Ismail Roe flux
-    nen_neq, nelem = q1.shape
-    nen = int(nen_neq / neq)
-    F = np.zeros((nen_neq,nen_neq,nelem))
-    for e in range(nelem):
-        for i in range(nen):
-            for j in range(nen):
-                idxi = i*neq
-                idxi2 = (i+1)*neq
-                idxj = j*neq
-                idxj2 = (j+1)*neq
-                F[idxi:idxi2,idxj:idxj2,e] = np.diag(ec_flux(q1[idxi:idxi2,e],q2[idxj:idxj2,e]))
-    return F

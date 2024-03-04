@@ -22,10 +22,10 @@ class Burgers(PdeBase):
     # Diffeq info
     diffeq_name = 'Burgers'
     dim = 1
-    npar = 0        # No. of design parameters
     neq_node = 1    # 1 equation in 1D
     eq_type = 'pde'
     pde_order = 1
+    has_exa_sol = False # TODO: Add exact solution (copy from other code)
 
     def __init__(self, para=None, q0_type='SinWave',
                  use_split_form=False, split_alpha=2/3):

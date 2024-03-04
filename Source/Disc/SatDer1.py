@@ -7,7 +7,6 @@ Created on Tue Feb 23 19:02:07 2021
 """
 import numpy as np
 import Source.Methods.Functions as fn
-#from Source.DiffEq.Quasi1DEulerA import build_F_vol, build_F_int
 
 class SatDer1:
     
@@ -123,7 +122,7 @@ class SatDer1:
     ''' LAX-FRIEDRICHS FLUXES '''
     ##########################################################################
     
-    def llf_div_1d(self, q, E, q_bdyL=None, q_bdyR=None, sigma=1, avg='simple'):
+    def llf_div_1d(self, q, E, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None, sigma=1, avg='simple'):
         '''
         A Local Lax-Fridriechs dissipative flux in 1D. 
         sigma=0 turns off dissipation, recovering central_div_1d.
@@ -137,13 +136,32 @@ class SatDer1:
         if q_bdyL is None:
             qf_L = fn.pad_1dL(q_b, q_b[:,-1])
             qf_R = fn.pad_1dR(q_a, q_a[:,0])
+            qf_jump = qf_R - qf_L
+
             EL = fn.shift_right(E)
             ER = fn.shift_left(E)
+            intR = fn.gm_gv(self.tbphys, ER)
+            intL = fn.gm_gv(self.taphys, EL)
         else:
-            qf_L = fn.pad_1dL(q_b, q_bdyL)
-            qf_R = fn.pad_1dR(q_a, q_bdyR)
-            raise Exception('TODO: adding boundary condition.')
-        qf_jump = qf_R - qf_L
+            # Pad the ends with the internal extrapolated value. We only use this to get
+            # the max eigenvalue with qf_avg anyway, so only want contribution from interior
+            qf_L = fn.pad_1dL(q_b, q_a[:,0])
+            qf_R = fn.pad_1dR(q_a, q_b[:,-1])
+            qf_jump = qf_R - qf_L
+            # manually fix boundaries of qf_jump to ensure proper dissipation
+            qf_jump[:,-1] = q_bdyR - q_b[:,-1]
+            qf_jump[:,0] = q_a[:,0] - q_bdyL
+
+            EL = fn.shift_right(E)
+            ER = fn.shift_left(E)
+            intR = fn.gm_gv(self.tbphys, ER)
+            intL = fn.gm_gv(self.taphys, EL)
+            # manually fix boundaries of EL, ER to ensure proper boundary coupling
+            if E_bdyL is None:
+                E_bdyL = self.calcEx(q_bdyL)
+                E_bdyR = self.calcEx(q_bdyR)
+            intR[:,-1] = self.tR @ (self.bdy_metrics[:,1,-1] * E_bdyR)
+            intL[:,0] = self.tL @ (self.bdy_metrics[:,0,0] * E_bdyL)
         
         if avg=='simple': # Alternatively, a Roe average can be used
             qf_avg = (qf_L + qf_R)/2
@@ -180,10 +198,9 @@ class SatDer1:
 # =============================================================================
         
         # This is equivalent to above, but tested to be slightly faster
-        sat = 0.5*( fn.gm_gv(self.vol_mat, E) 
-                  - fn.gm_gv(self.tbphys, ER)
-                  + fn.gm_gv(self.taphys, EL) 
-                  + dissR - dissL )
+        # remember, vol_mat = Esurf @ metrics, tbphys = tR @ bdy_metrics @ tLT
+        #                                      taphys = tL @ bdy_metrics @ tRT
+        sat = 0.5*( fn.gm_gv(self.vol_mat, E) - intR + intL + dissR - dissL )
         return sat
     
     
@@ -763,7 +780,8 @@ class SatDer1:
         '''
         Entropy-conservative/stable SATs for self.split_alpha=2/3
         sigma=0 is conservative, sigma=1 is disspative
-        But this is the SAT one recovers from the hadamard formulation
+        Not the same SAT found in SBP book, but this is the SAT 
+        one recovers from the hadamard formulation
         (uses extrapolation of the flux from the coupled elements)
         TODO: check metric terms for curvilinear transformation
         '''
@@ -809,55 +827,6 @@ class SatDer1:
     ##########################################################################
     ''' OLD STUFF ''' 
     ##########################################################################
-
-    def der1_upwind(self, q_L, q_R, sigma=1, avg='simple'):
-        '''
-        Purpose
-        ----------
-        Calculate the upwind or central SAT for a first derivative term such as
-        \frac{dE}{dx}) where E can be nonlinear
-        Parameters
-        ----------
-        q_fL : np array, shape (neq_node,nelem)
-            The extrapolated solution of the left element(s) to the facet(s).
-        q_fR : np array, shape (neq_node,nelem)
-            The extrapolated solution of the left element(s) to the facet(s).
-        xy : str, 'x' or 'y'
-            Determines whether to use SAT in x or y direction
-        sigma: float (default=1)
-            if sigma=1, creates upwinding SAT
-            if sigma=0, creates symmetric SAT
-        Returns
-        -------
-        satL : np array
-            The contribution of the SAT for the first derivative to the element(s)
-            on the left.
-        satR : np array
-            The contribution of the SAT for the first derivative to the element(s)
-            on the right.
-        '''
-        q_fL, q_fR = self.get_interface_sol(q_L, q_R)
-        
-        if avg=='simple':
-            qfacet = (q_fL + q_fR)/2 # Alternatively, a Roe average can be used
-        elif avg=='roe':
-            raise Exception('Roe Average not coded up yet')
-        else:
-            raise Exception('Averaging method not understood.')
-            
-        qf_diff = q_fL - q_fR
-
-        A = self.dExdq(qfacet)            
-        A_abs = self.dExdq_eig_abs(qfacet)
-        
-        # Upwinding flux
-        A_upwind = (A + sigma*A_abs)/2
-        A_downwind = (A - sigma*A_abs)/2
-
-        satL = self.tR @ fn.gm_gv(A_downwind, qf_diff)  # SAT for the left of the interface
-        satR = self.tL @ fn.gm_gv(A_upwind, qf_diff)    # SAT for the right of the interface
-
-        return satL, satR
     
     def dfdq_der1_upwind_scalar(self, q_L, q_R, xy, sigma=1, avg='simple'):
         '''
@@ -981,43 +950,6 @@ class SatDer1:
         dSatRdqR = fn.gm_lm(np.imag(satR_pert_qR) / eps_imag , self.tLT)
 
         return dSatLdqL, dSatLdqR, dSatRdqL, dSatRdqR
-
-# =============================================================================
-#     def der1_burgers_ec(self, q_L, q_R, xy):
-#         '''
-#         Purpose
-#         ----------
-#         Calculate the entropy conservative SAT for Burgers equation
-#         
-#         Parameters
-#         ----------
-#         q_fL : np array, shape (neq_node,nelem)
-#             The extrapolated solution of the left element(s) to the facet(s).
-#         q_fR : np array, shape (neq_node,nelem)
-#             The extrapolated solution of the left element(s) to the facet(s).
-# 
-#         Returns
-#         -------
-#         satL : np array
-#             The contribution of the SAT for the first derivative to the element(s)
-#             on the left.
-#         satR : np array
-#             The contribution of the SAT for the first derivative to the element(s)
-#             on the right.
-#         '''
-#         q_fL, q_fR = self.get_interface_sol(q_L, q_R)
-#         
-#         qLqR = q_fL * q_fR
-#         qL2 = q_fL**2
-#         qR2 = q_fR**2
-# 
-#         satL = self.tR @ (qL2/3 - qLqR/6 - qR2/6)    # SAT for the left of the interface
-#         satR = self.tL @ (-qR2/3 + qLqR/6 + qL2/6)    # SAT for the right of the interface
-# 
-#         return satL, satR
-# =============================================================================
-    
-
 
     def dfdq_der1_burgers_ec(self, q_L, q_R, xy):
         '''

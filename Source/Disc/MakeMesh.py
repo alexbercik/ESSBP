@@ -9,12 +9,14 @@ Created on Tue May 19 11:54:23 2020
 import numpy as np
 import matplotlib.pyplot as plt
 import Source.Methods.Functions as fn
-
+from sys import stderr
+from contextlib import redirect_stderr
 
 class MakeMesh:
     
     def __init__(self, dim, xmin, xmax, 
-                 nelem, x_op, warp_factor=0, warp_type='default'):
+                 nelem, x_op, warp_factor=0, warp_factor2=0, warp_factor3=0,
+                 warp_type='default'):
         '''
         Parameters
         ----------
@@ -38,6 +40,8 @@ class MakeMesh:
         self.nelem = nelem
         self.x_op = x_op
         self.warp_factor = warp_factor
+        self.warp_factor2 = warp_factor2
+        self.warp_factor3 = warp_factor3
         self.warp_type = warp_type
 
         ''' Additional terms '''
@@ -253,7 +257,10 @@ class MakeMesh:
     
         '''
         assert self.dim == 1 , 'Stretching only set up for 2D'
-        print('... Stretching mesh by a factor of {0}'.format(self.warp_factor))
+        if self.warp_factor2 != 0 or self.warp_factor3 != 0:
+            print('... Stretching mesh by factors of {0}, {1}, {2}'.format(self.warp_factor,self.warp_factor2,self.warp_factor3))
+        else:
+            print('... Stretching mesh by a factor of {0}'.format(self.warp_factor))
 
         
         def stretch_line(x):
@@ -280,7 +287,98 @@ class MakeMesh:
             ''' the derivative of the function stretch_line_quad wrt x (i.e. dnew_x/dx) '''
             a = self.warp_factor/(self.xmax-self.xmin)
             der = 2*a*x + (1-a*(self.xmin+self.xmax))
-            return der        
+            return der   
+
+        def stretch_sigmoid(x):
+            ''' a normalized tunable sigmoid function ''' 
+            assert(self.warp_factor>-1),'Invalid warp_factor. Use a value >-1'
+            arg = (x-self.xmin)/self.dom_len
+            new_x = self.dom_len*((1+self.warp_factor)*(arg-0.5)/(1+self.warp_factor*np.abs(2*arg-1)) + 0.5) + self.xmin
+            return new_x
+        
+        def stretch_sigmoid_der(x):
+            ''' derivative of the symmetric regularized incomplete beta function '''
+            arg = (x-self.xmin)/self.dom_len
+            der = (1+self.warp_factor)/((1+self.warp_factor*np.abs(2*arg-1))**2)
+            return der
+        
+        def stretch_corners(x):
+            ''' stretches the corners but keeps the middle linear'''
+            assert(self.xmin==0 and self.xmax==1),'Only set up for interval [0,1]'
+            a = self.warp_factor
+            b = self.warp_factor2
+            xk = self.warp_factor3
+            #assert(a>=0),'warp_factor must be >0, or >1 to squish at boundaries'
+            if a<1:
+                print('WARNING: warp_factor1 below allowed bound 1, capping manually.')
+                a = 1
+            if a>1E16:
+                print('WARNING: warp_factor1 above 1E16, capping manually.')
+                a = 1E16
+            #assert(xk >= 0 and xk <= 0.5),'warp_factor3 must be between 0 and 0.5'
+            if xk>0.5:
+                print('WARNING: warp_factor3 above allowed bound 0.5, capping manually.')
+                xk = 0.5
+            if xk<0:
+                print('WARNING: warp_factor2 below allowed bound 0, capping manually.')
+                xk = 0.
+            #assert(b <= xk**(1-a)/(a*(1-2*xk)+2*xk) and b >= 0),'warp_factor2={0} outside allowed range [0,{1}] \n warp_factors were {2}, {3}, {4}'.format(b, xk**(1-a)/(a*(1-2*xk)+2*xk), a, b, xk)
+            with redirect_stderr(None):
+                fac = xk**(1-a)
+            if fac == np.inf:
+                print('WARNING: exponent (1-warpfactor1) too small, capping manually.')
+                fac = 1E16
+            if b > fac/(a*(1-2*xk)+2*xk):
+                print('WARNING: warp_factor2 above allowed bound, capping manually.')
+                b = fac/(a*(1-2*xk)+2*xk) - 1E-10
+            if b < 0:
+                print('WARNING: warp_factor2 below allowed bound, capping manually.')
+                b = 0.
+            c1 = -a*b*xk**(a-1) + 1 + 2*(a-1)*b*xk**a
+            c2 = (a-1)*b*xk**a + 0.5
+            f = np.where(x<=xk, b*x**a+c1*x,0)
+            f = np.where(((xk<=x) & (x<=1-xk)), c2*(2*x-1)+0.5,f)
+            f = np.where(1-xk<=x, 1-b*(1-x)**a-c1*(1-x),f)
+            return f
+        
+        def stretch_corners_der(x):
+            ''' stretches the corners but keeps the middle linear'''
+            assert(self.xmin==0 and self.xmax==1),'Only set up for interval [0,1]'
+            a = self.warp_factor
+            b = self.warp_factor2
+            xk = self.warp_factor3
+            #assert(a>=0),'warp_factor must be >0, or >1 to squish at boundaries'
+            if a<1:
+                print('WARNING: warp_factor1 below allowed bound 1, capping manually.')
+                a = 1
+            if a>1E16:
+                print('WARNING: warp_factor1 above 1E16, capping manually.')
+                a = 1E16
+            #assert(xk >= 0 and xk <= 0.5),'warp_factor3 must be between 0 and 0.5'
+            if xk>0.5:
+                print('WARNING: warp_factor3 above allowed bound 0.5, capping manually.')
+                xk = 0.5
+            if xk<0:
+                print('WARNING: warp_factor2 below allowed bound 0, capping manually.')
+                xk = 0.
+            #assert(b <= xk**(1-a)/(a*(1-2*xk)+2*xk) and b >= 0),'warp_factor2={0} outside allowed range [0,{1}] \n warp_factors were {2}, {3}, {4}'.format(b, xk**(1-a)/(a*(1-2*xk)+2*xk), a, b, xk)
+            with redirect_stderr(None):
+                fac = xk**(1-a)
+            if fac == np.inf:
+                print('WARNING: exponent (1-warpfactor1) too small, capping manually.')
+                fac = 1E16
+            if b > fac/(a*(1-2*xk)+2*xk):
+                print('WARNING: warp_factor2 above allowed bound, capping manually.')
+                b = fac/(a*(1-2*xk)+2*xk) - 1E-10
+            if b < 0:
+                print('WARNING: warp_factor2 below allowed bound, capping manually.')
+                b = 0.
+            c1 = -a*b*xk**(a-1) + 1 + 2*(a-1)*b*xk**a
+            c2 = (a-1)*b*xk**a + 0.5
+            df = np.where(x<=xk, a*b*x**(a-1)+c1,0)
+            df = np.where(((xk<=x) & (x<=1-xk)), c2*2,df)
+            df = np.where(1-xk<=x, a*b*(1-x)**(a-1)+c1,df)
+            return df
         
         # switch between different mappings here
         if self.warp_type == 'default' or self.warp_type == 'papers':
@@ -289,8 +387,14 @@ class MakeMesh:
         elif self.warp_type == 'quad':
             warp_fun = stretch_line_quad
             warp_der = stretch_line_quad_der 
+        elif self.warp_type == 'sigmoid':
+            warp_fun = stretch_sigmoid
+            warp_der = stretch_sigmoid_der 
+        elif self.warp_type == 'corners':
+            warp_fun = stretch_corners
+            warp_der = stretch_corners_der 
         else:
-            print('WARNING: mesh.warp_type not understood. Reverting to default.')
+            print('WARNING: mesh.warp_type '+self.warp_type+' not understood. Reverting to default.')
             warp_fun = stretch_line
             warp_der = stretch_line_der        
         
@@ -302,7 +406,7 @@ class MakeMesh:
         self.bdy_x = warp_fun(self.bdy_x)
         
         self.jac_exa[:,0,:] *= warp_der(x_elem_old) # chain rule with original transformation
-        assert np.all(self.jac_exa>0),"Not a valid coordinate transformation. Try using a lower warp_factor."
+        assert np.all(self.jac_exa>0),"Not a valid coordinate transformation. Try using lower warp_factors than {0}".format((self.warp_factor,self.warp_factor2,self.warp_factor3))
         #self.jac_inv_exa = 1/self.jac_exa
         self.det_jac_exa = self.jac_exa[:,0,:]
         #self.det_jac_inv_exa = 1/self.det_jac_exa
@@ -542,13 +646,12 @@ class MakeMesh:
         self.jac_exa[:,1,1,:] = dynewdy * dydyref
         for elem in range(self.nelem[0]*self.nelem[1]):
             self.det_jac_exa[:,elem] = np.linalg.det(self.jac_exa[:,:,:,elem])
-        #TODO: temporary commenting out
-        #assert np.all(self.det_jac_exa>0),"Not a valid coordinate transformation. Try using a lower warp_factor."
-        #for elem in range(self.nelem[0]*self.nelem[1]):
-            #self.jac_inv_exa[:,:,:,elem] = np.linalg.inv(self.jac_exa[:,:,:,elem])
-            #self.det_jac_inv_exa[:,elem] =  np.linalg.det(self.jac_inv_exa[:,:,:,elem])
-        #if np.max(abs(self.det_jac_inv_exa - 1/self.det_jac_exa) > 1e-12):
-        #    print('WANRING: Numerical error in calculation of determinant inverse is {0:.2g}'.format(np.max(abs(self.det_jac_inv_exa - 1/self.det_jac_exa))))
+        assert np.all(self.det_jac_exa>0),"Not a valid coordinate transformation. Try using a lower warp_factor."
+        for elem in range(self.nelem[0]*self.nelem[1]):
+            self.jac_inv_exa[:,:,:,elem] = np.linalg.inv(self.jac_exa[:,:,:,elem])
+            self.det_jac_inv_exa[:,elem] =  np.linalg.det(self.jac_inv_exa[:,:,:,elem])
+        if np.max(abs(self.det_jac_inv_exa - 1/self.det_jac_exa) > 1e-12):
+            print('WANRING: Numerical error in calculation of determinant inverse is {0:.2g}'.format(np.max(abs(self.det_jac_inv_exa - 1/self.det_jac_exa))))
         
         dxnewdx, dxnewdy, dynewdx, dynewdy = warp_der(bdy_xy_old[:,0,:,:], bdy_xy_old[:,1,:,:])
         dxdxref = np.copy(self.bdy_jac_exa[:,0,0,:,:])
@@ -1230,7 +1333,7 @@ class MakeMesh:
                 
             elif bdy_metric_method=='interpolate' or bdy_metric_method=='extrapolate' or bdy_metric_method=='project':
                 self.bdy_metrics = np.zeros((self.nen,4,4,self.nelem[0]*self.nelem[1])) 
-                self.bdy_metrics_err = np.zeros((self.nen,4,4,self.nelem[0]*self.nelem[1]))  #TODO: temp
+                #self.bdy_metrics_err = np.zeros((self.nen,4,4,self.nelem[0]*self.nelem[1]))  #TODO: temp
                 eye = np.eye(self.nen)
                 txbT = np.kron(sbp.tR.reshape((self.nen,1)), eye).T
                 txaT = np.kron(sbp.tL.reshape((self.nen,1)), eye).T
@@ -1251,14 +1354,14 @@ class MakeMesh:
                                     maxdiff = max(maxdiff, np.max(abs(Lmetrics[:,:-1] - Rmetrics[:,1:])))
                                 self.bdy_metrics[:,0,i,row::self.nelem[1]][:,1:] = avgmetrics
                                 self.bdy_metrics[:,1,i,row::self.nelem[1]][:,:-1] = avgmetrics
-                                self.bdy_metrics_err[:,0,i,row::self.nelem[1]][:,1:] = abs(Lmetrics[:,:-1] - Rmetrics[:,1:])
-                                self.bdy_metrics_err[:,1,i,row::self.nelem[1]][:,:-1] = abs(Lmetrics[:,:-1] - Rmetrics[:,1:])
+                                #self.bdy_metrics_err[:,0,i,row::self.nelem[1]][:,1:] = abs(Lmetrics[:,:-1] - Rmetrics[:,1:])
+                                #self.bdy_metrics_err[:,1,i,row::self.nelem[1]][:,:-1] = abs(Lmetrics[:,:-1] - Rmetrics[:,1:])
                             if periodic[0]:   
                                 avgmetrics = (Lmetrics[:,-1] + Rmetrics[:,0])/2
                                 self.bdy_metrics[:,0,i,row::self.nelem[1]][:,0] = avgmetrics
                                 self.bdy_metrics[:,1,i,row::self.nelem[1]][:,-1] = avgmetrics 
-                                self.bdy_metrics_err[:,0,i,row::self.nelem[1]][:,0] = abs(Lmetrics[:,-1] - Rmetrics[:,0])
-                                self.bdy_metrics_err[:,1,i,row::self.nelem[1]][:,-1] = abs(Lmetrics[:,-1] - Rmetrics[:,0])
+                                #self.bdy_metrics_err[:,0,i,row::self.nelem[1]][:,0] = abs(Lmetrics[:,-1] - Rmetrics[:,0])
+                                #self.bdy_metrics_err[:,1,i,row::self.nelem[1]][:,-1] = abs(Lmetrics[:,-1] - Rmetrics[:,0])
                                 if print_diff:
                                     maxdiff = max(maxdiff, np.max(abs(Lmetrics[:,-1] - Rmetrics[:,0])))
                             else:
@@ -1277,14 +1380,14 @@ class MakeMesh:
                                     maxdiff = max(maxdiff, np.max(abs(Lmetrics[:,:-1] - Rmetrics[:,1:])))
                                 self.bdy_metrics[:,2,i,start:end][:,1:] = avgmetrics
                                 self.bdy_metrics[:,3,i,start:end][:,:-1] = avgmetrics
-                                self.bdy_metrics_err[:,2,i,start:end][:,1:] = abs(Lmetrics[:,:-1] - Rmetrics[:,1:])
-                                self.bdy_metrics_err[:,3,i,start:end][:,:-1] = abs(Lmetrics[:,:-1] - Rmetrics[:,1:])
+                                #self.bdy_metrics_err[:,2,i,start:end][:,1:] = abs(Lmetrics[:,:-1] - Rmetrics[:,1:])
+                                #self.bdy_metrics_err[:,3,i,start:end][:,:-1] = abs(Lmetrics[:,:-1] - Rmetrics[:,1:])
                             if periodic[1]:
                                 avgmetrics = (Lmetrics[:,-1] + Rmetrics[:,0])/2
                                 self.bdy_metrics[:,2,i,start:end][:,0] = avgmetrics
                                 self.bdy_metrics[:,3,i,start:end][:,-1] = avgmetrics 
-                                self.bdy_metrics_err[:,2,i,start:end][:,0] = abs(Lmetrics[:,-1] - Rmetrics[:,0])
-                                self.bdy_metrics_err[:,3,i,start:end][:,-1] = abs(Lmetrics[:,-1] - Rmetrics[:,0])
+                                #self.bdy_metrics_err[:,2,i,start:end][:,0] = abs(Lmetrics[:,-1] - Rmetrics[:,0])
+                                #self.bdy_metrics_err[:,3,i,start:end][:,-1] = abs(Lmetrics[:,-1] - Rmetrics[:,0])
                                 if print_diff:
                                     maxdiff = max(maxdiff, np.max(abs(Lmetrics[:,-1] - Rmetrics[:,0])))
                             else:

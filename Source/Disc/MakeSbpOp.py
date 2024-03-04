@@ -23,6 +23,8 @@ from Source.Disc.BasisFun import BasisFun
 from Source.Disc.SbpQuadRule import SbpQuadRule
 from Source.Disc.CSbpOp import CSbpOp
 import Source.Methods.Functions as fn
+from Source.Disc.MakeMesh import MakeMesh
+from contextlib import redirect_stdout
 
 
 class MakeSbpOp:
@@ -40,7 +42,8 @@ class MakeSbpOp:
         sbp_type : string, optional
             The type of SBP family for the operator.
             The families are 'lgl' (legendre-gauss-lobatto), 'lg' (lobatto-gauss),
-            'nc' (closed-form newton cotes), and 'csbp' (classical sbp).
+            'nc' (closed-form newton cotes), 'csbp' (classical sbp), 
+            'optz_map'.
             The default is 'lgl'.
         nn : int or (int,int)
             The number of nodes to use
@@ -66,12 +69,24 @@ class MakeSbpOp:
         self.p = p
         self.nn = nn
        
-        if sbp_type.lower()=='csbp':
+        if sbp_type.lower()=='csbp' or sbp_type.lower()=='optz':
             ''' Build Classical SBP Operators '''
             
             self.sbp_fam = 'csbp'
             self.quad = None # if CSBP, it is meaningless to talk about quadrature
             assert self.nn > 1 , "Please specify number of nodes nn > 1"
+            if p==1 and nn<3:
+                print('WARNING: nn set too small ({0}). Automatically increasing to minimum 3.'.format(nn))
+                self.nn = 3
+            elif p==2 and nn<9:
+                print('WARNING: nn set too small ({0}). Automatically increasing to minimum 9.'.format(nn))
+                self.nn=9
+            elif p==3 and nn<13:
+                print('WARNING: nn set too small ({0}). Automatically increasing to minimum 13.'.format(nn))
+                self.nn = 13
+            elif p==4 and nn<17:
+                print('WARNING: nn set too small ({0}). Automatically increasing to minimum 17.'.format(nn))
+                self.nn = 17
 
             # Do things manually (operator is built later)
             self.x = np.linspace(0, 1,self.nn)
@@ -80,6 +95,50 @@ class MakeSbpOp:
             self.E[0,0], self.E[-1,-1] = -1 , 1
             self.tL, self.tR = np.zeros(self.nn), np.zeros(self.nn)
             self.tL[0] , self.tR[-1] = 1 , 1
+
+            if sbp_type.lower()=='optz':
+                if p==1 and self.nn==3:
+                    warp_factor1, warp_factor2, warp_factor3 = 0.0, 0., 0.
+                    trans = 'sigmoid'
+                elif p==1 and self.nn==20:
+                    warp_factor1, warp_factor2, warp_factor3 = 2.593505526588188, 1.84727641471781, 0.2359412051939956
+                    trans = 'corners'
+                elif p==2 and self.nn==9:
+                    warp_factor1, warp_factor2, warp_factor3 = 0.18991350096392648, 0., 0.
+                    trans = 'sigmoid'
+                elif p==2 and self.nn==20:
+                    warp_factor1, warp_factor2, warp_factor3 = 2.770906371088635, 1.2849104355129346, 0.288447754977867
+                    trans = 'corners'
+                elif p==3 and self.nn==13:
+                    warp_factor1, warp_factor2, warp_factor3 = 0.1035576820946656, 0., 0.
+                    trans = 'sigmoid'
+                elif p==3 and self.nn==20:
+                    warp_factor1, warp_factor2, warp_factor3 = 5.024511643375132, 19.999041198274156, 0.1866586054617816
+                    trans = 'corners'
+                elif p==4 and self.nn==17:
+                    warp_factor1, warp_factor2, warp_factor3 = 0.03464339479945, 0., 0.
+                    trans = 'sigmoid'
+                elif p==2 and self.nn==30:
+                    warp_factor1, warp_factor2, warp_factor3 = 4.19668524183192, 1.0903630402992481, 0.1871758767436309
+                    trans = 'corners'
+                else:
+                    print('WARNING: Not set up yet, defaulting to CSBP.')
+                    warp_factor = 0
+
+                with redirect_stdout(None):
+                    mesh = MakeMesh(dim=1,xmin=0,xmax=1,nelem=1,x_op=self.x,warp_type=trans,
+                                    warp_factor=warp_factor1,warp_factor2=warp_factor2,warp_factor3=warp_factor3)
+                    mesh.get_jac_metrics(self, periodic=False,
+                            metric_method = 'exact', 
+                            bdy_metric_method = 'exact',
+                            jac_method='exact',
+                            use_optz_metrics = 'False',
+                            calc_exact_metrics = False)
+                    H, D,= self.ref_2_phys(mesh, 'skew_sym')
+                    self.x = mesh.x
+                    self.H, self.D = np.diag(H[:,0]), D[:,:,0]
+                    self.Q = self.H @ self.D
+                    self.S = self.Q - self.E/2
 
         else:
             ''' Build Element-type SBP Operators '''
@@ -114,6 +173,7 @@ class MakeSbpOp:
 
         ''' Test the operators '''
         self.check_diagH(self.x, self.H)
+        self.check_degree(self.D, self.x)
         self.check_accuracy(self.D, self.x)
         self.check_compatibility(self.x,self.H,self.E)
         self.check_interpolation(self.tL, self.tR, self.x)
@@ -253,7 +313,7 @@ class MakeSbpOp:
         Parameters
         ----------
         mesh : class instance of MakeMesh.py defining mesh
-        form : skew_sym' or 'div'
+        form : 'skew_sym' or 'div'
 
         Returns
         -------
@@ -314,8 +374,8 @@ class MakeSbpOp:
             elif form == 'div': # not provably stable
                 Dx_phys = fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,0,:]) + fn.lm_gdiag(Dy,mesh.metrics[:,2,:])))
                 Dy_phys = fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,1,:]) + fn.lm_gdiag(Dy,mesh.metrics[:,3,:])))
-                Dy_phys_nd = 0.
-                Dy_phys_nd = 0.
+                Dy_phys_nd = None
+                Dy_phys_nd = None
             else:
                 raise Exception('Physical operator form not understood.')
 
@@ -424,12 +484,23 @@ class MakeSbpOp:
         print('Test: The operator succesfully passed all decomposition tests.')
 
     @staticmethod
-    def check_accuracy(D, x, tol=1e-10):
-        ''' tests order of derivative D, D@x^j = j*x^(j-1) 
+    def check_degree(D, x, tol=1e-10):
+        ''' tests degree of derivative D, D@x^j = j*x^(j-1) 
         Based on reference element [0,1] '''
         p=1
         er=0
         while er<tol:
             p+=1
             er = np.sum(abs(D @ x**p - p*x**(p-1)))
-        print('Test: Derivative D is order {0}.'.format(p-1))
+        print('Test: Derivative D is degree {0}.'.format(p-1))
+
+    @staticmethod
+    def check_accuracy(D, x):
+        ''' tests degree of derivative D, D@u - dudx = O(h^p) 
+        Based on reference element [0,1] '''
+        er1 = np.mean(np.abs(D @ np.sin(x+0.1) - np.cos(x+0.1)))
+        er2 = np.mean(np.abs(D @ np.sin(0.5*x+0.1) - 0.5*np.cos(0.5*x+0.1)))
+        er3 = np.mean(np.abs(D @ np.sin(0.25*x+0.1) - 0.25*np.cos(0.25*x+0.1)))
+        o1 = (np.log(er2) - np.log(er1)) / (np.log(0.5) - np.log(1))
+        o2 = (np.log(er3) - np.log(er2)) / (np.log(0.25) - np.log(0.5))
+        print('Test: Derivative D is order {0:.2} in test 1, {1:.2} in test 2. (element-refinement, so should expect p+1)'.format(o1,o2))

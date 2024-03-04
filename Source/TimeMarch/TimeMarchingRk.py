@@ -113,25 +113,26 @@ class TimeMarchingRk:
             for i in range(n_step):
                 q_new += dt * b_vec[i] * f_mat[:,:,i]
 
-            return q_new
+            return q_new, f_mat[:,:,-1]
 
         q = q0 * 1.0
-        self.common(q, 0, n_ts, dt)
+        self.common(q, 0, n_ts, dt, -1)
 
         if self.keep_all_ts:
             q_vec = np.zeros([*self.shape_q, n_ts+1])
             q_vec[:, :, 0] = q
 
         for i in range(1, n_ts+1):
-            q = calc_time_step(q)
+            q, dqdt = calc_time_step(q)
 
             if self.keep_all_ts:
                 q_vec[:, :, i] = q
 
-            self.common(q, i, n_ts, dt)
+            self.common(q, i, n_ts, dt, dqdt)
+            if self.quitsim: break
 
         if self.keep_all_ts:
-            return q_vec
+            return q_vec[:,:,:i+1]
         else:
             return q
 
@@ -174,25 +175,26 @@ class TimeMarchingRk:
             for i in range(n_step):
                 q_new += dt * b_vec[i] * f_mat[:,i]
 
-            return q_new
+            return q_new, f_mat[:,:,-1]
 
         q = np.copy(q0)
-        self.common(q, 0, n_ts, dt)
+        self.common(q, 0, n_ts, dt, -1)
 
         if self.keep_all_ts:
             q_vec = np.zeros([self.len_q, n_ts+1])
             q_vec[:, 0] = q
 
         for i in range(1, n_ts+1):
-            q = calc_time_step(q)
+            q, dqdt = calc_time_step(q)
 
             if self.keep_all_ts:
                 q_vec[:,i] = q
 
-            self.common(q, i, n_ts, dt)
+            self.common(q, i, n_ts, dt, dqdt)
+            if self.quitsim: break
 
         if self.keep_all_ts:
-            return q_vec
+            return q_vec[:,:,:i+1]
         else:
             return q
 
@@ -292,24 +294,25 @@ class TimeMarchingRk:
                 else:
                     dfdq_array = calc_dfdq_all(q_mat)
 
-            return q_new
+            return q_new, f_array[:,-1]
 
         q = np.copy(q0)
-        self.common(q, 0, n_ts, dt)
+        self.common(q, 0, n_ts, dt, -1)
 
         if self.keep_all_ts:
             q_vec = np.zeros([self.len_q, n_ts+1])
             q_vec[:, 0] = q
 
         for i in range(1, n_ts+1):
-            q = calc_time_step(q)
+            q, dqdt = calc_time_step(q)
 
             if self.keep_all_ts:
                 q_vec[:,i] = q
 
-            self.common(q, i, n_ts, dt)
+            self.common(q, i, n_ts, dt, dqdt)
+            if self.quitsim: break
 
         if self.keep_all_ts:
-            return q_vec
+            return q_vec[:,:,:i+1]
         else:
             return q

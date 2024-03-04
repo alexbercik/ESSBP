@@ -89,9 +89,10 @@ class LinearConv(PdeBase):
             raise Exception('Variable coefficient not understood.')
         return ader
 
-    def exact_sol(self, time=0):
-
-        assert self.dim==1, 'exact sol only setup for 1D'
+    def exact_sol(self, time=0, x=None):
+        
+        if x is None:
+            x = self.x_elem
         # TODO
 
         return None
@@ -188,12 +189,6 @@ class LinearConv(PdeBase):
         self.ader = self.afunder(self.x_elem)
         if np.min(self.a) <= 0.: print('WARNING: Variable coefficient a(x) should be >=0')
         
-    def set_sbp_op(self, H_inv, Dx, Dy=None, Dz=None):
-        self.Dx = Dx
-        self.Dy = Dy
-        self.Dz = Dz
-        self.H_inv = H_inv
-        self.H = 1./self.H_inv
 
 
 

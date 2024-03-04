@@ -50,9 +50,10 @@ class LinearConv(PdeBase):
             self.dExdq = lambda q : fn.diag(np.ones(q.shape))
             self.dExdq_eig_abs = self.dExdq
 
-    def exact_sol(self, time=0):
+    def exact_sol(self, time=0, xy=None):
 
-        xy = self.xy_elem
+        if xy is None:
+            xy = self.xy_elem
         xy_mod = np.empty(xy.shape)
 
         xy_mod[:,0,:] = np.mod((xy[:,0,:] - self.xmin[0]) - self.ax*time, self.dom_len[0]) + self.xmin[0]

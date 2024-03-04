@@ -63,6 +63,10 @@ class PdeBase:
     nen = None              # No. of nodes per element
     nelem = None            # No. of elements
     neq_node = None         # No. of equations per node
+    xmin_fix = None         # If we need to ensure xmin is a certain value
+    xmax_fix = None         # If we need to ensure xmax is a certain value
+    steady = False          # Whether or not steady or transient flow
+    check_resid_conv = False # Whether to check for residual convergence to stop sim
 
     # Ploting options
     plt_fig_size = (6,4)
@@ -100,6 +104,10 @@ class PdeBase:
         self.para = para
         if not hasattr(self, 'para_fix'): self.para_fix = None
         self.q0_type = q0_type
+        if self.q0_type == None:
+            print("WARNING: No default q0_type given. Defaulting to 'gausswave'.")
+            self.q0_type = 'gausswave'
+
 
         ''' Modify type for inputs '''
 
@@ -108,7 +116,7 @@ class PdeBase:
             self.para = np.atleast_1d(np.asarray(self.para))
             
         
-    def var2plot(self,q):
+    def var2plot(self,q,var2plot_name=None):
         ''' base method, only important for systems where this is redefined '''
         return q
 
@@ -136,6 +144,9 @@ class PdeBase:
         #self.dx = self.mesh.dx
         self.xmin = self.mesh.xmin
         self.xmax = self.mesh.xmax
+        if self.xmin_fix is not None:
+            assert ((self.xmin == self.xmin_fix) and (self.xmax == self.xmax_fix)),\
+                    "xmin and xmax do not match required values. {0} ≠ {1} , {2} ≠ {3}".format(self.xmin,self.xmin_fix,self.xmax,self.xmax_fix)
         self.dom_len = self.mesh.dom_len
         self.nn = self.mesh.nn
         self.nelem = self.mesh.nelem
@@ -169,6 +180,7 @@ class PdeBase:
 
         if q0_type is None:
             q0_type = self.q0_type
+        q0_type = q0_type.lower()
 
         if xy is None:
             qshape = self.qshape
@@ -190,7 +202,7 @@ class PdeBase:
                 assert xy.ndim == self.xyz_elem.ndim, 'Provided xy has wrong dimensions. Given shape {0} while default is {1}'.format(shape,self.xyz_elem.shape)
                 qshape = (shape[0],shape[2])
 
-        if q0_type == 'GaussWave':
+        if q0_type == 'gausswave':
             k = (8*np.log(self.q0_gauss_wave_val_bc/self.q0_max_q))
             if self.dim == 1:
                 mid_point = 0.5*(self.xmax + self.xmin) # mean
@@ -213,7 +225,7 @@ class PdeBase:
                 stdev2z = abs(self.dom_len[2]**2/k)
                 exp = -0.5*((xy[:,0,:]-mid_pointx)**2/stdev2x + (xy[:,1,:]-mid_pointy)**2/stdev2y + (xy[:,2,:]-mid_pointz)**2/stdev2z)
                 q0 = self.q0_max_q * np.exp(exp) 
-        elif 'GaussWave_debug' in q0_type:
+        elif 'gausswave_debug' in q0_type:
             if 'y' in q0_type: xyz = 1
             elif 'z' in q0_type: xyz = 2
             else: xyz = 0
@@ -223,39 +235,39 @@ class PdeBase:
             stdev2 = abs(self.dom_len[xyz]**2/k) # standard deviation squared
             exp = -0.5*((xy[:,xyz,:]-mid_pointx)**2/stdev2)
             q0 = self.q0_max_q * np.exp(exp)    
-        elif ('SinWave' in q0_type) and not ('Gassner' in q0_type):
+        elif ('sinwave' in q0_type) and not ('gassner' in q0_type):
             if self.dim == 1:
                 x_scaled = (xy + self.xmin) / self.dom_len
                 q0 = np.sin(2*np.pi * x_scaled) * self.q0_max_q
-                if 'shift' in q0_type.lower():
+                if 'shift' in q0_type:
                     q0 = q0+2
             elif self.dim == 2:
                 x_scaled = (xy[:,0,:] + self.xmin[0]) / self.dom_len[0]
                 y_scaled = (xy[:,1,:] + self.xmin[1]) / self.dom_len[1]
-                if q0_type == 'SinWave':
+                if q0_type == 'sinwave':
                     q0 = self.q0_max_q * np.sin(2*np.pi * x_scaled) * np.sin(2*np.pi * y_scaled)  
-                elif q0_type == 'SinWave2' or q0_type == 'SinWavesum' or q0_type == 'SinWave_sum':
+                elif q0_type == 'sinwave2' or q0_type == 'sinwavesum' or q0_type == 'sinwave_sum':
                     q0 = self.q0_max_q * ( np.sin(2*np.pi * x_scaled) + np.sin(2*np.pi * y_scaled) )
             elif self.dim == 3:
                 x_scaled = (xy[:,0,:] + self.xmin[0]) / self.dom_len[0]
                 y_scaled = (xy[:,1,:] + self.xmin[1]) / self.dom_len[1]
                 z_scaled = (xy[:,2,:] + self.xmin[2]) / self.dom_len[2]
-                if q0_type == 'SinWave':
+                if q0_type == 'sinwave':
                     q0 = self.q0_max_q * np.sin(2*np.pi * x_scaled) * np.sin(2*np.pi * y_scaled) * np.sin(2*np.pi * z_scaled) 
-                elif q0_type == 'SinWave2' or q0_type == 'SinWavesum' or q0_type == 'SinWave_sum':
+                elif q0_type == 'sinwave2' or q0_type == 'sinwavesum' or q0_type == 'sinwave_sum':
                     q0 = self.q0_max_q * ( np.sin(2*np.pi * x_scaled) + np.sin(2*np.pi * y_scaled) + np.sin(2*np.pi * z_scaled) )
-        elif q0_type == 'Random':
+        elif q0_type == 'random':
             # Random numbers between -0.5 and 0.5
             q0 = np.random.rand(*qshape) -0.5
-        elif q0_type == 'Constant':
+        elif q0_type == 'constant':
             q0 = np.ones(qshape)
-        elif q0_type == 'GassnerSinWave_cont': # continuous
+        elif q0_type == 'gassnersinwave_cont': # continuous
             assert self.dim == 1,'Chosen q0 shape only works for dim = 1.'
             q0 = np.sin(np.pi * xy - 0.7) + 2 # note in the paper it is incorrectly written (np.pi * (xy - 0.7))
-        elif q0_type in ('GassnerSinWave','GassnerSinWave_coarse'): # discontinuous  
+        elif q0_type in ('gassnersinwave','gassnersinwave_coarse'): # discontinuous  
             assert self.dim == 1,'Chosen q0 shape only works for dim = 1.'
             from Source.Disc.Quadratures.LG import LG_set # use this instead of quadpy
-            if q0_type == 'GassnerSinWave_coarse':
+            if q0_type == 'gassnersinwave_coarse':
                 #xy_LG = qp.c1.gauss_legendre(2).points # coarse LG nodes
                 xy_LG = LG_set(2)[0]
             else:
@@ -278,52 +290,54 @@ class PdeBase:
     
 
     # TODO: Make a separate function for interactive plots? is this even possible using free packages?
-    def plot_sol(self, q, time=None, plot_exa=True, savefile=None,
+    def plot_sol(self, q, time=0., plot_exa=True, savefile=None,
                  show_fig=True, solmin=None, solmax=None, display_time=False, 
                  title=None, plot_mesh=False, save_format='png', dpi=600,
-                 plot_only_exa=False):
+                 plot_only_exa=False, var2plot_name=None):
         '''
         Purpose
         ----------
         Used to plot the solution
         
         '''
+        if var2plot_name is None:
+            var2plot_name = self.plt_var2plot_name
         
         if self.dim == 1:
-            num_sol = self.var2plot(q).flatten('F')
+            num_sol = self.var2plot(q,var2plot_name).flatten('F')
             
             fig = plt.figure(figsize=self.plt_fig_size)
             ax = plt.axes() 
 
             if plot_exa and self.has_exa_sol:
-                exa_sol = self.var2plot(self.exact_sol(time)).flatten('F')
+                exa_sol = self.var2plot(self.exact_sol(time),var2plot_name).flatten('F')
                 ax.plot(self.x, exa_sol, **self.plt_style_exa_sol, label='Exact')
                 
             ax.plot(self.x, num_sol, **self.plt_style_sol[0], label='Numerical')
         
             ax.set_ylim(solmin,solmax)
             plt.xlabel(r'$x$',fontsize=self.plt_label_font_size)
-            if self.plt_var2plot_name is None:
+            if var2plot_name is None:
                 plt.ylabel(r'$u$',fontsize=self.plt_label_font_size,rotation=0,labelpad=15)
             else:
-                plt.ylabel(self.plt_var2plot_name,fontsize=self.plt_label_font_size)
+                plt.ylabel(var2plot_name,fontsize=self.plt_label_font_size)
         
         
         elif self.dim == 2:            
             fig = plt.figure(figsize=(6,5.5*self.dom_len[1]/self.dom_len[0])) # scale figure properly
             ax = plt.axes()
             
-            x = fn.reshape_to_meshgrid(self.xy_elem[:,0,:],self.nen,self.nelem[0],self.nelem[1])
-            y = fn.reshape_to_meshgrid(self.xy_elem[:,1,:],self.nen,self.nelem[0],self.nelem[1])
-            num_sol = fn.reshape_to_meshgrid(self.var2plot(q),self.nen,self.nelem[0],self.nelem[1])
+            x = fn.reshape_to_meshgrid_2D(self.xy_elem[:,0,:],self.nen,self.nelem[0],self.nelem[1])
+            y = fn.reshape_to_meshgrid_2D(self.xy_elem[:,1,:],self.nen,self.nelem[0],self.nelem[1])
+            num_sol = fn.reshape_to_meshgrid_2D(self.var2plot(q,var2plot_name),self.nen,self.nelem[0],self.nelem[1])
             
             CS = ax.contourf(x,y,num_sol,levels=self.plt_contour_settings['levels'],
                                  vmin=solmin, vmax=solmax,
                                  cmap=self.plt_contour_settings['cmap'])
             
             cbar = fig.colorbar(CS)
-            if self.plt_var2plot_name is not None:
-                cbar.ax.set_ylabel(self.plt_var2plot_name)     
+            if var2plot_name is not None:
+                cbar.ax.set_ylabel(var2plot_name)     
                 
             if plot_mesh:
                 #ax = plt.axes(frameon=False) # turn off the frame
@@ -386,7 +400,7 @@ class PdeBase:
                 savefile = savefile + '_exa'
             if title is not None:
                 title = 'Exact Solution'
-            exa_sol = self.var2plot(self.exact_sol(time))
+            exa_sol = self.var2plot(self.exact_sol(time),var2plot_name)
             self.plot_sol(exa_sol, time=time, plot_exa=True, savefile=savefile,
                  show_fig=show_fig, solmin=solmin, solmax=solmax, display_time=display_time, 
                  title=title, plot_mesh=plot_mesh, save_format=save_format, dpi=dpi,
@@ -480,12 +494,12 @@ class PdeBase:
     ''' functions setting up operators '''
     # TODO: Do I need these? At least for split forms, yes
     
-    def set_sbp_op(self, H_inv, Dx, Dy=None, Dz=None):
+    def set_sbp_op(self, H, H_inv, Dx, Dy=None, Dz=None):
         self.Dx = Dx
         self.Dy = Dy
         self.Dz = Dz
         self.H_inv = H_inv
-        self.H = 1./H_inv
+        self.H = H
     
     def set_dg_strong_op(self, dd_phys):
         #TODO

@@ -28,30 +28,27 @@ The exact solution is available along with the algorithm from Chapter 4.
 
 # Eq parameters
 para = [287,1.4] # [R, gamma]
-test_case = 'density wave' # subsonic, transonic, shock tube, density wave
-nozzle_shape = 'constant' # book, constant, linear, smooth
+test_case = 'transonic_nozzle' # subsonic_nozzle, transonic, shock_tube, density_wave
+nozzle_shape = 'book' # book, constant, linear, smooth
+#TODO: transonic does not work
 
 # Time marching
-tm_method = 'explicit euler' # 'implicit_euler', 'explicit_euler', 'trapezoidal', 'rk4', 'bdf2'
-dt = 0.0001
-dt_init = dt
-nts = 500
+tm_method = 'rk4' # 'explicit_euler', 'rk4'
+dt = 0.00001
 t_init = 0
-tf = 0.5 #nts * dt # set to None to do automatically or use a convergence criterion
-# note: can add option to pass None, then that triggers it to check diffeq, if not can pass 'steady' in which case it uses converged criteria
-
-# TODO: Add flag that stops sim when it hits negative pressures
+tf = 1 #nts * dt # set to None to do automatically or use a convergence criterion
+check_resid_conv = True
 
 # Domain
 xmin = 0
-xmax = 1
-bc = 'periodic' # 'periodic', 'dirichlet', 'riemann'
+xmax = 10
+bc = 'dirichlet' # 'periodic', 'dirichlet', 'riemann'
 
 # Spatial discretization
 disc_type = 'div' # 'div', 'had'
 disc_nodes = 'lg' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
 p = 2
-nelem = 50 # number of elements
+nelem = 20 # number of elements
 nen = 0 # optional, number of nodes per element
 surf_type = 'lf'
 had_flux = 'central' # 2-point numerical flux used in hadamard form
@@ -63,47 +60,55 @@ title=r'1D Euler'
 
 # Initial solution
 q0 = None
-q0_type = 'linear'
+q0_type = 'exact'
 
 # Other
 bool_plot_sol = False
 print_sol_norm = False
+print_residual = True
 cons_obj_name=('Energy','Conservation','Entropy') # note: should I modify this for systems?
+settings = {} # extra things like for metrics
 
-bool_norm_var = False # what is this??
 
 
 ''' Set diffeq and solve '''
-c_solver = PdeSolverSbp
 
-diffeq = Quasi1dEuler(para, q0_type, test_case, nozzle_shape, bool_norm_var, bc)
+diffeq = Quasi1dEuler(para, q0_type, test_case, nozzle_shape, bc)
 
 diffeq.plt_style_exa_sol = {'color':'r','linestyle':'-','marker':'','linewidth':2}
 
-solver = PdeSolverSbp(diffeq,                               # Diffeq
-                      tm_method, dt, tf,                    # Time marching
-                      q0,                                   # Initial solution
-                      p, disc_type, nn,                     # Discretization
-                      nelem, nen, sat_flux_type,
-                      xmin, xmax,               # Domain
-                      cons_obj_name,              # Other
-                      bool_plot_sol, print_sol_norm)
+solver = PdeSolverSbp(diffeq, settings, 
+                  tm_method, dt, tf,   
+                  q0,                
+                  p, disc_type,      
+                  surf_type, diss_type, had_flux,
+                  nelem, nen, disc_nodes,
+                  bc, xmin, xmax,     
+                  cons_obj_name,      
+                  bool_plot_sol, print_sol_norm,
+                  print_residual, check_resid_conv)
 
-A = solver.check_eigs(plt_save_name=savefile+'_eigs',returnA=True,title='Eigenvalues: ' + title)
+if savefile is not None:
+    eigs_savefile = savefile+'_eigs'
+else:
+    eigs_savefile = None
+#A = solver.check_eigs(plt_save_name=eigs_savefile,returnA=True,title='Eigenvalues: ' + title,plot_eigs=False)
 #import numpy as np
 #eigs = np.linalg.eigvals(A)
 #max_eig = max(eigs.real)
 #def theory_fn(time):
 #    return 0.001*np.exp(max_eig * time)
 
-diffeq.plt_style_sol[0] = {'color':'b','linestyle':'-','marker':'','linewidth':3}
-solver.solve()
-solver.plot_sol(plt_save_name=savefile+'_sol',title=title,display_time=True)
-solver.plot_error(method='max diff',savefile=savefile+'_error', title=title)
-solver.plot_cons_obj(savefile=savefile)
+#diffeq.plt_style_sol[0] = {'color':'b','linestyle':'-','marker':'','linewidth':3}
+#solver.solve()
+#solver.plot_sol(plt_save_name=savefile+'_sol',title=title,display_time=True)
+#solver.plot_error(method='max diff',savefile=savefile+'_error', title=title)
+#solver.plot_cons_obj(savefile=savefile)
 #from Methods.Analysis import animate
 #animate(solver, plotargs={'display_time':True},skipsteps=100)
 
-#solver.solve()
-#solver.plot_sol()
-#solver.plot_cons_obj()
+#solver.plot_sol(q=solver.diffeq.set_q0(),time=0.)
+solver.solve()
+solver.plot_sol()
+solver.plot_cons_obj()
+solver.calc_error()

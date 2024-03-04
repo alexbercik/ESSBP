@@ -23,6 +23,7 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
                  bool_plot_sol=False, fun_plot_sol=None,
                  bool_calc_cons_obj=False, fun_calc_cons_obj=None,
                  print_sol_norm=False, print_residual=False,
+                 check_resid_conv=False,
                  dqdt=None, dfdq=None):
         '''
         Parameters
@@ -54,6 +55,9 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
         print_residual : bool, optional
             The norm of the residual is printed if this flag is true.
             The default is False.
+        check_resid_conv : bool, optional
+            Whether or not to check for residual convergence to exit.
+            The default is False (as it should be for unsteady)
         '''
 
         ''' Add inputs to the class '''
@@ -67,10 +71,8 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
         self.print_residual = print_residual
         self.bool_calc_cons_obj = bool_calc_cons_obj
         self.fun_calc_cons_obj = fun_calc_cons_obj
-
-        # TODO: Add this capability
-        if self.print_residual:
-            raise Exception('This option is not yet setup')
+        self.check_resid_conv = check_resid_conv
+        self.quitsim = False
 
         ''' Extract other required parameters '''
 
@@ -118,7 +120,7 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
         -------
         q_vec : numpy array
             One or all time steps, where each time step is a column in the
-            2D array.
+            3D array.
         '''
 
         if self.bool_calc_cons_obj:
@@ -129,7 +131,7 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
 
         return self.tm_solver(q0, dt, n_ts)
 
-    def common(self, q, t_idx, n_ts, dt):
+    def common(self, q, t_idx, n_ts, dt, dqdt):
         '''
         Parameters
         ----------
@@ -151,6 +153,10 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
             if (t_idx % self.idx_print == 0) or (t_idx == n_ts):
                 norm_q = np.linalg.norm(q) / np.sqrt(np.size(q))
                 print(f'i = {t_idx:4}, ||q|| = {norm_q:3.4}')
+
+        if self.check_resid_conv or self.print_residual:
+            resid = np.linalg.norm(dqdt)
+            resid = resid*resid # I actually want the norm squared
 
         if self.bool_calc_cons_obj:
             self.cons_obj[:, t_idx] = self.fun_calc_cons_obj(q)
@@ -179,10 +185,20 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
                 h,m,s = int(rem_time//3600),int((rem_time//60)%60),int(rem_time%60)
                 suf = 'Complete. Estimating {0}:{1:02d}:{2:02d} remaining.'.format(h,m,s)
                 #print('... {0}% Done. Estimating {1}:{2:02d}:{3:02d} remaining.'.format(pct,h,m,s))
+                if self.print_residual:
+                    suf += ' Resid = {0:.1E}'.format(resid)
                 printProgressBar(t_idx, n_ts, prefix = 'Progress:', suffix = suf)
+        
+        if np.any(np.isnan(q)):
+            print('ERROR: there are undefined solution values. Ending simulation at t =',t_idx * dt,'t_idx =', t_idx)
+            self.quitsim = True
+            self.cons_obj = self.cons_obj[:, :t_idx]
 
-        #TODO: Add convergence tests to stop time marching if solution is 
-        # sufficiently converged (rhs=0) or blown up.
+        if self.check_resid_conv:
+            if resid < 1E-10: 
+                print('Reached a residual tolerance of 1E-10 (L2 square norm). Ending simulation.')
+                self.quitsim = True
+                self.cons_obj = self.cons_obj[:, :t_idx]
 
     
 def printProgressBar(iteration, total, prefix = '', suffix = '', decimals = 0, length = 20, fill = '█', printEnd = "\r"):

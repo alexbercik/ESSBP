@@ -47,20 +47,22 @@ class Sat(SatDer1, SatDer2):
         self.direction = direction
         self.met_form = met_form
         assert met_form=='skew_sym','SATs not currently set up for divergence form metrics'
-        eye = np.eye(self.nen*self.neq_node)
+        self.bc = solver.bc
         
         if self.dim == 1:
             self.tL = solver.tL
             self.tR = solver.tR
+            self.calcEx = solver.diffeq.calcEx
             self.dExdq = solver.diffeq.dExdq
             self.d2Exdq2 = solver.diffeq.d2Exdq2
             self.dExdq_eig_abs = solver.diffeq.dExdq_eig_abs
             self.maxeig_dExdq = solver.diffeq.maxeig_dExdq
-            self.metrics = solver.mesh.metrics[:,0,:]
-            self.bdy_metrics = np.reshape(solver.mesh.bdy_metrics, (1,2,self.nelem))
+            self.metrics = fn.repeat_neq_gv(solver.mesh.metrics[:,0,:],self.neq_node)
+            self.bdy_metrics = np.repeat(np.reshape(solver.mesh.bdy_metrics, (1,2,self.nelem)),self.neq_node,0)
             self.had_flux_Ex = solver.had_flux_Ex
             
         elif self.dim == 2:
+            eye = np.eye(self.nen*self.neq_node)
             self.Hperp = solver.H_perp #TODO: Flatten this?
             if self.direction == 'x': # computational direction, not physical direction
                 self.tL = np.kron(solver.tL, eye)
@@ -82,6 +84,7 @@ class Sat(SatDer1, SatDer2):
             self.maxeig_dEydq = solver.diffeq.maxeig_dEydq
         
         elif self.dim == 3:
+            eye = np.eye(self.nen*self.neq_node)
             self.Hperp = solver.H_perp
             if self.direction == 'x': 
                 self.tL = np.kron(np.kron(solver.tL, eye), eye)
@@ -152,12 +155,8 @@ class Sat(SatDer1, SatDer2):
         ''' Set the methods that will be used to calculate the SATs '''
 
         if solver.pde_order == 1:          
-            
-            if self.method == 'diffeq': # will this work for burgers? Do i need to transfer things like tL?
-                self.calc = solver.diffeq.calc_sat
-                self.calc_dfdq = solver.diffeq.calc_dfdq_sat
                 
-            elif self.method == 'central' or self.method == 'nondissipative' or self.method == 'symmetric':
+            if self.method == 'central' or self.method == 'nondissipative' or self.method == 'symmetric':
                 if self.disc_type == 'div':
                     if self.dim == 1:
                         self.calc = self.central_div_1d
@@ -183,7 +182,8 @@ class Sat(SatDer1, SatDer2):
                         pass
                         #self.calc_dfdq = self.central_scalar_had_dfdq
                 else:
-                    self.calc_dfdq = self.dfdq_complexstep
+                    pass
+                    #self.calc_dfdq = self.dfdq_complexstep
                     
             elif self.method == 'upwind':
                 print('WARNING: upwind SATs are not provably stable because of metric terms. Use for example lf instead.')
@@ -213,7 +213,8 @@ class Sat(SatDer1, SatDer2):
                         #self.calc_dfdq = self.upwind_scalar_had_dfdq
                         pass
                 else:
-                    self.calc_dfdq = self.dfdq_complexstep
+                    pass
+                    #self.calc_dfdq = self.dfdq_complexstep
                     
             elif self.method == 'lf' or self.method == 'llf' or self.method == 'lax_friedrichs':
                 if self.disc_type == 'div':
@@ -241,7 +242,8 @@ class Sat(SatDer1, SatDer2):
                         pass
                         #self.calc_dfdq = self.llf_scalar_had_dfdq
                 else:
-                    self.calc_dfdq = self.dfdq_complexstep
+                    pass
+                    #self.calc_dfdq = self.dfdq_complexstep
             
             elif self.diffeq_name=='Burgers':
                 if self.dim >= 2:
@@ -278,16 +280,12 @@ class Sat(SatDer1, SatDer2):
                             self.calc = lambda q,E: self.div_1d_burgers_had(q, E, q_bdyL=None, q_bdyR=None, sigma=1.)
                         else:
                             raise Exception("SAT type not understood. Try 'ec', 'es', 'ec_had', 'es_had', 'split', or 'split_diss'.")
+
+            elif self.diffeq_name=='Quasi1dEuler':
+                assert(self.dim==1),'Something weird happened'  
+                #TODO           
                     
-                    
-            ######### TO DO
-            elif (self.method.lower()=='ec' and self.diffeq_name=='Quasi1dEuler') or self.method.lower()=='crean ec':
-                    self.calc = self.der1_crean_ec
-                    #self.calc_dfdq = complex step?
-            elif (self.method.lower()=='es' and self.diffeq_name=='Quasi1dEuler') or self.method.lower()=='crean es':
-                    self.calc = self.der1_crean_es
-                    #self.calc_dfdq = complex step?
-            # TODO: Add 'try' if it is there, if not revert to complexstep
+
             else:
                 raise Exception('Choice of SAT not understood.')
 
@@ -365,8 +363,8 @@ class Sat(SatDer1, SatDer2):
         self.metrics = []
         self.bdy_metrics = []
         for row in range(self.nelem[1]):
-            self.metrics.append(metrics[:,:2,row::self.nelem[1]]) # only want dx_ref/dx_phys and dx_ref/dy_phys
-            self.bdy_metrics.append(bdy_metrics[:,:2,:2,row::self.nelem[1]]) # facets 1 and 2, same matrix entries
+            self.metrics.append(fn.repeat_neq_gv(metrics[:,:2,row::self.nelem[1]],self.neq_node)) # only want dx_ref/dx_phys and dx_ref/dy_phys
+            self.bdy_metrics.append(np.repeat(bdy_metrics[:,:2,:2,row::self.nelem[1]],self.neq_node,0)) # facets 1 and 2, same matrix entries
 
     def set_metrics_2d_y(self, metrics, bdy_metrics):
         ''' create a list of metrics for each col '''  
@@ -375,14 +373,14 @@ class Sat(SatDer1, SatDer2):
         for col in range(self.nelem[0]):
             start = col*self.nelem[0]
             end = start + self.nelem[1]
-            self.metrics.append(metrics[:,2:,start:end]) # only want dy_ref/dx_phys and dy_ref/dy_phys
-            self.bdy_metrics.append(bdy_metrics[:,2:,2:,start:end]) # facets 3 and 4, same matrix entries
-            
+            self.metrics.append(fn.repeat_neq_gv(metrics[:,2:,start:end],self.neq_node)) # only want dy_ref/dx_phys and dy_ref/dy_phys
+            self.bdy_metrics.append(np.repeat(bdy_metrics[:,2:,2:,start:end],self.neq_node,0)) # facets 3 and 4, same matrix entries
+           
     def set_exact_metrics_2d_x(self, metrics):
         ''' create a list of metrics for each row '''  
         self.metrics_exa = []
         for row in range(self.nelem[1]):
-            self.metrics_exa.append(metrics[:,:2,row::self.nelem[1]]) # only want dx_ref/dx_phys and dx_ref/dy_phys
+            self.metrics_exa.append(fn.repeat_neq_gv(metrics[:,:2,row::self.nelem[1]],self.neq_node)) # only want dx_ref/dx_phys and dx_ref/dy_phys
 
     def set_exact_metrics_2d_y(self, metrics):
         ''' create a list of metrics for each col '''  
@@ -390,16 +388,16 @@ class Sat(SatDer1, SatDer2):
         for col in range(self.nelem[0]):
             start = col*self.nelem[0]
             end = start + self.nelem[1]
-            self.metrics_exa.append(metrics[:,2:,start:end]) # only want dy_ref/dx_phys and dy_ref/dy_phys
-
+            self.metrics_exa.append(fn.repeat_neq_gv(metrics[:,2:,start:end],self.neq_node)) # only want dy_ref/dx_phys and dy_ref/dy_phys
+     
     def set_metrics_3d_x(self, metrics, bdy_metrics):
         ''' create a list of metrics for each row '''  
         self.metrics = []
         self.bdy_metrics = []
         skipx = self.nelem[1]*self.nelem[2]
         for row in range(skipx):
-            self.metrics.append(metrics[:,:3,row::skipx])
-            self.bdy_metrics.append(bdy_metrics[:,:2,:3,row::skipx])
+            self.metrics.append(fn.repeat_neq_gv(metrics[:,:3,row::skipx],self.neq_node))
+            self.bdy_metrics.append(np.repeat(bdy_metrics[:,:2,:3,row::skipx],self.neq_node,0))
     
     def set_metrics_3d_y(self, metrics, bdy_metrics):
         ''' create a list of metrics for each row '''  
@@ -408,8 +406,8 @@ class Sat(SatDer1, SatDer2):
         for coly in range(self.nelem[0]*self.nelem[2]):
             start = coly + (coly//self.nelem[2])*(self.nelem[1]-1)*self.nelem[2]
             end = start + self.nelem[1]*self.nelem[2]
-            self.metrics.append(metrics[:,3:6,start:end:self.nelem[2]])
-            self.bdy_metrics.append(bdy_metrics[:,2:4,3:6,start:end:self.nelem[2]])
+            self.metrics.append(fn.repeat_neq_gv(metrics[:,3:6,start:end:self.nelem[2]],self.neq_node))
+            self.bdy_metrics.append(np.repeat(bdy_metrics[:,2:4,3:6,start:end:self.nelem[2]],self.neq_node,0))
     
     def set_metrics_3d_z(self, metrics, bdy_metrics):
         ''' create a list of metrics for each row '''  
@@ -418,8 +416,8 @@ class Sat(SatDer1, SatDer2):
         for colz in range(self.nelem[0]*self.nelem[2]):
             start = colz*self.nelem[2]
             end = start + self.nelem[2]
-            self.metrics.append(metrics[:,6:,start:end])
-            self.bdy_metrics.append(bdy_metrics[:,4:,6:,start:end])
+            self.metrics.append(fn.repeat_neq_gv(metrics[:,6:,start:end],self.neq_node))
+            self.bdy_metrics.append(np.repeat(bdy_metrics[:,4:,6:,start:end],self.neq_node,0))
 
     
 
