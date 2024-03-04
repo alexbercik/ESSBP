@@ -492,7 +492,7 @@ class SatDer1:
             qR = fn.pad_1dL(q, q_bdyR)  # TODO: this definitely does not work
             raise Exception('TODO: adding boundary condition.')
         
-        Fsurf = fn.build_F(qL, qR, self.neq_node, self.had_flux_Ex)
+        Fsurf = self.build_F(qL, qR, self.had_flux_Ex)
         
         surfa = fn.gm_gm_had_diff(self.taphys,np.transpose(Fsurf[:,:,:-1],(1,0,2)))
         surfb = fn.gm_gm_had_diff(self.tbphys,Fsurf[:,:,1:])
@@ -525,8 +525,8 @@ class SatDer1:
             qR = fn.pad_1dL(q, q_bdyR)  # TODO: this definitely does not work (needs entire q, not extrapolation)
             raise Exception('TODO: adding boundary condition.')
         
-        Fsurfx = fn.build_F(qL, qR, self.neq_node, self.had_flux_Ex)
-        Fsurfy = fn.build_F(qL, qR, self.neq_node, self.had_flux_Ey)
+        Fsurfx = self.build_F(qL, qR, self.had_flux_Ex)
+        Fsurfy = self.build_F(qL, qR, self.had_flux_Ey)
         
         surfa = fn.gm_gm_had_diff(self.taphysx[idx],np.transpose(Fsurfx[:,:,:-1],(1,0,2))) + \
                 fn.gm_gm_had_diff(self.taphysy[idx],np.transpose(Fsurfy[:,:,:-1],(1,0,2)))
@@ -563,9 +563,9 @@ class SatDer1:
             qR = fn.pad_1dL(q, q_bdyR)  # TODO: this definitely does not work
             raise Exception('TODO: adding boundary condition.')
         
-        Fsurfx = fn.build_F(qL, qR, self.neq_node, self.had_flux_Ex)
-        Fsurfy = fn.build_F(qL, qR, self.neq_node, self.had_flux_Ey)
-        Fsurfz = fn.build_F(qL, qR, self.neq_node, self.had_flux_Ez)
+        Fsurfx = self.build_F(qL, qR, self.had_flux_Ex)
+        Fsurfy = self.build_F(qL, qR, self.had_flux_Ey)
+        Fsurfz = self.build_F(qL, qR, self.had_flux_Ez)
         
         surfa = fn.gm_gm_had_diff(self.taphysx[idx],np.transpose(Fsurfx[:,:,:-1],(1,0,2))) + \
                 fn.gm_gm_had_diff(self.taphysy[idx],np.transpose(Fsurfy[:,:,:-1],(1,0,2))) + \
@@ -604,8 +604,8 @@ class SatDer1:
             qR = fn.pad_1dL(q, q_bdyR)  # TODO: this definitely does not work
             raise Exception('TODO: adding boundary condition.')
         
-        Fsurfx = fn.build_F(qL, qR, self.neq_node, self.had_flux_Ex)
-        Fsurfy = fn.build_F(qL, qR, self.neq_node, self.had_flux_Ey)
+        Fsurfx = self.build_F(qL, qR, self.had_flux_Ex)
+        Fsurfy = self.build_F(qL, qR, self.had_flux_Ey)
         
         surfa = self.had_gamma * (fn.gm_gm_had_diff(self.taphysx[idx],np.transpose(Fsurfx[:,:,:-1],(1,0,2))) + \
                                   fn.gm_gm_had_diff(self.taphysy[idx],np.transpose(Fsurfy[:,:,:-1],(1,0,2))) )

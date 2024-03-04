@@ -48,6 +48,13 @@ class Sat(SatDer1, SatDer2):
         self.met_form = met_form
         assert met_form=='skew_sym','SATs not currently set up for divergence form metrics'
         self.bc = solver.bc
+
+        if self.neq_node == 1:
+            self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sca(q1, q2, flux))
+            self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sca(q1, q2, flux))
+        else:
+            self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sys(self.neq_node, q1, q2, flux))
+            self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sys(self.neq_node, q1, q2, flux))
         
         if self.dim == 1:
             self.tL = solver.tL

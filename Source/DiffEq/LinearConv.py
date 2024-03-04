@@ -40,6 +40,7 @@ class LinearConv(PdeBase):
             self.maxeig_dExdq = lambda q : np.ones(q.shape)
             self.dExdq = lambda q : fn.diag(np.ones(q.shape))
             self.dExdq_eig_abs = self.dExdq
+            self.central_Ex = self.central_fix_Ex
             
 
     def exact_sol(self, time=0, x=None):
