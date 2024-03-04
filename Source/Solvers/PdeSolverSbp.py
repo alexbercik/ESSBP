@@ -103,6 +103,11 @@ class PdeSolverSbp(PdeSolver):
 
         ''' Modify solver approach '''
 
+        if self.neq_node == 1:
+            self.build_F_vol = staticmethod(fn.build_F_vol_sca)
+        else:
+            self.build_F_vol = staticmethod(lambda q, flux: fn.build_F_vol_sys(self.neq_node, q, flux))
+
         self.diffeq.set_mesh(self.mesh)
         if self.dim == 1:
             self.diffeq.set_sbp_op(self.H_phys, self.H_inv_phys, self.Dx_phys) # do we need this any more?
@@ -232,7 +237,7 @@ class PdeSolverSbp(PdeSolver):
         
     def dqdt_1d_had(self, q):
         ''' the main dqdt function for hadamard form in 1D '''
-        Fvol = fn.build_F_vol(q, self.neq_node, self.had_flux_Ex)
+        Fvol = self.build_F_vol(q, self.had_flux_Ex)
         dExdx = 2*fn.gm_gm_had_diff(self.Dx_phys, Fvol)
         
         if self.periodic:
@@ -249,8 +254,8 @@ class PdeSolverSbp(PdeSolver):
         
     def dqdt_2d_had(self, q):
         ''' the main dqdt function for hadamard form in 2D '''
-        Fxvol = fn.build_F_vol(q, self.neq_node, self.had_flux_Ex)
-        Fyvol = fn.build_F_vol(q, self.neq_node, self.had_flux_Ey)
+        Fxvol = self.build_F_vol(q, self.had_flux_Ex)
+        Fyvol = self.build_F_vol(q, self.had_flux_Ey)
         dExdx = 2*fn.gm_gm_had_diff(self.Dx_phys, Fxvol)
         dEydy = 2*fn.gm_gm_had_diff(self.Dy_phys, Fyvol)
         satx, saty = np.empty(self.qshape), np.empty(self.qshape)
@@ -280,9 +285,9 @@ class PdeSolverSbp(PdeSolver):
         
     def dqdt_3d_had(self, q):
         ''' the main dqdt function for hadamard form in 3D '''
-        Fxvol = fn.build_F_vol(q, self.neq_node, self.had_flux_Ex)
-        Fyvol = fn.build_F_vol(q, self.neq_node, self.had_flux_Ey)
-        Fzvol = fn.build_F_vol(q, self.neq_node, self.had_flux_Ez)
+        Fxvol = self.build_F_vol(q, self.had_flux_Ex)
+        Fyvol = self.build_F_vol(q, self.had_flux_Ey)
+        Fzvol = self.build_F_vol(q, self.had_flux_Ez)
         dExdx = 2*fn.gm_gm_had_diff(self.Dx_phys, Fxvol)
         dEydy = 2*fn.gm_gm_had_diff(self.Dy_phys, Fyvol)
         dEzdz = 2*fn.gm_gm_had_diff(self.Dz_phys, Fzvol)

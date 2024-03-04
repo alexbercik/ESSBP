@@ -97,11 +97,11 @@ class Quasi1dEuler(PdeBase):
             
         elif self.test_case == 'density_wave':
             self.u0 = 0.1         # initial (ideally constant) velocity
-            self.p0 = 10          # initial (ideally constant) pressure
+            self.p0 = 20          # initial (ideally constant) pressure
             self.nozzle_shape = 'constant'
             self.q0_type = 'density_wave'
             assert (bc == 'periodic'),\
-                "density_wave must use bc='dirichlet' or bc='riemann'."
+                "density_wave must use bc='periodic'."
             self.steady = False
             
         else: raise Exception("Test case not understood. Try 'subsonic_nozzle', 'transonic_nozzle', 'shock_tube', or 'density_wave'.")
@@ -112,9 +112,9 @@ class Quasi1dEuler(PdeBase):
             self.dExdq = efn.dExdq_1D
             self.dEndq_eig_abs_dq = efn.dEndq_eig_abs_dq_1D #TODO: rewrite special Euler SAT to use this directly
             self.dqdw = efn.symmetrizer_1D
-            self.Ismail_Roe_flux = efn.Ismail_Roe_flux_1D
-            self.Central_flux = efn.Central_flux_1D
-            self.Ranocha_flux = efn.Ranocha_flux_1D
+            self.central_Ex = efn.Central_flux_1D
+            self.ismail_roe_Ex = efn.Ismail_Roe_flux_1D
+            self.ranocha_Ex = efn.Ranocha_flux_1D
             self.maxeig_dExdq = efn.maxeig_dExdq_1D
             self.entropy = efn.entropy_1D
             self.entropy_var = efn.entropy_var_1D
@@ -644,9 +644,6 @@ class Quasi1dEuler(PdeBase):
                 x = x.flatten('F')
             mach, T, p = shocktube(time)
         elif self.test_case == 'density_wave':
-            if x.ndim >1: 
-                reshape=True
-                x = x.flatten('F')
             mach, T, p = density_wave(time)
         else:
             raise Exception('Invalid test case.')

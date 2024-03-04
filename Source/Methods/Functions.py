@@ -789,64 +789,76 @@ def reshape_to_meshgrid_2D(q,nen,nelemx,nelemy):
 # June 2023: I put it back in becuase the keyword default of False is being depreciated and 
 # it threw a warning. Maybe I can get away with this if it supports class functions?
 @njit
-def build_F_vol(q, neq, flux):
+def build_F_vol_sca(q, flux):
     ''' builds a Flux differencing matrix (used for Hadamard form) given 1 
     solution vector q, the number of equations per node, and a 2-point 
     flux function. Takes advantage of symmetry since q1 = q2 = q '''
     nen_neq, nelem = q.shape 
     F = np.zeros((nen_neq,nen_neq,nelem))  
-    if neq == 1:
-        # nen = nen_neq
-        for e in range(nelem):
-            for i in range(nen_neq):
-                for j in range(i,nen_neq):
-                    f = flux(q[i,e],q[j,e])
-                    F[i,j,e] = f
-                    if i != j:
-                        F[j,i,e] = f
-    else:  
-        nen = int(nen_neq / neq)
-        for e in range(nelem):
-            for i in range(nen):
-                for j in range(i,nen):
-                    idxi = i*neq
-                    idxi2 = (i+1)*neq
-                    idxj = j*neq
-                    idxj2 = (j+1)*neq
-                    diag = np.diag(flux(q[idxi:idxi2,e],q[idxj:idxj2,e]))
-                    F[idxi:idxi2,idxj:idxj2,e] = diag
-                    if i != j:
-                        F[idxj:idxj2,idxi:idxi2,e] = diag
+    for e in range(nelem):
+        for i in range(nen_neq):
+            for j in range(i,nen_neq):
+                f = flux(q[i,e],q[j,e])
+                F[i,j,e] = f
+                if i != j:
+                    F[j,i,e] = f
+    return F
+
+@njit
+def build_F_vol_sys(neq, q, flux):
+    ''' builds a Flux differencing matrix (used for Hadamard form) given 1 
+    solution vector q, the number of equations per node, and a 2-point 
+    flux function. Takes advantage of symmetry since q1 = q2 = q '''
+    nen_neq, nelem = q.shape 
+    F = np.zeros((nen_neq,nen_neq,nelem))   
+    nen = int(nen_neq / neq)
+    for e in range(nelem):
+        for i in range(nen):
+            for j in range(i,nen):
+                idxi = i*neq
+                idxi2 = (i+1)*neq
+                idxj = j*neq
+                idxj2 = (j+1)*neq
+                diag = np.diag(flux(q[idxi:idxi2,e],q[idxj:idxj2,e]))
+                F[idxi:idxi2,idxj:idxj2,e] = diag
+                if i != j:
+                    F[idxj:idxj2,idxi:idxi2,e] = diag
     return F
 
 # Don't use nopython @njit in case we need to pass class objects in ec_flux
 # June 2023: I put it back in becuase the keyword default of False is being depreciated and 
 # it threw a warning. Maybe I can get away with this if it supports class functions?
 @njit
-def build_F(q1, q2, neq, flux):
+def build_F_sca(q1, q2, flux):
+    ''' builds a Flux differencing matrix (used for Hadamard form) given 2 
+    solution vectors q1, q2, the number of equations per node, and a 2-point 
+    flux function. for scalar equations, neq=1 '''
+    nen_neq, nelem = q1.shape 
+    F = np.zeros((nen_neq,nen_neq,nelem))  
+    for e in range(nelem):
+        for i in range(nen_neq):
+            for j in range(nen_neq):
+                f = flux(q1[i,e],q2[j,e])
+                F[i,j,e] = f
+    return F
+
+@njit
+def build_F_sys(neq, q1, q2, flux):
     ''' builds a Flux differencing matrix (used for Hadamard form) given 2 
     solution vectors q1, q2, the number of equations per node, and a 2-point 
     flux function '''
     nen_neq, nelem = q1.shape 
     F = np.zeros((nen_neq,nen_neq,nelem))  
-    if neq == 1:
-        # nen = nen_neq
-        for e in range(nelem):
-            for i in range(nen_neq):
-                for j in range(nen_neq):
-                    f = flux(q1[i,e],q2[j,e])
-                    F[i,j,e] = f
-    else:  
-        nen = int(nen_neq / neq)
-        for e in range(nelem):
-            for i in range(nen):
-                for j in range(nen):
-                    idxi = i*neq
-                    idxi2 = (i+1)*neq
-                    idxj = j*neq
-                    idxj2 = (j+1)*neq
-                    diag = np.diag(flux(q1[idxi:idxi2,e],q2[idxj:idxj2,e]))
-                    F[idxi:idxi2,idxj:idxj2,e] = diag
+    nen = int(nen_neq / neq)
+    for e in range(nelem):
+        for i in range(nen):
+            for j in range(nen):
+                idxi = i*neq
+                idxi2 = (i+1)*neq
+                idxj = j*neq
+                idxj2 = (j+1)*neq
+                diag = np.diag(flux(q1[idxi:idxi2,e],q2[idxj:idxj2,e]))
+                F[idxi:idxi2,idxj:idxj2,e] = diag
     return F
 
 

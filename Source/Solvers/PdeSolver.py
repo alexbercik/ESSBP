@@ -167,37 +167,27 @@ class PdeSolver:
             else:
                 print("WARNING: 2-point flux '"+had_flux+"' not available for this Diffeq. Reverting to Central flux.")
                 self.had_flux = 'central'
-            if self.diffeq.para == self.diffeq.para_fix:
-                print('Using jitted (_fix) 2-point flux instead since params match.')
-                # has all the standard parameters - used fixed jit functions
-                self.had_flux_Ex = getattr(self.diffeq, self.had_flux+'_fix_Ex')
-                if self.dim > 1:
-                    self.had_flux_Ey = getattr(self.diffeq, self.had_flux+'_fix_Ey')
-                if self.dim > 2:
-                    self.had_flux_Ez = getattr(self.diffeq, self.had_flux+'_fix_Ez')
-            else:
-                self.had_flux_Ex = getattr(self.diffeq, self.had_flux+'_Ex')
-                if hasattr(self.diffeq, had_flux.lower()+'_fix_Ex'):
-                    print("WARNING: 2-point flux '"+had_flux+"' may run faster if you use '"+had_flux+"'_fix instead (though params different).")
-                if self.dim > 1:
-                    self.had_flux_Ey = getattr(self.diffeq, self.had_flux+'_Ey')
-                if self.dim > 2:
-                    self.had_flux_Ez = getattr(self.diffeq, self.had_flux+'_Ez')
+        
+            self.had_flux_Ex = getattr(self.diffeq, self.had_flux+'_Ex')
+            if self.dim > 1:
+                self.had_flux_Ey = getattr(self.diffeq, self.had_flux+'_Ey')
+            if self.dim > 2:
+                self.had_flux_Ez = getattr(self.diffeq, self.had_flux+'_Ez')
             # quick test
-            import sys
-            from io import StringIO 
-            save_stderr = sys.stderr # console output for error
-            temp_stderr = StringIO()
-            sys.stderr = temp_stderr # make temporary string output
-            from Source.Methods.Functions import build_F
-            test = build_F(np.ones((2*self.neq_node,2)), np.ones((2*self.neq_node,2)), self.neq_node, self.had_flux_Ex)
-            sys.stderr = save_stderr # reset error output
-            if len(temp_stderr.getvalue()) > 1:
+            try:
+                if self.neq_node == 1:
+                    from Source.Methods.Functions import build_F_sca
+                    test = build_F_sca(np.ones((2,3)), np.ones((2,3)), self.neq_node, self.had_flux_Ex)
+                else:
+                    from Source.Methods.Functions import build_F_sys
+                    test = build_F_sys(self.neq_node, np.ones((2*self.neq_node,3)), np.ones((2*self.neq_node,3)), self.had_flux_Ex)
+            except:
                 print('WARNING: The Hadamard Flux did not compile properly. Currently')
                 print('         supressing output, but most likely this is due to')
                 print('         passing class objects to the jitted function. The code')
                 print('         will not run as fast as it could, and may even fail.')
-
+                raise Exception('quitting. TODO: fix this exception.')
+            
         else: raise Exception('Discretization type not understood. Try div or had.')
         self.surf_type = surf_type.lower()
         self.diss_type = diss_type
@@ -299,8 +289,9 @@ class PdeSolver:
             self.t_final = self.diffeq.t_final
         
         if isinstance(self.t_final, int) or isinstance(self.t_final, float):
-            if (self.t_final != self.diffeq.t_final) and (self.diffeq.t_final is not None):
-                print('WARNING: The diffeq default is t_final= ',self.diffeq.t_final,', but you selected t_final =',t_final)
+            if hasattr(diffeq, 't_final'):
+                if (self.t_final != self.diffeq.t_final) and (self.diffeq.t_final is not None):
+                    print('WARNING: The diffeq default is t_final= ',self.diffeq.t_final,', but you selected t_final =',t_final)
             self.n_ts = int(np.round(self.t_final / self.dt))
             if abs(self.n_ts - (self.t_final / self.dt)) > 1e-10:
                 dt_old = np.copy(self.dt)

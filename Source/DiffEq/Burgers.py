@@ -109,7 +109,7 @@ class Burgers(PdeBase):
         return fx
     
     @njit   
-    def central_fix_Ex(qL,qR):
+    def central_Ex(qL,qR):
         ''' a central 2-point flux for hadamard form.
         This allows us to jit the hadamard flux functions. '''
         f = fn.arith_mean(qL**2/2,qR**2/2)

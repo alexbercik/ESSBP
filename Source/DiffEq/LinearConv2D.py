@@ -43,12 +43,14 @@ class LinearConv(PdeBase):
             self.maxeig_dExdq = lambda q : np.ones(q.shape)
             self.dExdq = lambda q : fn.diag(np.ones(q.shape))
             self.dExdq_eig_abs = self.dExdq
+            self.central_Ex = self.central_fix_Ex
         
         if self.ay == self.ay_fix:
             print('Using the fixed ay={} diffeq functions since params match.'.format(self.ax_fix))
-            self.maxeig_dExdq = lambda q : np.ones(q.shape)
-            self.dExdq = lambda q : fn.diag(np.ones(q.shape))
-            self.dExdq_eig_abs = self.dExdq
+            self.maxeig_dEydq = lambda q : np.ones(q.shape)
+            self.dEydq = lambda q : fn.diag(np.ones(q.shape))
+            self.dEydq_eig_abs = self.dEydq
+            self.central_Ey = self.central_fix_Ey
 
     def exact_sol(self, time=0, xy=None):
 

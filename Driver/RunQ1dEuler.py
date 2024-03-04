@@ -28,30 +28,30 @@ The exact solution is available along with the algorithm from Chapter 4.
 
 # Eq parameters
 para = [287,1.4] # [R, gamma]
-test_case = 'transonic_nozzle' # subsonic_nozzle, transonic, shock_tube, density_wave
+test_case = 'density_wave' # subsonic_nozzle, transonic, shock_tube, density_wave
 nozzle_shape = 'book' # book, constant, linear, smooth
 #TODO: transonic does not work
 
 # Time marching
 tm_method = 'rk4' # 'explicit_euler', 'rk4'
-dt = 0.00001
+dt = 0.0001
 t_init = 0
 tf = 1 #nts * dt # set to None to do automatically or use a convergence criterion
-check_resid_conv = True
+check_resid_conv = False
 
 # Domain
-xmin = 0
-xmax = 10
-bc = 'dirichlet' # 'periodic', 'dirichlet', 'riemann'
+xmin = -1
+xmax = 1
+bc = 'periodic' # 'periodic', 'dirichlet', 'riemann'
 
 # Spatial discretization
-disc_type = 'div' # 'div', 'had'
+disc_type = 'had' # 'div', 'had'
 disc_nodes = 'lg' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
 p = 2
 nelem = 20 # number of elements
 nen = 0 # optional, number of nodes per element
-surf_type = 'lf'
-had_flux = 'central' # 2-point numerical flux used in hadamard form
+surf_type = 'nondissipative'
+had_flux = 'ranocha' # 2-point numerical flux used in hadamard form
 diss_type = None
 
 # output
@@ -60,12 +60,12 @@ title=r'1D Euler'
 
 # Initial solution
 q0 = None
-q0_type = 'exact'
+q0_type = 'density_wave'
 
 # Other
 bool_plot_sol = False
 print_sol_norm = False
-print_residual = True
+print_residual = False
 cons_obj_name=('Energy','Conservation','Entropy') # note: should I modify this for systems?
 settings = {} # extra things like for metrics
 

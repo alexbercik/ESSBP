@@ -28,6 +28,10 @@ class LinearConv(PdeBase):
     xy = None
     has_exa_sol = True
     para_names = ('ax','ay','az')
+    ax_fix = 1
+    ay_fix = 1
+    az_fix = 1
+    para_fix = [ax_fix,ay_fix,az_fix]
 
     def __init__(self, para=None, q0_type='SinWave'):
 
@@ -35,6 +39,27 @@ class LinearConv(PdeBase):
         self.ax = self.para[0]
         self.ay = self.para[1]
         self.az = self.para[2]
+
+        if self.ax == self.ax_fix:
+            print('Using the fixed ax={} diffeq functions since params match.'.format(self.ax_fix))
+            self.maxeig_dExdq = lambda q : np.ones(q.shape)
+            self.dExdq = lambda q : fn.diag(np.ones(q.shape))
+            self.dExdq_eig_abs = self.dExdq
+            self.central_Ex = self.central_fix_Ex
+        
+        if self.ay == self.ay_fix:
+            print('Using the fixed ay={} diffeq functions since params match.'.format(self.ax_fix))
+            self.maxeig_dEydq = lambda q : np.ones(q.shape)
+            self.dEydq = lambda q : fn.diag(np.ones(q.shape))
+            self.dEydq_eig_abs = self.dEydq
+            self.central_Ey = self.central_fix_Ey
+
+        if self.az == self.az_fix:
+            print('Using the fixed ay={} diffeq functions since params match.'.format(self.ax_fix))
+            self.maxeig_dEzdq = lambda q : np.ones(q.shape)
+            self.dEzdq = lambda q : fn.diag(np.ones(q.shape))
+            self.dEzdq_eig_abs = self.dEzdq
+            self.central_Ez = self.central_fix_Ez
 
     def exact_sol(self, time=0, xyx=None):
 
