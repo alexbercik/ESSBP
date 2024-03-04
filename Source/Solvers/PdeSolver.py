@@ -177,7 +177,7 @@ class PdeSolver:
             try:
                 if self.neq_node == 1:
                     from Source.Methods.Functions import build_F_sca
-                    test = build_F_sca(np.ones((2,3)), np.ones((2,3)), self.neq_node, self.had_flux_Ex)
+                    test = build_F_sca(np.ones((2,3)), np.ones((2,3)), self.had_flux_Ex)
                 else:
                     from Source.Methods.Functions import build_F_sys
                     test = build_F_sys(self.neq_node, np.ones((2*self.neq_node,3)), np.ones((2*self.neq_node,3)), self.had_flux_Ex)
