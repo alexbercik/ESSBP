@@ -11,6 +11,7 @@ import numpy as np
 from Source.DiffEq.DiffEqBase import PdeBase
 import Source.Methods.Functions as fn
 from numba import njit
+from scipy.optimize import bisect
 
 class Burgers(PdeBase):
     '''
@@ -25,7 +26,7 @@ class Burgers(PdeBase):
     neq_node = 1    # 1 equation in 1D
     eq_type = 'pde'
     pde_order = 1
-    has_exa_sol = False # TODO: Add exact solution (copy from other code)
+    has_exa_sol = True
 
     def __init__(self, para=None, q0_type='SinWave',
                  use_split_form=False, split_alpha=2/3):
@@ -33,6 +34,30 @@ class Burgers(PdeBase):
         super().__init__(para, q0_type)
         self.use_split_form = use_split_form
         self.split_alpha = split_alpha
+
+    def exact_sol(self, time=0, x=None):
+
+        if x is None:
+            x = self.x_elem
+
+        reshape = False
+        if x.ndim >1: 
+            reshape=True
+            x = x.flatten('F')
+
+        u0 = self.set_q0(xy=x)
+        a,b = np.min(u0), np.max(u0) # u(x,t) must be some u0(x), so bounded by min & max
+        a,b = a-(b-a)/100 , b+(b-a)/100 # expand the boundaries slightly just in case
+        u = np.empty_like(x) # initiate u
+        for i in range(len(x)):
+            f = lambda z : self.set_q0(xy=z) # f(x) = u0(x+u0*t0) = u0(x)
+            eq = lambda z : f(x[i]-z*time) - z  # find roots u of 0 = f(x-ut) - u
+            u[i] = bisect(eq,a-0.1,b+0.1,xtol=1e-12,maxiter=1000)
+        
+        if reshape:
+            u = np.reshape(u,(self.nen,self.nelem),'F')
+
+        return u
 
     def calcEx(self, q):
         E = 0.5*q**2
@@ -85,6 +110,12 @@ class Burgers(PdeBase):
     def maxeig_dExdq(self, q):
         ''' return the maximum eigenvalue - used for LF fluxes '''
         return np.abs(q)
+    
+    def entropy_var(self,q):
+        return q
+    
+    def dqdw(self,q):
+        return fn.diag(np.ones(q.shape))
     
     def entropy(self,q):
         e = q**2/2

@@ -31,7 +31,6 @@ para = None
 tm_method = 'rk4' # explicit_euler, rk4
 dt = 0.0001
 # note: should set according to courant number C = a dt / dx
-t_init = 0
 tf = 0.5
 
 # Domain
@@ -41,13 +40,13 @@ bc = 'periodic' # no other boudnary conditions set up yet sorry...
 
 # Spatial discretization
 disc_type = 'div' # 'div', 'had' (divergence or hadamard-product)
-disc_nodes = 'lg' # 'lg', 'lgl', 'nc', 'csbp'
-p = 3
-nelem = 20 # optional, number of elements
-nen = 0 # optional, number of nodes per element
+disc_nodes = 'csbp' # 'lg', 'lgl', 'nc', 'csbp'
+p = 2
+nelem = 2 # optional, number of elements
+nen = 20 # optional, number of nodes per element
 surf_type = 'ec' # 'ec' / 'es' / 'ec_had' / 'es_had' / 'split' / 'split_diss' (es is a dissipative version of ec, split follows variable coefficient advection splitting)
 had_flux = 'ec' # 2-point numerical flux used in hadamard form (only 'ec' set up)
-diss_type = None # not set up yet
+vol_diss = {'diss_type':'B', 'jac_type':'scalar', 's':p, 'coeff':1.}
 use_split_form = True
 split_alpha = 2./3. # splitting parameter, 2/3 to recover entropy-conservative had form
 
@@ -60,7 +59,7 @@ bool_plot_sol = False
 bool_plot_exa = True
 print_sol_norm = False
 
-cons_obj_name = ('Energy','Conservation','Entropy','Energy_der','A_Energy') # 'Energy', 'Conservation', 'None'
+cons_obj_name = ('Energy','Conservation','Energy_der') # 'Energy', 'Conservation', 'A_Energy', 'Entropy'
 settings = {'warp_factor':0.0,               # Warps / stretches mesh.
             'warp_type': 'none',             # Options: 'defualt', 'papers', 'quad'
             'use_optz_metrics':True,         # Uses optimized metrics for free stream preservation.
@@ -77,7 +76,7 @@ solver = PdeSolverSbp(diffeq, settings,                     # Diffeq
                   tm_method, dt, tf,                    # Time marching
                   q0,                                   # Initial solution
                   p, disc_type,             # Discretization
-                  surf_type, diss_type, had_flux,
+                  surf_type, vol_diss, had_flux,
                   nelem, nen, disc_nodes,
                   bc, xmin, xmax,         # Domain
                   cons_obj_name,              # Other
@@ -92,7 +91,7 @@ solver = PdeSolverSbp(diffeq, settings,                     # Diffeq
 #    return 0.001*np.exp(max_eig * time)
 
 solver.solve()
-solver.check_eigs()
+#solver.check_eigs()
 diffeq.plt_style_sol[0] = {'color':'b','linestyle':'-','marker':'','linewidth':3}
 #solver.plot_sol(plt_save_name=savefile+'_sol',title=title)
 solver.plot_sol()
