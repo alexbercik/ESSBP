@@ -111,13 +111,14 @@ class Quasi1dEuler(PdeBase):
             self.calcEx = efn.calcEx_1D
             self.dExdq = efn.dExdq_1D
             self.dEndq_eig_abs_dq = efn.dEndq_eig_abs_dq_1D #TODO: rewrite special Euler SAT to use this directly
-            self.dqdw = efn.symmetrizer_1D
             self.central_Ex = efn.Central_flux_1D
             self.ismail_roe_Ex = efn.Ismail_Roe_flux_1D
             self.ranocha_Ex = efn.Ranocha_flux_1D
             self.maxeig_dExdq = efn.maxeig_dExdq_1D
             self.entropy = efn.entropy_1D
             self.entropy_var = efn.entropy_var_1D
+            self.dqdw = efn.symmetrizer_1D
+            self.dExdw_abs = efn.dExdw_abs_1D
 
         if bc != 'periodic':
             
@@ -692,6 +693,7 @@ class Quasi1dEuler(PdeBase):
             if q0_type != 'density_wave':
                 print("WARNING: Instead of using q0_type = '"+q0_type+", you should probably use q0_type = 'density_wave'.")
                 q0 = PdeBase.set_q0(self, q0_type=q0_type, xy=xy)
+                fn.repeat_neq_gv(q0,self.neq_node)
             else:
                 rho = 1 + 0.98*np.sin(2*np.pi*xy)
                 u = self.u0 * np.ones(rho.shape)
@@ -718,7 +720,7 @@ class Quasi1dEuler(PdeBase):
             else:
                 print("WARNING: Instead of using q0_type = '"+q0_type+"', you should probably use q0_type = 'linear' or 'exact'.")
                 q0 = PdeBase.set_q0(self, q0_type=q0_type, xy=xy)
-        
+                fn.repeat_neq_gv(q0,self.neq_node)
         return q0
 
 

@@ -214,6 +214,16 @@ def dExdq_1D_complex(q):
     return dEdq
 
 @njit    
+def dExdw_abs_1D(q):
+    ''' uses the Barth scaling to compute X @ abs(Lam) @ X.T, where X
+     are the eigenvectors of dExdq that symmetrixe P=dqdw, and Lam
+     are the eigenvalues of dExdq '''
+    
+    X, Lam, XT = dEdq_eigs_1D(q,val=True,vec=True,inv=False,trans=True,absval=True)
+    dExdw_abs = fn.gm_gm(X, fn.gdiag_gm(Lam, XT))
+    return dExdw_abs
+
+@njit    
 def dExdq_2D(q):
     ''' the x flux jacobian A in 2D. Note: can NOT handle complex values '''
     g = 1.4 # hard coded throughout
@@ -694,7 +704,7 @@ def dEzdq_3D_complex(q):
     return dEdq
 
 @njit    
-def dEdq_eigs_1D(q,val=True,vec=True,inv=True,trans=False):
+def dEdq_eigs_1D(q,val=True,vec=True,inv=True,trans=False,absval=True):
     ''' take a q of shape (nen*3,nelem) and performs an eigendecomposition,
     returns the eigenvectors, eigenvalues, inverse or transpose. Use the scaling
     from Merriam 1989 / Barth 1999  to coincide with entropy variable identity.
@@ -717,6 +727,8 @@ def dEdq_eigs_1D(q,val=True,vec=True,inv=True,trans=False):
         Lam[::3,:] = u
         Lam[1::3,:] = u + a
         Lam[2::3,:] = u - a
+        if absval:
+            Lam = np.abs(Lam)
     else:
         Lam = None
     if vec:
@@ -1558,9 +1570,9 @@ def entropy_var_1D(q):
     # Note: the same entropy variables for quasi1D euler (no svec dependence)
     g = 1.4 # hard coded throughout
 
-    rho = q[0::3] # = rho * S if quasi1D Euler
+    rho = q[0::3,:] # = rho * S if quasi1D Euler
     u = q[1::3,:]/rho
-    e = q[2::3] # = e * S if quasi1D Euler
+    e = q[2::3,:] # = e * S if quasi1D Euler
     k = rho*u*u # = rho * u^2 * S if quasi1D Euler
     p = (g-1)*(e - 0.5*k) # = p * S if quasi1D Euler
     s = np.log(p/(rho**1.4)) # specific entropy (not quite physical entropy if quasi1D Euler)
