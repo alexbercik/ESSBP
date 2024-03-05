@@ -31,8 +31,6 @@ para = 1      # Wave speed a
 tm_method = 'rk4' # explicit_euler, rk4
 dt = 0.0001
 # note: should set according to courant number C = a dt / dx
-dt_init = dt
-t_init = 0
 tf = 5.00
 
 # Domain
@@ -49,7 +47,7 @@ nen = 0 # optional, number of nodes per element
 surf_type = 'central'
 had_flux = 'central' # 2-point numerical flux used in hadamard form. 
 # note: use 'central_fix' instead of 'central' for speed, but then fixes a=1
-diss_type = None
+vol_diss = None
 
 # Initial solution
 q0 = None # can overwrite q0_type from DiffEq
@@ -82,7 +80,7 @@ solver1D = solver_c(diffeq, settings,                     # Diffeq
                   tm_method, dt, tf,                    # Time marching
                   q0,                                   # Initial solution
                   p, disc_type,             # Discretization
-                  surf_type, diss_type, had_flux,
+                  surf_type, vol_diss, had_flux,
                   nelem, nen, disc_nodes,
                   bc, xmin, xmax,         # Domain
                   cons_obj_name,              # Other

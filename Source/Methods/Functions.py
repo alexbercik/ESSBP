@@ -438,6 +438,30 @@ def abs_eig_mat(mat):
         mat_abs[:,:,elem] = eig_vec @ np.diag(np.abs(eig_val)).astype(dtype) @ np.linalg.inv(eig_vec)
     return mat_abs
 
+@njit
+def spec_rad(mat,neq):
+    '''
+    Given a 3d block diagonal array in the shape (nen*neq,nen*neq,nelem)
+    with blocks of size neq*neq, return a 2d array in the shape (nen,nelem) 
+    , i.e. like a global scalar, where the values are the spectral radius of each 
+
+    Parameters
+    ----------
+    *entries : numpy arrays of shape (nen,nelem)
+
+    Returns
+    -------
+    c : numpy array of shape (nen*neq_node,nen*neq_node)
+    '''
+    nen_neq, _, nelem = mat.shape
+    nen = int(nen_neq / neq)
+    rho = np.zeros((nen,nelem))
+    for e in range(nelem):
+        for i in range(nen):
+            A = mat[i*neq:(i+1)*neq,i*neq:(i+1)*neq,e]
+            eigs = np.linalg.eigvals(A)
+            rho[i,e] = np.max(np.abs(eigs))
+    return rho
 
 @njit
 def gm_triblock_flat(blockL,blockM,blockR):

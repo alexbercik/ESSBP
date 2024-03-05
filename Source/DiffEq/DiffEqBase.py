@@ -191,16 +191,7 @@ class PdeBase:
             elif self.dim == 3:
                 xy = self.xyz_elem
         else:
-            shape = xy.shape
-            if self.dim == 1:
-                assert xy.ndim == self.x_elem.ndim, 'Provided xy has wrong dimensions. Given shape {0} while default is {1}'.format(shape,self.x_elem.shape)
-                qshape = xy.shape
-            elif self.dim == 2:
-                assert xy.ndim == self.xy_elem.ndim, 'Provided xy has wrong dimensions. Given shape {0} while default is {1}'.format(shape,self.xy_elem.shape)
-                qshape = (shape[0],shape[2])
-            elif self.dim == 3:
-                assert xy.ndim == self.xyz_elem.ndim, 'Provided xy has wrong dimensions. Given shape {0} while default is {1}'.format(shape,self.xyz_elem.shape)
-                qshape = (shape[0],shape[2])
+            qshape = np.shape(xy)
 
         if q0_type == 'gausswave':
             k = (8*np.log(self.q0_gauss_wave_val_bc/self.q0_max_q))

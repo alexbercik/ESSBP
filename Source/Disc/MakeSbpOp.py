@@ -330,10 +330,15 @@ class MakeSbpOp:
 
         if mesh.dim == 1:
             
+
+            D_phys = fn.gdiag_lm(mesh.det_jac_inv, self.D) # remember in 1D metrics = 1
             H_phys = np.diag(self.H)[:,None] * mesh.det_jac
-            D_phys = fn.gdiag_lm(mesh.det_jac_inv, self.D)
+            tb = self.tR.reshape((mesh.nen,1))
+            ta = self.tL.reshape((mesh.nen,1))
+            E = tb @ tb.T - ta @ ta.T
+            D_phys_nd = D_phys
             
-            return H_phys, D_phys
+            return H_phys, D_phys, D_phys_nd
         
         elif mesh.dim == 2:
             

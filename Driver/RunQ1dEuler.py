@@ -35,24 +35,23 @@ nozzle_shape = 'book' # book, constant, linear, smooth
 # Time marching
 tm_method = 'rk4' # 'explicit_euler', 'rk4'
 dt = 0.0001
-t_init = 0
 tf = 1 #nts * dt # set to None to do automatically or use a convergence criterion
 check_resid_conv = False
 
 # Domain
-xmin = -1
+xmin = 0
 xmax = 1
 bc = 'periodic' # 'periodic', 'dirichlet', 'riemann'
 
 # Spatial discretization
-disc_type = 'had' # 'div', 'had'
-disc_nodes = 'lg' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
+disc_type = 'div' # 'div', 'had'
+disc_nodes = 'csbp' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
 p = 2
-nelem = 20 # number of elements
-nen = 0 # optional, number of nodes per element
+nelem = 5 # number of elements
+nen = 10 # optional, number of nodes per element
 surf_type = 'nondissipative'
 had_flux = 'ranocha' # 2-point numerical flux used in hadamard form
-diss_type = None
+vol_diss = {'diss_type':'B', 'jac_type':'scalar', 's':p}
 
 # output
 savefile = None
@@ -81,7 +80,7 @@ solver = PdeSolverSbp(diffeq, settings,
                   tm_method, dt, tf,   
                   q0,                
                   p, disc_type,      
-                  surf_type, diss_type, had_flux,
+                  surf_type, vol_diss, had_flux,
                   nelem, nen, disc_nodes,
                   bc, xmin, xmax,     
                   cons_obj_name,      
@@ -107,8 +106,9 @@ else:
 #from Methods.Analysis import animate
 #animate(solver, plotargs={'display_time':True},skipsteps=100)
 
+#solver.check_eigs()
 #solver.plot_sol(q=solver.diffeq.set_q0(),time=0.)
 solver.solve()
 solver.plot_sol()
 solver.plot_cons_obj()
-solver.calc_error()
+#solver.calc_error()

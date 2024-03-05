@@ -11,6 +11,7 @@ import numpy as np
 from Source.Disc.MakeMesh import MakeMesh
 from Source.Disc.MakeSbpOp import MakeSbpOp
 from Source.Disc.Sat import Sat
+from Source.Disc.ADiss import ADiss
 from Source.Solvers.PdeSolver import PdeSolver
 import Source.Methods.Functions as fn
 
@@ -70,7 +71,7 @@ class PdeSolverSbp(PdeSolver):
         else:
             form = 'div'
         if self.dim == 1:
-            self.H_phys, self.Dx_phys = self.sbp.ref_2_phys(self.mesh, form)
+            self.H_phys, self.Dx_phys, self.Dx_phys_nd = self.sbp.ref_2_phys(self.mesh, form)
         elif self.dim == 2:
             self.H_phys, self.Dx_phys, self.Dy_phys, self.Dx_phys_nd, self.Dy_phys_nd = self.sbp.ref_2_phys(self.mesh, form)
         elif self.dim == 3:
@@ -100,6 +101,9 @@ class PdeSolverSbp(PdeSolver):
         if self.dim == 3:
             self.Dz_phys_unkronned = self.Dz_phys
             self.Dz_phys = fn.kron_neq_gm(self.Dz_phys,self.neq_node)
+
+        self.adiss = ADiss(self)
+        self.dissipation = self.adiss.dissipation
 
         ''' Modify solver approach '''
 
@@ -157,7 +161,7 @@ class PdeSolverSbp(PdeSolver):
         else:
             raise Exception('Not coded up yet')
     
-        dqdt = - dExdx + (self.H_inv_phys * sat) + self.diffeq.calcG(q)
+        dqdt = - dExdx + (self.H_inv_phys * sat) + self.diffeq.calcG(q) + self.dissipation(q)
         return dqdt
     
     
@@ -245,7 +249,7 @@ class PdeSolverSbp(PdeSolver):
         else:
             raise Exception('Not coded up yet')
         
-        dqdt = - dExdx + (self.H_inv_phys * sat) + self.diffeq.calcG(q)
+        dqdt = - dExdx + (self.H_inv_phys * sat) + self.diffeq.calcG(q) + self.dissipation(q)
         return dqdt
     
     def dfdq_1d_had(self, q):
