@@ -503,9 +503,9 @@ class MakeSbpOp:
     def check_accuracy(D, x):
         ''' tests degree of derivative D, D@u - dudx = O(h^p) 
         Based on reference element [0,1] '''
-        er1 = np.mean(np.abs(D @ np.sin(x+0.1) - np.cos(x+0.1)))
-        er2 = np.mean(np.abs(D @ np.sin(0.5*x+0.1) - 0.5*np.cos(0.5*x+0.1)))
-        er3 = np.mean(np.abs(D @ np.sin(0.25*x+0.1) - 0.25*np.cos(0.25*x+0.1)))
-        o1 = (np.log(er2) - np.log(er1)) / (np.log(0.5) - np.log(1))
-        o2 = (np.log(er3) - np.log(er2)) / (np.log(0.25) - np.log(0.5))
+        er1 = np.mean(np.abs(D @ np.sin(0.5*x+0.1) - 0.5*np.cos(0.5*x+0.1)))
+        er2 = np.mean(np.abs(D @ np.sin(0.25*x+0.1) - 0.25*np.cos(0.25*x+0.1)))
+        er3 = np.mean(np.abs(D @ np.sin(0.125*x+0.1) - 0.125*np.cos(0.125*x+0.1)))
+        o1 = (np.log(er2) - np.log(er1)) / (np.log(0.25) - np.log(0.5))
+        o2 = (np.log(er3) - np.log(er2)) / (np.log(0.125) - np.log(0.25))
         print('Test: Derivative D is order {0:.2} in test 1, {1:.2} in test 2. (element-refinement, so should expect p+1)'.format(o1,o2))

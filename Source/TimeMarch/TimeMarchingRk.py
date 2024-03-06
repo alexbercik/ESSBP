@@ -23,6 +23,66 @@ time-invariant since the PDE is the same at time t=0 and at time t=10.
 
 class TimeMarchingRk:
 
+    ''' Specific RK methods '''
+
+    def rk4(self, q, dt, n_ts):
+
+        q_sol = self.init_q_sol(q, n_ts)
+
+        # This method solves the 4th order explicit Runge-Kutta method.
+        for i in range(0, n_ts):
+
+            k1 = self.dqdt(q)
+            self.common(q, q_sol, i, n_ts, dt, k1)
+            if self.quitsim: break
+
+            q1 = q + 0.5*dt*k1 # first predictor q_{n+1/2}
+            
+            k2 = self.dqdt(q1)
+            q2 = q + 0.5*dt*k2 # first corrector q_{n+1/2}
+            
+            k3 = self.dqdt(q2)
+            q3 = q + dt*k3     # second predictor q_{n+1}
+            
+            k4 = self.dqdt(q3)
+            q += dt*(k1 + 2*(k2+k3) + k4)/6 # final correction q_{n+1}
+        
+        # Congrats you reached the end
+        i += 1
+        self.common(q, q_sol, i, n_ts, dt, k1)
+        return self.return_q_sol(q,q_sol,i,dt)
+
+    def explicit_euler(self, q, dt, n_ts):
+
+        q_sol = self.init_q_sol(q, n_ts)
+
+        # This method solves the 1st order explicit Euler method.
+        for i in range(0, n_ts):
+
+            dqdt = self.dqdt(q)
+            self.common(q, q_sol, i, n_ts, dt, dqdt)
+            if self.quitsim: break
+
+            q += dt * dqdt
+
+        # Congrats you reached the end
+        self.common(q, q_sol, i, n_ts, dt, dqdt)
+        return self.return_q_sol(q,q_sol,i,dt)
+    
+    # TODO: Do I want to put bacl any of the implicit methods? 
+    # THis would include implicit Euler, Trapezoidal, etc
+
+
+
+
+
+
+class TimeMarchingRk_old:
+
+    ''' This is the class originally built by Andre, but I only ever used RK4,
+    and it was just too bulky. So instead I spearate it here in case I ever in
+    the future want to re-implement IRK or DIRK methods again. '''
+
     tol = 1e-12     # Used for IRK to check if the solution has converged
     n_iter_max = 10 # Max no. of iterations to converge the solution
 
@@ -119,20 +179,37 @@ class TimeMarchingRk:
         self.common(q, 0, n_ts, dt, -1)
 
         if self.keep_all_ts:
-            q_vec = np.zeros([*self.shape_q, n_ts+1])
+            if n_ts/(self.skip_ts+1) == int(n_ts/(self.skip_ts+1)):
+                # we will land exactly on the final frame
+                frames = int(n_ts/(self.skip_ts+1)) + 1
+            else:
+                # append the final frame manually
+                frames = int(n_ts/(self.skip_ts+1)) + 2
+            q_vec = np.zeros([*self.shape_q, frames])
             q_vec[:, :, 0] = q
 
         for i in range(1, n_ts+1):
-            q, dqdt = calc_time_step(q)
+            q_new, dqdt = calc_time_step(q, q_old)
+            q_old = np.copy(q)
+            q = np.copy(q_new)
 
             if self.keep_all_ts:
-                q_vec[:, :, i] = q
+                modi = i/(self.skip_ts+1)
+                if modi.is_integer():
+                    q_vec[:, :, int(modi)] = q
 
             self.common(q, i, n_ts, dt, dqdt)
             if self.quitsim: break
 
         if self.keep_all_ts:
-            return q_vec[:,:,:i+1]
+            if self.quitsim:
+                return q_vec[:,:,:int(modi)]
+            else:
+                if modi.is_integer():
+                    return q_vec
+                else:
+                    q_vec[:, :, -1] = q
+                return q_vec
         else:
             return q
 
@@ -179,22 +256,38 @@ class TimeMarchingRk:
 
         q = np.copy(q0)
         self.common(q, 0, n_ts, dt, -1)
-
         if self.keep_all_ts:
-            q_vec = np.zeros([self.len_q, n_ts+1])
-            q_vec[:, 0] = q
+            if n_ts/(self.skip_ts+1) == int(n_ts/(self.skip_ts+1)):
+                # we will land exactly on the final frame
+                frames = int(n_ts/(self.skip_ts+1)) + 1
+            else:
+                # append the final frame manually
+                frames = int(n_ts/(self.skip_ts+1)) + 2
+            q_vec = np.zeros([*self.shape_q, frames])
+            q_vec[:, :, 0] = q
 
         for i in range(1, n_ts+1):
-            q, dqdt = calc_time_step(q)
+            q_new, dqdt = calc_time_step(q, q_old)
+            q_old = np.copy(q)
+            q = np.copy(q_new)
 
             if self.keep_all_ts:
-                q_vec[:,i] = q
+                modi = i/(self.skip_ts+1)
+                if modi.is_integer():
+                    q_vec[:, :, int(modi)] = q
 
             self.common(q, i, n_ts, dt, dqdt)
             if self.quitsim: break
 
         if self.keep_all_ts:
-            return q_vec[:,:,:i+1]
+            if self.quitsim:
+                return q_vec[:,:,:int(modi)]
+            else:
+                if modi.is_integer():
+                    return q_vec
+                else:
+                    q_vec[:, :, -1] = q
+                return q_vec
         else:
             return q
 
@@ -300,19 +393,36 @@ class TimeMarchingRk:
         self.common(q, 0, n_ts, dt, -1)
 
         if self.keep_all_ts:
-            q_vec = np.zeros([self.len_q, n_ts+1])
-            q_vec[:, 0] = q
+            if n_ts/(self.skip_ts+1) == int(n_ts/(self.skip_ts+1)):
+                # we will land exactly on the final frame
+                frames = int(n_ts/(self.skip_ts+1)) + 1
+            else:
+                # append the final frame manually
+                frames = int(n_ts/(self.skip_ts+1)) + 2
+            q_vec = np.zeros([*self.shape_q, frames])
+            q_vec[:, :, 0] = q
 
         for i in range(1, n_ts+1):
-            q, dqdt = calc_time_step(q)
+            q_new, dqdt = calc_time_step(q, q_old)
+            q_old = np.copy(q)
+            q = np.copy(q_new)
 
             if self.keep_all_ts:
-                q_vec[:,i] = q
+                modi = i/(self.skip_ts+1)
+                if modi.is_integer():
+                    q_vec[:, :, int(modi)] = q
 
             self.common(q, i, n_ts, dt, dqdt)
             if self.quitsim: break
 
         if self.keep_all_ts:
-            return q_vec[:,:,:i+1]
+            if self.quitsim:
+                return q_vec[:,:,:int(modi)]
+            else:
+                if modi.is_integer():
+                    return q_vec
+                else:
+                    q_vec[:, :, -1] = q
+                return q_vec
         else:
             return q

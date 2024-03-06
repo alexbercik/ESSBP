@@ -95,7 +95,11 @@ def animate(solver, file_name='animation', make_video=True, make_gif=False,
     # note: if you want axes to be set dynamically, input 'ymin'=None and 
     #       'ymax'=None in plotargs
     fig, ax = plt.subplots()
-    ax.plot([0,0],[np.min(solver.q_sol),np.max(solver.q_sol)])
+    if 'var2plot_name' in plotargs: 
+        var2plot_name = plotargs['var2plot_name']
+    else:
+        var2plot_name = solver.diffeq.plt_var2plot_name
+    ax.plot([0,0],[np.min(solver.diffeq.var2plot(np.min(solver.q_sol,axis=2),var2plot_name)),np.max(solver.diffeq.var2plot(np.max(solver.q_sol,axis=2),var2plot_name))])
     ymin,ymax= ax.get_ylim()
     plt.close()
     if 'solmin' not in plotargs: plotargs['solmin']=ymin
@@ -108,16 +112,26 @@ def animate(solver, file_name='animation', make_video=True, make_gif=False,
     cmd = subprocess.run('mkdir '+file_name, shell=True, capture_output=True, text=True)
     assert(cmd.returncode==0),"Not able to make directory. Error raised: "+cmd.stderr
     
-    print('...Making Frames')    
+    print('...Making Frames') 
+    suf = 'Complete.'  
+    printProgressBar(0, frames, prefix = 'Progress:', suffix = suf) 
     for i in range(frames):
         stepi = i*(skipsteps+1)
-        timei =  solver.dt*stepi # or tfinal/steps*stepi
+        timei =  solver.dt*(solver.skip_ts+1)*stepi # or tfinal/steps*stepi
+        # note, final time *may* be a little off due to how program was terminated
+        # and when solution checkpoints were saved, but it will be the only one 
+        # that is off. So fix the final time.
+        if i == frames - 1:
+            timei = min(timei, solver.t_final)
+        printProgressBar(i+1, frames, prefix = 'Progress:', suffix = suf)
         
         # call plotting function from solver module
         plot(solver.q_sol[:,:,stepi], **plotargs, time=timei,
              savefile=file_name+'/'+'frame'+str(i).zfill(numfill))
     
     if last_frame:
+        # if i == frames - 1, then this may double plot the final
+        # frame, but I also don't really care if it does.
         plot(solver.q_sol[:,:,-1], **plotargs, time=tfinal,
              savefile=file_name+'/'+'frame'+str(frames))
 
@@ -148,6 +162,27 @@ def animate(solver, file_name='animation', make_video=True, make_gif=False,
         assert(cmd.returncode==0),"Not able to create mp4. Error raised: "+cmd.stderr
     
     print('All Done! Results are saved in '+file_name+' folder.') 
+
+def printProgressBar(iteration, total, prefix = '', suffix = '', decimals = 0, length = 20, fill = '█', printEnd = "\r"):
+    """
+    Call in a loop to create terminal progress bar
+    @params:
+        iteration   - Required  : current iteration (Int)
+        total       - Required  : total iterations (Int)
+        prefix      - Optional  : prefix string (Str)
+        suffix      - Optional  : suffix string (Str)
+        decimals    - Optional  : positive number of decimals in percent complete (Int)
+        length      - Optional  : character length of bar (Int)
+        fill        - Optional  : bar fill character (Str)
+        printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
+    """
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    filledLength = int(length * iteration // total)
+    bar = fill * filledLength + '-' * (length - filledLength)
+    print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
+    # Print New Line on Complete
+    if iteration == total: 
+        print()
     
 def plot_sparsity(mat_in,savefile=None,markersize=2,figsize=(6,6)):
     ''' prints the sparsity of the 2D matrix '''
