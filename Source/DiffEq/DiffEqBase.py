@@ -284,15 +284,18 @@ class PdeBase:
     def plot_sol(self, q, time=0., plot_exa=True, savefile=None,
                  show_fig=True, solmin=None, solmax=None, display_time=False, 
                  title=None, plot_mesh=False, save_format='png', dpi=600,
-                 plot_only_exa=False, var2plot_name=None):
+                 plot_only_exa=False, var2plot_name=None, legendloc=None):
         '''
         Purpose
         ----------
         Used to plot the solution
         
         '''
+
         if var2plot_name is None:
             var2plot_name = self.plt_var2plot_name
+        if legendloc is None:
+            legendloc = 'best'
         
         if self.dim == 1:
             num_sol = self.var2plot(q,var2plot_name).flatten('F')
@@ -372,7 +375,7 @@ class PdeBase:
         if plt.title is not None:
             plt.title(title,fontsize=self.plt_label_font_size+1)
             if self.dim == 1:
-                plt.legend(loc='best',fontsize=self.plt_label_font_size-1)
+                plt.legend(loc=legendloc,fontsize=self.plt_label_font_size-1)
         
         if savefile is not None:
             filename = savefile+'.'+save_format
@@ -516,20 +519,14 @@ class PdeBase:
 class DiffEqOverwrite:
 # Allows you to overwrite the methods in the Diffeq class
 
-    def __init__(self, diffeq_in, f_dqdt, f_dfdq, f_dfds,
-                       f_cons_obj, n_cons_obj):
+    def __init__(self, diffeq_in, dqdt, dfdq, 
+                       cons_obj, n_cons_obj):
 
-        self.dqdt = f_dqdt
-        self.dfdq = f_dfdq
-        self.dfds = f_dfds
-
-        self.dfds = diffeq_in.dfds
-
-        self.djdq = diffeq_in.djdq
-        self.djds = diffeq_in.djds
+        self.dqdt = dqdt
+        self.dfdq = dfdq
 
         self.set_q0 = diffeq_in.set_q0
         self.plot_sol = diffeq_in.plot_sol
-        self.calc_cons_obj = f_cons_obj
+        self.calc_cons_obj = cons_obj
 
         self.n_cons_obj = n_cons_obj

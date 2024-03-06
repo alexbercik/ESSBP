@@ -20,7 +20,7 @@ weight used for the solution at the previous time steps, and a vector b, which
 indicates the weight for the flux at the previous time steps.
 '''
 
-class TimeMarchingLms:
+class TimeMarchingLms_old:
 
     def ab1(self, q0, dt, n_ts):
 
@@ -73,7 +73,7 @@ class TimeMarchingLms:
         ''' Use 4th order RK to have sufficient steps to start the solution '''
 
         # Need to save all the time steps when calling the RK4 method
-        keep_all_ts = self.keep_all_ts
+        keep_all_ts_old = self.keep_all_ts
         self.keep_all_ts = True
 
         n_ts_rk = n_step - 1 # Minus 1 since q0 is provided
@@ -87,11 +87,20 @@ class TimeMarchingLms:
             sol_rk = self.dirk_p4s3(q0, dt, n_ts_rk)
             I = np.eye(self.len_q)
 
-        self.keep_all_ts = keep_all_ts
+        self.keep_all_ts = keep_all_ts_old
 
         if self.keep_all_ts:
-            q_vec = np.zeros([self.len_q, n_ts+1])
-            q_vec[:, :n_ts_rk+1] = sol_rk
+            if n_ts/(self.skip_ts+1) == int(n_ts/(self.skip_ts+1)):
+                # we will land exactly on the final frame
+                frames = int(n_ts/(self.skip_ts+1)) + 1
+            else:
+                # append the final frame manually
+                frames = int(n_ts/(self.skip_ts+1)) + 2
+            q_vec = np.zeros([*self.shape_q, frames])
+            for i in range(n_ts_rk+1):
+                modi = i/(self.skip_ts+1)
+                if modi.is_integer():
+                    q_vec[:, :, int(modi)] = sol_rk[:,:,i]
 
         # Initiate the 2D arrays to hold the previous time steps
         q_mat = sol_rk * 1.0
@@ -124,19 +133,40 @@ class TimeMarchingLms:
             q_mat = np.roll(q_mat, -1, axis=1)
             f_mat = np.roll(f_mat, -1, axis=1)
 
+            # TODO: I realize that these are the wrong shape!
             q_mat[:,-1] = q_new
             f_mat[:,-1] = self.f_dqdt(q_new)
 
             if self.keep_all_ts:
-                q_vec[:,i] = q_new
+                modi = i/(self.skip_ts+1)
+                if modi.is_integer():
+                    q_vec[:, :, int(modi)] = q_new
 
             self.common(q_new, i, n_ts, dt, f_mat[:,-1])
             if self.quitsim: break
 
-        if self.keep_all_ts:
-            return q_vec[:,:,:i+1]
+        if self.quitsim:
+            # return up to but not including this current time step
+            if self.keep_all_ts:
+                # we only save for modi, but that may or many not be now
+                if modi.is_integer():
+                    # only return up to but not including this modi 
+                    self.t_final = (int(modi)-1)*(self.skip_ts+1)*dt
+                    print('... returning solutions up to and including t =', self.t_final)
+                    return q_vec[:,:,:int(modi)]
+                else:
+                    # safe to return up to last modi
+                    self.t_final = int(modi)*(self.skip_ts+1)*dt
+                    print('... returning solutions up to and including t =', self.t_final)
+                    return q_vec[:,:,:int(modi)+1]
+            else:
+                return q_mat[:,-2]
         else:
-            return q_new
+            if self.keep_all_ts:
+                return q_vec
+            else:
+                return q_new
+            
 
     def bdf2(self, q0, dt, n_ts):
 
@@ -178,9 +208,16 @@ class TimeMarchingLms:
         self.common(q, 1, n_ts, dt, ff)
 
         if self.keep_all_ts:
-            q_vec = np.zeros([self.len_q, n_ts+1])
-            q_vec[:, 0] = q_old
-            q_vec[:, 1] = q
+            if n_ts/(self.skip_ts+1) == int(n_ts/(self.skip_ts+1)):
+                # we will land exactly on the final frame
+                frames = int(n_ts/(self.skip_ts+1)) + 1
+            else:
+                # append the final frame manually
+                frames = int(n_ts/(self.skip_ts+1)) + 2
+            q_vec = np.zeros([*self.shape_q, frames])
+            q_vec[:, :, 0] = q_old
+            if (1/(self.skip_ts+1)).isinteger():
+                q_vec[:, :, 1] = q
 
         for i in range(2, n_ts+1):
 
@@ -189,13 +226,32 @@ class TimeMarchingLms:
             q = np.copy(q_new)
 
             if self.keep_all_ts:
-                q_vec[:,i] = q
+                modi = i/(self.skip_ts+1)
+                if modi.is_integer():
+                    q_vec[:, :, int(modi)] = q_new
 
             self.common(q, i, n_ts, dt, dqdt)
             if self.quitsim: break
 
-        if self.keep_all_ts:
-            return q_vec[:,:,:i+1]
+        if self.quitsim:
+            # return up to but not including this current time step
+            if self.keep_all_ts:
+                # we only save for modi, but that may or many not be now
+                if modi.is_integer():
+                    # only return up to but not including this modi 
+                    self.t_final = (int(modi)-1)*(self.skip_ts+1)*dt
+                    print('... returning solutions up to and including t =', self.t_final)
+                    return q_vec[:,:,:int(modi)]
+                else:
+                    # safe to return up to last modi
+                    self.t_final = int(modi)*(self.skip_ts+1)*dt
+                    print('... returning solutions up to and including t =', self.t_final)
+                    return q_vec[:,:,:int(modi)+1]
+            else:
+                return q_old
         else:
-            return q
+            if self.keep_all_ts:
+                return q_vec
+            else:
+                return q_new
 

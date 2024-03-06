@@ -21,6 +21,7 @@ class PdeSolver:
     q_sol = None        # Solution of the Diffeq
     cons_obj = None     # Conservation Objective(s)
     keep_all_ts = True  # whether to keep all time steps on solve
+    skip_ts = 0.
 
     def __init__(self, diffeq, settings,                            # Diffeq
                  tm_method, dt, t_final,                    # Time marching
@@ -397,6 +398,7 @@ class PdeSolver:
             q0 = self.diffeq.set_q0()
         
         tm_class = TimeMarching(self.diffeq, self.tm_method, self.keep_all_ts,
+                        skip_ts = self.skip_ts,
                         bool_plot_sol = self.bool_plot_sol,
                         bool_calc_cons_obj = self.bool_calc_cons_obj,
                         print_sol_norm = self.print_sol_norm,
@@ -406,6 +408,7 @@ class PdeSolver:
         
         self.q_sol =  tm_class.solve(q0, self.dt, self.n_ts)
         self.cons_obj = tm_class.cons_obj
+        self.t_final = tm_class.t_final
 
         end_time = time.time()
         self.simulation_time = end_time - stat_time

@@ -9,17 +9,17 @@ Created on Mon Dec 16 14:56:20 2019
 import numpy as np
 
 from Source.TimeMarch.TimeMarchingRk import TimeMarchingRk
-from Source.TimeMarch.TimeMarchingLms import TimeMarchingLms
-from Source.TimeMarch.TimeMarchingOneStep import TimeMarchingOneStep
+#from Source.TimeMarch.TimeMarchingLms import TimeMarchingLms
+#from Source.TimeMarch.TimeMarchingOneStep import TimeMarchingOneStep
 import time as tm
 
 
-class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
+class TimeMarching(TimeMarchingRk):
 
-    idx_print = 1 # Calc norm after this number of iterations
+    idx_print = 100 # Calc norm after this number of iterations
 
     def __init__(self, diffeq, tm_method,
-                 keep_all_ts=True,
+                 keep_all_ts=True, skip_ts=0,
                  bool_plot_sol=False, fun_plot_sol=None,
                  bool_calc_cons_obj=False, fun_calc_cons_obj=None,
                  print_sol_norm=False, print_residual=False,
@@ -35,6 +35,10 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
         keep_all_ts : bool, optional
             The solution at all time steps is stored if this flag is set to true.
             The default is True.
+        skip_ts : int, optional
+            If keep_all_ts = True, every how steps should we skip before saving the solution? 
+            ex. if skipsteps=5, every 6th time step will be saved
+            The default is 0.
         bool_plot_sol : bool, optional
             The solution is plotted if this flag is true.
             The default is False.
@@ -65,6 +69,8 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
         self.diffeq = diffeq
         self.tm_method = tm_method
         self.keep_all_ts = keep_all_ts
+        self.skip_ts = skip_ts
+        assert(isinstance(self.skip_ts, int)),"skip_ts must be an integer"
         self.bool_plot_sol = bool_plot_sol
         self.fun_plot_sol = fun_plot_sol
         self.print_sol_norm = print_sol_norm
@@ -77,13 +83,13 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
         ''' Extract other required parameters '''
 
         if dqdt is None:
-            self.f_dqdt = self.diffeq.dqdt
+            self.dqdt = self.diffeq.dqdt
         else:
-            self.f_dqdt = dqdt
+            self.dqdt = dqdt
         if dfdq is None:
-            self.f_dfdq = self.diffeq.dfdq
+            self.dfdq = self.diffeq.dfdq
         else:
-            self.f_dfdq = dfdq
+            self.dfdq = dfdq
 
         if self.bool_plot_sol and self.fun_plot_sol is None:
             self.fun_plot_sol = self.diffeq.plot_sol
@@ -128,10 +134,11 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
 
         self.shape_q = q0.shape
         self.len_q = q0.size
+        self.t_final = dt*n_ts
 
         return self.tm_solver(q0, dt, n_ts)
 
-    def common(self, q, t_idx, n_ts, dt, dqdt):
+    def common(self, q, q_sol, t_idx, n_ts, dt, dqdt):
         '''
         Parameters
         ----------
@@ -144,6 +151,11 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
         dt : float
             Size of the time step.
         '''
+
+        if self.keep_all_ts:
+            mod_t_idx = t_idx/(self.skip_ts+1)
+            if mod_t_idx.is_integer():
+                q_sol[:, :, int(mod_t_idx)] = q
 
         if self.bool_plot_sol:
             tf = t_idx * dt
@@ -160,45 +172,116 @@ class TimeMarching(TimeMarchingRk, TimeMarchingLms, TimeMarchingOneStep):
 
         if self.bool_calc_cons_obj:
             self.cons_obj[:, t_idx] = self.fun_calc_cons_obj(q)
-            
-        if t_idx == 10:
+        
+        if t_idx == 0:
+            print('--- Beginning Simulation ---')
+            self.start_time = tm.time()
+        elif t_idx == 10:
             sim_time = tm.time() - self.start_time
             rem_time = sim_time/10*(n_ts-10)
             print('... Estimating {0}:{1:02d}:{2:02d} to run.'.format(int(rem_time//3600),
-                                                        int((rem_time//60)%60),int(rem_time%60)))         
-            
-        if (t_idx*100/n_ts).is_integer():
-            if t_idx == 0:
-                print('--- Beginning Simulation ---')
-                self.start_time = tm.time()
-            elif t_idx <= 10:
-                pass
-            elif t_idx == n_ts:
-                sim_time = tm.time() - self.start_time
-                suf = 'Complete.'
-                h,m,s = int(sim_time//3600),int((sim_time//60)%60),int(sim_time%60)
-                printProgressBar(t_idx, n_ts, prefix = 'Progress:', suffix = suf)
-                print('... Took {0}:{1:02d}:{2:02d} to run.'.format(h,m,s))
-            else:
-                sim_time = tm.time() - self.start_time
-                rem_time = sim_time/t_idx*(n_ts-t_idx)
-                h,m,s = int(rem_time//3600),int((rem_time//60)%60),int(rem_time%60)
-                suf = 'Complete. Estimating {0}:{1:02d}:{2:02d} remaining.'.format(h,m,s)
-                #print('... {0}% Done. Estimating {1}:{2:02d}:{3:02d} remaining.'.format(pct,h,m,s))
-                if self.print_residual:
-                    suf += ' Resid = {0:.1E}'.format(resid)
-                printProgressBar(t_idx, n_ts, prefix = 'Progress:', suffix = suf)
+                                                        int((rem_time//60)%60),int(rem_time%60)))
+        elif t_idx == n_ts:
+            sim_time = tm.time() - self.start_time
+            suf = 'Complete.'
+            h,m,s = int(sim_time//3600),int((sim_time//60)%60),int(sim_time%60)
+            printProgressBar(t_idx, n_ts, prefix = 'Progress:', suffix = suf)
+            print('... Took {0}:{1:02d}:{2:02d} to run.'.format(h,m,s))
+        elif (t_idx*100/n_ts).is_integer():
+            sim_time = tm.time() - self.start_time
+            rem_time = sim_time/t_idx*(n_ts-t_idx)
+            h,m,s = int(rem_time//3600),int((rem_time//60)%60),int(rem_time%60)
+            suf = 'Complete. Estimating {0}:{1:02d}:{2:02d} remaining.'.format(h,m,s)
+            #print('... {0}% Done. Estimating {1}:{2:02d}:{3:02d} remaining.'.format(pct,h,m,s))
+            if self.print_residual:
+                suf += ' Resid = {0:.1E}'.format(resid)
+            printProgressBar(t_idx, n_ts, prefix = 'Progress:', suffix = suf)
         
         if np.any(np.isnan(q)):
-            print('ERROR: there are undefined solution values. Ending simulation at t =',t_idx * dt,'t_idx =', t_idx)
+            print('ERROR: there are undefined values for q at t =',t_idx * dt,'t_idx =', t_idx)
             self.quitsim = True
+            self.failsim = True
             self.cons_obj = self.cons_obj[:, :t_idx]
 
         if self.check_resid_conv:
-            if resid < 1E-10: 
+            if (resid < 1E-10): 
                 print('Reached a residual tolerance of 1E-10 (L2 square norm). Ending simulation.')
                 self.quitsim = True
+                self.failsim = False
                 self.cons_obj = self.cons_obj[:, :t_idx]
+
+    def init_q_sol(self, q0, n_ts):
+        ''' initiate the q_sol vector to store solutions '''
+        if self.keep_all_ts:
+            # initiate q_sol to a size depending on n_ts and skip_ts
+            if n_ts/(self.skip_ts+1) == int(n_ts/(self.skip_ts+1)):
+                # we will land exactly on the final frame
+                frames = int(n_ts/(self.skip_ts+1)) + 1
+                self.append_qsol = False
+            else:
+                print('WARNING: skip_ts in time marching is chosen so that you do not land exactly on the final')
+                print('         time step. Will manually append the final time step solution to q_sol.')
+                # append the final frame manually
+                frames = int(n_ts/(self.skip_ts+1)) + 2
+                self.append_qsol = True
+           
+            q_sol = np.zeros([*self.shape_q, frames])
+            q_sol[:, :, 0] = q0
+            return q_sol
+        else:
+            return None
+        
+    def return_q_sol(self,q,q_sol,t_idx,dt):
+        ''' prepare q or q_sol to be returned by the main function '''
+        if self.quitsim:
+            # NOTE: t_idx = i+1 from where the method determined q was bad
+            if self.keep_all_ts:
+                if self.failsim:
+                    # simulation failed, meaning there are some NaNs in q.
+                    # return up to *but not including* this current q.
+                    mod_t_idx = (t_idx-1)/(self.skip_ts+1)
+                    # recall we only saved q every mod_t_idx, but that may or many not be now
+                    # since the program could have exited for a t_idx between these checkpoints
+                    if mod_t_idx.is_integer():
+                        # only return up to but not including this mod_t_idx 
+                        self.t_final = (int(mod_t_idx)-1)*(self.skip_ts+1)*dt
+                        print("... returning q's up to and including t =", self.t_final)
+                        return q_sol[:,:,:int(mod_t_idx)]
+                    else:
+                        # safe to return up to last mod_t_idx 
+                        self.t_final = int(mod_t_idx)*(self.skip_ts+1)*dt
+                        print("... returning q's up to and including t =", self.t_final)
+                        return q_sol[:,:,:int(mod_t_idx)+1]
+                else:
+                    # the simulation ended because convergence was reached.
+                    # We want to return this most recent q.
+                    mod_t_idx = (t_idx-1)/(self.skip_ts+1)
+                    # recall we only saved q every mod_t_idx, but that may or many not be now
+                    # since the program could have exited for a t_idx between these checkpoints
+                    if mod_t_idx.is_integer():
+                        # return up to and including this mod_t_idx, which is the most recent t_idx
+                        self.t_final = int(mod_t_idx)*(self.skip_ts+1)*dt
+                        print("... returning q's up to and including t =", self.t_final)
+                        return q_sol[:,:,:int(mod_t_idx)+1]
+                    else:
+                        # want to append final q even though it lies inbetween checkpoints
+                        self.t_final = t_idx*(self.skip_ts+1)*dt
+                        print("... returning q's up to and including t =", self.t_final)
+                        print("... WARNING: this final timestep checkpoint is not the same dt as all the ones before it, but a bit shorter.")
+                        q_sol[:,:,int(mod_t_idx)+1] = q
+                        return q_sol[:,:,:int(mod_t_idx)+2]
+            else:
+                if self.failsim:
+                    print('... returning s at t =', self.t_final, '. Note: will contain NaNs. Consider running with keep_all_ts = True')
+                return q
+        else:
+            if self.keep_all_ts:
+                # might need to append the final solution value.
+                if self.append_qsol:
+                    q_sol[:,:,-1] = q
+                return q_sol
+            else:
+                return q
 
     
 def printProgressBar(iteration, total, prefix = '', suffix = '', decimals = 0, length = 20, fill = '█', printEnd = "\r"):
