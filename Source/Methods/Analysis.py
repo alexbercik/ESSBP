@@ -429,7 +429,7 @@ def symbolic(A):
 
 def run_convergence(solver, schedule_in=None, error_type='SBP',
              scale_dt=True, return_conv=False, savefile=None, labels=None,
-             title=None, ylabel=None, xlabel=None, grid=False, convunc=True):
+             title=None, ylabel=None, xlabel=None, grid=False, convunc=True, ylim=None):
     '''
     Purpose
     ----------
@@ -587,6 +587,8 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
 
             ''' solve run for case, store results '''
             print('Running for:', variables)
+            if labels is not None:
+                print('label:', labels[casei])
             solver.reset(variables=variables)
             solver.solve()
             errors[casei,runi] = solver.calc_error(method=error_type)
@@ -620,7 +622,7 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
     if title == None:
         title = r"Convergence of " + error_type + " Error"
     plot_conv(dofs, errors, legend_strings, solver.dim, title, savefile,
-                  ylabel=ylabel,xlabel=xlabel,grid=grid,convunc=convunc)
+                  ylabel=ylabel,xlabel=xlabel,grid=grid,convunc=convunc,ylim=ylim)
     
     if return_conv:
         return dofs, errors, legend_strings

@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Nov  9 00:26:34 2020
-
-@author: bercik
-"""
-
 from numba import jit, njit, literal_unroll
 import numpy as np
 from contextlib import contextmanager
@@ -14,7 +6,6 @@ import scipy.sparse as sp
 
 # The useful functions are defined first, the others are shoved to the bottom
 
-# TODO: This is the function to speed up (is approximately 40% of total code runtime)
 @njit
 def gm_gv(A,b):
     '''
@@ -38,7 +29,7 @@ def gm_gv(A,b):
         raise Exception('array shapes do not match')    
     if nelem!=nelemb:
         raise Exception('element shapes do not match')   
-    c = np.zeros((nen1,nelem),dtype=b.dtype)
+    c = np.zeros((nen1,nelem),dtype=np.complex128)
     for i in range(nen1):
         for j in range(nen2):
             for e in range(nelem):
@@ -67,7 +58,7 @@ def gm_gm(A,B):
         raise Exception('array shapes do not match')    
     if nelem!=nelemb:
         raise Exception('element shapes do not match')   
-    c = np.zeros((nen1,nen3,nelem))
+    c = np.zeros((nen1,nen3,nelem),dtype=np.complex128)
     for i in range(nen1):
         for j in range(nen2):
             for l in range(nen3):
@@ -95,7 +86,7 @@ def gm_lm(A,B):
     nen2b,nen3 = np.shape(B)
     if nen2!=nen2b:
         raise Exception('shapes do not match')
-    c = np.zeros((nen1,nen3,nelem))
+    c = np.zeros((nen1,nen3,nelem),dtype=np.complex128)
     for i in range(nen1):
         for j in range(nen2):
             for l in range(nen3):
@@ -124,7 +115,7 @@ def gm_lv(A,b):
     nen2b = len(b)
     if nen2!=nen2b:
         raise Exception('shapes do not match')
-    c = np.zeros((nen1,nelem))
+    c = np.zeros((nen1,nelem),dtype=np.complex128)
     for e in range(nelem):
         for j in range(nen2):
             for i in range(nen1):
@@ -153,7 +144,7 @@ def lm_gm(A,B):
     nen2b,nen3,nelem = np.shape(B)
     if nen2!=nen2b:
         raise Exception('shapes do not match')
-    c = np.zeros((nen1,nen3,nelem))
+    c = np.zeros((nen1,nen3,nelem),dtype=np.complex128)
     for i in range(nen1):
         for j in range(nen2):
             for l in range(nen3):
@@ -179,7 +170,7 @@ def gs_lm(A,B):
     '''
     nelem = A.size
     nen1,nen2 = np.shape(B)
-    c = np.zeros((nen1,nen2,nelem))
+    c = np.zeros((nen1,nen2,nelem),dtype=np.complex128)
     if A.ndim == 1:
         for e in range(nelem):
             c[:,:,e] = A[e]*B
@@ -209,7 +200,7 @@ def gv_lm(A,B):
     nen1b,nen2 = np.shape(B)
     if nen1!=nen1b:
         raise Exception('shapes do not match')
-    c = np.zeros((nen2,nelem))
+    c = np.zeros((nen2,nelem),dtype=np.complex128)
     for e in range(nelem):
             c[:,e] = A[:,e] @ B
 
@@ -235,7 +226,7 @@ def gdiag_lm(H,D):
     nen1b,nen2 = np.shape(D)
     if nen1!=nen1b:
         raise Exception('shapes do not match')
-    c = np.zeros((nen1,nen2,nelem)) 
+    c = np.zeros((nen1,nen2,nelem),dtype=np.complex128) 
     for e in range(nelem):
         c[:,:,e] = (D.T * H[:,e]).T
     return c
@@ -260,7 +251,7 @@ def lm_gdiag(D,H):
     nen1,nen2 = np.shape(D)
     if nen2!=nen2b:
         raise Exception('shapes do not match')
-    c = np.zeros((nen1,nen2,nelem)) 
+    c = np.zeros((nen1,nen2,nelem),dtype=np.complex128) 
     for e in range(nelem):
         c[:,:,e] = D * H[:,e]
     return c
@@ -287,7 +278,7 @@ def gdiag_gm(H,D):
         raise Exception('array shapes do not match')    
     if nelem!=nelemb:
         raise Exception('element shapes do not match')   
-    c = np.zeros((nen1,nen2,nelem))
+    c = np.zeros((nen1,nen2,nelem),dtype=np.complex128)
     for e in range(nelem):
         c[:,:,e] = (D[:,:,e].T * H[:,e]).T
     return c
@@ -317,7 +308,7 @@ def gm_gdiag(D,H):
         raise Exception('array shapes do not match')    
     if nelem!=nelemb:
         raise Exception('element shapes do not match')   
-    c = np.zeros((nen1,nen2,nelem))
+    c = np.zeros((nen1,nen2,nelem),dtype=np.complex128)
     for e in range(nelem):
         c[:,:,e] = D[:,:,e] * H[:,e]
     return c
@@ -372,7 +363,7 @@ def gm_gv_colmultiply(A,q):
         raise Exception('array shapes do not match')    
     if nelem!=nelemb:
         raise Exception('element shapes do not match')   
-    c = np.zeros((nen1,nen2,nelem))
+    c = np.zeros((nen1,nen2,nelem),dtype=np.complex128)
     for e in range(nelem):
         c[:,:,e] = A[:,:,e] * q[:,e]
     return c
@@ -393,7 +384,7 @@ def diag(q):
     c : numpy array of shape (nen,nen,nelem)
     '''
     i,k = np.shape(q)
-    c=np.zeros((i,i,k))
+    c=np.zeros((i,i,k),dtype=np.complex128)
     for e in range(k):
         c[:,:,e] = np.diag(q[:,e])
     return c
@@ -427,9 +418,8 @@ def block_diag(*entries):
     '''
     neq_node = int(np.sqrt(len(entries)))
     nen,nelem = entries[0].shape
-    dtype = entries[0].dtype
-    blocks = np.zeros((nen,neq_node,neq_node,nelem),dtype=dtype)
-    mat = np.zeros((nen*neq_node,nen*neq_node,nelem),dtype=dtype)
+    blocks = np.zeros((nen,neq_node,neq_node,nelem),dtype=np.complex128)
+    mat = np.zeros((nen*neq_node,nen*neq_node,nelem),dtype=np.complex128)
 
     idx = 0
     for entry in literal_unroll(entries): # add literal_unroll for heterogeneous tuple types
@@ -462,11 +452,10 @@ def abs_eig_mat(mat):
     c : numpy array of shape (nen*neq_node,nen*neq_node)
     '''
     nodes,_,nelem = mat.shape
-    dtype=mat.dtype
-    mat_abs = np.zeros((nodes,nodes,nelem),dtype=dtype)
+    mat_abs = np.zeros((nodes,nodes,nelem),dtype=np.complex128)
     for elem in range(nelem):
         eig_val, eig_vec = np.linalg.eig(mat[:,:,elem])
-        mat_abs[:,:,elem] = eig_vec @ np.diag(np.abs(eig_val)).astype(dtype) @ np.linalg.inv(eig_vec)
+        mat_abs[:,:,elem] = eig_vec @ np.diag(np.abs(eig_val)).astype(np.complex128) @ np.linalg.inv(eig_vec)
     return mat_abs
 
 @njit
@@ -491,7 +480,7 @@ def spec_rad(mat,neq):
     for e in range(nelem):
         for i in range(nen):
             A = mat[i*neq:(i+1)*neq,i*neq:(i+1)*neq,e].astype(np.complex128)
-            eigs = np.linalg.eigvals(A).real # forcing to be real
+            eigs = np.linalg.eigvals(A) # do not force to be real
             rho[i,e] = np.max(np.abs(eigs))
     return rho
 
@@ -517,7 +506,7 @@ def gm_triblock_flat(blockL,blockM,blockR):
     if (nelemb!=nelem-1 or nelemc!=nelem-1):
         raise Exception('number of blocks do not match')    
         
-    mat = np.zeros((nen*nelem,nen*nelem))
+    mat = np.zeros((nen*nelem,nen*nelem),dtype=np.complex128)
     for e in range(nelem-1):
         for i in range(nen):
             for j in range(nen):
@@ -553,7 +542,7 @@ def gm_triblock_flat_periodic(blockL,blockM,blockR):
     if (nelemb!=nelem or nelemc!=nelem):
         raise Exception('number of blocks do not match')  
     
-    mat = np.zeros((nen*nelem,nen*nelem))        
+    mat = np.zeros((nen*nelem,nen*nelem),dtype=np.complex128)        
     for e in range(nelem-1):
         for i in range(nen):
             for j in range(nen):
@@ -596,7 +585,7 @@ def gm_triblock_2D_flat_periodic(blockL,blockM,blockR,blockD,blockU,nelemy):
     if (nelemb!=nelem or nelemc!=nelem or nelemd!=nelem or neleme!=nelem):
         raise Exception('number of blocks do not match')  
     
-    mat = np.zeros((nen*nelem,nen*nelem))        
+    mat = np.zeros((nen*nelem,nen*nelem),dtype=np.complex128)        
     for e in range(nelem-1):
         for i in range(nen):
             for j in range(nen):
@@ -627,7 +616,7 @@ def lm_gm_had(A,B):
     C : numpy array of shape (nen1,nen2,nelem)
     '''
     nen,nen2,nelem = B.shape
-    C = np.zeros((nen,nen2,nelem))
+    C = np.zeros((nen,nen2,nelem),dtype=np.complex128)
     for e in range(nelem):
         C[:,:,e] = np.multiply(A,B[:,:,e])
             
@@ -644,7 +633,7 @@ def lm_gm_had_diff(A,B):
     C : numpy array of shape (nen1,nen2,nelem)
     '''
     nen,nen2,nelem = B.shape
-    C = np.zeros((nen,nen2,nelem))
+    C = np.zeros((nen,nen2,nelem),dtype=np.complex128)
     for e in range(nelem):
         C[:,:,e] = np.multiply(A,B[:,:,e])
     
@@ -662,7 +651,7 @@ def gm_gm_had(A,B):
     C : numpy array of shape (nen1,nen2,nelem)
     '''
     nen,nen2,nelem = B.shape
-    C = np.zeros((nen,nen2,nelem))
+    C = np.zeros((nen,nen2,nelem),dtype=np.complex128)
     for e in range(nelem):
         C[:,:,e] = np.multiply(A[:,:,e],B[:,:,e])
             
@@ -679,7 +668,7 @@ def gm_gm_had_diff(A,B):
     C : numpy array of shape (nen1,nen2,nelem)
     '''
     nen,nen2,nelem = B.shape
-    C = np.zeros((nen,nen2,nelem))
+    C = np.zeros((nen,nen2,nelem),dtype=np.complex128)
     for e in range(nelem):
         C[:,:,e] = np.multiply(A[:,:,e],B[:,:,e])
     
@@ -713,7 +702,7 @@ def pad_periodic_1d(q):
     qpad : numpy array of shape (nen,nelem)
     '''
     nen,nelem = q.shape
-    qpad = np.zeros((nen,nelem+2))
+    qpad = np.zeros((nen,nelem+2),dtype=np.complex128)
     qpad[:,1:-1] = q
     qpad[:,0] = q[:,-1]
     qpad[:,-1] = q[:,0]           
@@ -733,7 +722,7 @@ def pad_1d(q,qL,qR):
     nen,nelem = q.shape
     if qL.shape!=(nen,) or qR.shape!=(nen,):
         raise Exception('shapes do not match') 
-    qpad = np.zeros((nen,nelem+2))
+    qpad = np.zeros((nen,nelem+2),dtype=np.complex128)
     qpad[:,1:-1] = q
     qpad[:,0] = qL
     qpad[:,-1] = qR          
@@ -752,7 +741,7 @@ def pad_1dL(q,qL):
     nen,nelem = q.shape
     if qL.shape!=(nen,):
         raise Exception('shapes do not match') 
-    qpad = np.zeros((nen,nelem+1))
+    qpad = np.zeros((nen,nelem+1),dtype=np.complex128)
     qpad[:,1:] = q
     qpad[:,0] = qL         
     return qpad
@@ -770,12 +759,12 @@ def pad_1dR(q,qR):
     nen,nelem = q.shape
     if qR.shape!=(nen,):
         raise Exception('shapes do not match') 
-    qpad = np.zeros((nen,nelem+1))
+    qpad = np.zeros((nen,nelem+1),dtype=np.complex128)
     qpad[:,:-1] = q
     qpad[:,-1] = qR          
     return qpad
 
-@njit # renamed from fix_satL_1D
+@njit # TODO: renamed from fix_satL_1D
 def shift_left(q):
     '''
     Take a global vector (nen,nelem) and move the first elem to the last elem.
@@ -786,7 +775,7 @@ def shift_left(q):
     qfix : numpy array of shape (nen,nelem)
     '''
     nen,nelem = q.shape
-    qfix = np.zeros((nen,nelem))
+    qfix = np.zeros((nen,nelem),dtype=np.complex128)
     qfix[:,:-1] = q[:,1:]
     qfix[:,-1] = q[:,0]            
     return qfix
@@ -794,7 +783,7 @@ def shift_left(q):
 @njit
 def shift_right(q):
     '''
-    Take a global vector (nen,nelem) and move the last elem to the first elem.
+    Take a global vector (nen,nelem) and move the first elem to the last elem.
     This is used for example for periodic cases to create qL from q.
 
     Returns
@@ -802,42 +791,10 @@ def shift_right(q):
     qfix : numpy array of shape (nen,nelem)
     '''
     nen,nelem = q.shape
-    qfix = np.zeros((nen,nelem))
+    qfix = np.zeros((nen,nelem),dtype=np.complex128)
     qfix[:,1:] = q[:,:-1]
     qfix[:,0] = q[:,-1]            
     return qfix
-
-@njit 
-def shift_mat_left(A):
-    '''
-    Take a global matrix (nen,nen2,nelem) and move the first elem to the last elem.
-    This is used for example for periodic cases to create AR from A.
-
-    Returns
-    -------
-    qfix : numpy array of shape (nen,nelem)
-    '''
-    nen,nen2,nelem = A.shape
-    Afix = np.zeros((nen,nen2,nelem))
-    Afix[:,:,:-1] = A[:,:,1:]
-    Afix[:,:,-1] = A[:,:,0]            
-    return Afix
-
-@njit
-def shift_mat_right(A):
-    '''
-    Take a global matrix (nen,nen2,nelem) and move the last elem to the first elem.
-    This is used for example for periodic cases to create AL from A.
-
-    Returns
-    -------
-    qfix : numpy array of shape (nen,nelem)
-    '''
-    nen,nen2,nelem = A.shape
-    Afix = np.zeros((nen,nen2,nelem))
-    Afix[:,:,1:] = A[:,:,:-1]
-    Afix[:,:,0] = A[:,:,-1]            
-    return Afix
 
 @njit
 def fix_dsatL_1D(q):
@@ -851,7 +808,7 @@ def fix_dsatL_1D(q):
     qfix : numpy array of shape (nen,nelem)
     '''
     nen,nen1,nelem = q.shape
-    qfix = np.zeros((nen,nen1,nelem))
+    qfix = np.zeros((nen,nen1,nelem),dtype=np.complex128)
     qfix[:,:,:-1] = q[:,:,1:]
     qfix[:,:,-1] = q[:,:,0]            
     return qfix
@@ -865,7 +822,7 @@ def reshape_to_meshgrid_2D(q,nen,nelemx,nelemy):
     if q.shape != (nen**2,nelemx*nelemy):
         raise Exception('Shape does not match.')  
         
-    Q = np.zeros((nen*nelemx, nen*nelemy))
+    Q = np.zeros((nen*nelemx, nen*nelemy),dtype=np.complex128)
     for ex in range(nelemx):
         for ey in range(nelemy):
             for nx in range(nen):
@@ -882,7 +839,7 @@ def build_F_vol_sca(q, flux):
     solution vector q, the number of equations per node, and a 2-point 
     flux function. Takes advantage of symmetry since q1 = q2 = q '''
     nen_neq, nelem = q.shape 
-    F = np.zeros((nen_neq,nen_neq,nelem))  
+    F = np.zeros((nen_neq,nen_neq,nelem),dtype=np.complex128)  
     for e in range(nelem):
         for i in range(nen_neq):
             for j in range(i,nen_neq):
@@ -898,7 +855,7 @@ def build_F_vol_sys(neq, q, flux):
     solution vector q, the number of equations per node, and a 2-point 
     flux function. Takes advantage of symmetry since q1 = q2 = q '''
     nen_neq, nelem = q.shape 
-    F = np.zeros((nen_neq,nen_neq,nelem))   
+    F = np.zeros((nen_neq,nen_neq,nelem),dtype=np.complex128)   
     nen = int(nen_neq / neq)
     for e in range(nelem):
         for i in range(nen):
@@ -922,7 +879,7 @@ def build_F_sca(q1, q2, flux):
     solution vectors q1, q2, the number of equations per node, and a 2-point 
     flux function. for scalar equations, neq=1 '''
     nen_neq, nelem = q1.shape 
-    F = np.zeros((nen_neq,nen_neq,nelem))  
+    F = np.zeros((nen_neq,nen_neq,nelem),dtype=np.complex128)  
     for e in range(nelem):
         for i in range(nen_neq):
             for j in range(nen_neq):
@@ -936,7 +893,7 @@ def build_F_sys(neq, q1, q2, flux):
     solution vectors q1, q2, the number of equations per node, and a 2-point 
     flux function '''
     nen_neq, nelem = q1.shape 
-    F = np.zeros((nen_neq,nen_neq,nelem))  
+    F = np.zeros((nen_neq,nen_neq,nelem),dtype=np.complex128)  
     nen = int(nen_neq / neq)
     for e in range(nelem):
         for i in range(nen):
@@ -994,7 +951,7 @@ def repeat_neq_gv(q,neq_node):
         Note: just as fast as np.repeat(q,neq_node,0) but this 
               is not compatible with jit (axis argument not supported)'''
     nen, nelem = q.shape
-    qn = np.zeros((nen*neq_node,nelem)) 
+    qn = np.zeros((nen*neq_node,nelem),dtype=np.complex128) 
     for e in range(nelem):
         for i in range(nen):
             for i2 in range(i*neq_node,i*neq_node+neq_node):
@@ -1006,7 +963,7 @@ def kron_neq_gm(A,neq_node):
     ''' take array of shape (nen,nen2,nelem) and return (nen*neq_node,nen2*neq_node,nelem)
         the proper kronecker product for the operator acting on a vector (nen2*neq_node,nelem). '''
     nen, nen2, nelem = A.shape
-    An = np.zeros((nen*neq_node,nen2*neq_node,nelem)) 
+    An = np.zeros((nen*neq_node,nen2*neq_node,nelem),dtype=np.complex128) 
     for e in range(nelem):
         for i in range(nen):
             for n in range(neq_node):
@@ -1020,7 +977,7 @@ def kron_neq_lm(A,neq_node):
     ''' take array of shape (nen,nen2) and return (nen*neq_node,nen2*neq_node)
         the proper kronecker product for the operator acting on a vector (nen2*neq_node,nelem). '''
     nen, nen2 = A.shape
-    An = np.zeros((nen*neq_node,nen2*neq_node)) 
+    An = np.zeros((nen*neq_node,nen2*neq_node),dtype=np.complex128) 
     for i in range(nen):
         for n in range(neq_node):
             i2 = i*neq_node + n
@@ -1035,300 +992,18 @@ def repeat_neq_lv(q,neq_node):
         Note: just as fast as np.repeat(q,neq_node,0) but this 
               is not compatible with jit (axis argument not supported)'''
     nen = len(q)
-    qn = np.zeros(nen*neq_node) 
+    qn = np.zeros(nen*neq_node,dtype=np.complex128) 
     for i in range(nen):
         for j in range(i*neq_node,i*neq_node+neq_node):
             qn[j] = q[i]
     return qn
 
-@njit
 def sparse_block_diag(A):
     ''' given a matrix A of shape (nen,nen2,nelem), return a sparse LHS
     of shape (nen*nelem,nen2*nelem) with the (nen,nen2) blocks of A on the diag'''
     nen,nen2,nelem = A.shape
-    #mat = sp.lil_matrix((nen*nelem,nen2*nelem))
-    mat = np.zeros((nen*nelem,nen2*nelem))
+    mat = sp.lil_matrix((nen*nelem,nen2*nelem),dtype=np.complex128)
     for e in range(nelem):
         mat[nen*e:nen*(e+1),nen2*e:nen2*(e+1)] = A[:,:,e]
-    #mat.eliminate_zeros()
+    mat.eliminate_zeros()
     return mat
-
-@njit
-def sparse_block_diag_R_1D(A):
-    ''' given a matrix A of shape (nen,nen2,nelem), return a sparse LHS
-    of shape (nen*nelem,nen2*nelem) with the (nen,nen2) blocks of A on the 
-    right-side of the diag (and wraps around). Appropriate for 1D.'''
-    nen,nen2,nelem = A.shape
-    #mat = sp.lil_matrix((nen*nelem,nen2*nelem))
-    mat = np.zeros((nen*nelem,nen2*nelem))
-    for e in range(nelem-1):
-        mat[nen*e:nen*(e+1),nen2*(e+1):nen2*(e+2)] = A[:,:,e]
-    mat[nen*(nelem-1):,:nen2] = A[:,:,nelem-1]
-    #mat.eliminate_zeros()
-    return mat
-
-@njit
-def sparse_block_diag_L_1D(A):
-    ''' given a matrix A of shape (nen,nen2,nelem), return a sparse LHS
-    of shape (nen*nelem,nen2*nelem) with the (nen,nen2) blocks of A on the 
-    left-side of the diag (and wraps around). Appropriate for 1D.'''
-    nen,nen2,nelem = A.shape
-    #mat = sp.lil_matrix((nen*nelem,nen2*nelem))
-    mat = np.zeros((nen*nelem,nen2*nelem))
-    for e in range(1,nelem):
-        mat[nen*e:nen*(e+1),nen2*(e-1):nen2*e] = A[:,:,e]
-    mat[:nen,nen2*(nelem-1):nen2*nelem] = A[:,:,0]
-    #mat.eliminate_zeros()
-    return mat
-
-
-""" Old functions (no longer useful)
-
-def ldiag_gdiag2(l,g):
-    '''
-    Takes a a local array of shape (nen) that simulates a local diagonal 
-    matrix of shape (nen,nen), and a global array of shape (nen,nelem)
-    that simulates a global diagonal matrix of shape (nen,nen,nelem), 
-    and returns a global array of shape (nen,nelem), simulating a global
-    matrix of shape (nen,nen,nelem), i.e. l @ g
-
-    Parameters
-    ----------
-    l : numpy array of shape (nen)
-    g : numpy array of shape (nen,nelem)
-
-    Returns
-    -------
-    c : numpy array of shape (nen,nelem)
-    ''' 
-    return l[:,None] * g
-
-@njit
-def gv_lvT(A,B):
-    '''
-    Takes a global vector of shape (nen1,nelem) and a local vector of shape 
-    (nen2,) or (1,nen2) and returns the outer product global matrix of shape 
-    (nen1,nen2,nelem)
-
-    Parameters
-    ----------
-    A : numpy array of shape (nen1,nelem)
-    B : numpy array of shape (nen2,) or (1,nen2)
-
-    Returns
-    -------
-    c : numpy array of shape (nen1,nen2,nelem)
-    '''
-    nen1,nelem = np.shape(A)
-    nen2 = B.size
-    c = np.zeros((nen1,nen2,nelem))
-    if B.ndim == 1:
-        for e in range(nelem):
-            c[:,:,e] = np.outer(A[:,e],B)
-    elif B.ndim == 2:
-        b = B[0,:]
-        for e in range(nelem):
-            c[:,:,e] = np.outer(A[:,e],b)
-    else: raise Exception('Local vector shape not understood. Should be (nen,) or (1,nen)')
-
-    return c
-
-@njit
-def gm_triblock_flat(blockL,blockM,blockR):
-    '''
-    Takes 3 3d arrays, blockL and blockR of shape (nen,nen,nelem-1) and 
-    blockM of shape (nen,nen,nelem) returns a 2d array of shape (nen*nelem,nen*nelem)
-    where the nelem (nen,nen) blocks are along the diagonal, blockL blocks are
-    to the left of the main diagonal, and blockR blocks are to the right.
-
-    Returns
-    -------
-    c : numpy array of shape (nen*neq_node,nen*neq_node)
-    '''
-    nen,nenb,nelem = blockM.shape
-    nenc,nend,nelemb = blockL.shape
-    nene,nenf,nelemc = blockR.shape
-    if (nenb!=nen or nenc!=nen or nend!=nen or nene!=nen or nenf!=nen):
-        raise Exception('block shapes do not match')    
-    if (nelemb!=nelem-1 or nelemc!=nelem-1):
-        raise Exception('number of blocks do not match')    
-        
-    mat = np.zeros((nen*nelem,nen*nelem))
-    for e in range(nelem-1):
-        nene = nen*e
-        nenen = nene+nen
-        for j in range(nen):
-            nenej = nene+j
-            mat[nene:nenen,nenej] = blockM[:,j,e]
-            mat[nenen:nenen+nen,nenej] = blockL[:,j,e]
-            mat[nene:nenen,nenen+j] = blockR[:,j,e]
-    e = nelem-1
-    nene = nen*e
-    nenen = nene+nen
-    for j in range(nen):
-        nenej = nene+j
-        mat[nene:nenen,nenej] = blockM[:,j,e]
-        
-    return mat
-
-@njit
-def lm_lv(A,b):
-    '''
-    Equivalent to np.einsum('ij,j->i',A,b) where A is a 2-tensor of shape
-    (nen,nen) and b is a 1-tensor of shape (nen). This can be 
-    thought of as a local matrix @ local vector.
-
-    Parameters
-    ----------
-    A : numpy array of shape (nen,nen)
-    b : numpy array of shape (nen)
-    
-    note: in theory this works for general shapes (i,j) and (j)
-
-    Returns
-    -------
-    c : numpy array of shape (nen)
-    '''
-    return A@b
-
-@njit
-def lm_lm(A,B):
-    '''
-    Equivalent to np.einsum('ij,jk->ik',A,B) where A is a 2-tensor of shape
-    (nen,nen) and b is a 2-tensor of shape (nen,nen). This can be 
-    thought of as a local matrix @ local matrix.
-
-    Parameters
-    ----------
-    A : numpy array of shape (nen,nen)
-    B : numpy array of shape (nen,nen)
-    
-    note: this does not work for general shapes (i,j) and (j,k)
-
-    Returns
-    -------
-    c : numpy array of shape (nen,nen)
-    '''
-    return A@B
-
-def dot(A,B):
-    '''
-    Equivalent to @ where A is a (possibly sparse) 2-array of shape (a,b) and 
-    b is either a (possibly sparse) 2-array of shape (b,c) or a numpy array of 
-    shape (b).
-
-    Parameters
-    ----------
-    A : (sparse) array of shape (a,b)
-    B : numpy array of shape (b) or (sparse) array of shape (b,c)
-
-    Returns
-    -------
-    c : numpy array of shape (a) or (sparse) array of shape (a,c)
-    '''
-    return A.dot(B)
-
-@njit
-def diag_1d(q):
-    '''
-    Takes a 2-dim numpy array q of shape (nen,1) and returns a 2-dim
-    array of shape (nen,nen) with the entries of q along the diagonals.
-
-    Parameters
-    ----------
-    q : numpy array of shape (nen)
-
-    Returns
-    -------
-    c : numpy array of shape (nen,nen)
-    '''
-    return np.diag(q[:,0])
-
-def diag_sp(q):
-    '''
-    Takes a 2-dim numpy array q of shape (n) and returns a 2-dim
-    sparse array in csr_matrix format of shape (n,n) with the entries 
-    of q along the diagonals.
-
-    Parameters
-    ----------
-    q : numpy array of shape (n)
-
-    Returns
-    -------
-    c : sparse dia array of shape (n,n)
-    '''
-    return sp.diags(q,format="csr")
-
-def diag_sp_FD(q):
-    '''
-    Takes a 2-dim numpy array q of shape (nen,1) and returns a 2-dim
-    sparse array in csr_matrix format of shape (nen,nen) with the entries 
-    of q along the diagonals.
-
-    Parameters
-    ----------
-    q : numpy array of shape (nen)
-
-    Returns
-    -------
-    c : sparse dia array of shape (nen,nen)
-    '''
-    return sp.diags(q[:,0],format="csr")
-
-def chk_q_unstr(q):
-    '''
-    Check shape of q to ensure it is in an unstructured form, i.e. the q
-    being passed is the local q for a single element, not the global q.
-
-    Parameters
-    ----------
-    q : numpy array
-
-    Returns
-    -------
-    properly shaped q
-
-    '''
-    if q.ndim == 1:
-        return q
-    if q.ndim == 2:
-        print('WARNING: Passed q of wrong shape. Taking first element only.')
-        return q[:,0]
-    else:
-        print('ERROR: Unrecognized q shape.')
-        
-@njit       
-def block_diag_1d(*entries):
-    '''
-    Takes neq_node^2 2-dim numpy arrays q of shape (nen,1) and returns a 2-dim
-    block-diagonal array of shape (nen*neq_node,nen*neq_node) where each block
-    along the diagonal is an (neq_node,neq_node) 2-dim array with entries
-    given from the *entries arrays in order from top left, left to right, then 
-    top to bottom (normal reading direction)
-
-    Parameters
-    ----------
-    *entries : numpy arrays of shape (nen,1)
-
-    Returns
-    -------
-    c : numpy array of shape (nen*neq_node,nen*neq_node)
-    '''
-    neq_node = int(np.sqrt(len(entries)))
-    nen = len(entries[0])
-    blocks = np.zeros((nen,neq_node,neq_node))
-    mat = np.zeros((nen*neq_node,nen*neq_node))
-
-    idx = 0
-    for entry in literal_unroll(entries):
-        row = idx // neq_node
-        col = idx % neq_node
-        blocks[:,row,col] = entry[:,0]
-        idx += 1
-    for i in range(nen):
-        a = i*neq_node
-        b = (i+1)*neq_node
-        mat[a:b,a:b] = blocks[i]    
-    return mat
-"""

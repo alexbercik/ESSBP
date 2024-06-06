@@ -31,28 +31,28 @@ para = None
 tm_method = 'rk4' # explicit_euler, rk4
 dt = 0.0001
 # note: should set according to courant number C = a dt / dx
-tf = 0.5
+tf = 1.0
 
 # Domain
-xmin = 0
-xmax = np.pi
+xmin = -1.
+xmax = 1.
 bc = 'periodic' # no other boudnary conditions set up yet sorry...
 
 # Spatial discretization
 disc_type = 'div' # 'div', 'had' (divergence or hadamard-product)
 disc_nodes = 'csbp' # 'lg', 'lgl', 'nc', 'csbp'
-p = 2
-nelem = 2 # optional, number of elements
-nen = 20 # optional, number of nodes per element
-surf_type = 'ec' # 'ec' / 'es' / 'ec_had' / 'es_had' / 'split' / 'split_diss' (es is a dissipative version of ec, split follows variable coefficient advection splitting)
+p = 3
+nelem = 6 # optional, number of elements
+nen = 10 # optional, number of nodes per element (set to zero for element-type)
+surf_type = 'ec_had' # 'ec' / 'es' / 'ec_had' / 'es_had' / 'split' / 'split_diss' (es is a dissipative version of ec, split follows variable coefficient advection splitting)
 had_flux = 'ec' # 2-point numerical flux used in hadamard form (only 'ec' set up)
-vol_diss = {'diss_type':'B', 'jac_type':'scalar', 's':p, 'coeff':1.}
+vol_diss = {'diss_type':'w', 'jac_type':'scalar', 's':'p+1', 'coeff':0.05}
 use_split_form = True
 split_alpha = 2./3. # splitting parameter, 2/3 to recover entropy-conservative had form
 
 # Initial solution
 q0 = None # can overwrite q0_type from DiffEq
-q0_type = 'ShiftedSinWave' # 'GassnerSinWave', '..._cont', '..._coarse' 'GaussWave', 'SinWave'
+q0_type = 'GassnerSinWave_coarse' # 'GassnerSinWave', '..._cont', '..._coarse' 'GaussWave', 'SinWave'
 
 # Other
 bool_plot_sol = False
@@ -90,13 +90,16 @@ solver = PdeSolverSbp(diffeq, settings,                     # Diffeq
 #def theory_fn(time):
 #    return 0.001*np.exp(max_eig * time)
 
-solver.solve()
-#solver.check_eigs()
-diffeq.plt_style_sol[0] = {'color':'b','linestyle':'-','marker':'','linewidth':3}
+solver.skip_ts = 100
+solver.check_eigs()
+#solver.solve()
+#solver.check_eigs(title=r'Eigenvalues: LGL, Surface Dissipation (10 elem, $p=3$)',
+#                  savefile='lgl_p3_es_nd', colour_by_k=True)
+#diffeq.plt_style_sol[0] = {'color':'b','linestyle':'-','marker':'','linewidth':3}
 #solver.plot_sol(plt_save_name=savefile+'_sol',title=title)
-solver.plot_sol()
+#solver.plot_sol(q=solver.diffeq.set_q0(),plot_exa=False,title=r'Initial CSBP State, 2 elem',savefile='Linearization_State_csbp',legend=False)
 #solver.plot_error(method='max diff',savefile=savefile+'_error', extra_fn=theory_fn, extra_label='Theory', title=title)
-solver.plot_cons_obj()
-
+#solver.plot_cons_obj()
+#solver.plot_sol()
 #from Methods.Analysis import animate
 #animate(solver, plotargs={'display_time':True},skipsteps=100)

@@ -211,7 +211,8 @@ class MakeMesh:
                     self.bdy_xyz[:,::2,2,e] = self.bdy_xyz[:,::2,3,e] = np.array(np.meshgrid(z_elem, x_elem)).reshape(2, -1).T[:,[1,0]]
                     self.bdy_xyz[:,2,4,e], self.bdy_xyz[:,2,5,e] = verticesz[k], verticesz[k+1]
                     self.bdy_xyz[:,:2,4,e] = self.bdy_xyz[:,:2,5,e] = np.array(np.meshgrid(y_elem, x_elem)).reshape(2, -1).T[:,[1,0]]
-                    
+
+        self.xyz_elem_unwarped = np.copy(self.xyz_elem)            
         for i in range(self.nelem[0]*self.nelem[1]*self.nelem[2]):
             a = i*self.nen**3
             b = (i+1)*self.nen**3
@@ -647,11 +648,11 @@ class MakeMesh:
         for elem in range(self.nelem[0]*self.nelem[1]):
             self.det_jac_exa[:,elem] = np.linalg.det(self.jac_exa[:,:,:,elem])
         assert np.all(self.det_jac_exa>0),"Not a valid coordinate transformation. Try using a lower warp_factor."
-        for elem in range(self.nelem[0]*self.nelem[1]):
-            self.jac_inv_exa[:,:,:,elem] = np.linalg.inv(self.jac_exa[:,:,:,elem])
-            self.det_jac_inv_exa[:,elem] =  np.linalg.det(self.jac_inv_exa[:,:,:,elem])
-        if np.max(abs(self.det_jac_inv_exa - 1/self.det_jac_exa) > 1e-12):
-            print('WANRING: Numerical error in calculation of determinant inverse is {0:.2g}'.format(np.max(abs(self.det_jac_inv_exa - 1/self.det_jac_exa))))
+        #for elem in range(self.nelem[0]*self.nelem[1]):
+        #    self.jac_inv_exa[:,:,:,elem] = np.linalg.inv(self.jac_exa[:,:,:,elem])
+        #    self.det_jac_inv_exa[:,elem] =  np.linalg.det(self.jac_inv_exa[:,:,:,elem])
+        #if np.max(abs(self.det_jac_inv_exa - 1/self.det_jac_exa) > 1e-12):
+        #    print('WANRING: Numerical error in calculation of determinant inverse is {0:.2g}'.format(np.max(abs(self.det_jac_inv_exa - 1/self.det_jac_exa))))
         
         dxnewdx, dxnewdy, dynewdx, dynewdy = warp_der(bdy_xy_old[:,0,:,:], bdy_xy_old[:,1,:,:])
         dxdxref = np.copy(self.bdy_jac_exa[:,0,0,:,:])
@@ -710,7 +711,7 @@ class MakeMesh:
 # =============================================================================
         
             
-    def warp_mesh_3d(self):
+    def warp_mesh_3d(self, xyz=None):
         '''
         Warps a cuboid mesh to test curvlinear coordinate trasformations.
     
@@ -755,6 +756,7 @@ class MakeMesh:
             return new_x , new_y, new_z
         
         def warp_cuboid_flipped_der(x,y,z):
+            print('WARNING: I think there is a mistake here?')
             ''' the derivative of the function warp_cuboid wrt x (i.e. dnew_x/dx) '''   
             argy = (y-self.xmin[1])/self.dom_len[1]
             argz = (z-self.xmin[2])/self.dom_len[2] 
@@ -769,6 +771,30 @@ class MakeMesh:
             dxdz = 0.25*self.warp_factor*self.dom_len[0]*2*np.pi*(np.cos(2*np.pi*(new_y-self.xmin[1])/self.dom_len[1])*dydz/self.dom_len[1] + np.cos(2*np.pi*(new_z-self.xmin[2])/self.dom_len[2])*dzdz/self.dom_len[2])
             dxdx = np.ones(np.shape(dydy))
             return dxdx, dxdy, dxdz, dydx, dydy, dydz, dzdx, dzdy, dzdz
+        
+        def warp_chan(x,y,z):
+            argx = (x-self.xmin[0])/self.dom_len[0]
+            argy = (y-self.xmin[1])/self.dom_len[1]     
+            argz = (z-self.xmin[2])/self.dom_len[2]  
+            xn = x + self.warp_factor*self.dom_len[0]*np.cos(np.pi*argx/2.)*np.cos(np.pi*argy/2.)*np.cos(np.pi*argz/2.)
+            yn = y + self.warp_factor*self.dom_len[1]*np.cos(np.pi*argx/2.)*np.cos(np.pi*argy/2.)*np.cos(np.pi*argz/2.)
+            zn = z + self.warp_factor*self.dom_len[2]*np.cos(np.pi*argx/2.)*np.cos(np.pi*argy/2.)*np.cos(np.pi*argz/2.)
+            return xn , yn, zn
+        
+        def warp_chan_der(x,y,z):
+            argx = (x-self.xmin[0])/self.dom_len[0]
+            argy = (y-self.xmin[1])/self.dom_len[1]     
+            argz = (z-self.xmin[2])/self.dom_len[2] 
+            dxndx = 1 - self.warp_factor*np.pi*0.5*np.sin(np.pi*argx/2.)*np.cos(np.pi*argy/2.)*np.cos(np.pi*argz/2.)
+            dxndy = - self.warp_factor*self.dom_len[0]/self.dom_len[1]*np.pi*0.5*np.cos(np.pi*argx/2.)*np.sin(np.pi*argy/2.)*np.cos(np.pi*argz/2.)
+            dxndz = - self.warp_factor*self.dom_len[0]/self.dom_len[2]*np.pi*0.5*np.cos(np.pi*argx/2.)*np.cos(np.pi*argy/2.)*np.sin(np.pi*argz/2.)
+            dyndx = - self.warp_factor*self.dom_len[1]/self.dom_len[0]*np.pi*0.5*np.sin(np.pi*argx/2.)*np.cos(np.pi*argy/2.)*np.cos(np.pi*argz/2.)
+            dyndy = 1 - self.warp_factor*np.pi*0.5*np.cos(np.pi*argx/2.)*np.sin(np.pi*argy/2.)*np.cos(np.pi*argz/2.)
+            dyndz = - self.warp_factor*self.dom_len[1]/self.dom_len[2]*np.pi*0.5*np.cos(np.pi*argx/2.)*np.cos(np.pi*argy/2.)*np.sin(np.pi*argz/2.)
+            dzndx = - self.warp_factor*np.pi*self.dom_len[2]/self.dom_len[0]*0.5*np.sin(np.pi*argx/2.)*np.cos(np.pi*argy/2.)*np.cos(np.pi*argz/2.)
+            dzndy = - self.warp_factor*self.dom_len[2]/self.dom_len[1]*np.pi*0.5*np.cos(np.pi*argx/2.)*np.sin(np.pi*argy/2.)*np.cos(np.pi*argz/2.)
+            dzndz = 1 - self.warp_factor*np.pi*0.5*np.cos(np.pi*argx/2.)*np.cos(np.pi*argy/2.)*np.sin(np.pi*argz/2.)
+            return dxndx, dxndy, dxndz, dyndx, dyndy, dyndz, dzndx, dzndy, dzndz
         
         def warp_quad(x,y,z):
             ''' Warps according to a quadratic (in each direction. Total order is 4) '''
@@ -895,187 +921,196 @@ class MakeMesh:
         elif self.warp_type == 'strong':
             warp_fun = warp_strong
             warp_der = warp_strong_der
+        elif self.warp_type == 'chan':
+            warp_fun = warp_chan
+            warp_der = warp_chan_der
         else:
             print('WARNING: mesh.warp_type not understood. Reverting to default.')
             warp_fun = warp_cuboid
             warp_der = warp_cuboid_der 
-        
-        xyz_elem_old = np.copy(self.xyz_elem)
-        bdy_xyz_old = np.copy(self.bdy_xyz)
-        self.xyz_elem[:,0,:], self.xyz_elem[:,1,:], self.xyz_elem[:,2,:] = warp_fun(self.xyz_elem[:,0,:], self.xyz_elem[:,1,:], self.xyz_elem[:,2,:])
-        self.bdy_xyz[:,0,:,:], self.bdy_xyz[:,1,:,:], self.bdy_xyz[:,2,:,:] = warp_fun(self.bdy_xyz[:,0,:,:],self.bdy_xyz[:,1,:,:],self.bdy_xyz[:,2,:,:])
-        self.grid_planes[:,0,:,:], self.grid_planes[:,1,:,:], self.grid_planes[:,2,:,:] =  warp_fun(self.grid_planes[:,0,:,:], self.grid_planes[:,1,:,:], self.grid_planes[:,2,:,:])
-        
-        for i in range(self.nelem[0]*self.nelem[1]*self.nelem[2]):
-            a = i*self.nen**3
-            b = (i+1)*self.nen**3
-            self.xyz[a:b,:] = self.xyz_elem[:,:,i]
-            
-        dxnewdx, dxnewdy, dxnewdz, dynewdx, dynewdy, dynewdz, dznewdx, dznewdy, dznewdz = warp_der(xyz_elem_old[:,0,:], xyz_elem_old[:,1,:], xyz_elem_old[:,2,:])
-        dxdxref = np.copy(self.jac_exa[:,0,0,:])
-        dydyref = np.copy(self.jac_exa[:,1,1,:])
-        dzdzref = np.copy(self.jac_exa[:,2,2,:])
-        self.jac_exa[:,0,0,:] = dxnewdx * dxdxref # chain rule, ignoring cross terms that are 0 in original transformation
-        self.jac_exa[:,0,1,:] = dxnewdy * dydyref
-        self.jac_exa[:,0,2,:] = dxnewdz * dzdzref
-        self.jac_exa[:,1,0,:] = dynewdx * dxdxref
-        self.jac_exa[:,1,1,:] = dynewdy * dydyref
-        self.jac_exa[:,1,2,:] = dynewdz * dzdzref
-        self.jac_exa[:,2,0,:] = dznewdx * dxdxref
-        self.jac_exa[:,2,1,:] = dznewdy * dydyref
-        self.jac_exa[:,2,2,:] = dznewdz * dzdzref
-        for elem in range(self.nelem[0]*self.nelem[1]*self.nelem[2]):
-            self.det_jac_exa[:,elem] = np.linalg.det(self.jac_exa[:,:,:,elem])
-        assert np.all(self.det_jac_exa>0),"Not a valid coordinate transformation. Try using a lower warp_factor."
-        #for elem in range(self.nelem[0]*self.nelem[1]*self.nelem[2]):
-            #self.jac_inv_exa[:,:,:,elem] = np.linalg.inv(self.jac_exa[:,:,:,elem])
-            #self.det_jac_inv_exa[:,elem] =  np.linalg.det(self.jac_inv_exa[:,:,:,elem])
-        #if np.max(abs(self.det_jac_inv_exa - 1/self.det_jac_exa) > 1e-12):
-        #    print('WANRING: Numerical error in calculation of determinant inverse is {0:.2g}'.format(np.max(abs(self.det_jac_inv_exa - 1/self.det_jac_exa))))
 
-        dxnewdx, dxnewdy, dxnewdz, dynewdx, dynewdy, dynewdz, dznewdx, dznewdy, dznewdz = warp_der(bdy_xyz_old[:,0,:,:], bdy_xyz_old[:,1,:,:], bdy_xyz_old[:,2,:,:])
-        dxdxref = np.copy(self.bdy_jac_exa[:,0,0,:,:])
-        dydyref = np.copy(self.bdy_jac_exa[:,1,1,:,:])
-        dzdzref = np.copy(self.bdy_jac_exa[:,2,2,:,:])
-        self.bdy_jac_exa[:,0,0,:,:] = dxnewdx * dxdxref # chain rule, ignoring cross terms that are 0 in original transformation
-        self.bdy_jac_exa[:,0,1,:,:] = dxnewdy * dydyref
-        self.bdy_jac_exa[:,0,2,:,:] = dxnewdz * dzdzref
-        self.bdy_jac_exa[:,1,0,:,:] = dynewdx * dxdxref
-        self.bdy_jac_exa[:,1,1,:,:] = dynewdy * dydyref
-        self.bdy_jac_exa[:,1,2,:,:] = dynewdz * dzdzref
-        self.bdy_jac_exa[:,2,0,:,:] = dznewdx * dxdxref
-        self.bdy_jac_exa[:,2,1,:,:] = dznewdy * dydyref
-        self.bdy_jac_exa[:,2,2,:,:] = dznewdz * dzdzref
-        #for elem in range(self.nelem[0]*self.nelem[1]*self.nelem[2]):
-            #for i in range(6):
-                #self.bdy_det_jac_exa[:,i,elem] = np.linalg.det(self.bdy_jac_exa[:,:,:,i,elem])
-                #self.bdy_jac_inv_exa[:,:,:,i,elem] = np.linalg.inv(self.bdy_jac_exa[:,:,:,i,elem])
+        if xyz is not None:
+            xyz_new = np.copy(xyz)
+            xyz_new[:,0,:], xyz_new[:,1,:], xyz_new[:,2,:] = warp_fun(xyz[:,0,:], xyz[:,1,:], xyz[:,2,:])
+            return xyz_new
+        else:
+        
+            xyz_elem_old = np.copy(self.xyz_elem)
+            bdy_xyz_old = np.copy(self.bdy_xyz)
+            self.xyz_elem[:,0,:], self.xyz_elem[:,1,:], self.xyz_elem[:,2,:] = warp_fun(self.xyz_elem[:,0,:], self.xyz_elem[:,1,:], self.xyz_elem[:,2,:])
+            self.bdy_xyz[:,0,:,:], self.bdy_xyz[:,1,:,:], self.bdy_xyz[:,2,:,:] = warp_fun(self.bdy_xyz[:,0,:,:],self.bdy_xyz[:,1,:,:],self.bdy_xyz[:,2,:,:])
+            self.grid_planes[:,0,:,:], self.grid_planes[:,1,:,:], self.grid_planes[:,2,:,:] =  warp_fun(self.grid_planes[:,0,:,:], self.grid_planes[:,1,:,:], self.grid_planes[:,2,:,:])
+            
+            for i in range(self.nelem[0]*self.nelem[1]*self.nelem[2]):
+                a = i*self.nen**3
+                b = (i+1)*self.nen**3
+                self.xyz[a:b,:] = self.xyz_elem[:,:,i]
                 
-        ''' Uncomment the below section to debug and test the consistency of the warping '''
+            dxnewdx, dxnewdy, dxnewdz, dynewdx, dynewdy, dynewdz, dznewdx, dznewdy, dznewdz = warp_der(xyz_elem_old[:,0,:], xyz_elem_old[:,1,:], xyz_elem_old[:,2,:])
+            dxdxref = np.copy(self.jac_exa[:,0,0,:])
+            dydyref = np.copy(self.jac_exa[:,1,1,:])
+            dzdzref = np.copy(self.jac_exa[:,2,2,:])
+            self.jac_exa[:,0,0,:] = dxnewdx * dxdxref # chain rule, ignoring cross terms that are 0 in original transformation
+            self.jac_exa[:,0,1,:] = dxnewdy * dydyref
+            self.jac_exa[:,0,2,:] = dxnewdz * dzdzref
+            self.jac_exa[:,1,0,:] = dynewdx * dxdxref
+            self.jac_exa[:,1,1,:] = dynewdy * dydyref
+            self.jac_exa[:,1,2,:] = dynewdz * dzdzref
+            self.jac_exa[:,2,0,:] = dznewdx * dxdxref
+            self.jac_exa[:,2,1,:] = dznewdy * dydyref
+            self.jac_exa[:,2,2,:] = dznewdz * dzdzref
+            for elem in range(self.nelem[0]*self.nelem[1]*self.nelem[2]):
+                self.det_jac_exa[:,elem] = np.linalg.det(self.jac_exa[:,:,:,elem])
+            assert np.all(self.det_jac_exa>0),"Not a valid coordinate transformation. Try using a lower warp_factor."
+            #for elem in range(self.nelem[0]*self.nelem[1]*self.nelem[2]):
+                #self.jac_inv_exa[:,:,:,elem] = np.linalg.inv(self.jac_exa[:,:,:,elem])
+                #self.det_jac_inv_exa[:,elem] =  np.linalg.det(self.jac_inv_exa[:,:,:,elem])
+            #if np.max(abs(self.det_jac_inv_exa - 1/self.det_jac_exa) > 1e-12):
+            #    print('WANRING: Numerical error in calculation of determinant inverse is {0:.2g}'.format(np.max(abs(self.det_jac_inv_exa - 1/self.det_jac_exa))))
+
+            dxnewdx, dxnewdy, dxnewdz, dynewdx, dynewdy, dynewdz, dznewdx, dznewdy, dznewdz = warp_der(bdy_xyz_old[:,0,:,:], bdy_xyz_old[:,1,:,:], bdy_xyz_old[:,2,:,:])
+            dxdxref = np.copy(self.bdy_jac_exa[:,0,0,:,:])
+            dydyref = np.copy(self.bdy_jac_exa[:,1,1,:,:])
+            dzdzref = np.copy(self.bdy_jac_exa[:,2,2,:,:])
+            self.bdy_jac_exa[:,0,0,:,:] = dxnewdx * dxdxref # chain rule, ignoring cross terms that are 0 in original transformation
+            self.bdy_jac_exa[:,0,1,:,:] = dxnewdy * dydyref
+            self.bdy_jac_exa[:,0,2,:,:] = dxnewdz * dzdzref
+            self.bdy_jac_exa[:,1,0,:,:] = dynewdx * dxdxref
+            self.bdy_jac_exa[:,1,1,:,:] = dynewdy * dydyref
+            self.bdy_jac_exa[:,1,2,:,:] = dynewdz * dzdzref
+            self.bdy_jac_exa[:,2,0,:,:] = dznewdx * dxdxref
+            self.bdy_jac_exa[:,2,1,:,:] = dznewdy * dydyref
+            self.bdy_jac_exa[:,2,2,:,:] = dznewdz * dzdzref
+            #for elem in range(self.nelem[0]*self.nelem[1]*self.nelem[2]):
+                #for i in range(6):
+                    #self.bdy_det_jac_exa[:,i,elem] = np.linalg.det(self.bdy_jac_exa[:,:,:,i,elem])
+                    #self.bdy_jac_inv_exa[:,:,:,i,elem] = np.linalg.inv(self.bdy_jac_exa[:,:,:,i,elem])
+                    
+            ''' Uncomment the below section to debug and test the consistency of the warping '''
 # =============================================================================
-#         max_xy = [0,0,0,0,0,0,0,0,0]
-#         max_der = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-#             
-#         skipx = self.nelem[1]*self.nelem[2]
-#         for row in range(skipx):
-#             diff = abs(self.bdy_xyz[:,0,0,row::skipx][:,0] - self.bdy_xyz[:,0,1,row::skipx][:,-1])
-#             max_xy[0] = max(max_xy[0],np.max(diff))
-#             diff = abs(self.bdy_xyz[:,1,0,row::skipx][:,0] - self.bdy_xyz[:,1,1,row::skipx][:,-1])
-#             max_xy[1] = max(max_xy[1],np.max(diff))
-#             diff = abs(self.bdy_xyz[:,2,0,row::skipx][:,0] - self.bdy_xyz[:,2,1,row::skipx][:,-1])
-#             max_xy[2] = max(max_xy[2],np.max(diff))
-#             diff = abs(dxnewdx[:,0,row::skipx][:,0] - dxnewdx[:,1,row::skipx][:,-1])
-#             max_der[0] = max(max_der[0],np.max(diff))
-#             diff = abs(dxnewdy[:,0,row::skipx][:,0] - dxnewdy[:,1,row::skipx][:,-1])
-#             max_der[1] = max(max_der[1],np.max(diff))
-#             diff = abs(dxnewdz[:,0,row::skipx][:,0] - dxnewdz[:,1,row::skipx][:,-1])
-#             max_der[2] = max(max_der[2],np.max(diff))
-#             diff = abs(dynewdx[:,0,row::skipx][:,0] - dynewdx[:,1,row::skipx][:,-1])
-#             max_der[3] = max(max_der[3],np.max(diff))
-#             diff = abs(dynewdy[:,0,row::skipx][:,0] - dynewdy[:,1,row::skipx][:,-1])
-#             max_der[4] = max(max_der[4],np.max(diff))
-#             diff = abs(dynewdz[:,0,row::skipx][:,0] - dynewdz[:,1,row::skipx][:,-1])
-#             max_der[5] = max(max_der[5],np.max(diff))
-#             diff = abs(dznewdx[:,0,row::skipx][:,0] - dznewdx[:,1,row::skipx][:,-1])
-#             max_der[6] = max(max_der[6],np.max(diff))
-#             diff = abs(dznewdy[:,0,row::skipx][:,0] - dznewdy[:,1,row::skipx][:,-1])
-#             max_der[7] = max(max_der[7],np.max(diff))
-#             diff = abs(dznewdz[:,0,row::skipx][:,0] - dznewdz[:,1,row::skipx][:,-1])
-#             max_der[8] = max(max_der[8],np.max(diff))
-#                 
-#         for coly in range(self.nelem[0]*self.nelem[2]):
-#             start = coly + (coly//self.nelem[2])*(self.nelem[1]-1)*self.nelem[2]
-#             end = start + self.nelem[1]*self.nelem[2]
-#             diff = abs(self.bdy_xyz[:,0,2,start:end:self.nelem[2]][:,0] - self.bdy_xyz[:,0,3,start:end:self.nelem[2]][:,-1])
-#             max_xy[3] = max(max_xy[3],np.max(diff))
-#             diff = abs(self.bdy_xyz[:,1,2,start:end:self.nelem[2]][:,0] - self.bdy_xyz[:,1,3,start:end:self.nelem[2]][:,-1])
-#             max_xy[4] = max(max_xy[4],np.max(diff))
-#             diff = abs(self.bdy_xyz[:,2,2,start:end:self.nelem[2]][:,0] - self.bdy_xyz[:,2,3,start:end:self.nelem[2]][:,-1])
-#             max_xy[5] = max(max_xy[5],np.max(diff))
-#             diff = abs(dxnewdx[:,2,start:end:self.nelem[2]][:,0] - dxnewdx[:,3,start:end:self.nelem[2]][:,-1])
-#             max_der[9] = max(max_der[9],np.max(diff))
-#             diff = abs(dxnewdy[:,2,start:end:self.nelem[2]][:,0] - dxnewdy[:,3,start:end:self.nelem[2]][:,-1])
-#             max_der[10] = max(max_der[10],np.max(diff))
-#             diff = abs(dxnewdz[:,2,start:end:self.nelem[2]][:,0] - dxnewdz[:,3,start:end:self.nelem[2]][:,-1])
-#             max_der[11] = max(max_der[11],np.max(diff))
-#             diff = abs(dynewdx[:,2,start:end:self.nelem[2]][:,0] - dynewdx[:,3,start:end:self.nelem[2]][:,-1])
-#             max_der[12] = max(max_der[12],np.max(diff))
-#             diff = abs(dynewdy[:,2,start:end:self.nelem[2]][:,0] - dynewdy[:,3,start:end:self.nelem[2]][:,-1])
-#             max_der[13] = max(max_der[13],np.max(diff))
-#             diff = abs(dynewdz[:,2,start:end:self.nelem[2]][:,0] - dynewdz[:,3,start:end:self.nelem[2]][:,-1])
-#             max_der[14] = max(max_der[14],np.max(diff))
-#             diff = abs(dznewdx[:,2,start:end:self.nelem[2]][:,0] - dznewdx[:,3,start:end:self.nelem[2]][:,-1])
-#             max_der[15] = max(max_der[15],np.max(diff))
-#             diff = abs(dznewdy[:,2,start:end:self.nelem[2]][:,0] - dznewdy[:,3,start:end:self.nelem[2]][:,-1])
-#             max_der[16] = max(max_der[16],np.max(diff))
-#             diff = abs(dznewdz[:,2,start:end:self.nelem[2]][:,0] - dznewdz[:,3,start:end:self.nelem[2]][:,-1])
-#             max_der[17] = max(max_der[17],np.max(diff))
-# 
-#         
-#         for colz in range(self.nelem[0]*self.nelem[2]):
-#             start = colz*self.nelem[2]
-#             end = start + self.nelem[2]
-#             diff = abs(self.bdy_xyz[:,0,4,start:end][:,0] - self.bdy_xyz[:,0,5,start:end][:,-1])
-#             max_xy[6] = max(max_xy[6],np.max(diff))
-#             diff = abs(self.bdy_xyz[:,1,4,start:end][:,0] - self.bdy_xyz[:,1,5,start:end][:,-1])
-#             max_xy[7] = max(max_xy[7],np.max(diff))
-#             diff = abs(self.bdy_xyz[:,2,4,start:end][:,0] - self.bdy_xyz[:,2,5,start:end][:,-1])
-#             max_xy[8] = max(max_xy[8],np.max(diff))
-#             diff = abs(dxnewdx[:,4,start:end][:,0] - dxnewdx[:,5,start:end][:,-1])
-#             max_der[18] = max(max_der[18],np.max(diff))
-#             diff = abs(dxnewdy[:,4,start:end][:,0] - dxnewdy[:,5,start:end][:,-1])
-#             max_der[19] = max(max_der[19],np.max(diff))
-#             diff = abs(dxnewdz[:,4,start:end][:,0] - dxnewdz[:,5,start:end][:,-1])
-#             max_der[20] = max(max_der[20],np.max(diff))
-#             diff = abs(dynewdx[:,4,start:end][:,0] - dynewdx[:,5,start:end][:,-1])
-#             max_der[21] = max(max_der[21],np.max(diff))
-#             diff = abs(dynewdy[:,4,start:end][:,0] - dynewdy[:,5,start:end][:,-1])
-#             max_der[22] = max(max_der[22],np.max(diff))
-#             diff = abs(dynewdz[:,4,start:end][:,0] - dynewdz[:,5,start:end][:,-1])
-#             max_der[23] = max(max_der[23],np.max(diff))
-#             diff = abs(dznewdx[:,4,start:end][:,0] - dznewdx[:,5,start:end][:,-1])
-#             max_der[24] = max(max_der[24],np.max(diff))
-#             diff = abs(dznewdy[:,4,start:end][:,0] - dznewdy[:,5,start:end][:,-1])
-#             max_der[25] = max(max_der[25],np.max(diff))
-#             diff = abs(dznewdz[:,4,start:end][:,0] - dznewdz[:,5,start:end][:,-1])
-#             max_der[26] = max(max_der[26],np.max(diff))
-# 
-#         #print('Max diff x values along x_ref direction boundary (=domain[0]): ', max_xy[0])
-#         print('Max diff y values along x_ref direction boundary: ', max_xy[1])
-#         print('Max diff z values along x_ref direction boundary: ', max_xy[2])
-#         print('Max diff x values along y_ref direction boundary: ', max_xy[3])
-#         #print('Max diff y values along y_ref direction boundary: (=domain[1])', max_xy[4])
-#         print('Max diff z values along y_ref direction boundary: ', max_xy[5])
-#         print('Max diff x values along z_ref direction boundary: ', max_xy[6])
-#         print('Max diff y values along z_ref direction boundary: ', max_xy[7])
-#         #print('Max diff z values along z_ref direction boundary: (=domain[2])', max_xy[8])
-#         #print('Max diff of dxnew(1)/dxref(1) along x bdy (not nec. = 0): ', max_der[0])
-#         print('Max diff of dxnew(1)/dxref(2) along x bdy: ', max_der[1])
-#         print('Max diff of dxnew(1)/dxref(3) along x bdy: ', max_der[2])
-#         #print('Max diff of dxnew(2)/dxref(1) along x bdy (not nec. = 0): ', max_der[3])
-#         print('Max diff of dxnew(2)/dxref(2) along x bdy: ', max_der[4])
-#         print('Max diff of dxnew(2)/dxref(3) along x bdy: ', max_der[5])
-#         #print('Max diff of dxnew(3)/dxref(1) along x bdy (not nec. = 0): ', max_der[6])
-#         print('Max diff of dxnew(3)/dxref(2) along x bdy: ', max_der[7])
-#         print('Max diff of dxnew(3)/dxref(3) along x bdy: ', max_der[8])
-#         print('Max diff of dxnew(1)/dxref(1) along y bdy: ', max_der[9])
-#         #print('Max diff of dxnew(1)/dxref(2) along y bdy (not nec. = 0): ', max_der[10])
-#         print('Max diff of dxnew(1)/dxref(3) along y bdy: ', max_der[11])
-#         print('Max diff of dxnew(2)/dxref(1) along y bdy: ', max_der[12])
-#         #print('Max diff of dxnew(2)/dxref(2) along y bdy (not nec. = 0): ', max_der[13])
-#         print('Max diff of dxnew(2)/dxref(3) along y bdy: ', max_der[14])
-#         print('Max diff of dxnew(3)/dxref(1) along y bdy: ', max_der[15])
-#         #print('Max diff of dxnew(3)/dxref(2) along y bdy (not nec. = 0): ', max_der[16])
-#         print('Max diff of dxnew(3)/dxref(3) along y bdy: ', max_der[17])
-#         print('Max diff of dxnew(1)/dxref(1) along z bdy: ', max_der[18])
-#         print('Max diff of dxnew(1)/dxref(2) along z bdy: ', max_der[19])
-#         #print('Max diff of dxnew(1)/dxref(3) along z bdy (not nec. = 0): ', max_der[20])
-#         print('Max diff of dxnew(2)/dxref(1) along z bdy: ', max_der[21])
-#         print('Max diff of dxnew(2)/dxref(2) along z bdy: ', max_der[22])
-#         #print('Max diff of dxnew(2)/dxref(3) along z bdy (not nec. = 0): ', max_der[23])
-#         print('Max diff of dxnew(3)/dxref(1) along z bdy: ', max_der[24])
-#         print('Max diff of dxnew(3)/dxref(2) along z bdy: ', max_der[25])
-#         #print('Max diff of dxnew(3)/dxref(3) along z bdy (not nec. = 0): ', max_der[26])
+        """max_xy = [0,0,0,0,0,0,0,0,0]
+        max_der = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+            
+        skipx = self.nelem[1]*self.nelem[2]
+        for row in range(skipx):
+            diff = abs(self.bdy_xyz[:,0,0,row::skipx][:,0] - self.bdy_xyz[:,0,1,row::skipx][:,-1])
+            max_xy[0] = max(max_xy[0],np.max(diff))
+            diff = abs(self.bdy_xyz[:,1,0,row::skipx][:,0] - self.bdy_xyz[:,1,1,row::skipx][:,-1])
+            max_xy[1] = max(max_xy[1],np.max(diff))
+            diff = abs(self.bdy_xyz[:,2,0,row::skipx][:,0] - self.bdy_xyz[:,2,1,row::skipx][:,-1])
+            max_xy[2] = max(max_xy[2],np.max(diff))
+            diff = abs(dxnewdx[:,0,row::skipx][:,0] - dxnewdx[:,1,row::skipx][:,-1])
+            max_der[0] = max(max_der[0],np.max(diff))
+            diff = abs(dxnewdy[:,0,row::skipx][:,0] - dxnewdy[:,1,row::skipx][:,-1])
+            max_der[1] = max(max_der[1],np.max(diff))
+            diff = abs(dxnewdz[:,0,row::skipx][:,0] - dxnewdz[:,1,row::skipx][:,-1])
+            max_der[2] = max(max_der[2],np.max(diff))
+            diff = abs(dynewdx[:,0,row::skipx][:,0] - dynewdx[:,1,row::skipx][:,-1])
+            max_der[3] = max(max_der[3],np.max(diff))
+            diff = abs(dynewdy[:,0,row::skipx][:,0] - dynewdy[:,1,row::skipx][:,-1])
+            max_der[4] = max(max_der[4],np.max(diff))
+            diff = abs(dynewdz[:,0,row::skipx][:,0] - dynewdz[:,1,row::skipx][:,-1])
+            max_der[5] = max(max_der[5],np.max(diff))
+            diff = abs(dznewdx[:,0,row::skipx][:,0] - dznewdx[:,1,row::skipx][:,-1])
+            max_der[6] = max(max_der[6],np.max(diff))
+            diff = abs(dznewdy[:,0,row::skipx][:,0] - dznewdy[:,1,row::skipx][:,-1])
+            max_der[7] = max(max_der[7],np.max(diff))
+            diff = abs(dznewdz[:,0,row::skipx][:,0] - dznewdz[:,1,row::skipx][:,-1])
+            max_der[8] = max(max_der[8],np.max(diff))
+                
+        for coly in range(self.nelem[0]*self.nelem[2]):
+            start = coly + (coly//self.nelem[2])*(self.nelem[1]-1)*self.nelem[2]
+            end = start + self.nelem[1]*self.nelem[2]
+            diff = abs(self.bdy_xyz[:,0,2,start:end:self.nelem[2]][:,0] - self.bdy_xyz[:,0,3,start:end:self.nelem[2]][:,-1])
+            max_xy[3] = max(max_xy[3],np.max(diff))
+            diff = abs(self.bdy_xyz[:,1,2,start:end:self.nelem[2]][:,0] - self.bdy_xyz[:,1,3,start:end:self.nelem[2]][:,-1])
+            max_xy[4] = max(max_xy[4],np.max(diff))
+            diff = abs(self.bdy_xyz[:,2,2,start:end:self.nelem[2]][:,0] - self.bdy_xyz[:,2,3,start:end:self.nelem[2]][:,-1])
+            max_xy[5] = max(max_xy[5],np.max(diff))
+            diff = abs(dxnewdx[:,2,start:end:self.nelem[2]][:,0] - dxnewdx[:,3,start:end:self.nelem[2]][:,-1])
+            max_der[9] = max(max_der[9],np.max(diff))
+            diff = abs(dxnewdy[:,2,start:end:self.nelem[2]][:,0] - dxnewdy[:,3,start:end:self.nelem[2]][:,-1])
+            max_der[10] = max(max_der[10],np.max(diff))
+            diff = abs(dxnewdz[:,2,start:end:self.nelem[2]][:,0] - dxnewdz[:,3,start:end:self.nelem[2]][:,-1])
+            max_der[11] = max(max_der[11],np.max(diff))
+            diff = abs(dynewdx[:,2,start:end:self.nelem[2]][:,0] - dynewdx[:,3,start:end:self.nelem[2]][:,-1])
+            max_der[12] = max(max_der[12],np.max(diff))
+            diff = abs(dynewdy[:,2,start:end:self.nelem[2]][:,0] - dynewdy[:,3,start:end:self.nelem[2]][:,-1])
+            max_der[13] = max(max_der[13],np.max(diff))
+            diff = abs(dynewdz[:,2,start:end:self.nelem[2]][:,0] - dynewdz[:,3,start:end:self.nelem[2]][:,-1])
+            max_der[14] = max(max_der[14],np.max(diff))
+            diff = abs(dznewdx[:,2,start:end:self.nelem[2]][:,0] - dznewdx[:,3,start:end:self.nelem[2]][:,-1])
+            max_der[15] = max(max_der[15],np.max(diff))
+            diff = abs(dznewdy[:,2,start:end:self.nelem[2]][:,0] - dznewdy[:,3,start:end:self.nelem[2]][:,-1])
+            max_der[16] = max(max_der[16],np.max(diff))
+            diff = abs(dznewdz[:,2,start:end:self.nelem[2]][:,0] - dznewdz[:,3,start:end:self.nelem[2]][:,-1])
+            max_der[17] = max(max_der[17],np.max(diff))
+
+        
+        for colz in range(self.nelem[0]*self.nelem[2]):
+            start = colz*self.nelem[2]            
+            end = start + self.nelem[2]
+            diff = abs(self.bdy_xyz[:,0,4,start:end][:,0] - self.bdy_xyz[:,0,5,start:end][:,-1])
+            max_xy[6] = max(max_xy[6],np.max(diff))
+            diff = abs(self.bdy_xyz[:,1,4,start:end][:,0] - self.bdy_xyz[:,1,5,start:end][:,-1])
+            max_xy[7] = max(max_xy[7],np.max(diff))
+            diff = abs(self.bdy_xyz[:,2,4,start:end][:,0] - self.bdy_xyz[:,2,5,start:end][:,-1])
+            max_xy[8] = max(max_xy[8],np.max(diff))
+            diff = abs(dxnewdx[:,4,start:end][:,0] - dxnewdx[:,5,start:end][:,-1])
+            max_der[18] = max(max_der[18],np.max(diff))
+            diff = abs(dxnewdy[:,4,start:end][:,0] - dxnewdy[:,5,start:end][:,-1])
+            max_der[19] = max(max_der[19],np.max(diff))
+            diff = abs(dxnewdz[:,4,start:end][:,0] - dxnewdz[:,5,start:end][:,-1])
+            max_der[20] = max(max_der[20],np.max(diff))
+            diff = abs(dynewdx[:,4,start:end][:,0] - dynewdx[:,5,start:end][:,-1])
+            max_der[21] = max(max_der[21],np.max(diff))
+            diff = abs(dynewdy[:,4,start:end][:,0] - dynewdy[:,5,start:end][:,-1])
+            max_der[22] = max(max_der[22],np.max(diff))
+            diff = abs(dynewdz[:,4,start:end][:,0] - dynewdz[:,5,start:end][:,-1])
+            max_der[23] = max(max_der[23],np.max(diff))
+            diff = abs(dznewdx[:,4,start:end][:,0] - dznewdx[:,5,start:end][:,-1])
+            max_der[24] = max(max_der[24],np.max(diff))
+            diff = abs(dznewdy[:,4,start:end][:,0] - dznewdy[:,5,start:end][:,-1])
+            max_der[25] = max(max_der[25],np.max(diff))
+            diff = abs(dznewdz[:,4,start:end][:,0] - dznewdz[:,5,start:end][:,-1])
+            max_der[26] = max(max_der[26],np.max(diff))
+
+        #print('Max diff x values along x_ref direction boundary (=domain[0]): ', max_xy[0])
+        print('Max diff y values along x_ref direction boundary: ', max_xy[1])
+        print('Max diff z values along x_ref direction boundary: ', max_xy[2])
+        print('Max diff x values along y_ref direction boundary: ', max_xy[3])
+        #print('Max diff y values along y_ref direction boundary: (=domain[1])', max_xy[4])
+        print('Max diff z values along y_ref direction boundary: ', max_xy[5])
+        print('Max diff x values along z_ref direction boundary: ', max_xy[6])
+        print('Max diff y values along z_ref direction boundary: ', max_xy[7])
+        #print('Max diff z values along z_ref direction boundary: (=domain[2])', max_xy[8])
+        #print('Max diff of dxnew(1)/dxref(1) along x bdy (not nec. = 0): ', max_der[0])
+        print('Max diff of dxnew(1)/dxref(2) along x bdy: ', max_der[1])
+        print('Max diff of dxnew(1)/dxref(3) along x bdy: ', max_der[2])
+        #print('Max diff of dxnew(2)/dxref(1) along x bdy (not nec. = 0): ', max_der[3])
+        print('Max diff of dxnew(2)/dxref(2) along x bdy: ', max_der[4])
+        print('Max diff of dxnew(2)/dxref(3) along x bdy: ', max_der[5])
+        #print('Max diff of dxnew(3)/dxref(1) along x bdy (not nec. = 0): ', max_der[6])
+        print('Max diff of dxnew(3)/dxref(2) along x bdy: ', max_der[7])
+        print('Max diff of dxnew(3)/dxref(3) along x bdy: ', max_der[8])
+        print('Max diff of dxnew(1)/dxref(1) along y bdy: ', max_der[9])
+        #print('Max diff of dxnew(1)/dxref(2) along y bdy (not nec. = 0): ', max_der[10])
+        print('Max diff of dxnew(1)/dxref(3) along y bdy: ', max_der[11])
+        print('Max diff of dxnew(2)/dxref(1) along y bdy: ', max_der[12])
+        #print('Max diff of dxnew(2)/dxref(2) along y bdy (not nec. = 0): ', max_der[13])
+        print('Max diff of dxnew(2)/dxref(3) along y bdy: ', max_der[14])
+        print('Max diff of dxnew(3)/dxref(1) along y bdy: ', max_der[15])
+        #print('Max diff of dxnew(3)/dxref(2) along y bdy (not nec. = 0): ', max_der[16])
+        print('Max diff of dxnew(3)/dxref(3) along y bdy: ', max_der[17])
+        print('Max diff of dxnew(1)/dxref(1) along z bdy: ', max_der[18])
+        print('Max diff of dxnew(1)/dxref(2) along z bdy: ', max_der[19])
+        #print('Max diff of dxnew(1)/dxref(3) along z bdy (not nec. = 0): ', max_der[20])
+        print('Max diff of dxnew(2)/dxref(1) along z bdy: ', max_der[21])
+        print('Max diff of dxnew(2)/dxref(2) along z bdy: ', max_der[22])
+        #print('Max diff of dxnew(2)/dxref(3) along z bdy (not nec. = 0): ', max_der[23])
+        print('Max diff of dxnew(3)/dxref(1) along z bdy: ', max_der[24])
+        print('Max diff of dxnew(3)/dxref(2) along z bdy: ', max_der[25])
+        #print('Max diff of dxnew(3)/dxref(3) along z bdy (not nec. = 0): ', max_der[26]) """
 # =============================================================================
 
     def plot(self,plt_save_name=None,markersize=4,fontsize=12,dpi=1000,label=True,
@@ -1786,6 +1821,98 @@ class MakeMesh:
                     self.det_jac = dxp_dxr*(dyp_dyr*dzp_dzr - dyp_dzr*dzp_dyr) \
                                  - dyp_dxr*(dxp_dyr*dzp_dzr - dxp_dzr*dzp_dyr) \
                                  + dzp_dxr*(dxp_dyr*dyp_dzr - dxp_dzr*dyp_dyr)
+            
+            elif metric_method.lower()== 'kopriva':
+                self.metrics = np.zeros((self.nen**3,9,self.nelem[0]*self.nelem[1]*self.nelem[2]))
+                # do thomas and lombard with lgl operators, then interpolate to lg
+                from Source.Disc.MakeSbpOp import MakeSbpOp
+                sbp_lgl = MakeSbpOp(sbp.p,'lgl')
+                # the following bases were outputted with the following:
+                '''
+                basis = []
+                for x in ['ones','xi']:
+                    for y in ['ones','eta']:
+                        for z in ['ones','zeta']:
+                            fn = x + '*' + y + '*' + z
+                            fn = fn.replace('*ones', '')
+                            fn = fn.replace('ones*', '')
+                            basis.append(fn)
+                print ('= np.vstack((%s)).T' % ', '.join(map(str, basis)))
+                '''
+                ones = np.ones(sbp.nn*sbp.nn*sbp.nn)
+                if sbp.p==1:
+                    xi, eta, zeta = np.array(np.meshgrid(sbp.x, sbp.x, sbp.x)).reshape(3, -1).T[:,[1,0,2]].T
+                    Vsbp = np.vstack((ones, zeta, eta, eta*zeta, xi, xi*zeta, xi*eta, xi*eta*zeta)).T
+                    xi, eta, zeta = np.array(np.meshgrid(sbp_lgl.x, sbp_lgl.x, sbp_lgl.x)).reshape(3, -1).T[:,[1,0,2]].T
+                    Vlgl = np.vstack((ones, zeta, eta, eta*zeta, xi, xi*zeta, xi*eta, xi*eta*zeta)).T
+                elif sbp.p==2:
+                    xi, eta, zeta = np.array(np.meshgrid(sbp.x, sbp.x, sbp.x)).reshape(3, -1).T[:,[1,0,2]].T
+                    Vsbp = np.vstack((ones, zeta, zeta**2, eta, eta*zeta, eta*zeta**2, eta**2, eta**2*zeta, eta**2*zeta**2, xi, xi*zeta, xi*zeta**2, xi*eta, xi*eta*zeta, xi*eta*zeta**2, xi*eta**2, xi*eta**2*zeta, xi*eta**2*zeta**2, xi**2, xi**2*zeta, xi**2*zeta**2, xi**2*eta, xi**2*eta*zeta, xi**2*eta*zeta**2, xi**2*eta**2, xi**2*eta**2*zeta, xi**2*eta**2*zeta**2)).T
+                    xi, eta, zeta = np.array(np.meshgrid(sbp_lgl.x, sbp_lgl.x, sbp_lgl.x)).reshape(3, -1).T[:,[1,0,2]].T
+                    Vlgl = np.vstack((ones, zeta, zeta**2, eta, eta*zeta, eta*zeta**2, eta**2, eta**2*zeta, eta**2*zeta**2, xi, xi*zeta, xi*zeta**2, xi*eta, xi*eta*zeta, xi*eta*zeta**2, xi*eta**2, xi*eta**2*zeta, xi*eta**2*zeta**2, xi**2, xi**2*zeta, xi**2*zeta**2, xi**2*eta, xi**2*eta*zeta, xi**2*eta*zeta**2, xi**2*eta**2, xi**2*eta**2*zeta, xi**2*eta**2*zeta**2)).T
+                elif sbp.p==3:
+                    xi, eta, zeta = np.array(np.meshgrid(sbp.x, sbp.x, sbp.x)).reshape(3, -1).T[:,[1,0,2]].T
+                    Vsbp = np.vstack((ones, zeta, zeta**2, zeta**3, eta, eta*zeta, eta*zeta**2, eta*zeta**3, eta**2, eta**2*zeta, eta**2*zeta**2, eta**2*zeta**3, eta**3, eta**3*zeta, eta**3*zeta**2, eta**3*zeta**3, xi, xi*zeta, xi*zeta**2, xi*zeta**3, xi*eta, xi*eta*zeta, xi*eta*zeta**2, xi*eta*zeta**3, xi*eta**2, xi*eta**2*zeta, xi*eta**2*zeta**2, xi*eta**2*zeta**3, xi*eta**3, xi*eta**3*zeta, xi*eta**3*zeta**2, xi*eta**3*zeta**3, xi**2, xi**2*zeta, xi**2*zeta**2, xi**2*zeta**3, xi**2*eta, xi**2*eta*zeta, xi**2*eta*zeta**2, xi**2*eta*zeta**3, xi**2*eta**2, xi**2*eta**2*zeta, xi**2*eta**2*zeta**2, xi**2*eta**2*zeta**3, xi**2*eta**3, xi**2*eta**3*zeta, xi**2*eta**3*zeta**2, xi**2*eta**3*zeta**3, xi**3, xi**3*zeta, xi**3*zeta**2, xi**3*zeta**3, xi**3*eta, xi**3*eta*zeta, xi**3*eta*zeta**2, xi**3*eta*zeta**3, xi**3*eta**2, xi**3*eta**2*zeta, xi**3*eta**2*zeta**2, xi**3*eta**2*zeta**3, xi**3*eta**3, xi**3*eta**3*zeta, xi**3*eta**3*zeta**2, xi**3*eta**3*zeta**3)).T
+                    xi, eta, zeta = np.array(np.meshgrid(sbp_lgl.x, sbp_lgl.x, sbp_lgl.x)).reshape(3, -1).T[:,[1,0,2]].T
+                    Vlgl = np.vstack((ones, zeta, zeta**2, zeta**3, eta, eta*zeta, eta*zeta**2, eta*zeta**3, eta**2, eta**2*zeta, eta**2*zeta**2, eta**2*zeta**3, eta**3, eta**3*zeta, eta**3*zeta**2, eta**3*zeta**3, xi, xi*zeta, xi*zeta**2, xi*zeta**3, xi*eta, xi*eta*zeta, xi*eta*zeta**2, xi*eta*zeta**3, xi*eta**2, xi*eta**2*zeta, xi*eta**2*zeta**2, xi*eta**2*zeta**3, xi*eta**3, xi*eta**3*zeta, xi*eta**3*zeta**2, xi*eta**3*zeta**3, xi**2, xi**2*zeta, xi**2*zeta**2, xi**2*zeta**3, xi**2*eta, xi**2*eta*zeta, xi**2*eta*zeta**2, xi**2*eta*zeta**3, xi**2*eta**2, xi**2*eta**2*zeta, xi**2*eta**2*zeta**2, xi**2*eta**2*zeta**3, xi**2*eta**3, xi**2*eta**3*zeta, xi**2*eta**3*zeta**2, xi**2*eta**3*zeta**3, xi**3, xi**3*zeta, xi**3*zeta**2, xi**3*zeta**3, xi**3*eta, xi**3*eta*zeta, xi**3*eta*zeta**2, xi**3*eta*zeta**3, xi**3*eta**2, xi**3*eta**2*zeta, xi**3*eta**2*zeta**2, xi**3*eta**2*zeta**3, xi**3*eta**3, xi**3*eta**3*zeta, xi**3*eta**3*zeta**2, xi**3*eta**3*zeta**3)).T
+                elif sbp.p==4:
+                    xi, eta, zeta = np.array(np.meshgrid(sbp.x, sbp.x, sbp.x)).reshape(3, -1).T[:,[1,0,2]].T
+                    Vsbp = np.vstack((ones, zeta, zeta**2, zeta**3, zeta**4, eta, eta*zeta, eta*zeta**2, eta*zeta**3, eta*zeta**4, eta**2, eta**2*zeta, eta**2*zeta**2, eta**2*zeta**3, eta**2*zeta**4, eta**3, eta**3*zeta, eta**3*zeta**2, eta**3*zeta**3, eta**3*zeta**4, eta**4, eta**4*zeta, eta**4*zeta**2, eta**4*zeta**3, eta**4*zeta**4, xi, xi*zeta, xi*zeta**2, xi*zeta**3, xi*zeta**4, xi*eta, xi*eta*zeta, xi*eta*zeta**2, xi*eta*zeta**3, xi*eta*zeta**4, xi*eta**2, xi*eta**2*zeta, xi*eta**2*zeta**2, xi*eta**2*zeta**3, xi*eta**2*zeta**4, xi*eta**3, xi*eta**3*zeta, xi*eta**3*zeta**2, xi*eta**3*zeta**3, xi*eta**3*zeta**4, xi*eta**4, xi*eta**4*zeta, xi*eta**4*zeta**2, xi*eta**4*zeta**3, xi*eta**4*zeta**4, xi**2, xi**2*zeta, xi**2*zeta**2, xi**2*zeta**3, xi**2*zeta**4, xi**2*eta, xi**2*eta*zeta, xi**2*eta*zeta**2, xi**2*eta*zeta**3, xi**2*eta*zeta**4, xi**2*eta**2, xi**2*eta**2*zeta, xi**2*eta**2*zeta**2, xi**2*eta**2*zeta**3, xi**2*eta**2*zeta**4, xi**2*eta**3, xi**2*eta**3*zeta, xi**2*eta**3*zeta**2, xi**2*eta**3*zeta**3, xi**2*eta**3*zeta**4, xi**2*eta**4, xi**2*eta**4*zeta, xi**2*eta**4*zeta**2, xi**2*eta**4*zeta**3, xi**2*eta**4*zeta**4, xi**3, xi**3*zeta, xi**3*zeta**2, xi**3*zeta**3, xi**3*zeta**4, xi**3*eta, xi**3*eta*zeta, xi**3*eta*zeta**2, xi**3*eta*zeta**3, xi**3*eta*zeta**4, xi**3*eta**2, xi**3*eta**2*zeta, xi**3*eta**2*zeta**2, xi**3*eta**2*zeta**3, xi**3*eta**2*zeta**4, xi**3*eta**3, xi**3*eta**3*zeta, xi**3*eta**3*zeta**2, xi**3*eta**3*zeta**3, xi**3*eta**3*zeta**4, xi**3*eta**4, xi**3*eta**4*zeta, xi**3*eta**4*zeta**2, xi**3*eta**4*zeta**3, xi**3*eta**4*zeta**4, xi**4, xi**4*zeta, xi**4*zeta**2, xi**4*zeta**3, xi**4*zeta**4, xi**4*eta, xi**4*eta*zeta, xi**4*eta*zeta**2, xi**4*eta*zeta**3, xi**4*eta*zeta**4, xi**4*eta**2, xi**4*eta**2*zeta, xi**4*eta**2*zeta**2, xi**4*eta**2*zeta**3, xi**4*eta**2*zeta**4, xi**4*eta**3, xi**4*eta**3*zeta, xi**4*eta**3*zeta**2, xi**4*eta**3*zeta**3, xi**4*eta**3*zeta**4, xi**4*eta**4, xi**4*eta**4*zeta, xi**4*eta**4*zeta**2, xi**4*eta**4*zeta**3, xi**4*eta**4*zeta**4)).T
+                    xi, eta, zeta = np.array(np.meshgrid(sbp_lgl.x, sbp_lgl.x, sbp_lgl.x)).reshape(3, -1).T[:,[1,0,2]].T
+                    Vlgl = np.vstack((ones, zeta, zeta**2, zeta**3, zeta**4, eta, eta*zeta, eta*zeta**2, eta*zeta**3, eta*zeta**4, eta**2, eta**2*zeta, eta**2*zeta**2, eta**2*zeta**3, eta**2*zeta**4, eta**3, eta**3*zeta, eta**3*zeta**2, eta**3*zeta**3, eta**3*zeta**4, eta**4, eta**4*zeta, eta**4*zeta**2, eta**4*zeta**3, eta**4*zeta**4, xi, xi*zeta, xi*zeta**2, xi*zeta**3, xi*zeta**4, xi*eta, xi*eta*zeta, xi*eta*zeta**2, xi*eta*zeta**3, xi*eta*zeta**4, xi*eta**2, xi*eta**2*zeta, xi*eta**2*zeta**2, xi*eta**2*zeta**3, xi*eta**2*zeta**4, xi*eta**3, xi*eta**3*zeta, xi*eta**3*zeta**2, xi*eta**3*zeta**3, xi*eta**3*zeta**4, xi*eta**4, xi*eta**4*zeta, xi*eta**4*zeta**2, xi*eta**4*zeta**3, xi*eta**4*zeta**4, xi**2, xi**2*zeta, xi**2*zeta**2, xi**2*zeta**3, xi**2*zeta**4, xi**2*eta, xi**2*eta*zeta, xi**2*eta*zeta**2, xi**2*eta*zeta**3, xi**2*eta*zeta**4, xi**2*eta**2, xi**2*eta**2*zeta, xi**2*eta**2*zeta**2, xi**2*eta**2*zeta**3, xi**2*eta**2*zeta**4, xi**2*eta**3, xi**2*eta**3*zeta, xi**2*eta**3*zeta**2, xi**2*eta**3*zeta**3, xi**2*eta**3*zeta**4, xi**2*eta**4, xi**2*eta**4*zeta, xi**2*eta**4*zeta**2, xi**2*eta**4*zeta**3, xi**2*eta**4*zeta**4, xi**3, xi**3*zeta, xi**3*zeta**2, xi**3*zeta**3, xi**3*zeta**4, xi**3*eta, xi**3*eta*zeta, xi**3*eta*zeta**2, xi**3*eta*zeta**3, xi**3*eta*zeta**4, xi**3*eta**2, xi**3*eta**2*zeta, xi**3*eta**2*zeta**2, xi**3*eta**2*zeta**3, xi**3*eta**2*zeta**4, xi**3*eta**3, xi**3*eta**3*zeta, xi**3*eta**3*zeta**2, xi**3*eta**3*zeta**3, xi**3*eta**3*zeta**4, xi**3*eta**4, xi**3*eta**4*zeta, xi**3*eta**4*zeta**2, xi**3*eta**4*zeta**3, xi**3*eta**4*zeta**4, xi**4, xi**4*zeta, xi**4*zeta**2, xi**4*zeta**3, xi**4*zeta**4, xi**4*eta, xi**4*eta*zeta, xi**4*eta*zeta**2, xi**4*eta*zeta**3, xi**4*eta*zeta**4, xi**4*eta**2, xi**4*eta**2*zeta, xi**4*eta**2*zeta**2, xi**4*eta**2*zeta**3, xi**4*eta**2*zeta**4, xi**4*eta**3, xi**4*eta**3*zeta, xi**4*eta**3*zeta**2, xi**4*eta**3*zeta**3, xi**4*eta**3*zeta**4, xi**4*eta**4, xi**4*eta**4*zeta, xi**4*eta**4*zeta**2, xi**4*eta**4*zeta**3, xi**4*eta**4*zeta**4)).T
+                else:
+                    raise Exception('kopriva metrics only set up for p<=4')
+                
+                Vlgltosbp = Vsbp @ np.linalg.inv(Vlgl)
+                Vsbptolgl = Vlgl @ np.linalg.inv(Vsbp)
+
+                eye = np.eye(self.nen)
+                Dx = np.kron(np.kron(sbp_lgl.D, eye), eye)
+                Dy = np.kron(np.kron(eye, sbp_lgl.D), eye)
+                Dz = np.kron(np.kron(eye, eye), sbp_lgl.D)  
+                # The following does NOT work (although the interpolation is exact, 
+                # can have different polynomials in neighboring elements, i.e. different boundary values)
+                #x_elem = Vsbptolgl @ self.xyz_elem[:,0,:]
+                #y_elem = Vsbptolgl @ self.xyz_elem[:,1,:]
+                #z_elem = Vsbptolgl @ self.xyz_elem[:,2,:]
+                x_unwarped = self.xyz_elem_unwarped[:,0,:]
+                y_unwarped = self.xyz_elem_unwarped[:,1,:]
+                z_unwarped = self.xyz_elem_unwarped[:,2,:]
+                xyz_unwarped_lgl = np.zeros_like(self.xyz_elem_unwarped)
+                xyz_unwarped_lgl[:,0,:] = Vsbptolgl @ x_unwarped
+                xyz_unwarped_lgl[:,1,:] = Vsbptolgl @ y_unwarped
+                xyz_unwarped_lgl[:,2,:] = Vsbptolgl @ z_unwarped
+                xyz_elem = self.warp_mesh_3d(xyz=xyz_unwarped_lgl)
+                x_elem, y_elem, z_elem = xyz_elem[:,0,:], xyz_elem[:,1,:], xyz_elem[:,2,:]
+                dxp_dxr = Dx @ x_elem
+                dxp_dyr = Dy @ x_elem
+                dxp_dzr = Dz @ x_elem
+                dyp_dxr = Dx @ y_elem
+                dyp_dyr = Dy @ y_elem
+                dyp_dzr = Dz @ y_elem
+                dzp_dxr = Dx @ z_elem
+                dzp_dyr = Dy @ z_elem
+                dzp_dzr = Dz @ z_elem
+                dXp_dxr = fn.lm_gdiag(Dx, x_elem)
+                dXp_dyr = fn.lm_gdiag(Dy, x_elem)
+                dXp_dzr = fn.lm_gdiag(Dz, x_elem)
+                dYp_dxr = fn.lm_gdiag(Dx, y_elem)
+                dYp_dyr = fn.lm_gdiag(Dy, y_elem)
+                dYp_dzr = fn.lm_gdiag(Dz, y_elem)
+                dZp_dxr = fn.lm_gdiag(Dx, z_elem)
+                dZp_dyr = fn.lm_gdiag(Dy, z_elem)
+                dZp_dzr = fn.lm_gdiag(Dz, z_elem)
+
+                self.metrics[:,0,:] = Vlgltosbp @ ( fn.gm_gv(dZp_dzr,dyp_dyr) - fn.gm_gv(dZp_dyr,dyp_dzr) )
+                self.metrics[:,1,:] = Vlgltosbp @ ( fn.gm_gv(dXp_dzr,dzp_dyr) - fn.gm_gv(dXp_dyr,dzp_dzr) )
+                self.metrics[:,2,:] = Vlgltosbp @ ( fn.gm_gv(dYp_dzr,dxp_dyr) - fn.gm_gv(dYp_dyr,dxp_dzr) )
+                self.metrics[:,3,:] = Vlgltosbp @ ( fn.gm_gv(dZp_dxr,dyp_dzr) - fn.gm_gv(dZp_dzr,dyp_dxr) )
+                self.metrics[:,4,:] = Vlgltosbp @ ( fn.gm_gv(dXp_dxr,dzp_dzr) - fn.gm_gv(dXp_dzr,dzp_dxr) )
+                self.metrics[:,5,:] = Vlgltosbp @ ( fn.gm_gv(dYp_dxr,dxp_dzr) - fn.gm_gv(dYp_dzr,dxp_dxr) )
+                self.metrics[:,6,:] = Vlgltosbp @ ( fn.gm_gv(dZp_dyr,dyp_dxr) - fn.gm_gv(dZp_dxr,dyp_dyr) )
+                self.metrics[:,7,:] = Vlgltosbp @ ( fn.gm_gv(dXp_dyr,dzp_dxr) - fn.gm_gv(dXp_dxr,dzp_dyr) )
+                self.metrics[:,8,:] = Vlgltosbp @ ( fn.gm_gv(dYp_dyr,dxp_dxr) - fn.gm_gv(dYp_dxr,dxp_dyr) )
+
                 
             else:
                 self.metrics = np.zeros((self.nen**3,9,self.nelem[0]*self.nelem[1]*self.nelem[2])) 
@@ -1854,7 +1981,6 @@ class MakeMesh:
                     self.metrics[:,6,:] = dzp_dyr*dyp_dxr - dzp_dxr*dyp_dyr
                     self.metrics[:,7,:] = dxp_dyr*dzp_dxr - dxp_dxr*dzp_dyr
                     self.metrics[:,8,:] = dyp_dyr*dxp_dxr - dyp_dxr*dxp_dyr 
-                    
                         
                     
             if bdy_metric_method.lower()=='exact':
@@ -1955,9 +2081,10 @@ class MakeMesh:
                 self.ignore_surface_metrics()
                             
             else: 
-                if not (bdy_metric_method.lower()=='thomaslombard' or bdy_metric_method.lower()=='vinokuryee'):
+                if not (bdy_metric_method.lower()=='thomaslombard' or bdy_metric_method.lower()=='vinokuryee' or bdy_metric_method.lower()=='thomaslombard_extrap'):
                     print("WARNING: Did not understand bdy_metric_method. For 3D, try 'exact', 'VinokurYee', 'ThomasLombard', or 'interpolate'.")
                     print("         Defaulting to 'VinokurYee'.")
+                    self.bdy_metric_method = 'VinokurYee'
                 self.bdy_metrics = np.zeros((self.nen**2,6,9,self.nelem[0]*self.nelem[1]*self.nelem[2]))
                 eye = np.eye(self.nen)
                 D1 = np.kron(sbp.D,eye)
@@ -1980,6 +2107,33 @@ class MakeMesh:
                             self.bdy_metrics[:,f,6,:] = fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,2,f,:]),(D1 @ self.bdy_xyz[:,1,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,2,f,:]),(D2 @ self.bdy_xyz[:,1,f,:]))
                             self.bdy_metrics[:,f,7,:] = fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,0,f,:]),(D1 @ self.bdy_xyz[:,2,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,0,f,:]),(D2 @ self.bdy_xyz[:,2,f,:]))
                             self.bdy_metrics[:,f,8,:] = fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,1,f,:]),(D1 @ self.bdy_xyz[:,0,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,1,f,:]),(D2 @ self.bdy_xyz[:,0,f,:]))
+                elif bdy_metric_method.lower() == 'thomaslombard_extrap':
+                    bdy_xyz = self.extrapolate_xyz(sbp)
+                    self.temp = bdy_xyz
+                    # the following is for debugging
+                    #for f in range(6):
+                    #    print('----- facet', f, '-----')
+                    #    print('max difference in x extrapolation:', np.max(abs(bdy_xyz[:,0,f,:]-self.bdy_xyz[:,0,f,:])))
+                    #    print('max difference in y extrapolation:', np.max(abs(bdy_xyz[:,1,f,:]-self.bdy_xyz[:,1,f,:])))
+                    #    print('max difference in z extrapolation:', np.max(abs(bdy_xyz[:,2,f,:]-self.bdy_xyz[:,2,f,:])))
+                    print('Warning: this method is only meant for testing. Domain boundaries are not averaged!')
+                    for f in range(6): # loop over facets (xleft, xright, yleft, yright, zxleft, zright)
+                        if (f == 0) or (f == 1):
+                            self.bdy_metrics[:,f,0,:] = fn.gm_gv(fn.lm_gdiag(D2, bdy_xyz[:,2,f,:]),(D1 @ bdy_xyz[:,1,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, bdy_xyz[:,2,f,:]),(D2 @ bdy_xyz[:,1,f,:]))
+                            self.bdy_metrics[:,f,1,:] = fn.gm_gv(fn.lm_gdiag(D2, bdy_xyz[:,0,f,:]),(D1 @ bdy_xyz[:,2,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, bdy_xyz[:,0,f,:]),(D2 @ bdy_xyz[:,2,f,:]))
+                            self.bdy_metrics[:,f,2,:] = fn.gm_gv(fn.lm_gdiag(D2, bdy_xyz[:,1,f,:]),(D1 @ bdy_xyz[:,0,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, bdy_xyz[:,1,f,:]),(D2 @ bdy_xyz[:,0,f,:]))
+                            self.bdy_metrics[:,f,3:,:] = None
+                        elif (f == 2) or (f == 3):
+                            self.bdy_metrics[:,f,:3,:] = None
+                            self.bdy_metrics[:,f,3,:] = fn.gm_gv(fn.lm_gdiag(D1, bdy_xyz[:,2,f,:]),(D2 @ bdy_xyz[:,1,f,:])) - fn.gm_gv(fn.lm_gdiag(D2, bdy_xyz[:,2,f,:]),(D1 @ bdy_xyz[:,1,f,:]))
+                            self.bdy_metrics[:,f,4,:] = fn.gm_gv(fn.lm_gdiag(D1, bdy_xyz[:,0,f,:]),(D2 @ bdy_xyz[:,2,f,:])) - fn.gm_gv(fn.lm_gdiag(D2, bdy_xyz[:,0,f,:]),(D1 @ bdy_xyz[:,2,f,:]))
+                            self.bdy_metrics[:,f,5,:] = fn.gm_gv(fn.lm_gdiag(D1, bdy_xyz[:,1,f,:]),(D2 @ bdy_xyz[:,0,f,:])) - fn.gm_gv(fn.lm_gdiag(D2, bdy_xyz[:,1,f,:]),(D1 @ bdy_xyz[:,0,f,:]))
+                            self.bdy_metrics[:,f,6:,:] = None
+                        elif (f == 4) or (f == 5):
+                            self.bdy_metrics[:,f,:6,:] = None
+                            self.bdy_metrics[:,f,6,:] = fn.gm_gv(fn.lm_gdiag(D2, bdy_xyz[:,2,f,:]),(D1 @ bdy_xyz[:,1,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, bdy_xyz[:,2,f,:]),(D2 @ bdy_xyz[:,1,f,:]))
+                            self.bdy_metrics[:,f,7,:] = fn.gm_gv(fn.lm_gdiag(D2, bdy_xyz[:,0,f,:]),(D1 @ bdy_xyz[:,2,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, bdy_xyz[:,0,f,:]),(D2 @ bdy_xyz[:,2,f,:]))
+                            self.bdy_metrics[:,f,8,:] = fn.gm_gv(fn.lm_gdiag(D2, bdy_xyz[:,1,f,:]),(D1 @ bdy_xyz[:,0,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, bdy_xyz[:,1,f,:]),(D2 @ bdy_xyz[:,0,f,:]))
                 elif bdy_metric_method.lower() == 'vinokuryee':
                     for f in range(6): # loop over facets (xleft, xright, yleft, yright, zxleft, zright)
                         if (f == 0) or (f == 1):
@@ -2007,6 +2161,7 @@ class MakeMesh:
                                                             +fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,0,f,:]),(D1 @ self.bdy_xyz[:,2,f,:])) - fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,2,f,:]),(D1 @ self.bdy_xyz[:,0,f,:])))
                             self.bdy_metrics[:,f,8,:] = 0.5*(fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,0,f,:]),(D2 @ self.bdy_xyz[:,1,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,1,f,:]),(D2 @ self.bdy_xyz[:,0,f,:])) \
                                                             +fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,1,f,:]),(D1 @ self.bdy_xyz[:,0,f,:])) - fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,0,f,:]),(D1 @ self.bdy_xyz[:,1,f,:])))
+                    self.ignore_surface_metrics()
            
             
             if use_optz_metrics:
@@ -2379,6 +2534,78 @@ class MakeMesh:
                     self.bdy_metrics[:,f,3,:] = None
                     self.bdy_metrics[:,f,4,:] = None
                     self.bdy_metrics[:,f,5,:] = None
+
+    def extrapolate_xyz(self,sbp):
+        ''' extrapolate the boundary xyz values - for 3D only '''
+        bdy_xyz = np.zeros((self.nen**2,3,6,self.nelem[0]*self.nelem[1]*self.nelem[2]))
+        eye = np.eye(self.nen)
+        txbT = np.kron(np.kron(sbp.tR.reshape((self.nen,1)), eye), eye).T
+        txaT = np.kron(np.kron(sbp.tL.reshape((self.nen,1)), eye), eye).T
+        tybT = np.kron(np.kron(eye, sbp.tR.reshape((self.nen,1))), eye).T
+        tyaT = np.kron(np.kron(eye, sbp.tL.reshape((self.nen,1))), eye).T
+        tzbT = np.kron(np.kron(eye, eye), sbp.tR.reshape((self.nen,1))).T
+        tzaT = np.kron(np.kron(eye, eye), sbp.tL.reshape((self.nen,1))).T
+        skipx = self.nelem[1]*self.nelem[2]
+        skipz = self.nelem[0]*self.nelem[1]
+        average = True # for testing things when not averaging surface metrics
+        print_diff = True
+        maxdiff = 0.
+        
+        if average:
+        
+            for rowx in range(skipx):
+                for i in range(3): # loop over matrix entries
+                    bdy_xyzR = txaT @ self.xyz_elem[:,i,rowx::skipx]
+                    bdy_xyzL = txbT @ self.xyz_elem[:,i,rowx::skipx]
+                    if self.nelem[0] != 1:
+                        avgbdy_xyz = (bdy_xyzL[:,:-1] + bdy_xyzR[:,1:])/2
+                        maxdiff = max(maxdiff, np.max(abs(avgbdy_xyz-bdy_xyzL[:,:-1])))
+                        bdy_xyz[:,i,0,rowx::skipx][:,1:] = avgbdy_xyz
+                        bdy_xyz[:,i,1,rowx::skipx][:,:-1] = avgbdy_xyz 
+                    bdy_xyz[:,i,0,rowx::skipx][:,0] = bdy_xyzR[:,0]
+                    bdy_xyz[:,i,1,rowx::skipx][:,-1] = bdy_xyzL[:,-1]
+            
+            for coly in range(self.nelem[0]*self.nelem[2]):
+                start = coly + (coly//self.nelem[2])*(self.nelem[1]-1)*self.nelem[2]
+                end = start + skipx
+                for i in range(3): # loop over matrix entries
+                    bdy_xyzL = tybT @ self.xyz_elem[:,i,start:end:self.nelem[2]]
+                    bdy_xyzR = tyaT @ self.xyz_elem[:,i,start:end:self.nelem[2]]
+                    if self.nelem[1] != 1:
+                        avgbdy_xyz = (bdy_xyzL[:,:-1] + bdy_xyzR[:,1:])/2
+                        maxdiff = max(maxdiff, np.max(abs(avgbdy_xyz-bdy_xyzL[:,:-1])))
+                        bdy_xyz[:,i,2,start:end:self.nelem[2]][:,1:] = avgbdy_xyz
+                        bdy_xyz[:,i,3,start:end:self.nelem[2]][:,:-1] = avgbdy_xyz    
+                    bdy_xyz[:,i,2,start:end:self.nelem[2]][:,0] = bdy_xyzR[:,0]
+                    bdy_xyz[:,i,3,start:end:self.nelem[2]][:,-1] = bdy_xyzL[:,-1] 
+            
+            for colz in range(skipz):
+                start = colz*self.nelem[2]
+                end = start + self.nelem[2]
+                for i in range(3): # loop over matrix entries
+                    bdy_xyzL = tzbT @ self.xyz_elem[:,i,start:end]
+                    bdy_xyzR = tzaT @ self.xyz_elem[:,i,start:end]
+                    if self.nelem[2] != 1:
+                        avgbdy_xyz = (bdy_xyzL[:,:-1] + bdy_xyzR[:,1:])/2
+                        maxdiff = max(maxdiff, np.max(abs(avgbdy_xyz-bdy_xyzL[:,:-1])))
+                        bdy_xyz[:,i,4,start:end][:,1:] = avgbdy_xyz
+                        bdy_xyz[:,i,5,start:end][:,:-1] = avgbdy_xyz
+                    bdy_xyz[:,i,4,start:end][:,0] = bdy_xyzR[:,0]
+                    bdy_xyz[:,i,5,start:end][:,-1] = bdy_xyzL[:,-1]
+            
+            if print_diff:
+                print('The boundary xyz extrapolations modified by a max of {0:.2g} in averaging.'.format(maxdiff))
+            
+        else:
+            for i in range(3):
+                bdy_xyz[:,i,0,:] = txaT @ self.xyz_elem[:,i,:]
+                bdy_xyz[:,i,1,:] = txbT @ self.xyz_elem[:,i,:]
+                bdy_xyz[:,i,2,:] = tyaT @ self.xyz_elem[:,i,:]
+                bdy_xyz[:,i,3,:] = tybT @ self.xyz_elem[:,i,:]
+                bdy_xyz[:,i,4,:] = tzaT @ self.xyz_elem[:,i,:]
+                bdy_xyz[:,i,5,:] = tzbT @ self.xyz_elem[:,i,:]
+        
+        return bdy_xyz
                 
     def check_surface_metrics(self):
         ''' check that the surface metrics on either side of an interface are equal '''

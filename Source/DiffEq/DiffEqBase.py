@@ -216,6 +216,12 @@ class PdeBase:
                 stdev2z = abs(self.dom_len[2]**2/k)
                 exp = -0.5*((xy[:,0,:]-mid_pointx)**2/stdev2x + (xy[:,1,:]-mid_pointy)**2/stdev2y + (xy[:,2,:]-mid_pointz)**2/stdev2z)
                 q0 = self.q0_max_q * np.exp(exp) 
+        elif q0_type == 'gausswave_sbpbook':
+            assert self.dim==1,'only for dim=1'
+            assert (self.xmax==1 and self.xmin==0)
+            stdev2 = 0.08**2
+            exp = -0.5*(xy-0.5)**2/stdev2
+            q0 = np.exp(exp)
         elif 'gausswave_debug' in q0_type:
             if 'y' in q0_type: xyz = 1
             elif 'z' in q0_type: xyz = 2
@@ -266,12 +272,12 @@ class PdeBase:
                 xy_LG = LG_set(self.nen)[0]
             xy_LG = 0.5*(xy_LG[:, None] + 1) # Convert from 1D to 2D array
             wBary_LG = MakeDgOp.BaryWeights(xy_LG) # Barycentric weights for LG nodes
-            van = MakeDgOp.VandermondeLagrange1D(self.xy_ref,wBary_LG,xy_LG)
+            van = MakeDgOp.VandermondeLagrange1D(self.x_ref,wBary_LG,xy_LG)
             # The vandermonde maps from xy_LG coarse nodes to self.xy_elem solution nodes
             # now map the LG nodes to the entire domain
-            mesh = MakeMesh(self.xmin, self.xmax, self.isperiodic, self.nelem, xy_LG)
+            mesh = MakeMesh(self.dim, self.xmin, self.xmax, self.nelem, xy_LG[:,0])
             # Now set the initial condition on the coarse nodes and map to solution nodes
-            q0_coarse = np.sin(np.pi * mesh.xy_elem[:,:,0] - 0.7) + 2
+            q0_coarse = np.sin(np.pi * mesh.x_elem - 0.7) + 2
             q0 = van @ q0_coarse
         else:
             print(f'q0_type = {q0_type}')
@@ -284,7 +290,7 @@ class PdeBase:
     def plot_sol(self, q, time=0., plot_exa=True, savefile=None,
                  show_fig=True, solmin=None, solmax=None, display_time=False, 
                  title=None, plot_mesh=False, save_format='png', dpi=600,
-                 plot_only_exa=False, var2plot_name=None, legendloc=None):
+                 plot_only_exa=False, var2plot_name=None, legendloc=None, legend=True):
         '''
         Purpose
         ----------
@@ -370,12 +376,13 @@ class PdeBase:
             ax.text(0.05, 0.95, r'$t=$ '+str(round(time,2))+' s', transform=ax.transAxes, 
                     fontsize=self.plt_label_font_size, verticalalignment='top', bbox=props)
         
-        fig.tight_layout()
-        
         if plt.title is not None:
             plt.title(title,fontsize=self.plt_label_font_size+1)
             if self.dim == 1:
-                plt.legend(loc=legendloc,fontsize=self.plt_label_font_size-1)
+                if legend:
+                    plt.legend(loc=legendloc,fontsize=self.plt_label_font_size-1)
+
+        plt.tight_layout()
         
         if savefile is not None:
             filename = savefile+'.'+save_format

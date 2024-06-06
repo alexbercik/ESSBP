@@ -9,11 +9,15 @@ Created in Sep 2019
 
 # Add the root folder of ECO to the search path
 import os
-import sys
+from sys import path
 
-test_folder_path, _ = os.path.split(__file__)
-root_folder_path, _ = os.path.split(test_folder_path)
-sys.path.append(root_folder_path)
+n_nested_folder = 2
+folder_path, _ = os.path.split(__file__)
+
+for i in range(n_nested_folder):
+    folder_path, _ = os.path.split(folder_path)
+
+path.append(folder_path)
 
 # Import the required modules
 import numpy as np
@@ -139,6 +143,25 @@ class MakeSbpOp:
                     self.H, self.D = np.diag(H[:,0]), D[:,:,0]
                     self.Q = self.H @ self.D
                     self.S = self.Q - self.E/2
+
+        elif sbp_type.lower()=='upwind':
+            from Source.Disc.UpwindOp import UpwindOp
+            assert self.nn > 1 , "Please specify number of nodes nn > 1"
+            assert self.nn > 1 , "Please specify degree p > 1"
+            if (p==2 or p==3)  and nn<5:
+                print('WARNING: nn set too small ({0}). Automatically increasing to minimum 5.'.format(nn))
+                self.nn = 5
+            elif (p==4 or p==5) and nn<9:
+                print('WARNING: nn set too small ({0}). Automatically increasing to minimum 9.'.format(nn))
+                self.nn=5
+            elif (p==6 or p==7) and nn<13:
+                print('WARNING: nn set too small ({0}). Automatically increasing to minimum 13.'.format(nn))
+                self.nn = 13
+            elif (p==8 or p==9) and nn<17:
+                print('WARNING: nn set too small ({0}). Automatically increasing to minimum 17.'.format(nn))
+                self.nn = 17
+
+            self.D, self.Du, self.Dm, self.Q, self.H, self.E, self.S, self.tL, self.tR, self.x, self.Ddiss = UpwindOp(p,self.nn)
 
         else:
             ''' Build Element-type SBP Operators '''
@@ -418,7 +441,7 @@ class MakeSbpOp:
             return H_phys, Dx_phys, Dy_phys, Dz_phys
 
     @staticmethod
-    def check_diagH(x,H,tol=1e-10):
+    def check_diagH(x,H,tol=1e-10,returndegree=False):
         ''' tests order of quadrature for H, (j+1)*H*x^j = b^(j+1)-a(j+1). 
         Based on reference element [0,1] '''
         p=0
@@ -426,7 +449,10 @@ class MakeSbpOp:
         while er<tol:
             p+=1
             er = abs((p+1)*(np.diag(H) @ x**p) - 1)
-        print('Test: Quadrature H is order {0}.'.format(p-1))
+        if returndegree:
+            return int(p-1)
+        else:
+            print('Test: Quadrature H is order {0}.'.format(p-1))
         
     @staticmethod
     def check_compatibility(x,H,E,tol=1e-10):
