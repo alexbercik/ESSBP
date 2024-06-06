@@ -108,14 +108,20 @@ class Burgers(PdeBase):
         return dExdq_eig_abs
     
     def maxeig_dExdq(self, q):
-        ''' return the maximum eigenvalue - used for LF fluxes '''
+        ''' return the absolute maximum eigenvalue - used for LF fluxes '''
         return np.abs(q)
+    
+    def maxeig_dEndq(self, q, dxidx):
+        ''' return the absolute maximum eigenvalue - used for LF fluxes '''
+        return np.abs(q*dxidx)
     
     def entropy_var(self,q):
         return q
     
     def dqdw(self,q):
-        return fn.diag(np.ones(q.shape))
+        # normally I would use the below, but instead make it a shape g_diag
+        #return fn.diag(np.ones(q.shape))
+        return np.ones(q.shape)
     
     def entropy(self,q):
         e = q**2/2

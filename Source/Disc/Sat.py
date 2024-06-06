@@ -64,6 +64,7 @@ class Sat(SatDer1, SatDer2):
             self.d2Exdq2 = solver.diffeq.d2Exdq2
             self.dExdq_eig_abs = solver.diffeq.dExdq_eig_abs
             self.maxeig_dExdq = solver.diffeq.maxeig_dExdq
+            #self.maxeig_dExdq_cmplx = solver.diffeq.maxeig_dExdq_cmplx
             self.metrics = fn.repeat_neq_gv(solver.mesh.metrics[:,0,:],self.neq_node)
             self.bdy_metrics = np.repeat(np.reshape(solver.mesh.bdy_metrics, (1,2,self.nelem)),self.neq_node,0)
             self.had_flux_Ex = solver.had_flux_Ex
@@ -167,6 +168,7 @@ class Sat(SatDer1, SatDer2):
                 if self.disc_type == 'div':
                     if self.dim == 1:
                         self.calc = self.central_div_1d
+                        self.calc_dfdq = self.central_div_1d_dfdq
                     elif self.dim == 2:
                         self.calc = self.central_div_2d
                     elif self.dim == 3:
@@ -181,16 +183,6 @@ class Sat(SatDer1, SatDer2):
                     elif self.dim == 3:
                         self.calc = self.base_had_3d
                         self.diss = lambda *x: 0
-                if self.neq_node == 1:
-                    if self.disc_type == 'div':
-                        pass
-                        #self.calc_dfdq = self.central_scalar_div_dfdq
-                    elif self.disc_type == 'had':
-                        pass
-                        #self.calc_dfdq = self.central_scalar_had_dfdq
-                else:
-                    pass
-                    #self.calc_dfdq = self.dfdq_complexstep
                     
             elif self.method == 'upwind':
                 print('WARNING: upwind SATs are not provably stable because of metric terms. Use for example lf instead.')
@@ -212,21 +204,12 @@ class Sat(SatDer1, SatDer2):
                     elif self.dim == 3:
                         self.calc = self.base_had_3d
                         self.diss = self.upwind_diss_cons_3d
-                if self.neq_node == 1:
-                    if self.disc_type == 'div':
-                        pass
-                        #self.calc_dfdq = self.upwind_scalar_div_dfdq
-                    elif self.disc_type == 'had':
-                        #self.calc_dfdq = self.upwind_scalar_had_dfdq
-                        pass
-                else:
-                    pass
-                    #self.calc_dfdq = self.dfdq_complexstep
                     
             elif self.method == 'lf' or self.method == 'llf' or self.method == 'lax_friedrichs':
                 if self.disc_type == 'div':
                     if self.dim == 1:
                         self.calc = self.llf_div_1d
+                        #self.calc_dfdq = self.llf_div_1d_dfdq
                     elif self.dim == 2:
                         self.calc = self.llf_div_2d
                     elif self.dim == 3:
@@ -241,16 +224,6 @@ class Sat(SatDer1, SatDer2):
                     elif self.dim == 3:
                         self.calc = self.base_had_3d
                         self.diss = self.lf_diss_cons_3d
-                if self.neq_node == 1:
-                    if self.disc_type == 'div':
-                        pass
-                        #self.calc_dfdq = self.llf_scalar_div_dfdq
-                    elif self.disc_type == 'had':
-                        pass
-                        #self.calc_dfdq = self.llf_scalar_had_dfdq
-                else:
-                    pass
-                    #self.calc_dfdq = self.dfdq_complexstep
             
             elif self.diffeq_name=='Burgers':
                 if self.dim >= 2:
@@ -370,7 +343,7 @@ class Sat(SatDer1, SatDer2):
         self.metrics = []
         self.bdy_metrics = []
         for row in range(self.nelem[1]):
-            self.metrics.append(fn.repeat_neq_gv(metrics[:,:2,row::self.nelem[1]],self.neq_node)) # only want dx_ref/dx_phys and dx_ref/dy_phys
+            self.metrics.append(np.repeat(metrics[:,:2,row::self.nelem[1]],self.neq_node,0)) # only want dx_ref/dx_phys and dx_ref/dy_phys
             self.bdy_metrics.append(np.repeat(bdy_metrics[:,:2,:2,row::self.nelem[1]],self.neq_node,0)) # facets 1 and 2, same matrix entries
 
     def set_metrics_2d_y(self, metrics, bdy_metrics):
@@ -380,14 +353,14 @@ class Sat(SatDer1, SatDer2):
         for col in range(self.nelem[0]):
             start = col*self.nelem[0]
             end = start + self.nelem[1]
-            self.metrics.append(fn.repeat_neq_gv(metrics[:,2:,start:end],self.neq_node)) # only want dy_ref/dx_phys and dy_ref/dy_phys
+            self.metrics.append(np.repeat(metrics[:,2:,start:end],self.neq_node,0)) # only want dy_ref/dx_phys and dy_ref/dy_phys
             self.bdy_metrics.append(np.repeat(bdy_metrics[:,2:,2:,start:end],self.neq_node,0)) # facets 3 and 4, same matrix entries
            
     def set_exact_metrics_2d_x(self, metrics):
         ''' create a list of metrics for each row '''  
         self.metrics_exa = []
         for row in range(self.nelem[1]):
-            self.metrics_exa.append(fn.repeat_neq_gv(metrics[:,:2,row::self.nelem[1]],self.neq_node)) # only want dx_ref/dx_phys and dx_ref/dy_phys
+            self.metrics_exa.append(np.repeat(metrics[:,:2,row::self.nelem[1]],self.neq_node,0)) # only want dx_ref/dx_phys and dx_ref/dy_phys
 
     def set_exact_metrics_2d_y(self, metrics):
         ''' create a list of metrics for each col '''  
@@ -395,7 +368,7 @@ class Sat(SatDer1, SatDer2):
         for col in range(self.nelem[0]):
             start = col*self.nelem[0]
             end = start + self.nelem[1]
-            self.metrics_exa.append(fn.repeat_neq_gv(metrics[:,2:,start:end],self.neq_node)) # only want dy_ref/dx_phys and dy_ref/dy_phys
+            self.metrics_exa.append(np.repeat(metrics[:,2:,start:end],self.neq_node,0)) # only want dy_ref/dx_phys and dy_ref/dy_phys
      
     def set_metrics_3d_x(self, metrics, bdy_metrics):
         ''' create a list of metrics for each row '''  
@@ -403,7 +376,7 @@ class Sat(SatDer1, SatDer2):
         self.bdy_metrics = []
         skipx = self.nelem[1]*self.nelem[2]
         for row in range(skipx):
-            self.metrics.append(fn.repeat_neq_gv(metrics[:,:3,row::skipx],self.neq_node))
+            self.metrics.append(np.repeat(metrics[:,:3,row::skipx],self.neq_node,0))
             self.bdy_metrics.append(np.repeat(bdy_metrics[:,:2,:3,row::skipx],self.neq_node,0))
     
     def set_metrics_3d_y(self, metrics, bdy_metrics):
@@ -413,7 +386,7 @@ class Sat(SatDer1, SatDer2):
         for coly in range(self.nelem[0]*self.nelem[2]):
             start = coly + (coly//self.nelem[2])*(self.nelem[1]-1)*self.nelem[2]
             end = start + self.nelem[1]*self.nelem[2]
-            self.metrics.append(fn.repeat_neq_gv(metrics[:,3:6,start:end:self.nelem[2]],self.neq_node))
+            self.metrics.append(np.repeat(metrics[:,3:6,start:end:self.nelem[2]],self.neq_node,0))
             self.bdy_metrics.append(np.repeat(bdy_metrics[:,2:4,3:6,start:end:self.nelem[2]],self.neq_node,0))
     
     def set_metrics_3d_z(self, metrics, bdy_metrics):
@@ -423,7 +396,7 @@ class Sat(SatDer1, SatDer2):
         for colz in range(self.nelem[0]*self.nelem[2]):
             start = colz*self.nelem[2]
             end = start + self.nelem[2]
-            self.metrics.append(fn.repeat_neq_gv(metrics[:,6:,start:end],self.neq_node))
+            self.metrics.append(np.repeat(metrics[:,6:,start:end],self.neq_node,0))
             self.bdy_metrics.append(np.repeat(bdy_metrics[:,4:,6:,start:end],self.neq_node,0))
 
     

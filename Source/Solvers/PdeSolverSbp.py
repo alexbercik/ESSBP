@@ -50,7 +50,8 @@ class PdeSolverSbp(PdeSolver):
         ''' Setup the mesh and apply required transformations to SBP operators '''
 
         self.mesh = MakeMesh(self.dim, self.xmin, self.xmax, self.nelem, self.x_op, 
-                             self.settings['warp_factor'],self.settings['warp_type'])
+                             warp_factor=self.settings['warp_factor'],
+                             warp_type=self.settings['warp_type'])
 
         self.mesh.get_jac_metrics(self.sbp, self.periodic,
                         metric_method = self.settings['metric_method'], 
@@ -97,7 +98,8 @@ class PdeSolverSbp(PdeSolver):
             self.Dy_phys = fn.kron_neq_gm(self.Dy_phys,self.neq_node)
             if self.Dy_phys_nd is not None:
                 self.Dy_phys_nd = fn.kron_neq_gm(self.Dy_phys_nd,self.neq_node)
-            self.H_perp = fn.kron_neq_gm(self.H_perp,self.neq_node)
+            #self.H_perp = fn.kron_neq_gm(self.H_perp,self.neq_node)
+            self.H_perp = np.kron(self.H_perp, np.eye(self.neq_node))
         if self.dim == 3:
             self.Dz_phys_unkronned = self.Dz_phys
             self.Dz_phys = fn.kron_neq_gm(self.Dz_phys,self.neq_node)
@@ -161,13 +163,33 @@ class PdeSolverSbp(PdeSolver):
         else:
             raise Exception('Not coded up yet')
     
-        dqdt = - dExdx + (self.H_inv_phys * sat) + self.diffeq.calcG(q) + self.dissipation(q)
+        dqdt = - dExdx + self.diffeq.calcG(q) + (self.H_inv_phys * sat) + self.dissipation(q)
         return dqdt
     
     
     def dfdq_1d_div(self, q):
         ''' the main linearized RHS function for divergence form in 1D '''
-        raise Exception('Not done yet.')
+        if not self.dissipation.type.lower() == 'nd':
+            raise Exception('Not coded up')
+        
+        if self.use_diffeq_dExdx:
+            raise Exception('Not coded up')
+        else:
+            A = self.diffeq.dExdq(q)
+            vol = -fn.gm_gm(self.Dx_phys, A)
+
+        if self.periodic:
+            sat = self.sat.calc_dfdq(q, A)
+        elif self.bc == 'homogeneous':
+            sat = self.sat.calc_dfdq(q, A, q_bdyL=np.array([0]), q_bdyR=np.array([0]))
+        elif self.bc == 'dirichlet':
+            sat = self.sat.calc_dfdq(q, A, q_bdyL=self.diffeq.qL, q_bdyR=self.diffeq.qR)
+        else:
+            raise Exception('Not coded up yet')
+        
+        dfdq = fn.sparse_block_diag(vol) + self.diffeq.dGdq(q) \
+            + self.H_inv_phys.flatten('f')[:, np.newaxis] * sat
+        return dfdq
         
     def dqdt_2d_div(self, q):
         ''' the main dqdt function for divergence form in 2D '''
@@ -326,110 +348,7 @@ class PdeSolverSbp(PdeSolver):
         ''' the main linearized RHS function for hadamard form in 3D '''
         raise Exception('Not done yet.')
         
-    
-    ############################################################################
-    '''' old functions '''
-
-    
-
-    def sbp_dqdt_2D_mod(self, q):
-        
-        dqdt_out = self.diffeq.dqdt(q)
-        
-        if self.bc == 'periodic':
-            # notation is: given an element q, SatL and SatR correspond to L and R of element (NOT L and R of interface)
-            # notation is: given an element q, SatU and SatD correspond to up and down of element (NOT up and down of interface)
-            satL, satR, satD, satU = np.ones(self.qshape), np.ones(self.qshape), np.ones(self.qshape), np.ones(self.qshape)
-            for col in range(self.nelem[0]):
-                for nodecol in range(self.nen):
-                    start = col*self.nelem[0] # starts at bottom left, then next iteration bottom row and 1 over right
-                    end = start + self.nelem[1]
-                    startcol = nodecol*self.nen
-                    endcol = startcol + self.nen
-                    qpad = fn.pad_periodic_1D(q[startcol:endcol,start:end])
-                    satU_temp, satD[startcol:endcol,start:end] = self.saty.calc(qpad[:,:-1], qpad[:,1:])
-                    satU[startcol:endcol,start:end] = fn.fix_satL_1D(satU_temp)
-            for elemrow in range(self.nelem[1]):
-                for noderow in range(self.nen):
-                    qpad = fn.pad_periodic_1D(q[noderow::self.nen,elemrow::self.nelem[1]])
-                    satR_temp, satL[noderow::self.nen,elemrow::self.nelem[1]] = self.satx.calc(qpad[:,:-1], qpad[:,1:])
-                    satR[noderow::self.nen,elemrow::self.nelem[1]] = fn.fix_satL_1D(satR_temp)
-        else:
-            raise Exception('Not coded up yet for boundary SATs')
-            
-        dqdt_out += self.Hx_inv_phys * (satL + satR) + self.Hy_inv_phys * (satD + satU) # equivalent to fn.gv_gv
-
-        return dqdt_out
-
-    def sbp_dqdt_2D(self, q):
-        
-        dqdt_out = self.diffeq.dqdt(q)
-        
-        if self.bc == 'periodic':
-            # notation is: given an element q, SatL and SatR correspond to L and R of element (NOT L and R of interface)
-            # notation is: given an element q, SatU and SatD correspond to up and down of element (NOT up and down of interface)
-            satL, satR, satD, satU = np.empty(self.qshape), np.empty(self.qshape), np.empty(self.qshape), np.empty(self.qshape)
-            for col in range(self.nelem[0]):
-                start = col*self.nelem[0] # starts at bottom left, then next iteration bottom row and 1 over right
-                end = start + self.nelem[1]
-                qpad = fn.pad_periodic_1D(q[:,start:end])
-                satU_temp, satD[:,start:end] = self.saty.calc(qpad[:,:-1], qpad[:,1:])
-                satU[:,start:end] = fn.fix_satL_1D(satU_temp)
-            for row in range(self.nelem[1]):
-                qpad = fn.pad_periodic_1D(q[:,row::self.nelem[1]])
-                satR_temp, satL[:,row::self.nelem[1]] = self.satx.calc(qpad[:,:-1], qpad[:,1:])
-                satR[:,row::self.nelem[1]] = fn.fix_satL_1D(satR_temp)
-        else:
-            raise Exception('Not coded up yet for boundary SATs')
-            
-        dqdt_out += self.Hx_inv_phys * (satL + satR) + self.Hy_inv_phys * (satD + satU) # equivalent to fn.gv_gv
-
-        return dqdt_out
-    
-    def sbp_dfdq_2D(self, q):
-        
-        raise Exception('Not Coded up yet.')
-        
-        dfdq_diffeq = self.diffeq.dfdq(q)
-        shape = dfdq_diffeq.shape
-        dSatLdq, dSatRdq, dSatLdqL, dSatRdqR = np.zeros(shape), np.empty(shape), np.zeros(shape), np.empty(shape)
-        dSatUdq, dSatDdq, dSatUdqU, dSatDdqD = np.zeros(shape), np.empty(shape), np.zeros(shape), np.empty(shape)
-        
-        if self.bc == 'periodic':
-            for col in self.nelem[0]:
-                start = col*self.nelem[0] # starts at bottom left, then next iteration bottom row and 1 over right
-                end = start + self.nelem[1]
-                qpad = fn.pad_periodic_1D(q[:,start:end])
-                dSatUdq_temp, dSatUdqU_temp, dSatDdq[:,:,start:end], dSatDdqD[:,:,start:end] = self.saty.calc_dfdq(qpad[:,:-1], qpad[:,1:])
-                dSatUdq[:,:,start:end] = fn.fix_dsatL_1D(dSatUdq_temp)
-                dSatUdqU[:,:,start:end] = fn.fix_dsatL_1D(dSatUdqU_temp)
-            for row in self.nelem[1]:
-                end = row+self.nelem[0]
-                qpad = fn.pad_periodic_1D(q[:,row:end:self.nelem[1]])
-                dSatRdq_temp, dSatRdqR_temp, dSatLdqL[:,:,row:end:self.nelem[1]], dSatLdq[:,:,row:end:self.nelem[1]] = self.satx.calc_dfdq(qpad[:,:-1], qpad[:,1:])
-                dSatRdq[:,:,row:end:self.nelem[1]] = fn.fix_dsatL_1D(dSatRdq_temp)
-                dSatRdqR[:,:,row:end:self.nelem[1]] = fn.fix_dsatL_1D(dSatRdqR_temp)
-        else:
-            raise Exception('Linearization not coded up yet for boundary SATs')
-        
-        # global 2d matrix blocks acting on element q blocks
-        dfdq_q = dfdq_diffeq + fn.gdiag_gm(self.Hx_inv_phys, dSatLdq + dSatRdq) \
-                             + fn.gdiag_gm(self.Hy_inv_phys, dSatDdq + dSatUdq)
-        # global 2d matrix blocks acting on element qL blocks (to the left of dfdq_q)
-        # length nelem if periodic (first goes to top right, remaining under main diagonal)
-        dfdq_qL = fn.gdiag_gm(self.Hx_inv_phys, dSatLdqL)
-        # global 2d matrix blocks acting on element qR blocks (to the right of dfdq_q)
-        # length nelem if periodic (last goes to bottom left, remaining above main diagonal)
-        dfdq_qR = fn.gdiag_gm(self.Hx_inv_phys, dSatRdqR)
-        dfdq_qD = fn.gdiag_gm(self.Hy_inv_phys, dSatDdqD)
-        dfdq_qU = fn.gdiag_gm(self.Hy_inv_phys, dSatUdqU)
-        
-        if self.isperiodic:
-            dfdq = fn.gm_triblock_2D_flat_periodic(dfdq_qL,dfdq_q,dfdq_qR,dfdq_qD,dfdq_qU,self.nelem[1])
-        else:
-            raise Exception('Linearization not coded up yet for boundary SATs')        
-            
-        return dfdq
+ 
     
     def sbp_energy(self,q):
         ''' compute the global SBP energy of global solution vector q '''
@@ -458,7 +377,7 @@ class PdeSolverSbp(PdeSolver):
 
 
     ''' temporary functions '''
-    def check_invariants(self,return_ers=False):
+    def check_invariants(self,return_ers=False,return_max_only=True,returnRL=True):
         eye = np.eye(self.nen)
         if self.dim==1:
             pass
@@ -530,13 +449,31 @@ class PdeSolverSbp(PdeSolver):
             
         if return_ers:
             if self.dim==2:
-                return np.max(abs(LHS1)),np.mean(abs(LHS1)),np.max(abs(LHS2)),np.mean(abs(LHS2)),\
-                        np.max(abs(RHS1)),np.mean(abs(RHS1)),np.max(abs(RHS2)),np.mean(abs(RHS2)),\
-                        np.max(abs(tot1)),np.mean(abs(tot1)),np.max(abs(tot2)),np.mean(abs(tot2))
+                if return_max_only:
+                    maxval = np.max(np.nan_to_num([abs(tot1),abs(tot2)]))
+                    if returnRL:
+                        maxRHS = np.max(np.nan_to_num([abs(RHS1),abs(RHS2)]))
+                        maxLHS = np.max(np.nan_to_num([abs(LHS1),abs(LHS2)]))
+                        return maxval, maxRHS, maxLHS
+                    else:
+                        return maxval
+                else:
+                    return np.max(abs(LHS1)),np.mean(abs(LHS1)),np.max(abs(LHS2)),np.mean(abs(LHS2)),\
+                            np.max(abs(RHS1)),np.mean(abs(RHS1)),np.max(abs(RHS2)),np.mean(abs(RHS2)),\
+                            np.max(abs(tot1)),np.mean(abs(tot1)),np.max(abs(tot2)),np.mean(abs(tot2))
             else:
-                return np.max(abs(LHS1)),np.mean(abs(LHS1)),np.max(abs(LHS2)),np.mean(abs(LHS2)),np.max(abs(LHS3)),np.mean(abs(LHS3)),\
-                        np.max(abs(RHS1)),np.mean(abs(RHS1)),np.max(abs(RHS2)),np.mean(abs(RHS2)),np.max(abs(RHS3)),np.mean(abs(RHS3)),\
-                        np.max(abs(tot1)),np.mean(abs(tot1)),np.max(abs(tot2)),np.mean(abs(tot2)),np.max(abs(tot3)),np.mean(abs(tot3))
+                if return_max_only:
+                    maxval = np.max(np.nan_to_num([abs(tot1),abs(tot2),abs(tot3)]))
+                    if returnRL:
+                        maxRHS = np.max(np.nan_to_num([abs(RHS1),abs(RHS2),abs(RHS3)]))
+                        maxLHS = np.max(np.nan_to_num([abs(LHS1),abs(LHS2),abs(LHS3)]))
+                        return maxval, maxRHS, maxLHS
+                    else:
+                        return maxval
+                else:
+                    return np.max(abs(LHS1)),np.mean(abs(LHS1)),np.max(abs(LHS2)),np.mean(abs(LHS2)),np.max(abs(LHS3)),np.mean(abs(LHS3)),\
+                            np.max(abs(RHS1)),np.mean(abs(RHS1)),np.max(abs(RHS2)),np.mean(abs(RHS2)),np.max(abs(RHS3)),np.mean(abs(RHS3)),\
+                            np.max(abs(tot1)),np.mean(abs(tot1)),np.max(abs(tot2)),np.mean(abs(tot2)),np.max(abs(tot3)),np.mean(abs(tot3))
         else:
             print('Max error on LHSx =', np.max(abs(LHS1)))
             print('Avg error on LHSx =', np.mean(abs(LHS1)))
@@ -558,7 +495,8 @@ class PdeSolverSbp(PdeSolver):
                 print('Max error on total z =', np.max(abs(tot3)))
                 print('Avg error on total z =', np.mean(abs(tot3)))
                 
-    def check_surf_invariants(self):
+    def check_surf_invariants(self, returnval=False):
+        maxval = 0.
         if self.dim==2:
             Hperp = np.diag(self.sbp.H)
             for phys_dir in range(2):
@@ -573,8 +511,10 @@ class PdeSolverSbp(PdeSolver):
                     
                 RHS = np.dot(Hperp, ( self.mesh.bdy_metrics[:,1,xm,:] - self.mesh.bdy_metrics[:,0,xm,:] \
                                      + self.mesh.bdy_metrics[:,3,ym,:] - self.mesh.bdy_metrics[:,2,ym,:] ))
-      
-                print('Metric Optz: '+term+' surface integral GCL constraints violated by a max of {0:.2g}'.format(np.max(abs(RHS))))
+                if np.max(abs(RHS))>maxval:
+                    maxval = np.max(abs(RHS))
+                if not returnval:
+                    print('Metric Optz: '+term+' surface integral GCL constraints violated by a max of {0:.2g}'.format(np.max(abs(RHS))))
         elif self.dim==3:
             Hperp = np.diag(np.kron(self.sbp.H,self.sbp.H))
             for phys_dir in range(3):
@@ -597,9 +537,13 @@ class PdeSolverSbp(PdeSolver):
                 RHS = np.dot(Hperp, ( self.mesh.bdy_metrics[:,1,xm,:] - self.mesh.bdy_metrics[:,0,xm,:] \
                                      + self.mesh.bdy_metrics[:,3,ym,:] - self.mesh.bdy_metrics[:,2,ym,:] \
                                      + self.mesh.bdy_metrics[:,5,zm,:] - self.mesh.bdy_metrics[:,4,zm,:] ))
-                
-                print('Metric Optz: '+term+' surface integral GCL constraints violated by a max of {0:.2g}'.format(np.max(abs(RHS))))
-        
+                if np.max(abs(RHS))>maxval:
+                    maxval = np.max(abs(RHS))
+                if not returnval:
+                    print('Metric Optz: '+term+' surface integral GCL constraints violated by a max of {0:.2g}'.format(np.max(abs(RHS))))
+        if returnval:
+            if np.isnan(maxval): maxval = 0.
+            return maxval
             
     ''' temporary functions '''
     def check_chain_rule(self,theta, tau):

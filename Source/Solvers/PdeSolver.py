@@ -11,8 +11,11 @@ import time
 import matplotlib.pyplot as plt
 from matplotlib import rc
 rc('text', usetex=True)
+from os import path
+
 
 from Source.TimeMarch.TimeMarching import TimeMarching
+from Source.Disc.MakeDgOp import MakeDgOp
 
 class PdeSolver:
 
@@ -21,7 +24,7 @@ class PdeSolver:
     q_sol = None        # Solution of the Diffeq
     cons_obj = None     # Conservation Objective(s)
     keep_all_ts = True  # whether to keep all time steps on solve
-    skip_ts = 0.
+    skip_ts = 0
 
     def __init__(self, diffeq, settings,                            # Diffeq
                  tm_method, dt, t_final,                    # Time marching
@@ -157,8 +160,13 @@ class PdeSolver:
             if hasattr(self.diffeq, 'dExdx'):
                 print('Using dExdx defined in specific DiffEq file.')
                 self.use_diffeq_dExdx = True
+                if self.dim>1:
+                    #TODO: Update this for 2D and 3D
+                    print('TODO: Update use_dEdx for 2D and 3D')
             else:
-                #TODO: Update this for 2D and 3D
+                if self.dim>1:
+                    #TODO: Update this for 2D and 3D
+                    print('TODO: Update use_dEdx for 2D and 3D')
                 self.use_diffeq_dExdx = False
         elif disc_type.lower() == 'had' or disc_type.lower() == 'hadamard':
             assert self.settings['skew_sym'],"If hadamard scheme must also use skew-sym metrics. Set settings['skew_sym']=True"
@@ -197,6 +205,11 @@ class PdeSolver:
             self.vol_diss = vol_diss
             assert(isinstance(self.vol_diss, dict)),"vol_diss must be a dictionary"
             assert(isinstance(self.vol_diss['diss_type'], str)),"vol_diss must contain a key 'diss_type'"
+        # use defaults in ADiss module.
+        #self.settings.setdefault('jac_type',None) # what type? scalar, scalar-scalar, scalar-matrix, matrix-matrix
+        #self.settings.setdefault('s',None) # usually set to p+1
+        #self.settings.setdefault('coeff',0.1) # coefficient out infront
+        #self.settings.setdefault('fluxvec',None) # what type of flux differencing? lf? only used if diss_type='upwind'
         self.pde_order = self.diffeq.pde_order
 
 
@@ -297,7 +310,7 @@ class PdeSolver:
         if isinstance(self.t_final, int) or isinstance(self.t_final, float):
             if hasattr(diffeq, 't_final'):
                 if (self.t_final != self.diffeq.t_final) and (self.diffeq.t_final is not None):
-                    print('WARNING: The diffeq default is t_final= ',self.diffeq.t_final,', but you selected t_final =',t_final)
+                    print('WARNING: The diffeq default is t_final =',self.diffeq.t_final,', but you selected t_final =',t_final)
             self.n_ts = int(np.round(self.t_final / self.dt))
             if abs(self.n_ts - (self.t_final / self.dt)) > 1e-10:
                 dt_old = np.copy(self.dt)
@@ -619,8 +632,9 @@ class PdeSolver:
 
     
     def check_eigs(self, q=None, plot_eigs=True, returnA=False, exact_dfdq=True,
-                   step=1.0e-4, tol=1.0e-10, plt_save_name=None, ymin=None, ymax=None,
-                   xmin=None, xmax=None, time=None, display_time=False, title=None, **kargs):
+                   step=1.0e-4, tol=1.0e-10, savefile=None, ymin=None, ymax=None,
+                   xmin=None, xmax=None, time=None, display_time=False, title=None, 
+                   save_format='png', dpi=600, colour_by_k=False, **kargs):
         '''
         Call on self.diffeq.dqdt to check the stability of the spatial operator
         at a particular state q using central finite differences (approximate!).
@@ -656,7 +670,10 @@ class PdeSolver:
 
         '''
         A = self.get_LHS(q=q, exact_dfdq=exact_dfdq, step=step)
-        eigs = np.linalg.eigvals(A)
+        if (colour_by_k) and self.dim==1 and self.neq_node==1 and plot_eigs:
+            eigs, eigvecs = np.linalg.eig(A)
+        else:
+            eigs = np.linalg.eigvals(A)
         print('Max real component =',max(eigs.real))
         if max(eigs.real) < tol:
             print('Max eigenvalue within tolerance. STABLE.')
@@ -664,9 +681,74 @@ class PdeSolver:
             print('Max eigenvalue exceeds tolerance. UNSTABLE.')
             
         if plot_eigs:
+            if colour_by_k:
+                second_moment = True # use the first moment (like COM) or second moment (like variance from 0)
+                from scipy.stats import moment
+                if self.dim >1 or self.neq_node>1: 
+                    print('WARNING: colour by wavenumber not set up for dim >1 or neq>0. Ignoring.')
+                    avg_k=None
+                else:
+                    def remove_duplicates_and_average(x, y):
+                        # important for SBP to avoid doubled nodes
+                        duplicates = np.where(np.diff(x) == 0)[0] # Find indices where x has repeated values
+                        mask = np.ones(len(x), dtype=bool) # Initialize a mask to identify unique elements
+                        # For each duplicate, average the y values and mark the second occurrence for removal
+                        for idx in duplicates:
+                            y[idx] = (y[idx] + y[idx + 1]) / 2
+                            mask[idx + 1] = False
+                        new_x = x[mask] # Apply mask to remove duplicates
+                        new_y = y[mask]
+                        return new_x, new_y
+                    if self.disc_nodes == 'lgl':
+                        # evaluate eigenvectors at equispaced nc nodes so fft works
+                        nc_nodes = np.linspace(0,1,self.nen,endpoint=True)
+                        elem_nodes = np.reshape(self.sbp.x,(self.nen,1))
+                        wBary = MakeDgOp.BaryWeights(elem_nodes)
+                        V_to_nc = MakeDgOp.VandermondeLagrange1D(nc_nodes,wBary,elem_nodes)
+                        for elem in range(self.nelem):
+                            eigvecs[elem*self.nen:(elem+1)*self.nen] = V_to_nc @ eigvecs[elem*self.nen:(elem+1)*self.nen]
+                    elif self.disc_nodes == 'lg':
+                        # evaluate eigenvectors at equispaced nodes (not nc) so fft works
+                        nc_nodes = np.linspace(0,1,self.nen,endpoint=False)
+                        elem_nodes = np.reshape(self.sbp.x,(self.nen,1))
+                        wBary = MakeDgOp.BaryWeights(elem_nodes)
+                        V_to_nc = MakeDgOp.VandermondeLagrange1D(nc_nodes,wBary,elem_nodes)
+                        for elem in range(self.nelem):
+                            eigvecs[elem*self.nen:(elem+1)*self.nen] = V_to_nc @ eigvecs[elem*self.nen:(elem+1)*self.nen]
+
+                    
+                    new_x, new_eigvecs = remove_duplicates_and_average(self.mesh.x, eigvecs)
+                    n = len(new_x)
+                    avg_k = np.zeros(self.nn)
+                    for i in range(self.nn):
+                        power_spec = np.abs(np.fft.fft(new_eigvecs[:,i])[1:])**2 # ignore the zero frequency, but NOT negative frequencies (important when eigenvectors are complex)
+                        if n % 2 == 0: # even
+                            ks = np.linspace(1,int(n/2),int(n/2),endpoint=True)
+                            ks = np.concatenate((ks, ks[-2::-1]))
+                        else: # odd
+                            ks = np.linspace(1,int((n-1)/2),int((n-1)/2),endpoint=True)
+                            ks = np.concatenate((ks, ks[-1::-1]))
+                        if np.sum(power_spec < 1e-10):
+                            avg_k[i] = 0
+                        else:
+                            if second_moment:
+                                avg_k[i] = np.sqrt(np.sum(power_spec*ks*ks)/np.sum(power_spec))
+                                # square root to rescale to be between min(ks) and max(ks)
+                            else:
+                                avg_k[i] = np.average(ks,weights=power_spec)
+                                # np.sum(power_spec*ks)/np.sum(power_spec) # equivalent to above
+                    print(avg_k)
+
+            else:
+                avg_k=None
+
             X = [x.real for x in eigs]
             Y = [x.imag for x in eigs]
-            plt.scatter(X,Y, color='red')
+            if avg_k is None:
+                plt.scatter(X,Y, color='red')
+            else:
+                plt.scatter(X,Y, c=avg_k, cmap='viridis', vmin=1, vmax=np.max(ks))
+                plt.colorbar(label='Average Wavenumber')
             plt.axvline(x=0, linewidth=1, linestyle='--', color='black')
             plt.xlabel(r'Real Component ($x<0$ for stability)',fontsize=14)
             plt.ylabel(r'Imaginary Component',fontsize=14)
@@ -681,9 +763,16 @@ class PdeSolver:
                 # define matplotlib.patch.Patch properties
                 #props = dict(boxstyle='round', facecolor='white')
                 ax.text(0.05, 0.95, r'$t=$ '+str(round(time,2))+' s', transform=ax.transAxes, 
-                        fontsize=14, verticalalignment='top')           
-            if plt_save_name is not None:
-                plt.savefig(plt_save_name+'.eps', format='eps')
+                        fontsize=14, verticalalignment='top') 
+              
+            plt.tight_layout()        
+            if savefile is not None:
+                filename = savefile+'.'+save_format
+                if path.exists(filename):
+                    print('WARNING: File name already exists. Using a temporary name instead.')
+                    plt.savefig(filename+'_RENAMEME', format=save_format, dpi=dpi)
+                else: 
+                    plt.savefig(filename, format=save_format, dpi=dpi)
             plt.show()
         
         if returnA:

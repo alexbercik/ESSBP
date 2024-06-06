@@ -41,6 +41,8 @@ class LinearConv(PdeBase):
             self.dExdq = lambda q : fn.diag(np.ones(q.shape))
             self.dExdq_eig_abs = self.dExdq
             self.central_Ex = self.central_fix_Ex
+        
+        self.maxeig_dExdq_cmplx = self.maxeig_dExdq
             
 
     def exact_sol(self, time=0, x=None):
@@ -69,6 +71,11 @@ class LinearConv(PdeBase):
         
         dExdq = fn.diag(np.ones(q.shape)*self.a)
         return dExdq
+    
+    def dEndq(self, q, dxidx):
+        
+        dExdq = fn.diag(dxidx*np.ones(q.shape)*self.a)
+        return dExdq
 
     def d2Exdq2(self, q):
 
@@ -81,9 +88,14 @@ class LinearConv(PdeBase):
         return dExdq_eig_abs
 
     def maxeig_dExdq(self, q):
-        ''' return the maximum eigenvalue - used for LF fluxes '''
-        maxeig = np.ones(q.shape)*self.a
+        ''' return the absolute maximum eigenvalue - used for LF fluxes '''
+        maxeig = np.ones(q.shape)*abs(self.a)
         # this is actually slower: np.ones_like(qf_avg)*self.a
+        return maxeig
+    
+    def maxeig_dEndq(self, q, dxidx):
+        ''' return the absolute maximum eigenvalue - used for LF fluxes '''
+        maxeig = abs(dxidx*self.a)
         return maxeig
     
 

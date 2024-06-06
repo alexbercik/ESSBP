@@ -49,7 +49,7 @@ class TimeMarchingRk:
         
         # Congrats you reached the end
         i += 1
-        self.common(q, q_sol, i, n_ts, dt, k1)
+        self.final_common(q, q_sol, i, n_ts, dt, k1)
         return self.return_q_sol(q,q_sol,i,dt)
 
     def explicit_euler(self, q, dt, n_ts):
@@ -66,7 +66,8 @@ class TimeMarchingRk:
             q += dt * dqdt
 
         # Congrats you reached the end
-        self.common(q, q_sol, i, n_ts, dt, dqdt)
+        i += 1
+        self.final_common(q, q_sol, i, n_ts, dt, dqdt)
         return self.return_q_sol(q,q_sol,i,dt)
     
     # TODO: Do I want to put bacl any of the implicit methods? 

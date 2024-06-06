@@ -14,7 +14,7 @@ class SatDer1:
     ''' CENTRAL FLUXES '''
     ##########################################################################
     
-    def central_div_1d(self, q, E, q_bdyL=None, q_bdyR=None):
+    def central_div_1d(self, q, E, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None):
         '''
         A non-dissipative central flux in 1D
         Assumes skew-symmetric form metrics.
@@ -22,8 +22,19 @@ class SatDer1:
         if q_bdyL is None: # periodic
             EL = fn.shift_right(E)
             ER = fn.shift_left(E)
+            intR = fn.gm_gv(self.tbphys, ER)
+            intL = fn.gm_gv(self.taphys, EL)
         else:
-            raise Exception('TODO: adding boundary condition.')
+            EL = fn.shift_right(E)
+            ER = fn.shift_left(E)
+            intR = fn.gm_gv(self.tbphys, ER)
+            intL = fn.gm_gv(self.taphys, EL)
+            # manually fix boundaries of EL, ER to ensure proper boundary coupling
+            if E_bdyL is None:
+                E_bdyL = self.calcEx(q_bdyL)
+                E_bdyR = self.calcEx(q_bdyR)
+            intR[:,-1] = self.tR @ (self.bdy_metrics[:,1,-1] * E_bdyR)
+            intL[:,0] = self.tL @ (self.bdy_metrics[:,0,0] * E_bdyL)
         
 # =============================================================================
 #         # This is equivalent to below, but tested to be slightly slower
@@ -38,11 +49,45 @@ class SatDer1:
 # =============================================================================
         
         # This is equivalent to above, but tested to be slightly faster
-        sat = 0.5*( fn.gm_gv(self.vol_mat, E) 
-                  - fn.gm_gv(self.tbphys, ER)
-                  + fn.gm_gv(self.taphys, EL) )
+        sat = 0.5*( fn.gm_gv(self.vol_mat, E) - intR + intL )
         
         return sat
+    
+    def central_div_1d_dfdq(self, q, A, q_bdyL=None, q_bdyR=None):
+        '''
+        A non-dissipative central flux in 1D
+        Assumes skew-symmetric form metrics.
+        '''
+        q_a = self.tLT @ q
+        q_b = self.tRT @ q
+        # Here we work in terms of facets, starting from the left-most facet.
+        # This is NOT the same as elements. i.e. qR is to the right of the
+        # facet and qL is to the left of the facet, opposite of element-wise.
+        if q_bdyL is None:
+            # here AL is the flux-jac in the left-hand side element, AR is the element on the right
+            # then intL is the coupling contribution from the left-interface to the current element (row i, column i-1)
+            # and intR is the coupling contribution from the right-interface to the current element (row i, column i+1)
+            AL = fn.shift_mat_right(A) # move the last elem to the first elem
+            AR = fn.shift_mat_left(A) # move the first elem to the last elem
+
+            intR = fn.gm_gm(self.tbphys, AR) # these should be placed in col R
+            intL = fn.gm_gm(self.taphys, AL) # these should be placed in col L
+        else:
+            AL = fn.shift_mat_right(A) # move the last elem to the first elem
+            AR = fn.shift_mat_left(A) # move the first elem to the last elem
+            intR = fn.gm_gm(self.tbphys, AR)
+            intL = fn.gm_gm(self.taphys, AL)
+            # manually fix boundaries of AL, AR to ensure proper boundary coupling
+            # TODO: assuming dirichlet boundaries (or not depending on solution)
+            # else would need to fix boundary intR and intL more smartly
+            intR[:,:,-1] = 0.
+            intL[:,:,0] = 0.
+
+        # Note: could also use gm_triblock_flat_periodic or gm_triblock_flat (works for 2D)
+        dfdq = 0.5*(  fn.sparse_block_diag(fn.gm_gm(self.vol_mat, A)) \
+                    - fn.sparse_block_diag_R_1D(intR) \
+                    + fn.sparse_block_diag_L_1D(intL)  )
+        return dfdq
     
     def central_div_2d(self, q, Ex, Ey, idx, q_bdyL=None, q_bdyR=None):
         '''
@@ -127,7 +172,6 @@ class SatDer1:
         A Local Lax-Fridriechs dissipative flux in 1D. 
         sigma=0 turns off dissipation, recovering central_div_1d.
         '''
-
         q_a = self.tLT @ q
         q_b = self.tRT @ q
         # Here we work in terms of facets, starting from the left-most facet.
@@ -138,6 +182,9 @@ class SatDer1:
             qf_R = fn.pad_1dR(q_a, q_a[:,0])
             qf_jump = qf_R - qf_L
 
+            # here EL is the flux in the left-hand side element, ER is the element on the right
+            # then intL is the coupling contribution from the left-interface to the current element
+            # and intR is the coupling contribution from the right-interface to the current element
             EL = fn.shift_right(E)
             ER = fn.shift_left(E)
             intR = fn.gm_gv(self.tbphys, ER)
@@ -182,8 +229,8 @@ class SatDer1:
         metrics = fn.pad_1dR(self.bdy_metrics[:,0,:], self.bdy_metrics[:,1,-1])
         Lambda = np.abs(maxeigs * metrics)
         Lambda_q_jump = fn.gdiag_gv(Lambda, qf_jump)
-        dissL = self.tL @ Lambda_q_jump[:,:-1]
-        dissR = self.tR @ Lambda_q_jump[:,1:]
+        dissL = sigma * self.tL @ Lambda_q_jump[:,:-1]
+        dissR = sigma * self.tR @ Lambda_q_jump[:,1:]
         
 # =============================================================================
 #         # This is equivalent to below, but tested to be slightly slower
@@ -202,6 +249,92 @@ class SatDer1:
         #                                      taphys = tL @ bdy_metrics @ tRT
         sat = 0.5*( fn.gm_gv(self.vol_mat, E) - intR + intL + dissR - dissL )
         return sat
+    
+    def llf_div_1d_dfdq(self, q, A, q_bdyL=None, q_bdyR=None, sigma=1, eps_imag=1e-20, avg='simple'):
+        '''
+        A Local Lax-Fridriechs dissipative flux in 1D. 
+        sigma=0 turns off dissipation, recovering central_div_1d.
+        '''
+
+        q_a = self.tLT @ q
+        q_b = self.tRT @ q
+        # Here we work in terms of facets, starting from the left-most facet.
+        # This is NOT the same as elements. i.e. qR is to the right of the
+        # facet and qL is to the left of the facet, opposite of element-wise.
+        if q_bdyL is None:
+            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
+            qf_R = fn.pad_1dR(q_a, q_a[:,0])
+            qf_jump = qf_R - qf_L
+
+            # here AL is the flux-jac in the left-hand side element, AR is the element on the right
+            # then intL is the coupling contribution from the left-interface to the current element (row i, column i-1)
+            # and intR is the coupling contribution from the right-interface to the current element (row i, column i+1)
+            AL = fn.shift_mat_right(A) # move the last elem to the first elem
+            AR = fn.shift_mat_left(A) # move the first elem to the last elem
+
+            intR = fn.gm_gm(self.tbphys, AR) # these should be placed in col R
+            intL = fn.gm_gm(self.taphys, AL) # these should be placed in col L
+        else:
+            # Pad the ends with the internal extrapolated value. We only use this to get
+            # the max eigenvalue with qf_avg anyway, so only want contribution from interior
+            qf_L = fn.pad_1dL(q_b, q_a[:,0])
+            qf_R = fn.pad_1dR(q_a, q_b[:,-1])
+            qf_jump = qf_R - qf_L
+            # manually fix boundaries of qf_jump to ensure proper dissipation
+            qf_jump[:,-1] = q_bdyR - q_b[:,-1]
+            qf_jump[:,0] = q_a[:,0] - q_bdyL
+
+            AL = fn.shift_mat_right(A) # move the last elem to the first elem
+            AR = fn.shift_mat_left(A) # move the first elem to the last elem
+            intR = fn.gm_gm(self.tbphys, AR)
+            intL = fn.gm_gm(self.taphys, AL)
+            # manually fix boundaries of AL, AR to ensure proper boundary coupling
+            # TODO: assuming dirichlet boundaries (or not depending on solution)
+            # else would need to fix boundary intR and intL more smartly
+            intR[:,:,-1] = 0.
+            intL[:,:,0] = 0.
+        
+        if avg=='simple': # Alternatively, a Roe average can be used
+            qf_avg = (qf_L + qf_R)/2
+            ''' I give up on linearizing dissipative part
+            dqf_avg_dqR = fn.sparse_block_R_1D(self.tLT) + fn.sparse_block_diag(self.tRT) # wrong... facet centred, not element
+            dqf_avg_dqL = fn.sparse_block_L_1D(self.tRT) + fn.sparse_block_diag(self.tLT)
+            
+            if q_bdyL is not None:
+                # assume dirichlet boundaries, remove periodic dependence on corner
+                dqf_avg_dqR
+            '''
+        elif avg=='roe':
+            raise Exception('Roe Average not coded up yet')
+        else:
+            raise Exception('Averaging method not understood.')
+        '''
+        # do this part in complex step
+        qf_shape = qf_avg.shape
+        dLambda_dqf_avg = np.zeros((qf_shape[0],qf_shape[0],qf_shape[1]))
+        metrics = fn.pad_1dR(self.bdy_metrics[:,0,:], self.bdy_metrics[:,1,-1])
+        maxeigs = self.maxeig_dExdq(qf_avg)
+        Lambda = np.abs(maxeigs * metrics)
+        sgn = np.sign(maxeigs * metrics)
+        for neq in range(self.neq_node):
+            pert = np.zeros(qf_shape,dtype=complex)
+            pert[neq,:] = eps_imag * 1j
+            maxeigs = self.maxeig_dExdq_cmplx(qf_avg + pert)
+            Lambda_pert = maxeigs * metrics # without the absolute value! Will cause problems for complex step
+            #Lambda = np.abs(maxeigs * metrics)
+            # instead do d/dx |f(x)| = sgn(f(x)) * f'(x) = sgn(f(x)) * complex_step(f(x))
+            dLambda_dqf_avg[:,neq,:] = sgn * np.imag(Lambda_pert) / eps_imag 
+        '''
+
+        #Lambda_q_jump = fn.gdiag_gv(Lambda, qf_jump)
+        #dissL = self.tL @ Lambda_q_jump[:,:-1]
+        #dissR = self.tR @ Lambda_q_jump[:,1:]
+        #sat = 0.5*( fn.gm_gv(self.vol_mat, E) - intR + intL + dissR - dissL )
+        # Note: could also use gm_triblock_flat_periodic or gm_triblock_flat (works for 2D)
+        dfdq = 0.5*(  fn.sparse_block_diag(fn.gm_gm(self.vol_mat, A)) \
+                    - fn.sparse_block_diag_R_1D(intR) \
+                    + fn.sparse_block_diag_L_1D(intL)  )
+        return dfdq
     
     
     def llf_div_2d(self, q, Ex, Ey, idx, q_bdyL=None, q_bdyR=None, sigma=1, avg='simple'):
@@ -338,7 +471,7 @@ class SatDer1:
     # in general, these are NOT stable because of the treatment of metric terms
     ##########################################################################
     
-    def upwind_div_1d(self, q, E, q_bdyL=None, q_bdyR=None, sigma=1, avg='simple'):
+    def upwind_div_1d(self, q, E, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None, sigma=1, avg='simple'):
         '''
         An upwind dissipative flux in 1D. sigma=0 turns off dissipation.
         '''
@@ -353,7 +486,6 @@ class SatDer1:
         else:
             qf_L = fn.pad_1dL(q_b, q_bdyL)
             qf_R = fn.pad_1dR(q_a, q_bdyR)
-            raise Exception('TODO: adding boundary condition.')
         qf_jump = -(qf_R - qf_L)
         bdy_metrics = fn.pad_1dR(self.bdy_metrics[:,0,:], self.bdy_metrics[:,1,-1])
         
@@ -625,7 +757,7 @@ class SatDer1:
     ''' LINEARIZATIONS ''' 
     ##########################################################################
     
-    def dfdq_der1_complexstep_div_1d(self, q, E, q_bdyL=None, q_bdyR=None, eps_imag=1e-30):
+    def dfdq_complexstep(self, q_L, q_R, xy, eps_imag=1e-30):
         '''
         Purpose
         ----------
@@ -636,29 +768,40 @@ class SatDer1:
         More details are given below.
         Parameters
         ----------
+        q_fL : np array, shape (neq_node,nelem)
+            The extrapolated solution of the left element to the facet.
+        q_fR : np array, shape (neq_node,nelem)
+            The extrapolated solution of the left element to the facet.
+        xy : str, 'x' or 'y'
+            Determines whether to use SAT in x or y direction
         eps_imag : float, optional
             Size of the complex step
         Returns
         -------
         The derivative of the SAT contribution to the elements on both sides
-        of the interface. shape (nen*neq_node,nen*neq_node,nelem)
+        of the interface. shapes (nen*neq_node,nen*neq_node,nelem)
         '''
+        q_fL, q_fR = self.get_interface_sol(q_L, q_R)
         
-        neq_node,nelem = q.shape
+        neq_node,nelem = q_fL.shape
         assert neq_node == self.neq_node,'neq_node does not match'
-        sat_pert = np.zeros((self.nen*neq_node,neq_node,nelem),dtype=complex)
+        satL_pert_qL = np.zeros((self.nen*neq_node,neq_node,nelem),dtype=complex)
+        satR_pert_qL = np.zeros((self.nen*neq_node,neq_node,nelem),dtype=complex)
+        satL_pert_qR = np.zeros((self.nen*neq_node,neq_node,nelem),dtype=complex)
+        satR_pert_qR = np.zeros((self.nen*neq_node,neq_node,nelem),dtype=complex)
         
         for neq in range(neq_node):
             pert = np.zeros((self.neq_node,nelem),dtype=complex)
             pert[neq,:] = eps_imag * 1j
-            E_pert = self.diffeq.calcEx(q + pert)
-            sat_pert[:,neq,:] = self.calc(q + pert, E_pert, q_bdyL=None, q_bdyR=None)
+            satL_pert_qL[:,neq,:], satR_pert_qL[:,neq,:] = self.calc(q_fL + pert, q_fR, xy)
+            satL_pert_qR[:,neq,:], satR_pert_qR[:,neq,:] = self.calc(q_fL, q_fR + pert, xy)
         
-        dSatdq = np.imag(sat_pert) / eps_imag
+        dSatLdqL = fn.gm_lm(np.imag(satL_pert_qL) / eps_imag , self.tRT)
+        dSatLdqR = fn.gm_lm(np.imag(satL_pert_qR) / eps_imag , self.tLT)
+        dSatRdqL = fn.gm_lm(np.imag(satR_pert_qL) / eps_imag , self.tRT)
+        dSatRdqR = fn.gm_lm(np.imag(satR_pert_qR) / eps_imag , self.tLT)
 
-        #TODO: This does not work. Need to differentiate the effects form either side of the boundary
-        
-        return dSatdq
+        return dSatLdqL, dSatLdqR, dSatRdqL, dSatRdqR
 
     ##########################################################################
     ''' SPECIAL FUNCTIONS ''' 
@@ -768,10 +911,16 @@ class SatDer1:
                         - self.tL @ (4. * self.tLT @ E - q_a*q_L - q_L*q_L) )
         
         if sigma != 0.:
+            Rusanov = False # controls whether we try the ED rusanov flux (Gasser Local-Linear Stability 2022 eq 25)
+                            # or use a standard Lax-Friedrichs
             q_Rjump = q_b - q_R
             q_Ljump = q_a - q_L
-            q_Rlambda = np.abs(q_b + q_R) / 2.
-            q_Llambda = np.abs(q_a + q_L) / 2.
+            if Rusanov:
+                q_Rlambda = np.maximum(np.abs(q_b), np.abs(q_R)) / 2.
+                q_Llambda = np.maximum(np.abs(q_a), np.abs(q_L)) / 2.
+            else:
+                q_Rlambda = np.abs(q_b + q_R) / 2.
+                q_Llambda = np.abs(q_a + q_L) / 2.
             sat -= sigma*(self.tR @ (q_Rlambda * q_Rjump) + self.tL @ (q_Llambda * q_Ljump))
         
         return sat
@@ -815,10 +964,16 @@ class SatDer1:
         #                 - q**2 * self.tL[:] - q * (self.tL @ q_a) - self.tL @ q2_a + self.tL @ (q_a*q_a + q_a*q_L + q_L*q_L) )
         
         if sigma != 0.:
+            Rusanov = False # controls whether we try the ED rusanov flux (Gasser Local-Linear Stability 2022 eq 25)
+                            # or use a standard Lax-Friedrichs
             q_Rjump = q_b - q_R
             q_Ljump = q_a - q_L
-            q_Rlambda = np.abs(q_b + q_R) / 2.
-            q_Llambda = np.abs(q_a + q_L) / 2.
+            if Rusanov:
+                q_Rlambda = np.maximum(np.abs(q_b), np.abs(q_R)) / 2.
+                q_Llambda = np.maximum(np.abs(q_a), np.abs(q_L)) / 2.
+            else:
+                q_Rlambda = np.abs(q_b + q_R) / 2.
+                q_Llambda = np.abs(q_a + q_L) / 2.
             sat -= sigma*(self.tR @ (q_Rlambda * q_Rjump) + self.tL @ (q_Llambda * q_Ljump))
         
         return sat
@@ -902,52 +1057,6 @@ class SatDer1:
         dSatRdqR = 0.5*fn.lm_gm(self.tL,psigsignA*factor_qR + fn.gm_lm(ApsigmaA_abs,dqf_diffdqR))
         dSatLdqL = 0.5*fn.lm_gm(self.tR,msigsignA*factor_qL + fn.gm_lm(AmsigmaA_abs, dqf_diffdqL))
         dSatLdqR = 0.5*fn.lm_gm(self.tR,msigsignA*factor_qR + fn.gm_lm(AmsigmaA_abs, dqf_diffdqR))
-
-        return dSatLdqL, dSatLdqR, dSatRdqL, dSatRdqR
-
-    def dfdq_der1_complexstep(self, q_L, q_R, xy, eps_imag=1e-30):
-        '''
-        Purpose
-        ----------
-        Calculates the derivative of the SATs using complex step. This is
-        required for PDEs that are systems and nonlinear, such as the Euler eq.
-        This function only works to calculate the derivatives of SATs for
-        first derivatives but could be modified to handle higher derivatives.
-        More details are given below.
-        Parameters
-        ----------
-        q_fL : np array, shape (neq_node,nelem)
-            The extrapolated solution of the left element to the facet.
-        q_fR : np array, shape (neq_node,nelem)
-            The extrapolated solution of the left element to the facet.
-        xy : str, 'x' or 'y'
-            Determines whether to use SAT in x or y direction
-        eps_imag : float, optional
-            Size of the complex step
-        Returns
-        -------
-        The derivative of the SAT contribution to the elements on both sides
-        of the interface. shapes (nen*neq_node,nen*neq_node,nelem)
-        '''
-        q_fL, q_fR = self.get_interface_sol(q_L, q_R)
-        
-        neq_node,nelem = q_fL.shape
-        assert neq_node == self.neq_node,'neq_node does not match'
-        satL_pert_qL = np.zeros((self.nen*neq_node,neq_node,nelem),dtype=complex)
-        satR_pert_qL = np.zeros((self.nen*neq_node,neq_node,nelem),dtype=complex)
-        satL_pert_qR = np.zeros((self.nen*neq_node,neq_node,nelem),dtype=complex)
-        satR_pert_qR = np.zeros((self.nen*neq_node,neq_node,nelem),dtype=complex)
-        
-        for neq in range(neq_node):
-            pert = np.zeros((self.neq_node,nelem),dtype=complex)
-            pert[neq,:] = eps_imag * 1j
-            satL_pert_qL[:,neq,:], satR_pert_qL[:,neq,:] = self.calc(q_fL + pert, q_fR, xy)
-            satL_pert_qR[:,neq,:], satR_pert_qR[:,neq,:] = self.calc(q_fL, q_fR + pert, xy)
-        
-        dSatLdqL = fn.gm_lm(np.imag(satL_pert_qL) / eps_imag , self.tRT)
-        dSatLdqR = fn.gm_lm(np.imag(satL_pert_qR) / eps_imag , self.tLT)
-        dSatRdqL = fn.gm_lm(np.imag(satR_pert_qL) / eps_imag , self.tRT)
-        dSatRdqR = fn.gm_lm(np.imag(satR_pert_qR) / eps_imag , self.tLT)
 
         return dSatLdqL, dSatLdqR, dSatRdqL, dSatRdqR
 
