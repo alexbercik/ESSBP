@@ -13,7 +13,7 @@ function getOps(p,n)
                             xmin=0.0, xmax=1.0, N=n)
     H = mass_matrix(Dup)
     D = 0.5 * (Matrix(Dup.plus) + Matrix(Dup.minus))
-    diss = - 0.5 * H * (Matrix(Dup.plus) - Matrix(Dup.minus))
+    diss = - 0.5 * (Matrix(Dup.plus) - Matrix(Dup.minus))
     Q = 0.5 * H * (Matrix(Dup.plus) + Matrix(Dup.minus))
     x = SummationByPartsOperators.grid(Dup)
 

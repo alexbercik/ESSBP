@@ -13,6 +13,38 @@ class SatDer1:
     ##########################################################################
     ''' CENTRAL FLUXES '''
     ##########################################################################
+
+    def central_div_1d_base(self, q, E, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None, sigma=1, avg='simple'):
+        '''
+        A non-dissipative central flux in 1D, that calls an external dissipation function.
+        '''
+        q_a = self.tLT @ q
+        q_b = self.tRT @ q
+        if q_bdyL is None: # periodic
+            EL = fn.shift_right(E)
+            ER = fn.shift_left(E)
+            intR = fn.gm_gv(self.tbphys, ER)
+            intL = fn.gm_gv(self.taphys, EL)
+            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
+            qf_R = fn.pad_1dR(q_a, q_a[:,0])
+        else:
+            EL = fn.shift_right(E)
+            ER = fn.shift_left(E)
+            intR = fn.gm_gv(self.tbphys, ER)
+            intL = fn.gm_gv(self.taphys, EL)
+            # manually fix boundaries of EL, ER to ensure proper boundary coupling
+            if E_bdyL is None:
+                E_bdyL = self.calcEx(q_bdyL)
+                E_bdyR = self.calcEx(q_bdyR)
+            intR[:,-1] = self.tR @ (self.bdy_metrics[:,1,-1] * E_bdyR)
+            intL[:,0] = self.tL @ (self.bdy_metrics[:,0,0] * E_bdyL)
+            qf_L = fn.pad_1dL(q_b, q_bdyL)
+            qf_R = fn.pad_1dR(q_a, q_bdyR)
+
+        diss = self.diss(qf_L,qf_R)
+
+        sat = 0.5*( fn.gm_gv(self.vol_mat, E) - intR + intL ) - diss
+        return sat
     
     def central_div_1d(self, q, E, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None):
         '''
@@ -616,13 +648,15 @@ class SatDer1:
         if q_bdyL is None:
             qL = fn.pad_1dL(q, q[:,-1])
         else:
-            qL = fn.pad_1dL(q, q_bdyL) # TODO: this definitely does not work
-            raise Exception('TODO: adding boundary condition.')
+            # TODO: I don't think this will be provably stable, but works for dissipation at least
+            qbdy = np.repeat(q_bdyL, self.nen)
+            qL = fn.pad_1dL(q, qbdy) 
         if q_bdyR is None:
             qR = fn.pad_1dR(q, q[:,0])
         else:
-            qR = fn.pad_1dL(q, q_bdyR)  # TODO: this definitely does not work
-            raise Exception('TODO: adding boundary condition.')
+            # TODO: I don't think this will be provably stable, but works for dissipation at least
+            qbdy = np.repeat(q_bdyR, self.nen)
+            qR = fn.pad_1dL(q, qbdy) 
         
         Fsurf = self.build_F(qL, qR, self.had_flux_Ex)
         

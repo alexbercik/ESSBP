@@ -40,19 +40,19 @@ bc = 'periodic' # no other boudnary conditions set up yet sorry...
 
 # Spatial discretization
 disc_type = 'div' # 'div', 'had' (divergence or hadamard-product)
-disc_nodes = 'csbp' # 'lg', 'lgl', 'nc', 'csbp'
-p = 3
-nelem = 6 # optional, number of elements
-nen = 10 # optional, number of nodes per element (set to zero for element-type)
-surf_type = 'ec_had' # 'ec' / 'es' / 'ec_had' / 'es_had' / 'split' / 'split_diss' (es is a dissipative version of ec, split follows variable coefficient advection splitting)
-had_flux = 'ec' # 2-point numerical flux used in hadamard form (only 'ec' set up)
-vol_diss = {'diss_type':'w', 'jac_type':'scalar', 's':'p+1', 'coeff':0.05}
+disc_nodes = 'upwind' # 'lg', 'lgl', 'nc', 'csbp'
+p = 6
+nelem = 4 # optional, number of elements
+nen = 20 # optional, number of nodes per element (set to zero for element-type)
+surf_type = 'central' # 'ec' / 'es' / 'ec_had' / 'es_had' / 'split' / 'split_diss' (es is a dissipative version of ec, split follows variable coefficient advection splitting)
+had_flux = 'ec_had' # 2-point numerical flux used in hadamard form (only 'ec' set up)
+vol_diss = {'diss_type':'upwind', 'jac_type':'scalar', 's':'p', 'coeff':1.0}
 use_split_form = True
 split_alpha = 2./3. # splitting parameter, 2/3 to recover entropy-conservative had form
 
 # Initial solution
 q0 = None # can overwrite q0_type from DiffEq
-q0_type = 'GassnerSinWave_coarse' # 'GassnerSinWave', '..._cont', '..._coarse' 'GaussWave', 'SinWave'
+q0_type = 'GassnerSinWave' # 'GassnerSinWave', '..._cont', '..._coarse' 'GaussWave', 'SinWave'
 
 # Other
 bool_plot_sol = False
@@ -69,8 +69,12 @@ settings = {'warp_factor':0.0,               # Warps / stretches mesh.
 ''' Set diffeq and solve '''
 diffeq = Burgers(para, q0_type, use_split_form, split_alpha)
 diffeq.plt_style_exa_sol = {'color':'r','linestyle':'-','marker':'','linewidth':2}
-savefile = 'burgers_alpha1_symSAT'
-title=r'Burgers Eqn, $\alpha={0:1.2}$, sym flux'.format(split_alpha)
+savefile = 'upwind_central'
+title=r'Upwind LF Flux Vector Splitting w/ Central SATs, $\varepsilon = $'
+#title=r"Entropy-Cons. + `Naive' Narrow Diss., $\varepsilon = 0.006$"
+#title=r"Entropy-Cons. + Corrected Narrow Diss., $\varepsilon = 0.02$"
+#title=r"Entropy-Cons. + Wide (Repeated D) Diss., $\varepsilon = 0.006$"
+#title=r"Entropy-Conservative (No Dissipation)"
 
 solver = PdeSolverSbp(diffeq, settings,                     # Diffeq
                   tm_method, dt, tf,                    # Time marching
@@ -84,14 +88,15 @@ solver = PdeSolverSbp(diffeq, settings,                     # Diffeq
 
 #solver.force_steady_solution()
 #solver.perturb_q0()
-#A = solver.check_eigs(plt_save_name=savefile+'_eigs',returnA=True,title='Eigenvalues: ' + title,exact_dfdq=True)
+solver.check_eigs(savefile=savefile+'_eigs',returnA=False,title=title,exact_dfdq=True,xmin=-410,ymin=-240,ymax=240,xmax=30,overwrite=True)
 #eigs = np.linalg.eigvals(A)
 #max_eig = max(eigs.real)
 #def theory_fn(time):
 #    return 0.001*np.exp(max_eig * time)
 
 solver.skip_ts = 100
-solver.check_eigs()
+#solver.check_eigs()
+#solver.plot_sol(q=solver.diffeq.set_q0(),plot_exa=False)
 #solver.solve()
 #solver.check_eigs(title=r'Eigenvalues: LGL, Surface Dissipation (10 elem, $p=3$)',
 #                  savefile='lgl_p3_es_nd', colour_by_k=True)

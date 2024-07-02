@@ -32,19 +32,21 @@ class TimeMarchingRk:
         # This method solves the 4th order explicit Runge-Kutta method.
         for i in range(0, n_ts):
 
-            k1 = self.dqdt(q)
+            t = i * dt
+
+            k1 = self.dqdt(q, t)
             self.common(q, q_sol, i, n_ts, dt, k1)
             if self.quitsim: break
 
             q1 = q + 0.5*dt*k1 # first predictor q_{n+1/2}
             
-            k2 = self.dqdt(q1)
+            k2 = self.dqdt(q1, t+0.5*dt)
             q2 = q + 0.5*dt*k2 # first corrector q_{n+1/2}
             
-            k3 = self.dqdt(q2)
+            k3 = self.dqdt(q2, t+0.5*dt)
             q3 = q + dt*k3     # second predictor q_{n+1}
             
-            k4 = self.dqdt(q3)
+            k4 = self.dqdt(q3, t+dt)
             q += dt*(k1 + 2*(k2+k3) + k4)/6 # final correction q_{n+1}
         
         # Congrats you reached the end
@@ -59,7 +61,9 @@ class TimeMarchingRk:
         # This method solves the 1st order explicit Euler method.
         for i in range(0, n_ts):
 
-            dqdt = self.dqdt(q)
+            t = i * dt
+
+            dqdt = self.dqdt(q, t)
             self.common(q, q_sol, i, n_ts, dt, dqdt)
             if self.quitsim: break
 
@@ -70,7 +74,7 @@ class TimeMarchingRk:
         self.final_common(q, q_sol, i, n_ts, dt, dqdt)
         return self.return_q_sol(q,q_sol,i,dt)
     
-    # TODO: Do I want to put bacl any of the implicit methods? 
+    # TODO: Do I want to put back any of the implicit methods? 
     # THis would include implicit Euler, Trapezoidal, etc
 
 

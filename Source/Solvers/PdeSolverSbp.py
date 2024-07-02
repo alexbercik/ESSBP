@@ -146,7 +146,7 @@ class PdeSolverSbp(PdeSolver):
             self.saty = Sat(self, 'y', form)
             self.satz = Sat(self, 'z', form)
 
-    def dqdt_1d_div(self, q):
+    def dqdt_1d_div(self, q, t):
         ''' the main dqdt function for divergence form in 1D '''
         E = self.diffeq.calcEx(q)
         if self.use_diffeq_dExdx:
@@ -163,11 +163,11 @@ class PdeSolverSbp(PdeSolver):
         else:
             raise Exception('Not coded up yet')
     
-        dqdt = - dExdx + self.diffeq.calcG(q) + (self.H_inv_phys * sat) + self.dissipation(q)
+        dqdt = - dExdx + self.diffeq.calcG(q,t) + (self.H_inv_phys * sat) + self.dissipation(q)
         return dqdt
     
     
-    def dfdq_1d_div(self, q):
+    def dfdq_1d_div(self, q, t):
         ''' the main linearized RHS function for divergence form in 1D '''
         if not self.dissipation.type.lower() == 'nd':
             raise Exception('Not coded up')
@@ -191,7 +191,7 @@ class PdeSolverSbp(PdeSolver):
             + self.H_inv_phys.flatten('f')[:, np.newaxis] * sat
         return dfdq
         
-    def dqdt_2d_div(self, q):
+    def dqdt_2d_div(self, q, t):
         ''' the main dqdt function for divergence form in 2D '''
         Ex = self.diffeq.calcEx(q)
         dExdx = fn.gm_gv(self.Dx_phys, Ex)
@@ -215,14 +215,14 @@ class PdeSolverSbp(PdeSolver):
         else:
             raise Exception('Not coded up yet')
         
-        dqdt = - dExdx - dEydy + self.H_inv_phys * (satx + saty) + self.diffeq.calcG(q)
+        dqdt = - dExdx - dEydy + self.H_inv_phys * (satx + saty) + self.diffeq.calcG(q,t)
         return dqdt
     
-    def dfdq_2d_div(self, q):
+    def dfdq_2d_div(self, q, t):
         ''' the main linearized RHS function for divergence form in 2D '''
         raise Exception('Not done yet.')
 
-    def dqdt_3d_div(self, q):
+    def dqdt_3d_div(self, q, t):
         ''' the main dqdt function for divergence form in 3D '''
         Ex = self.diffeq.calcEx(q)
         dExdx = fn.gm_gv(self.Dx_phys, Ex)
@@ -254,14 +254,14 @@ class PdeSolverSbp(PdeSolver):
         else:
             raise Exception('Not coded up yet')
         
-        dqdt = - dExdx - dEydy - dEzdz + self.H_inv_phys * (satx + saty + satz) + self.diffeq.calcG(q)
+        dqdt = - dExdx - dEydy - dEzdz + self.H_inv_phys * (satx + saty + satz) + self.diffeq.calcG(q,t)
         return dqdt
     
-    def dfdq_3d_div(self, q):
+    def dfdq_3d_div(self, q, t):
         ''' the main linearized RHS function for divergence form in 3D '''
         raise Exception('Not done yet.') 
         
-    def dqdt_1d_had(self, q):
+    def dqdt_1d_had(self, q, t):
         ''' the main dqdt function for hadamard form in 1D '''
         Fvol = self.build_F_vol(q, self.had_flux_Ex)
         dExdx = 2*fn.gm_gm_had_diff(self.Dx_phys, Fvol)
@@ -271,14 +271,14 @@ class PdeSolverSbp(PdeSolver):
         else:
             raise Exception('Not coded up yet')
         
-        dqdt = - dExdx + (self.H_inv_phys * sat) + self.diffeq.calcG(q) + self.dissipation(q)
+        dqdt = - dExdx + (self.H_inv_phys * sat) + self.diffeq.calcG(q,t) + self.dissipation(q)
         return dqdt
     
-    def dfdq_1d_had(self, q):
+    def dfdq_1d_had(self, q, t):
         ''' the main linearized RHS function for hadamard form in 1D '''
         raise Exception('Not done yet.')
         
-    def dqdt_2d_had(self, q):
+    def dqdt_2d_had(self, q, t):
         ''' the main dqdt function for hadamard form in 2D '''
         Fxvol = self.build_F_vol(q, self.had_flux_Ex)
         Fyvol = self.build_F_vol(q, self.had_flux_Ey)
@@ -302,14 +302,14 @@ class PdeSolverSbp(PdeSolver):
         else:
             raise Exception('Not coded up yet')
         
-        dqdt = - dExdx -dEydy + (self.H_inv_phys * (satx + saty)) + self.diffeq.calcG(q)
+        dqdt = - dExdx -dEydy + (self.H_inv_phys * (satx + saty)) + self.diffeq.calcG(q,t)
         return dqdt
     
-    def dfdq_2d_had(self, q):
+    def dfdq_2d_had(self, q, t):
         ''' the main linearized RHS function for hadamard form in 2D '''
         raise Exception('Not done yet.')
         
-    def dqdt_3d_had(self, q):
+    def dqdt_3d_had(self, q, t):
         ''' the main dqdt function for hadamard form in 3D '''
         Fxvol = self.build_F_vol(q, self.had_flux_Ex)
         Fyvol = self.build_F_vol(q, self.had_flux_Ey)
@@ -341,10 +341,10 @@ class PdeSolverSbp(PdeSolver):
         else:
             raise Exception('Not coded up yet')
         
-        dqdt = - dExdx - dEydy - dEzdz + self.H_inv_phys * (satx + saty + satz) + self.diffeq.calcG(q)
+        dqdt = - dExdx - dEydy - dEzdz + self.H_inv_phys * (satx + saty + satz) + self.diffeq.calcG(q,t)
         return dqdt
     
-    def dfdq_3d_had(self, q):
+    def dfdq_3d_had(self, q, t):
         ''' the main linearized RHS function for hadamard form in 3D '''
         raise Exception('Not done yet.')
         
@@ -587,11 +587,11 @@ class PdeSolverSbp(PdeSolver):
             #print(tot2)
 
         
-    def check_cons(self,q=None):
+    def check_cons(self,q=None,t=0.):
         ''' returns what I think is 1 @ H @ dqdt for 2D and 3D '''
         if q == None:
             q = self.diffeq.set_q0()
-        dqdt = self.dqdt(q)
+        dqdt = self.dqdt(q,t)
         cons = np.sum(self.H_phys * dqdt)
         
         Esurfxref = self.satx.tR @ np.diag(self.satx.Hperp[:,0]) @ self.satx.tRT \

@@ -429,7 +429,8 @@ def symbolic(A):
 
 def run_convergence(solver, schedule_in=None, error_type='SBP',
              scale_dt=True, return_conv=False, savefile=None, labels=None,
-             title=None, ylabel=None, xlabel=None, grid=False, convunc=True, ylim=None):
+             title=None, ylabel=None, xlabel=None, grid=False, convunc=True, 
+             ylim=None, ignore_fail=False):
     '''
     Purpose
     ----------
@@ -554,62 +555,95 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
             diff_p = cases[casei][attributes.index('p')] - solver.p
         else:
             diff_p = 0
-        for runi in range(n_runs):
-            variables = variables_base.copy() # for each run (refinement)
-            variables[0] = ('nelem',runs_nelem[runi])
-            if match_nen_to_nelem:
-                run_neni = runi
-            elif match_nen_to_p:
-                p = cases[casei][attributes.index('p')]
-                run_neni = runs_p.index(p)
-            else:
-                raise Exception('Something went wrong')
-            variables[1] = ('nen',runs_nen[run_neni])
-            if scale_dt:
-                if runs_nen[run_neni] == 0: neni = solver.nen
-                else: neni = runs_nen[run_neni]
-                if solver.dim == 1:
-                    xmin, xmax, nelem = solver.xmin, solver.xmax, runs_nelem[runi]
+        try:
+            for runi in range(n_runs):
+                variables = variables_base.copy() # for each run (refinement)
+                variables[0] = ('nelem',runs_nelem[runi])
+                if match_nen_to_nelem:
+                    run_neni = runi
+                elif match_nen_to_p:
+                    p = cases[casei][attributes.index('p')]
+                    run_neni = runs_p.index(p)
                 else:
-                    # only estimate new dt based on scaling of x coordinate
-                    xmin, xmax = solver.xmin[0], solver.xmax[0]
-                    if isinstance(runs_nelem[runi], tuple):
-                        nelem = runs_nelem[runi][0]
-                    else: nelem = runs_nelem[runi]
-                new_dx = (xmax - xmin) / (nelem*(neni+diff_p))
-                new_dt = base_dt * new_dx / base_dx
-                variables[-1] = ('dt',new_dt)
-            # add a few default things to save time
-            # TODO : add flag to also calculate conservation objectives
-            variables.append(('print_sol_norm', False))
-            variables.append(('bool_plot_sol', False))
-            variables.append(('cons_obj_name', None))
+                    raise Exception('Something went wrong')
+                variables[1] = ('nen',runs_nen[run_neni])
+                if scale_dt:
+                    if runs_nen[run_neni] == 0: neni = solver.nen
+                    else: neni = runs_nen[run_neni]
+                    if solver.dim == 1:
+                        xmin, xmax, nelem = solver.xmin, solver.xmax, runs_nelem[runi]
+                    else:
+                        # only estimate new dt based on scaling of x coordinate
+                        xmin, xmax = solver.xmin[0], solver.xmax[0]
+                        if isinstance(runs_nelem[runi], tuple):
+                            nelem = runs_nelem[runi][0]
+                        else: nelem = runs_nelem[runi]
+                    new_dx = (xmax - xmin) / (nelem*(neni+diff_p))
+                    new_dt = base_dt * new_dx / base_dx
+                    variables[-1] = ('dt',new_dt)
+                # add a few default things to save time
+                # TODO : add flag to also calculate conservation objectives
+                variables.append(('print_sol_norm', False))
+                variables.append(('bool_plot_sol', False))
+                variables.append(('cons_obj_name', None))
 
-            ''' solve run for case, store results '''
-            print('Running for:', variables)
-            if labels is not None:
-                print('label:', labels[casei])
-            solver.reset(variables=variables)
-            solver.solve()
-            errors[casei,runi] = solver.calc_error(method=error_type)
-            if solver.dim == 1:
-                nn = solver.nn
-                dofs[casei,runi] = nn
-            elif solver.dim == 2:
-                nn = solver.nn[0]*solver.nn[1]
-                dofs[casei,runi] = np.sqrt(nn)
-            elif solver.dim == 3:
-                nn = solver.nn[0]*solver.nn[1]*solver.nn[2]
-                dofs[casei,runi] = np.cbrt(nn)
+                ''' solve run for case, store results '''
+                print('Running for:', variables)
+                if labels is not None:
+                    print('label:', labels[casei])
+                solver.reset(variables=variables)
+                solver.solve()
+                errors[casei,runi] = solver.calc_error(method=error_type)
+                if solver.dim == 1:
+                    nn = solver.nn
+                    dofs[casei,runi] = nn
+                elif solver.dim == 2:
+                    nn = solver.nn[0]*solver.nn[1]
+                    dofs[casei,runi] = np.sqrt(nn)
+                elif solver.dim == 3:
+                    nn = solver.nn[0]*solver.nn[1]*solver.nn[2]
+                    dofs[casei,runi] = np.cbrt(nn)
 
-            print('Convergence Progress: run {0} of {1} complete.'.format(n_toti,n_tot))
-            print('Final Error: ', solver.calc_error())
-            print('Total number of nodes: ', nn)
-            print('---------------------------------------------------------')
-            n_toti += 1
+                print('Convergence Progress: run {0} of {1} complete.'.format(n_toti,n_tot))
+                print('Final Error: ', solver.calc_error())
+                print('Total number of nodes: ', nn)
+                print('---------------------------------------------------------')
+                n_toti += 1
+        except Exception as e:
+            if ignore_fail:
+                errors[casei,:] = None
+                dofs[casei,:] = None
+                print('---------------------------------------------------------')
+                print('---------------------------------------------------------')
+                print('---------------------------------------------------------')
+                print('WARNING: run {0} of {1} encountered errors.'.format(n_toti,n_tot))
+                print('         Ignoring this case (all runs) and moving on.')
+                print('---------------------------------------------------------')
+                print('WARNING: run {0} of {1} encountered errors.'.format(n_toti,n_tot))
+                print('         Ignoring this case (all runs) and moving on.')
+                print('---------------------------------------------------------')
+                print('WARNING: run {0} of {1} encountered errors.'.format(n_toti,n_tot))
+                print('         Ignoring this case (all runs) and moving on.')
+                print('---------------------------------------------------------')
+                print('---------------------------------------------------------')
+                print('---------------------------------------------------------')
+                n_toti += n_runs - runi
+            else:
+                raise Exception(e)
     if labels is not None:
         # overwrite legend_strings with labels
         legend_strings = labels
+    
+    if np.any(np.isnan(errors)) or np.any(np.equal(errors, None)):
+        errors_to_keep = []
+        dofs_to_keep = []
+        labels_to_keep = []
+        for i, row in enumerate(errors):
+            if not (np.any(np.isnan(row)) or np.any(np.equal(row, None))):
+                errors_to_keep.append(row)
+                dofs_to_keep.append(dofs[i])
+                labels_to_keep.append(legend_strings[i])
+        errors, dofs, legend_strings = np.array(errors_to_keep), np.array(dofs_to_keep), labels_to_keep
     
     ''' Analyze convergence '''
     print('---------------------------------------------------------')

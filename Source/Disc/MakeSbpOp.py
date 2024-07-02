@@ -127,7 +127,8 @@ class MakeSbpOp:
                     trans = 'corners'
                 else:
                     print('WARNING: Not set up yet, defaulting to CSBP.')
-                    warp_factor = 0
+                    warp_factor1, warp_factor2, warp_factor3 = 0., 0., 0.
+                    trans = 'default'
 
                 with redirect_stdout(None):
                     mesh = MakeMesh(dim=1,xmin=0,xmax=1,nelem=1,x_op=self.x,warp_type=trans,
@@ -138,7 +139,7 @@ class MakeSbpOp:
                             jac_method='exact',
                             use_optz_metrics = 'False',
                             calc_exact_metrics = False)
-                    H, D,= self.ref_2_phys(mesh, 'skew_sym')
+                    H, D, _ = self.ref_2_phys(mesh, 'skew_sym')
                     self.x = mesh.x
                     self.H, self.D = np.diag(H[:,0]), D[:,:,0]
                     self.Q = self.H @ self.D
@@ -153,7 +154,7 @@ class MakeSbpOp:
                 self.nn = 5
             elif (p==4 or p==5) and nn<9:
                 print('WARNING: nn set too small ({0}). Automatically increasing to minimum 9.'.format(nn))
-                self.nn=5
+                self.nn = 9
             elif (p==6 or p==7) and nn<13:
                 print('WARNING: nn set too small ({0}). Automatically increasing to minimum 13.'.format(nn))
                 self.nn = 13
@@ -161,7 +162,7 @@ class MakeSbpOp:
                 print('WARNING: nn set too small ({0}). Automatically increasing to minimum 17.'.format(nn))
                 self.nn = 17
 
-            self.D, self.Du, self.Dm, self.Q, self.H, self.E, self.S, self.tL, self.tR, self.x, self.Ddiss = UpwindOp(p,self.nn)
+            self.D, self.Dp, self.Dm, self.Q, self.H, self.E, self.S, self.tL, self.tR, self.x, self.Ddiss = UpwindOp(p,self.nn)
 
         else:
             ''' Build Element-type SBP Operators '''

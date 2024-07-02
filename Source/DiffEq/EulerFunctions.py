@@ -177,7 +177,7 @@ def dEndw_abs_1D(q,dxidx):
      are the eigenvalues of dExdq '''
     
     Lam, X, _, XT = dEndq_eigs_1D(q,dxidx,val=True,vec=True,inv=False,trans=True)
-    dEndw_abs = fn.gm_gm(X, fn.gdiag_gm(Lam, XT))
+    dEndw_abs = fn.gm_gm(X, fn.gdiag_gm(abs(Lam), XT))
     return dEndw_abs
 
 def dEndw_abs_2D(q,dxidx):
@@ -186,7 +186,7 @@ def dEndw_abs_2D(q,dxidx):
      are the eigenvalues of dExdq '''
     
     Lam, X, _, XT = dEndq_eigs_2D(q,dxidx,val=True,vec=True,inv=False,trans=True)
-    dEndw_abs = fn.gm_gm(X, fn.gdiag_gm(Lam, XT))
+    dEndw_abs = fn.gm_gm(X, fn.gdiag_gm(abs(Lam), XT))
     return dEndw_abs
 
 def dEndw_abs_3D(q,dxidx):
@@ -195,7 +195,7 @@ def dEndw_abs_3D(q,dxidx):
      are the eigenvalues of dExdq '''
     
     Lam, X, _, XT = dEndq_eigs_3D(q,dxidx,val=True,vec=True,inv=False,trans=True)
-    dEndw_abs = fn.gm_gm(X, fn.gdiag_gm(Lam, XT))
+    dEndw_abs = fn.gm_gm(X, fn.gdiag_gm(abs(Lam), XT))
     return dEndw_abs
 
 @njit    
@@ -1840,9 +1840,64 @@ def Ranocha_fluxes_2D(qL,qR):
     return Ex, Ey
 
 @njit
+def StegerWarming_diss_1D(q, n):
+    ''' get the dissipative part of the steger-warming splitting. See gassner upwind paper.'''
+    rho = q[::3,:]
+    u = q[1::3,:]/rho
+    k = (u*u)/2
+    e = q[2::3,:]
+    p = g1*(q[2::3,:]-rho*k) # pressure
+    norm = np.abs(n)
+    a = np.sqrt(g*p/rho)
+    un = u*n
+
+    H = (e + p)/rho
+    lam1 = np.abs(un - norm*a)
+    lam2 = np.abs(un)
+    lam3 = np.abs(un + norm*a)
+
+    # assemble_vec 
+    f = np.zeros(q.shape)
+    f[::3,:] = rho*(lam1 + 2*g1*lam2 + lam3)
+    f[1::3,:] = rho*((u-a)*lam1 + 2*g1*u*lam2 + (u+a)*lam3)
+    f[2::3,:] = rho*((H-un*a/norm)*lam1 + 2*g1*k*lam2 + (H+un*a/norm)*lam3)
+    f = (0.5/g)*f
+    return f
+
+@njit
+def StegerWarming_diss_2D(q, n):
+    ''' get the dissipative part of the steger-warming splitting. See gassner upwind paper.
+    TODO: not entirely sure the curvilinear part is ok... '''
+    rho = q[::4,:]
+    u = q[1::4,:]/rho
+    v = q[2::4,:]/rho
+    k = (u*u+v*v)/2
+    e = q[3::4,:]
+    p = g1*(q[3::4,:]-rho*k) # pressure
+    nx = n[:,0,:]
+    ny = n[:,1,:]
+    norm = np.sqrt(nx*nx + ny*ny)
+    a = np.sqrt(g*p/rho)
+    H = (e + p)/rho
+    uvn = nx*u + ny*v
+
+    lam1 = abs(uvn - norm*a)
+    lam2 = abs(uvn)
+    lam3 = abs(uvn + norm*a)
+
+    # assemble_vec 
+    f = np.zeros(q.shape)
+    f[::4,:] = rho*(lam1 + 2*g1*lam2 + lam3)
+    f[1::4,:] = rho*((u-a)*lam1 + 2*g1*u*lam2 + (u+a)*lam3)
+    f[2::4,:] = rho*((v-a)*lam1 + 2*g1*v*lam2 + (v+a)*lam3)
+    f[3::4,:] = rho*((H-uvn*a/norm)*lam1 + 2*g1*k*lam2 + (H+uvn*a/norm)*lam3)
+    f = (0.5/g)*f
+    return f
+
+@njit
 def dEndq_eig_abs_dq_1D(dxidx, q, qg, flux_type):
     '''
-    calculates abs(A)@(q-qg) according to the implentation in diablo. Used in SATs.
+    calculates -0.5*abs(A)@(q-qg) according to the implentation in diablo. Used in SATs.
     INPUTS:
     dxidx = the metric terms in the desired direction (indpendent of J), shape(nen,nelem)
     q = the flow state of the "local" node, shape (nen*3,nelem)
@@ -1851,7 +1906,7 @@ def dEndq_eig_abs_dq_1D(dxidx, q, qg, flux_type):
 
     gamma = g #1.4 # hard coded throughout
     gami = g1 #0.4
-    tau = 1.
+    tau = 1. #controls amount of upwinding, hardcoded
     sat_Vl = 0.025
     sat_Vn = 0.025
 
@@ -1973,7 +2028,7 @@ def dEndq_eig_abs_dq_1D(dxidx, q, qg, flux_type):
 @njit
 def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
     '''
-    calculates abs(An)@(q-qg) according to the implentation in diablo. Used in SATs.
+    calculates -0.5*abs(An)@(q-qg) according to the implentation in diablo. Used in SATs.
     INPUTS:
     dxidx = the metric terms in the desired direction (indpendent of J), shape(nen,2,nelem)
             these are the dxi_x, dxi_dy, where xi is a fixed computational direction
@@ -2127,7 +2182,7 @@ def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
 @njit
 def dEndq_eig_abs_dq_3D(dxidx, q, qg, flux_type):
     '''
-    calculates abs(An)@(q-qg) according to the implentation in diablo. Used in SATs.
+    calculates -0.5*abs(An)@(q-qg) according to the implentation in diablo. Used in SATs.
     INPUTS:
     dxidx = the metric terms in the desired direction (indpendent of J), shape(nen,3,nelem)
             these are the dxi_x, dxi_dy, dxi_dz, where xi is a fixed computational direction

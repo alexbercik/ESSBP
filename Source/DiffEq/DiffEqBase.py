@@ -67,6 +67,7 @@ class PdeBase:
     xmax_fix = None         # If we need to ensure xmax is a certain value
     steady = False          # Whether or not steady or transient flow
     check_resid_conv = False # Whether to check for residual convergence to stop sim
+    nondimensionalize = False
 
     # Ploting options
     plt_fig_size = (6,4)
@@ -320,7 +321,7 @@ class PdeBase:
             if var2plot_name is None:
                 plt.ylabel(r'$u$',fontsize=self.plt_label_font_size,rotation=0,labelpad=15)
             else:
-                plt.ylabel(var2plot_name,fontsize=self.plt_label_font_size)
+                plt.ylabel(var2plot_name,fontsize=self.plt_label_font_size,rotation=0,labelpad=15)
         
         
         elif self.dim == 2:            
@@ -486,7 +487,7 @@ class PdeBase:
 
     ''' Source term '''
 
-    def calcG(self, q):
+    def calcG(self, q, t):
         return 0
 
     def dGdq(self, q):
