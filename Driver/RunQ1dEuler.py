@@ -29,34 +29,39 @@ The exact solution is available along with the algorithm from Chapter 4.
 
 # Eq parameters
 para = [287,1.4] # [R, gamma]
-test_case = 'subsonic_nozzle' # subsonic_nozzle, transonic, shock_tube, density_wave
-nozzle_shape = 'smooth' # book, constant, linear, smooth
+test_case = 'density_wave' # subsonic_nozzle, transonic, shock_tube, density_wave, manufactured_soln
+nozzle_shape = 'constant' # book, constant, linear, smooth
 #TODO: transonic does not work
 
 # Time marching
 tm_method = 'rk4' # 'explicit_euler', 'rk4'
 dt = 0.0001
-tf = 'steady' #nts * dt # set to None to do automatically or use a convergence criterion
-check_resid_conv = True
+tf = 2.0 #nts * dt # set to None to do automatically or use a convergence criterion, or 'steady'
+check_resid_conv = False
 
 # Domain
-xmin = 0
-xmax = 10
-bc = 'dirichlet' # 'periodic', 'dirichlet', 'riemann'
-
+xmin = -1.
+xmax = 1.
+bc = 'periodic' # 'periodic', 'dirichlet'
 # Spatial discretization
 disc_type = 'div' # 'div', 'had'
-disc_nodes = 'lgl' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
-p = 2
-nelem = 6 # number of elements
-nen = 0 # optional, number of nodes per element
-surf_type = 'upwind'
+disc_nodes = 'upwind' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
+p = 6
+nelem = 4 # number of elements
+nen = 20 # optional, number of nodes per element
+surf_type = 'lf'
 had_flux = 'ranocha' # 2-point numerical flux used in hadamard form
-vol_diss = {'diss_type':'dcp', 'jac_type':'scalar', 's':'p', 'coeff':0.1}
+vol_diss = {'diss_type':'upwind', 'jac_type':'scalarmatrix', 's':'p', 'coeff':1.0, 'fluxvec':'sw'}
 
 # output
-savefile = None
-title=r'1D Euler'
+#savefile = None
+#title=r'1D Euler'
+savefile = 'nd_ec'
+#title=r'Upwind Lax-Friedrichs Splitting w/ LF SATs, $\varepsilon = 1$'
+#title=r"Entropy-Diss. + `Naive' Narrow Diss., $\varepsilon = 0.01$"
+#title=r"Entropy-Diss. + Corrected Narrow Diss., $\varepsilon = 0.004$"
+#title=r"Entropy-Diss. + Wide (Repeated D) Diss., $\varepsilon = 0.02$"
+title=r"Entropy-Conservative (No Dissipation)"
 
 # Initial solution
 q0 = None
@@ -65,10 +70,10 @@ q0_type = 'exact'
 # Other
 bool_plot_sol = False
 print_sol_norm = False
-print_residual = True
-cons_obj_name=('Energy','Conservation','Entropy') # note: should I modify this for systems?
+print_residual = False
+cons_obj_name=('Energy','Entropy') # note: should I modify this for systems?
 settings = {} # extra things like for metrics
-skip_ts = 9999
+skip_ts = 0
 
 
 ''' Set diffeq and solve '''
@@ -100,7 +105,9 @@ else:
     err_savefile = None
     cons_savefile = None
 
-A = solver.check_eigs(savefile=eigs_savefile,returnA=True,title='Eigenvalues: ' + title,plot_eigs=True,exact_dfdq=False)
+#A = solver.check_eigs(returnA=True)
+#solver.check_eigs(savefile=eigs_savefile,returnA=False,title=title,plot_eigs=True,exact_dfdq=False,xmin=-1,xmax=1,ymin=-1700,ymax=1700,overwrite=True)
+#solver.check_eigs(savefile=eigs_savefile,returnA=False,title=title,plot_eigs=True,exact_dfdq=False,xmin=-6,xmax=2,ymin=-400,ymax=400,overwrite=True)
 #import numpy as np
 #eigs = np.linalg.eigvals(A)
 #max_eig = max(eigs.real)
@@ -109,17 +116,19 @@ A = solver.check_eigs(savefile=eigs_savefile,returnA=True,title='Eigenvalues: ' 
 
 #diffeq.plt_style_sol[0] = {'color':'b','linestyle':'-','marker':'','linewidth':3}
 #solver.solve()
+solver.check_eigs()
+#ssolver.plot_sol()
+#solver.plot_cons_obj()
 #solver.plot_sol(savefile=sol_savefile,title=title,display_time=True)
 #solver.plot_error(method='max diff',savefile=err_savefile, title=title)
 #solver.plot_cons_obj(savefile=savefile)
 
-#solver.check_eigs()
 #solver.plot_sol(q=solver.diffeq.set_q0(),time=0.)
 #solver.solve()
 #animate(solver, plotargs={'display_time':True, 'legendloc':'lower right'},skipsteps=0, last_frame=False)
 #solver.plot_sol()#var2plot_name='mach')
 #solver.plot_cons_obj()
-#solver.calc_error()
+#print('Error: ', solver.calc_error())
 
 
 """

@@ -41,6 +41,7 @@ def profiler(command, filename="profile.stats", n_stats=50, verbose=False,
     return stats.print_stats(n_stats or {})
 
 import sympy as sp
+import numpy as np
 class TaylorSeries1D:
     """Class for symbolic Taylor series."""
     def __init__(self, f, num_terms=4):
@@ -69,6 +70,23 @@ def Check_Taylor_Series_1D(Mat,x,num_terms=4,notebook=True):
     h = sp.Symbol(r'(\Delta x)')
     u_Taylor = TaylorSeries1D(u,num_terms)
     Dxs = []
+    h_avg = np.mean(x[1:] - x[:-1])
+
+    def round_to_nearest_simple_decimal(expr, threshold=1e-9):
+        """Round numbers in expr close to simple decimals to those simple decimals."""
+        rounded_expr = expr
+        for number in expr.atoms(sp.Number):
+            num_float = float(number)
+            nearest_integer = round(num_float)
+            nearest_decimal = round(num_float, 5)
+            # Check if the number is close to an integer
+            if abs(num_float - nearest_integer) < threshold:
+                rounded_expr = rounded_expr.subs(number, nearest_integer)
+            # Check if the number is close to a simple decimal up to 3 places
+            elif abs(num_float - nearest_decimal) < threshold:
+                rounded_expr = rounded_expr.subs(number, nearest_decimal)
+        return rounded_expr
+
 
     for i in range(len(x)):
         dx = 0
@@ -76,21 +94,31 @@ def Check_Taylor_Series_1D(Mat,x,num_terms=4,notebook=True):
             if j==i:
                 dx += Mat[i,j]*u
             else:
-                hx = (x[j]-x[i])*h
+                hx = (x[j]-x[i])*h/h_avg
                 taylor = u_Taylor(hx)
                 dx += Mat[i,j]*taylor
     
         threshold = 1e-12
         dx = sp.simplify(dx)
-        small_numbers = set([e for e in dx.atoms(sp.Number) if abs(e) < threshold])
-        d = {s: 0 for s in small_numbers}
-        Dxs.append(dx.subs(d))
+        #small_numbers = set([e for e in dx.atoms(sp.Number) if abs(e) < threshold])
+        #numbers_near_one = set([e for e in dx.atoms(sp.Number) if abs(e - 1) < threshold])
+        #d = {s: 0 for s in small_numbers}
+        #d.update({s: 1 for s in numbers_near_one})
+        #Dxs.append(dx.subs(d))
+        dx = round_to_nearest_simple_decimal(dx)
+        Dxs.append(dx)
 
+    if notebook:
+        out = f"\\text{{Using a value of }} \Delta x =  {latex(h_avg)}"
+        display(Math(out))
+    else:
+        print(f"Using a value of \Delta x = {h_avg}") 
     for i in range(len(x)):
         if notebook:
             out = f'\\text{{Mat[{i}] = }} {latex(Dxs[i])}'
             display(Math(out))
         else:
+
             print(r'Mat[{0}] = {1}'.format(i,Dxs[i]))
 
 

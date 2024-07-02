@@ -171,7 +171,7 @@ class TimeMarching(TimeMarchingRk):
             resid = resid*resid # I actually want the norm squared
 
         if self.bool_calc_cons_obj:
-            self.cons_obj[:, t_idx] = self.fun_calc_cons_obj(q)
+            self.cons_obj[:, t_idx] = self.fun_calc_cons_obj(q,t_idx * dt)
         
         if (t_idx*100/n_ts).is_integer():
             if t_idx == 0:
@@ -235,7 +235,7 @@ class TimeMarching(TimeMarchingRk):
                 resid = resid*resid # I actually want the norm squared
 
             if self.bool_calc_cons_obj:
-                self.cons_obj[:, t_idx] = self.fun_calc_cons_obj(q)
+                self.cons_obj[:, t_idx] = self.fun_calc_cons_obj(q,t_idx * dt)
         
             sim_time = tm.time() - self.start_time
             suf = 'Complete.'

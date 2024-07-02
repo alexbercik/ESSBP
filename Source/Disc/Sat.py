@@ -166,6 +166,7 @@ class Sat(SatDer1, SatDer2):
                 
             if self.method == 'central' or self.method == 'nondissipative' or self.method == 'symmetric':
                 if self.disc_type == 'div':
+                    print('Using the base central SAT and no dissipation.')
                     if self.dim == 1:
                         self.calc = self.central_div_1d
                         self.calc_dfdq = self.central_div_1d_dfdq
@@ -174,6 +175,7 @@ class Sat(SatDer1, SatDer2):
                     elif self.dim == 3:
                         self.calc = self.central_div_3d
                 elif self.disc_type == 'had':
+                    print(f'Using the base Hadamard SAT with {solver.had_flux} flux and no dissipation.')
                     if self.dim == 1:
                         self.calc = self.base_had_1d
                         self.diss = lambda *x: 0
@@ -187,6 +189,7 @@ class Sat(SatDer1, SatDer2):
             elif self.method == 'upwind':
                 print('WARNING: upwind SATs are not provably stable because of metric terms. Use for example lf instead.')
                 if self.disc_type == 'div':
+                    print('Using the base upwind SAT.')
                     if self.dim == 1:
                         self.calc = self.upwind_div_1d
                     elif self.dim == 2:
@@ -207,6 +210,7 @@ class Sat(SatDer1, SatDer2):
                     
             elif self.method == 'lf' or self.method == 'llf' or self.method == 'lax_friedrichs':
                 if self.disc_type == 'div':
+                    print('Using the base LF SAT.')
                     if self.dim == 1:
                         self.calc = self.llf_div_1d
                         #self.calc_dfdq = self.llf_div_1d_dfdq
@@ -215,6 +219,7 @@ class Sat(SatDer1, SatDer2):
                     elif self.dim == 3:
                         self.calc = self.llf_div_3d
                 elif self.disc_type == 'had':
+                    print(f'Using the base Hadamard SAT with {solver.had_flux} flux and LF dissipation on conservative variables.')
                     if self.dim == 1:
                         self.calc = self.base_had_1d
                         self.diss = self.lf_diss_cons_1d
@@ -231,7 +236,7 @@ class Sat(SatDer1, SatDer2):
                 else:
                     if self.disc_type == 'had':
                         assert (self.method.lower()=='ec'),"Only entropy-conservative SATs set up for Hadamard formulation. Try surf_type='ec'."
-                        print('Using base EC Hadamard SAT.')
+                        print(f'Using the base Hadamard SAT with {solver.had_flux} flux and no dissipation.')
                         self.calc = self.base_had_1d
                         self.diss = lambda *x: 0
                     elif self.disc_type == 'div':
@@ -262,8 +267,67 @@ class Sat(SatDer1, SatDer2):
                             raise Exception("SAT type not understood. Try 'ec', 'es', 'ec_had', 'es_had', 'split', or 'split_diss'.")
 
             elif self.diffeq_name=='Quasi1dEuler':
-                assert(self.dim==1),'Something weird happened'  
-                #TODO           
+                if self.dim >= 2:
+                    raise Exception('Burgers equation SATs only set up for 1D!')
+                else:
+                    if self.disc_type == 'had':
+                        if self.method.lower()=='ec':
+                            print(f'Using the base Hadamard SAT with {solver.had_flux} flux and no dissipation.')
+                            self.calc = self.base_had_1d
+                            self.diss = lambda *x: 0
+                        elif self.method.lower()=='lf_cons3':
+                            print(f'Using the base Hadamard SAT with {solver.had_flux} flux and diablo LF3 on conservative variables.')
+                            self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
+                            self.calc = self.base_had_1d
+                            self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,3)
+                        elif self.method.lower()=='lf_cons4':
+                            print(f'Using the base Hadamard SAT with {solver.had_flux} flux and diablo LF4 on conservative variables.')
+                            self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
+                            self.calc = self.base_had_1d
+                            self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,4)
+                        elif self.method.lower()=='roe_cons1':
+                            print(f'Using the base Hadamard SAT with {solver.had_flux} flux and diablo Roe1 (Hicken fix) on conservative variables.')
+                            self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
+                            self.calc = self.base_had_1d
+                            self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,1)
+                        elif self.method.lower()=='roe_cons2' or self.method.lower()=='roe':
+                            print(f'Using the base Hadamard SAT with {solver.had_flux} flux and diablo Roe2 (entropy fix) on conservative variables.')
+                            self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
+                            self.calc = self.base_had_1d
+                            self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,2)
+                        elif self.method.lower()=='es':
+                            self.dEndw_abs = solver.diffeq.dEndw_abs
+                            self.entropy_var = solver.diffeq.entropy_var
+                            self.calc = self.base_had_1d
+                            self.diss = self.lf_diss_ent_matmat_1d
+                            print(f'Using the base Hadamard SAT with {solver.had_flux} flux and matrix-matrix dissipation on entropy variables.')
+                        else:
+                            raise Exception("SAT type not understood. Try 'ec', 'es', 'lf', 'lf_cons3', 'lf_cons4', 'roe_cons1', 'roe_cons2'.")
+                        
+                    else:
+                        if self.method.lower()=='lf_cons3':
+                            print(f'Using the base conservative SAT and diablo LF3 on conservative variables.')
+                            self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
+                            self.calc = self.central_div_1d_base
+                            self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D_2(qL,qR,3)
+                        elif self.method.lower()=='lf_cons4':
+                            print(f'Using the base conservative SAT and diablo LF4 on conservative variables.')
+                            self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
+                            self.calc = self.central_div_1d_base
+                            self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D_2(qL,qR,4)
+                        elif self.method.lower()=='roe_cons1':
+                            print(f'Using the base conservative SAT and diablo Roe1 (Hicken fix) on conservative variables.')
+                            self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
+                            self.calc = self.central_div_1d_base
+                            self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D_2(qL,qR,1)
+                        elif self.method.lower()=='roe_cons2' or self.method.lower()=='roe':
+                            print(f'Using the base conservative SAT and diablo Roe2 (entropy fix) on conservative variables.')
+                            self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
+                            self.calc = self.central_div_1d_base
+                            self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D_2(qL,qR,2)
+                        else:
+                            raise Exception("SAT type not understood. Try 'lf', 'lf_cons3', 'lf_cons4', 'roe_cons1', 'roe_cons2'.")
+
                     
 
             else:
@@ -404,6 +468,30 @@ class Sat(SatDer1, SatDer2):
 
     ''' Define the 2-point flux dissipation functions. For a conservative flux + dissipation '''
 
+    def diss_dEndq_eig_abs_dq_1D(self,qL,qR,flux_type):
+        ''' calculates dissipation calculates -0.5*abs(A)@(q-qg) using diffeq's dEndq_eig_abs_dq function '''
+        qLf = self.tRT @ qL
+        qRf = self.tLT @ qR
+        # remember that metric have been repeated neq times, unecessary here
+        metrics = fn.pad_1dR(self.bdy_metrics[::self.neq_node,0,:], self.bdy_metrics[::self.neq_node,1,-1])
+        A_q_jump = self.dEndq_eig_abs_dq(metrics, qRf, qLf, flux_type)
+        dissL = self.tL @ A_q_jump[:,:-1]
+        dissR = self.tR @ A_q_jump[:,1:]
+
+        diss = dissR - dissL # diablo function outputs 2 * negative of the convention used here
+        return diss
+    
+    def diss_dEndq_eig_abs_dq_1D_2(self,qLf,qRf,flux_type):
+        ''' calculates dissipation calculates -0.5*abs(A)@(q-qg) using diffeq's dEndq_eig_abs_dq function '''
+        # remember that metric have been repeated neq times, unecessary here
+        metrics = fn.pad_1dR(self.bdy_metrics[::self.neq_node,0,:], self.bdy_metrics[::self.neq_node,1,-1])
+        A_q_jump = self.dEndq_eig_abs_dq(metrics, qRf, qLf, flux_type)
+        dissL = self.tL @ A_q_jump[:,:-1]
+        dissR = self.tR @ A_q_jump[:,1:]
+
+        diss = dissR - dissL # diablo function outputs 2 * negative of the convention used here
+        return diss
+
     def lf_diss_cons_1d(self,qL,qR,avg='simple'):
         ''' lax-friedrichs dissipation in conservative variables '''
         qLf = self.tRT @ qL
@@ -424,6 +512,32 @@ class Sat(SatDer1, SatDer2):
         Lambda_q_jump = fn.gdiag_gv(Lambda, q_jump)
         dissL = self.tL @ Lambda_q_jump[:,:-1]
         dissR = self.tR @ Lambda_q_jump[:,1:]
+        
+        diss = (dissL - dissR)/2
+        return diss
+    
+    def lf_diss_ent_matmat_1d(self,qL,qR,avg='simple'):
+        ''' lax-friedrichs dissipation in entropy variables, matrix-matrix form '''
+        qLf = self.tRT @ qL
+        qRf = self.tLT @ qR
+        wLf = self.entropy_var(qLf)
+        wRf = self.entropy_var(qRf)
+        
+        w_jump = wRf - wLf
+        
+        if avg=='simple': # Alternatively, a Roe average can be used
+            q_avg = (qLf + qRf)/2
+        elif avg=='roe':
+            raise Exception('Roe Average not coded up yet')
+        else:
+            raise Exception('Averaging method not understood.')
+        
+        # remember that metric have been repeated neq times, unecessary here
+        metrics = fn.pad_1dR(self.bdy_metrics[::self.neq_node,0,:], self.bdy_metrics[::self.neq_node,1,-1])
+        A = self.dEndw_abs(q_avg,metrics)
+        A_w_jump = fn.gm_gv(A, w_jump)
+        dissL = self.tL @ A_w_jump[:,:-1]
+        dissR = self.tR @ A_w_jump[:,1:]
         
         diss = (dissL - dissR)/2
         return diss

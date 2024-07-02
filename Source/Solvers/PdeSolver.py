@@ -323,6 +323,13 @@ class PdeSolver:
         else:
             raise Exception('ERROR: t_final not understood,', self.t_final) 
         
+        if self.diffeq.nondimensionalize:
+            if self.diffeq.t_scale != 1.0:
+                print(f'WARNING: since nondimensionalizing, changing time from t_final and dt')
+                print(f'         from t_final={self.t_final} and dt={self.dt} to t_final={self.t_final * self.diffeq.t_scale} and dt={self.dt * self.diffeq.t_scale}.')
+                self.t_final = self.t_final * self.diffeq.t_scale
+                self.dt = self.dt * self.diffeq.t_scale
+        
         if self.diffeq.steady and not self.check_resid_conv:
             print('WARNING: Doing a steady solve with no residual checking. Consider setting check_resid_conv=True.')
         
@@ -426,7 +433,7 @@ class PdeSolver:
         end_time = time.time()
         self.simulation_time = end_time - stat_time
     
-    def calc_cons_obj(self, q):
+    def calc_cons_obj(self, q, t):
         '''
         Purpose
         ----------
@@ -447,7 +454,7 @@ class PdeSolver:
         cons_obj = np.zeros(self.n_cons_obj)
         
         if any('der' in name.lower() for name in self.cons_obj_name):
-            dqdt = self.dqdt(q) #TODO: Wildly inneficient. Can i get this from tm class?
+            dqdt = self.dqdt(q, t) #TODO: Wildly inneficient. Can i get this from tm class?
 
         for i in range(self.n_cons_obj):
             cons_obj_name_i = self.cons_obj_name[i].lower()
@@ -578,7 +585,7 @@ class PdeSolver:
                       cons_obj_name=self.cons_obj_name,
                       bool_plot_sol=self.bool_plot_sol, print_sol_norm=self.print_sol_norm)
         
-    def get_LHS(self, q=None, exact_dfdq=True, step=1.0e-4):
+    def get_LHS(self, q=None, t=0., exact_dfdq=True, step=1.0e-4):
         '''
         Either get the exact LHS operator on q if the problem is linear, or the
         linearization (LHS) of it at a particular state q. Either done exactly with
@@ -624,8 +631,8 @@ class PdeSolver:
                 for j in range(nelem):
                     ei = np.zeros((nen,nelem))
                     ei[i,j] = 1.*step
-                    q_r = self.dqdt(q+ei).flatten('F')
-                    q_l = self.dqdt(q-ei).flatten('F')
+                    q_r = self.dqdt(q+ei, t).flatten('F')
+                    q_l = self.dqdt(q-ei, t).flatten('F')
                     idx = np.where(ei.flatten('F')>step/10)[0][0]
                     A[:,idx] = (q_r - q_l)/(2*step)
         return A
@@ -634,7 +641,7 @@ class PdeSolver:
     def check_eigs(self, q=None, plot_eigs=True, returnA=False, exact_dfdq=True,
                    step=1.0e-4, tol=1.0e-10, savefile=None, ymin=None, ymax=None,
                    xmin=None, xmax=None, time=None, display_time=False, title=None, 
-                   save_format='png', dpi=600, colour_by_k=False, **kargs):
+                   save_format='png', dpi=600, colour_by_k=False, overwrite=False, **kargs):
         '''
         Call on self.diffeq.dqdt to check the stability of the spatial operator
         at a particular state q using central finite differences (approximate!).
@@ -679,6 +686,10 @@ class PdeSolver:
             print('Max eigenvalue within tolerance. STABLE.')
         else:
             print('Max eigenvalue exceeds tolerance. UNSTABLE.')
+
+        spec_rad = np.max(np.abs(eigs))
+        dt_max = 2.5/spec_rad
+        print(u"Assuming RK4, to remain stable (\u03bbh \u2264 2.5), should use dt \u2264", round(dt_max, -int(np.floor(np.log10(abs(dt_max/10))))))
             
         if plot_eigs:
             if colour_by_k:
@@ -768,7 +779,7 @@ class PdeSolver:
             plt.tight_layout()        
             if savefile is not None:
                 filename = savefile+'.'+save_format
-                if path.exists(filename):
+                if path.exists(filename) and not overwrite:
                     print('WARNING: File name already exists. Using a temporary name instead.')
                     plt.savefig(filename+'_RENAMEME', format=save_format, dpi=dpi)
                 else: 
@@ -845,11 +856,11 @@ class PdeSolver:
         q0 = self.diffeq.set_q0(q0_type=q0_type)
         
         if self.disc_type == 'fd':
-            rhs = self.diffeq.dqdt(q0)
-            self.dqdt = lambda q: self.diffeq.dqdt(q) - rhs
+            rhs = self.diffeq.dqdt(q0,0.)
+            self.dqdt = lambda q, t: self.diffeq.dqdt(q,t) - rhs
         elif self.disc_type == 'div' or self.disc_type == 'had':
-            rhs = self.dqdt_1d_div(q0) #TODO: Fix for had and 2D and 3D
-            self.dqdt = lambda q: self.dqdt_1d_div(q) - rhs           
+            rhs = self.dqdt_1d_div(q0,0.) #TODO: Fix for had and 2D and 3D
+            self.dqdt = lambda q, t: self.dqdt_1d_div(q,t) - rhs           
         elif self.disc_type == 'dg':
             if self.weak_form:
                 rhs = self.dg_dqdt_weak(q0)
@@ -931,7 +942,7 @@ class PdeSolver:
     
     def free_stream(self, print_result = True):
         ''' check free stream preservation '''
-        result = np.max(abs(self.dqdt(np.ones(self.qshape))))
+        result = np.max(abs(self.dqdt(np.ones(self.qshape),0.)))
         if print_result:
             print('Free Stream Preservation holds to a maximum of {0:.5g}'.format(result))
         else:
@@ -941,7 +952,7 @@ class PdeSolver:
         ''' check conservation '''
         if q is None:
             q = self.diffeq.set_q0()
-        dqdt = self.dqdt(q)
+        dqdt = self.dqdt(q,0.)
         result = self.conservation_der(dqdt)
         if print_result:
             print('Derivative of conservation is {0:.5g}'.format(result))

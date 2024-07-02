@@ -303,6 +303,27 @@ class MakeMesh:
             der = (1+self.warp_factor)/((1+self.warp_factor*np.abs(2*arg-1))**2)
             return der
         
+        def stretch_tanh(x):
+            ''' a tanh(x) function with constraints f(0)=0, f(0.5)=0.5, f(1) = 1 '''
+            assert(self.warp_factor>0 and self.warp_factor<1),'Invalid warp_factor. Use a value >0, <1'
+            a = 1./(1.- self.warp_factor*self.warp_factor) - 0.5
+            c = - np.arctanh(1/(2.0*a))
+            b = -2.0 * c
+            d = -a * np.tanh(c)
+            arg = (x-self.xmin)/self.dom_len
+            new_x = a * np.tanh(b * arg + c) + d
+            return new_x
+    
+        def stretch_tanh_der(x):
+            assert(self.warp_factor>0 and self.warp_factor<1),'Invalid warp_factor. Use a value >0, <1'
+            a = 1./(1.- self.warp_factor*self.warp_factor) - 0.5
+            c = - np.arctanh(1/(2.0*a))
+            b = -2.0 * c
+            d = -a * np.tanh(c)
+            arg = (x-self.xmin)/self.dom_len
+            der = a * b / (np.cosh(b * arg + c)**2 * self.dom_len)
+            return der
+        
         def stretch_corners(x):
             ''' stretches the corners but keeps the middle linear'''
             assert(self.xmin==0 and self.xmax==1),'Only set up for interval [0,1]'
@@ -394,6 +415,9 @@ class MakeMesh:
         elif self.warp_type == 'corners':
             warp_fun = stretch_corners
             warp_der = stretch_corners_der 
+        elif self.warp_type == 'tanh':
+            warp_fun = stretch_tanh
+            warp_der = stretch_tanh_der 
         else:
             print('WARNING: mesh.warp_type '+self.warp_type+' not understood. Reverting to default.')
             warp_fun = stretch_line
@@ -446,7 +470,7 @@ class MakeMesh:
             return dxdx, dxdy, dydx, dydy
         
         def warp_dcp(x,y):
-            ''' function from DCP ''' 
+            ''' function from DCP - pretty much the same as above''' 
             #assert self.warp_factor<0.24,'Try a warp_factor < 0.24 for this mesh transformation'
             argx = (x-self.xmin[0])/self.dom_len[0]
             argy = (y-self.xmin[1])/self.dom_len[1]
@@ -596,6 +620,26 @@ class MakeMesh:
             dydy = np.ones(np.shape(argx))
             return dxdx, dxdy, dydx, dydy
         
+        def warp_chan(x,y):
+            ''' 2d version of the transformation in chan and wilcox '''
+            ''' they used warp = 0.125 '''
+            argx = 2*(x-self.xmin[0])/self.dom_len[0] - 1
+            argy = 2*(y-self.xmin[1])/self.dom_len[1] - 1
+            new_x = x + self.warp_factor*self.dom_len[0]*np.cos(np.pi*argx/2)*np.cos(np.pi*argy/2)
+            new_y = y + self.warp_factor*self.dom_len[1]*np.cos(np.pi*argx/2)*np.cos(np.pi*argy/2)
+            return new_x,new_y
+            
+        def warp_chan_der(x,y):
+            ''' 2d version of the transformation in chan and wilcox '''
+            ''' they used warp = 0.125 '''
+            argx = 2*(x-self.xmin[0])/self.dom_len[0] - 1
+            argy = 2*(y-self.xmin[1])/self.dom_len[1] - 1
+            dxdx = 1.0 - np.pi*self.warp_factor*np.sin(np.pi*argx/2)*np.cos(np.pi*argy/2)
+            dxdy = - np.pi*self.warp_factor*self.dom_len[0]*np.cos(np.pi*argx/2)*np.sin(np.pi*argy/2)/self.dom_len[1]
+            dydx = - np.pi*self.warp_factor*self.dom_len[1]*np.sin(np.pi*argx/2)*np.cos(np.pi*argy/2)/self.dom_len[0]
+            dydy = 1.0 - np.pi*self.warp_factor*np.cos(np.pi*argx/2)*np.sin(np.pi*argy/2)
+            return dxdx, dxdy, dydx, dydy
+        
         # switch between different mappings here
         if self.warp_type == 'default' or self.warp_type == 'papers':
             warp_fun = warp_rectangle
@@ -621,6 +665,9 @@ class MakeMesh:
         elif self.warp_type == 'skew':
             warp_fun = warp_skew
             warp_der = warp_skew_der
+        elif self.warp_type == 'chan':
+            warp_fun = warp_chan
+            warp_der = warp_chan_der
         else:
             print('WARNING: mesh.warp_type not understood. Reverting to default.')
             warp_fun = warp_rectangle
@@ -782,18 +829,18 @@ class MakeMesh:
             return xn , yn, zn
         
         def warp_chan_der(x,y,z):
-            argx = (x-self.xmin[0])/self.dom_len[0]
-            argy = (y-self.xmin[1])/self.dom_len[1]     
-            argz = (z-self.xmin[2])/self.dom_len[2] 
-            dxndx = 1 - self.warp_factor*np.pi*0.5*np.sin(np.pi*argx/2.)*np.cos(np.pi*argy/2.)*np.cos(np.pi*argz/2.)
-            dxndy = - self.warp_factor*self.dom_len[0]/self.dom_len[1]*np.pi*0.5*np.cos(np.pi*argx/2.)*np.sin(np.pi*argy/2.)*np.cos(np.pi*argz/2.)
-            dxndz = - self.warp_factor*self.dom_len[0]/self.dom_len[2]*np.pi*0.5*np.cos(np.pi*argx/2.)*np.cos(np.pi*argy/2.)*np.sin(np.pi*argz/2.)
-            dyndx = - self.warp_factor*self.dom_len[1]/self.dom_len[0]*np.pi*0.5*np.sin(np.pi*argx/2.)*np.cos(np.pi*argy/2.)*np.cos(np.pi*argz/2.)
-            dyndy = 1 - self.warp_factor*np.pi*0.5*np.cos(np.pi*argx/2.)*np.sin(np.pi*argy/2.)*np.cos(np.pi*argz/2.)
-            dyndz = - self.warp_factor*self.dom_len[1]/self.dom_len[2]*np.pi*0.5*np.cos(np.pi*argx/2.)*np.cos(np.pi*argy/2.)*np.sin(np.pi*argz/2.)
-            dzndx = - self.warp_factor*np.pi*self.dom_len[2]/self.dom_len[0]*0.5*np.sin(np.pi*argx/2.)*np.cos(np.pi*argy/2.)*np.cos(np.pi*argz/2.)
-            dzndy = - self.warp_factor*self.dom_len[2]/self.dom_len[1]*np.pi*0.5*np.cos(np.pi*argx/2.)*np.sin(np.pi*argy/2.)*np.cos(np.pi*argz/2.)
-            dzndz = 1 - self.warp_factor*np.pi*0.5*np.cos(np.pi*argx/2.)*np.cos(np.pi*argy/2.)*np.sin(np.pi*argz/2.)
+            argx = 2*(x-self.xmin[0])/self.dom_len[0] - 1
+            argy = 2*(y-self.xmin[1])/self.dom_len[1] - 1     
+            argz = 2*(z-self.xmin[2])/self.dom_len[2] - 1 
+            dxndx = 1 - self.warp_factor*np.pi*np.sin(np.pi*argx/2.)*np.cos(np.pi*argy/2.)*np.cos(np.pi*argz/2.)
+            dxndy = - self.warp_factor*self.dom_len[0]/self.dom_len[1]*np.pi*np.cos(np.pi*argx/2.)*np.sin(np.pi*argy/2.)*np.cos(np.pi*argz/2.)
+            dxndz = - self.warp_factor*self.dom_len[0]/self.dom_len[2]*np.pi*np.cos(np.pi*argx/2.)*np.cos(np.pi*argy/2.)*np.sin(np.pi*argz/2.)
+            dyndx = - self.warp_factor*self.dom_len[1]/self.dom_len[0]*np.pi*np.sin(np.pi*argx/2.)*np.cos(np.pi*argy/2.)*np.cos(np.pi*argz/2.)
+            dyndy = 1 - self.warp_factor*np.pi*np.cos(np.pi*argx/2.)*np.sin(np.pi*argy/2.)*np.cos(np.pi*argz/2.)
+            dyndz = - self.warp_factor*self.dom_len[1]/self.dom_len[2]*np.pi*np.cos(np.pi*argx/2.)*np.cos(np.pi*argy/2.)*np.sin(np.pi*argz/2.)
+            dzndx = - self.warp_factor*np.pi*self.dom_len[2]/self.dom_len[0]*np.sin(np.pi*argx/2.)*np.cos(np.pi*argy/2.)*np.cos(np.pi*argz/2.)
+            dzndy = - self.warp_factor*self.dom_len[2]/self.dom_len[1]*np.pi*np.cos(np.pi*argx/2.)*np.sin(np.pi*argy/2.)*np.cos(np.pi*argz/2.)
+            dzndz = 1 - self.warp_factor*np.pi*np.cos(np.pi*argx/2.)*np.cos(np.pi*argy/2.)*np.sin(np.pi*argz/2.)
             return dxndx, dxndy, dxndz, dyndx, dyndy, dyndz, dzndx, dzndy, dzndz
         
         def warp_quad(x,y,z):
@@ -1122,17 +1169,18 @@ class MakeMesh:
             ax.hlines(0.35,self.xmin,self.xmax,color='black',lw=1)  # Draw a horizontal line at y=1
             ax.set_xlim(self.xmin-self.dom_len/100,self.xmax+self.dom_len/100)
             ax.set_ylim(0,1)
+
+            ax.axes.get_yaxis().set_visible(False) # turn off y axis 
+            ax.plot(self.vertices,0.35*np.ones(self.nelem+1),'|',ms=20,color='black',lw=1)  # Plot a line at each location specified in a
             
-            if nodes:
-                ax.plot(self.x,0.35*np.ones(self.nn),'o',color='blue',ms=markersize)
-                #ax.plot(self.x[:-1],0.35*np.ones(self.nn-1),'o',color='blue',ms=markersize)
-                
             if bdy_nodes:
                 ax.plot(self.bdy_x,0.35*np.ones(self.bdy_x.shape),'s',color='red',ms=markersize)
                 #ax.plot(self.bdy_x[0],0.35,'s',color='red',ms=markersize)
+
+            if nodes:
+                ax.plot(self.x,0.35*np.ones(self.nn),'o',color='blue',ms=markersize)
+                #ax.plot(self.x[:-1],0.35*np.ones(self.nn-1),'o',color='blue',ms=markersize)
             
-            ax.axes.get_yaxis().set_visible(False) # turn off y axis 
-            ax.plot(self.vertices,0.35*np.ones(self.nelem+1),'|',ms=20,color='black',lw=1)  # Plot a line at each location specified in a
             if label and label_all_lines:
                 ax.tick_params(axis='x',length=0,labelsize=fontsize) # hide x ticks
                 ax.set_xticks(self.vertices) # label element boundaries
@@ -1152,15 +1200,18 @@ class MakeMesh:
             
             ax.set_xlim(xmin-self.dom_len[0]/100,xmax+self.dom_len[0]/100)
             ax.set_ylim(ymin-self.dom_len[1]/100,ymax+self.dom_len[1]/100)
-            
-            if nodes:
-                ax.scatter(self.xy[:,0],self.xy[:,1],marker='o',c='blue',s=markersize)
-                
-            if bdy_nodes:
-                ax.scatter(self.bdy_xy[:,0,:,:],self.bdy_xy[:,1,:,:],marker='s',color='red',s=markersize)
-    
+
             for line in self.grid_lines:
                 ax.plot(line[0],line[1],color='black',lw=1)
+
+            if bdy_nodes:
+                #ax.scatter(self.bdy_xy[:,0,:,:],self.bdy_xy[:,1,:,:],marker='o',color='r',s=4)
+                ax.scatter(self.bdy_xy[:,0,:,:],self.bdy_xy[:,1,:,:],marker='s',color='red',s=markersize)
+            
+            if nodes:
+                #ax.scatter(self.xy[:,0],self.xy[:,1],marker='s',c='b',s=9)
+                ax.scatter(self.xy[:,0],self.xy[:,1],marker='o',c='blue',s=markersize)
+    
             if label and label_all_lines:
                 ax.tick_params(axis='both',length=0,labelsize=fontsize) # hide ticks
                 edge_verticesx = np.linspace(self.xmin[0],self.xmax[0],self.nelem[0]+1)

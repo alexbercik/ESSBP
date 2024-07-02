@@ -9,6 +9,7 @@ Created on Mon Mar 4 2024
 
 import numpy as np
 import Source.Methods.Functions as fn
+from Source.Disc.DissOp import BaselineDiss, make_dcp_diss_op
 
 
 class ADiss():
@@ -59,25 +60,26 @@ class ADiss():
             else:
                 self.jac_type = None
             
-            if 's' in self.solver.vol_diss.keys():
-                self.s = self.solver.vol_diss['s']
-                if self.s is None:
+            if not (self.solver.disc_nodes.lower() == 'upwind' and self.type.lower() == 'upwind'):
+                if 's' in self.solver.vol_diss.keys():
+                    self.s = self.solver.vol_diss['s']
+                    if self.s is None:
+                        print('WARNING: No s provided to artificial dissipation. Defaulting to s=p')
+                        self.s = self.solver.p
+                    elif self.s == 'p':
+                        self.s = self.solver.p
+                    elif self.s == 'p+1':
+                        self.s = self.solver.p + 1
+                    elif self.s == '2p-1':
+                        self.s = 2*self.solver.p - 1
+                    elif self.s == '2p':
+                        self.s = 2*self.solver.p
+                    elif self.s == '2p+1':
+                        self.s = 2*self.solver.p + 1
+                    assert isinstance(self.s, int), 'Artificial Dissipation: s must be an integer, {0}'.format(self.s)
+                else:
                     print('WARNING: No s provided to artificial dissipation. Defaulting to s=p')
                     self.s = self.solver.p
-                elif self.s == 'p':
-                    self.s = self.solver.p
-                elif self.s == 'p+1':
-                    self.s = self.solver.p + 1
-                elif self.s == '2p-1':
-                    self.s = 2*self.solver.p - 1
-                elif self.s == '2p':
-                    self.s = 2*self.solver.p
-                elif self.s == '2p+1':
-                    self.s = 2*self.solver.p + 1
-                assert isinstance(self.s, int), 'Artificial Dissipation: s must be an integer, {0}'.format(self.s)
-            else:
-                print('WARNING: No s provided to artificial dissipation. Defaulting to s=p')
-                self.s = self.solver.p
 
             if 'coeff' in  self.solver.vol_diss.keys():
                 assert isinstance(self.solver.vol_diss['coeff'], float), 'Artificial Dissipation: coeff must be a float, {0}'.format(self.solver.vol_diss['coeff'])
@@ -137,10 +139,31 @@ class ADiss():
 
 
         elif self.type.lower() == 'b':
-            raise Exception('TODO')
+            if self.jac_type.lower() == 'scalar':
+                self.dissipation = lambda q: self.dissipation_B_scalar(q,self.coeff)
+            else:
+                print("WARNING: Only scalar dissipation set up for type='B' dissipation. Defaulting to jac_type = 'scalar'.")
+                self.jac_type = 'scalar'
+                self.dissipation = lambda q: self.dissipation_B_scalar(q,self.coeff)
         
         elif self.type.lower() == 'entb':
-            raise Exception('TODO')
+            self.entropy_var = self.solver.diffeq.entropy_var
+            self.dqdw = self.solver.diffeq.dqdw
+            if self.neq_node == 1:
+                assert((self.jac_type.lower() == 'scalar') or (self.jac_type.lower() == 'scalar')),'scalar equations must have scalar dissipation'
+                self.dissipation = lambda q: self.dissipation_entB_scalar(q,self.coeff)
+            else:
+                if self.jac_type.lower() == 'scalarscalar':
+                    self.dissipation = lambda q: self.dissipation_entB_scalarscalar(q,self.coeff)
+                elif self.jac_type.lower() == 'scalarmatrix':
+                    self.dissipation = lambda q: self.dissipation_entB_scalarmatrix(q,self.coeff)
+                elif self.jac_type.lower() == 'matrixmatrix':
+                    self.dissipation = lambda q: self.dissipation_entB_matrixmatrix(q,self.coeff)
+                    self.dEndw_abs = self.solver.diffeq.dEndw_abs
+                else:
+                    print("WARNING: jac method not understood for type='entB' dissipation. Defaulting to jac_type = 'scalarscalar'.")
+                    self.jac_type = 'scalarscalar'
+                    self.dissipation = lambda q: self.dissipation_entB_scalarscalar(q,self.coeff)
         
         elif self.type.lower() == 'dcp':
             if self.jac_type.lower() == 'scalar':
@@ -172,6 +195,14 @@ class ADiss():
         elif self.type.lower() == 'upwind':
             if self.fluxvec.lower() == 'lf':
                 self.dissipation = lambda q: self.dissipation_upwind_lf(q,self.coeff)
+            elif self.fluxvec.lower() == 'sw' or self.fluxvec.lower()=='stegerwarming':
+                if self.dim == 1: 
+                    from Source.DiffEq.EulerFunctions import StegerWarming_diss_1D
+                    self.stegerwarming = StegerWarming_diss_1D
+                elif self.dim == 2: 
+                    from Source.DiffEq.EulerFunctions import StegerWarming_diss_2D
+                    self.stegerwarming = StegerWarming_diss_2D
+                self.dissipation = lambda q: self.dissipation_upwind_stegerwarming(q,self.coeff)
             else:
                 print("WARNING: fluxvec method not understood. Defaulting to fluxvec = 'lf'.")
                 self.fluxvec = 'lf'
@@ -200,12 +231,12 @@ class ADiss():
             #self.lhs_D = fn.gdiag_gm(-(self.solver.H_inv_phys * xavg**(2*self.s-1)), DsT * self.solver.H_phys)
             self.lhs_D = fn.gdiag_lm(-(self.solver.H_inv_phys * xavg**(2*self.s-1)),fn.kron_neq_lm(DsT @ self.solver.sbp.H,self.neq_node))
         elif self.type.lower() == 'dcp' or self.type.lower() == 'entdcp':
-            Ds, B = self.make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen)
+            Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen)
             self.rhs_D = fn.kron_neq_lm(Ds,self.neq_node) 
-            self.lhs_D = fn.gdiag_lm(-(self.solver.H_inv_phys/xavg),fn.kron_neq_lm(Ds.T @ np.diag(B) @ self.solver.sbp.H,self.neq_node))
+            self.lhs_D = fn.gdiag_lm(-(self.solver.H_inv_phys/xavg),fn.kron_neq_lm(Ds.T @ np.diag(B) @ self.solver.sbp.H, self.neq_node))
         elif self.type.lower() == 'upwind':
             if self.solver.disc_nodes.lower() == 'upwind':
-                Ddiss = fn.kron_neq_lm(self.solver.sbp.Ddiss,self.neq_node) 
+                Ddiss = self.solver.sbp.Ddiss
             else:
                 from Source.Disc.UpwindOp import UpwindOp
                 _,_,_,_,H,_,_,_,_,x,Ddiss = UpwindOp(self.s,self.nen)
@@ -215,7 +246,75 @@ class ADiss():
                     print(x)
                 if np.any(abs(H - self.solver.sbp.H) > 1e-14):
                     print('WARNING: H of sbp operator does not match H of dissipation operator! Not provably stable.')
-            self.Ddiss = fn.gdiag_lm( - self.solver.mesh.det_jac_inv, fn.kron_neq_lm(Ddiss,self.neq_node))
+            self.Ddiss = fn.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), fn.kron_neq_lm(Ddiss,self.neq_node))
+        elif self.type.lower() == 'b' or self.type.lower() == 'entb':
+            D = BaselineDiss(self.s, self.nen)
+            if self.s == 1:
+                D.updateD1()
+                D.updateD2()
+                D.updateB1()
+                D.updateB2()
+                self.rhs_D1 = fn.kron_neq_lm(D.D1,self.neq_node) 
+                self.rhs_D2 = fn.kron_neq_lm(D.D2,self.neq_node)
+                self.lhs_D1 = fn.gdiag_lm(-(self.solver.H_inv_phys/xavg),fn.kron_neq_lm(D.D1.T @ D.B1 @ self.solver.sbp.H, self.neq_node))
+                self.lhs_D2 = fn.gdiag_lm(-(self.solver.H_inv_phys/xavg),fn.kron_neq_lm(D.D2.T @ D.B2 @ self.solver.sbp.H, self.neq_node))
+            elif self.s == 2:
+                D.updateD1()
+                D.updateD3()
+                D.updateD4()
+                D.updateB1()
+                D.updateB3()
+                D.updateB4()
+                D2 = D.D1 @ D.D1
+                self.rhs_D2 = fn.kron_neq_lm(D2,self.neq_node) 
+                self.rhs_D3 = fn.kron_neq_lm(D.D3,self.neq_node)
+                self.rhs_D4 = fn.kron_neq_lm(D.D4,self.neq_node)
+                self.lhs_D2 = fn.gdiag_lm(-(self.solver.H_inv_phys/xavg),fn.kron_neq_lm(D2.T @ D.B1 @ self.solver.sbp.H, self.neq_node))
+                self.lhs_D3 = 0.5 * fn.gdiag_lm(-(self.solver.H_inv_phys/xavg),fn.kron_neq_lm(D.D3.T @ D.B3 @ self.solver.sbp.H, self.neq_node))
+                self.lhs_D4 = 0.0625 * fn.gdiag_lm(-(self.solver.H_inv_phys/xavg),fn.kron_neq_lm(D.D4.T @ D.B4 @ self.solver.sbp.H, self.neq_node))
+            elif self.s == 3:
+                D.updateD1()
+                D.updateD4()
+                D.updateD5()
+                D.updateD6()
+                D.updateB1()
+                D.updateB4()
+                D.updateB5()
+                D.updateB6()
+                D3 = D.D1 @ D.D1 @ D.D1
+                self.rhs_D3 = fn.kron_neq_lm(D3,self.neq_node) 
+                self.rhs_D4 = fn.kron_neq_lm(D.D4,self.neq_node)
+                self.rhs_D5 = fn.kron_neq_lm(D.D5,self.neq_node)
+                self.rhs_D6 = fn.kron_neq_lm(D.D6,self.neq_node)
+                self.lhs_D3 = fn.gdiag_lm(-(self.solver.H_inv_phys/xavg),fn.kron_neq_lm(D3.T @ D.B1 @ self.solver.sbp.H, self.neq_node))
+                self.lhs_D4 = 0.75 * fn.gdiag_lm(-(self.solver.H_inv_phys/xavg),fn.kron_neq_lm(D.D4.T @ D.B4 @ self.solver.sbp.H, self.neq_node))
+                self.lhs_D5 = 0.3125 * fn.gdiag_lm(-(self.solver.H_inv_phys/xavg),fn.kron_neq_lm(D.D5.T @ D.B5 @ self.solver.sbp.H, self.neq_node))
+                self.lhs_D6 = (1./96.) * fn.gdiag_lm(-(self.solver.H_inv_phys/xavg),fn.kron_neq_lm(D.D6.T @ D.B6 @ self.solver.sbp.H, self.neq_node))
+            elif self.s == 4:
+                D.updateD1()
+                D.updateD5()
+                D.updateD6()
+                D.updateD7()
+                D.updateD8()
+                D.updateB1()
+                D.updateB5()
+                D.updateB6()
+                D.updateB7()
+                D.updateB8()
+                D4 = D.D1 @ D.D1 @ D.D1 @ D.D1
+                self.rhs_D4 = fn.kron_neq_lm(D4,self.neq_node) 
+                self.rhs_D5 = fn.kron_neq_lm(D.D5,self.neq_node)
+                self.rhs_D6 = fn.kron_neq_lm(D.D6,self.neq_node)
+                self.rhs_D7 = fn.kron_neq_lm(D.D7,self.neq_node)
+                self.rhs_D8 = fn.kron_neq_lm(D.D8,self.neq_node)
+                self.lhs_D4 = fn.gdiag_lm(-(self.solver.H_inv_phys/xavg),fn.kron_neq_lm(D4.T @ D.B1 @ self.solver.sbp.H, self.neq_node))
+                self.lhs_D5 = fn.gdiag_lm(-(self.solver.H_inv_phys/xavg),fn.kron_neq_lm(D.D5.T @ D.B5 @ self.solver.sbp.H, self.neq_node))
+                self.lhs_D6 = 0.875 * fn.gdiag_lm(-(self.solver.H_inv_phys/xavg),fn.kron_neq_lm(D.D6.T @ D.B6 @ self.solver.sbp.H, self.neq_node))
+                self.lhs_D7 = 0.0875 * fn.gdiag_lm(-(self.solver.H_inv_phys/xavg),fn.kron_neq_lm(D.D7.T @ D.B7 @ self.solver.sbp.H, self.neq_node))
+                self.lhs_D8 = 0.00171875 * fn.gdiag_lm(-(self.solver.H_inv_phys/xavg),fn.kron_neq_lm(D.D8.T @ D.B8 @ self.solver.sbp.H, self.neq_node))
+            else:
+                raise ValueError('only s=1,2,3,4 coded up for baseline dissipation.')
+
         else:
             raise Exception(self.type + ' not set up yet')
         
@@ -240,7 +339,7 @@ class ADiss():
             self.lhs_Dxi = fn.kron_neq_gm(fn.gdiag_lm(-(self.solver.H_inv_phys * xavg**(2*self.s-1)),DsTxi),self.neq_node) 
             self.lhs_Deta = fn.kron_neq_gm(fn.gdiag_lm(-(self.solver.H_inv_phys * xavg**(2*self.s-1)),DsTeta),self.neq_node) 
         elif self.type == 'dcp':
-            Ds, B = self.make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen)
+            Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen)
             eye = np.eye(self.mesh.nen)
             self.rhs_Dxi = fn.kron_neq_lm(np.kron(Ds, eye),self.neq_node) 
             self.rhs_Deta = fn.kron_neq_lm(np.kron(eye, Ds),self.neq_node) 
@@ -261,8 +360,8 @@ class ADiss():
                 if np.any(abs(H - self.solver.sbp.H) > 1e-14):
                     print('WARNING: H of sbp operator does not match H of dissipation operator! Not provably stable.')
             eye = np.eye(self.mesh.nen)
-            self.Dxidiss = fn.gdiag_lm( - self.solver.mesh.det_jac_inv, fn.kron_neq_lm(np.kron(Ddiss, eye),self.neq_node)) 
-            self.Detadiss = fn.gdiag_lm( - self.solver.mesh.det_jac_inv, fn.kron_neq_lm(np.kron(eye, Ddiss),self.neq_node))
+            self.Dxidiss = fn.gdiag_lm( fn.repeat_neq_gv(-self.solver.det_jac_inv), fn.kron_neq_lm(np.kron(Ddiss, eye),self.neq_node)) 
+            self.Detadiss = fn.gdiag_lm( fn.repeat_neq_gv(-self.solver.det_jac_inv), fn.kron_neq_lm(np.kron(eye, Ddiss),self.neq_node))
         else:
             raise Exception(self.type + ' not set up yet')
 
@@ -293,6 +392,20 @@ class ADiss():
             A = fn.repeat_neq_gv(maxeig,self.neq_node)
             diss += fn.gm_gv(self.Dzetadiss, A * q) # zeta part
         return coeff*diss
+    
+    def dissipation_upwind_stegerwarming(self, q, coeff=1.):
+        ''' dissipation function for upwind steger warming flux-vector splitting'''
+        if self.dim == 1:
+            fdiss = self.stegerwarming(q,self.dxidx)
+            diss = fn.gm_gv(self.Ddiss, fdiss)
+        elif self.dim == 2:
+            fdiss = self.stegerwarming(q,self.dxidx)
+            diss = fn.gm_gv(self.Dxidiss, fdiss) # xi part
+            fdiss = self.stegerwarming(q,self.detadx)
+            diss += fn.gm_gv(self.Detadiss, fdiss) # eta part
+        elif self.dim == 3:
+            diss = 0.
+        return coeff*diss
 
     def dissipation_W_scalar(self, q, coeff=0.1):
         ''' dissipation function for wide interior stencils, scalar functions or systems'''
@@ -319,39 +432,71 @@ class ADiss():
             diss += fn.gm_gv(self.lhs_Dzeta, A * (self.rhs_Dzeta @ q)) # zeta part
         return coeff*diss
     
+    def dissipation_B_scalar(self, q, coeff=0.1):
+        ''' DCP 2018 dissipation function for narrow interior stencils, scalar functions or systems'''
+        if self.dim == 1:
+            maxeig = self.maxeig_dEndq(q,self.dxidx)
+            A = fn.repeat_neq_gv(maxeig,self.neq_node)
+            if self.s == 1:
+                diss = fn.gm_gv(self.lhs_D1, A * (self.rhs_D1 @ q)) + \
+                       fn.gm_gv(self.lhs_D2, A * (self.rhs_D2 @ q))
+            elif self.s == 2:
+                diss = fn.gm_gv(self.lhs_D2, A * (self.rhs_D2 @ q)) + \
+                       fn.gm_gv(self.lhs_D3, A * (self.rhs_D3 @ q)) + \
+                       fn.gm_gv(self.lhs_D4, A * (self.rhs_D4 @ q))
+            elif self.s == 3:
+                diss = fn.gm_gv(self.lhs_D3, A * (self.rhs_D3 @ q)) + \
+                       fn.gm_gv(self.lhs_D4, A * (self.rhs_D4 @ q)) + \
+                       fn.gm_gv(self.lhs_D5, A * (self.rhs_D5 @ q)) + \
+                       fn.gm_gv(self.lhs_D6, A * (self.rhs_D6 @ q))
+            elif self.s == 4:
+                diss = fn.gm_gv(self.lhs_D4, A * (self.rhs_D4 @ q)) + \
+                       fn.gm_gv(self.lhs_D5, A * (self.rhs_D5 @ q)) + \
+                       fn.gm_gv(self.lhs_D6, A * (self.rhs_D6 @ q)) + \
+                       fn.gm_gv(self.lhs_D7, A * (self.rhs_D7 @ q)) + \
+                       fn.gm_gv(self.lhs_D8, A * (self.rhs_D8 @ q))
+            else:
+                raise ValueError('only s=1,2,3,4 coded up for baseline dissipation.')
+        elif self.dim == 2:
+            raise Exception('TODO')
+        elif self.dim == 3:
+            raise Exception('TODO')
+        return coeff*diss
+    
     def dissipation_dcp_scalar(self, q, coeff=0.1):
         ''' dissipation function for DCP's narrow interior stencils, scalar functions or systems'''
         # TODO: for now we always take a simple sum at half-nodes, but should generalize.
+        avg_half_nodes = False
         if self.dim == 1:
             maxeig = self.maxeig_dEndq(q,self.dxidx)
-            if self.s % 2 == 1:
+            if self.s % 2 == 1 and avg_half_nodes:
                 maxeig[:-1] = 0.5*(maxeig[:-1] + maxeig[1:])
             A = fn.repeat_neq_gv(maxeig,self.neq_node)
             diss = fn.gm_gv(self.lhs_D, A * (self.rhs_D @ q))
         elif self.dim == 2:
             maxeig = self.maxeig_dEndq(q,self.dxidx)
-            if self.s % 2 == 1:
+            if self.s % 2 == 1 and avg_half_nodes:
                 maxeig[:-1] = 0.5*(maxeig[:-1] + maxeig[1:])
             A = fn.repeat_neq_gv(maxeig,self.neq_node)
             diss = fn.gm_gv(self.lhs_Dxi, A * (self.rhs_Dxi @ q)) # xi part
             maxeig = self.maxeig_dEndq(q,self.detadx)
-            if self.s % 2 == 1:
+            if self.s % 2 == 1 and avg_half_nodes:
                 maxeig[:-1] = 0.5*(maxeig[:-1] + maxeig[1:])
             A = fn.repeat_neq_gv(maxeig,self.neq_node)
             diss += fn.gm_gv(self.lhs_Deta, A * (self.rhs_Deta @ q)) # eta part
         elif self.dim == 3:
             maxeig = self.maxeig_dEndq(q,self.dxidx)
-            if self.s % 2 == 1:
+            if self.s % 2 == 1 and avg_half_nodes:
                 maxeig[:-1] = 0.5*(maxeig[:-1] + maxeig[1:])
             A = fn.repeat_neq_gv(maxeig,self.neq_node)
             diss = fn.gm_gv(self.lhs_Dxi, A * (self.rhs_Dxi @ q)) # xi part
             maxeig = self.maxeig_dEndq(q,self.detadx)
-            if self.s % 2 == 1:
+            if self.s % 2 == 1 and avg_half_nodes:
                 maxeig[:-1] = 0.5*(maxeig[:-1] + maxeig[1:])
             A = fn.repeat_neq_gv(maxeig,self.neq_node)
             diss += fn.gm_gv(self.lhs_Deta, A * (self.rhs_Deta @ q)) # eta part
             maxeig = self.maxeig_dEndq(q,self.dzetadx)
-            if self.s % 2 == 1:
+            if self.s % 2 == 1 and avg_half_nodes:
                 maxeig[:-1] = 0.5*(maxeig[:-1] + maxeig[1:])
             A = fn.repeat_neq_gv(maxeig,self.neq_node)
             diss += fn.gm_gv(self.lhs_Dzeta, A * (self.rhs_Dzeta @ q)) # zeta part
@@ -377,23 +522,57 @@ class ADiss():
 
         return coeff*diss
     
+    def dissipation_entB_scalar(self, q, coeff=0.1):
+        ''' DCP 2018 dissipation function for narrow interior stencils, scalar functions'''
+        w = self.entropy_var(q)
+        dqdw = self.dqdw(q)
+        if self.dim == 1:
+            maxeig = self.maxeig_dEndq(q,self.dxidx)
+            A = maxeig*dqdw
+            if self.s == 1:
+                diss = fn.gm_gv(self.lhs_D1, A * (self.rhs_D1 @ w)) + \
+                       fn.gm_gv(self.lhs_D2, A * (self.rhs_D2 @ w))
+            elif self.s == 2:
+                diss = fn.gm_gv(self.lhs_D2, A * (self.rhs_D2 @ w)) + \
+                       fn.gm_gv(self.lhs_D3, A * (self.rhs_D3 @ w)) + \
+                       fn.gm_gv(self.lhs_D4, A * (self.rhs_D4 @ w))
+            elif self.s == 3:
+                diss = fn.gm_gv(self.lhs_D3, A * (self.rhs_D3 @ w)) + \
+                       fn.gm_gv(self.lhs_D4, A * (self.rhs_D4 @ w)) + \
+                       fn.gm_gv(self.lhs_D5, A * (self.rhs_D5 @ w)) + \
+                       fn.gm_gv(self.lhs_D6, A * (self.rhs_D6 @ w))
+            elif self.s == 4:
+                diss = fn.gm_gv(self.lhs_D4, A * (self.rhs_D4 @ w)) + \
+                       fn.gm_gv(self.lhs_D5, A * (self.rhs_D5 @ w)) + \
+                       fn.gm_gv(self.lhs_D6, A * (self.rhs_D6 @ w)) + \
+                       fn.gm_gv(self.lhs_D7, A * (self.rhs_D7 @ w)) + \
+                       fn.gm_gv(self.lhs_D8, A * (self.rhs_D8 @ w))
+            else:
+                raise ValueError('only s=1,2,3,4 coded up for baseline dissipation.')
+        elif self.dim == 2:
+            raise Exception('TODO')
+        elif self.dim == 3:
+            raise Exception('TODO')
+        return coeff*diss
+    
     def dissipation_entdcp_scalar(self, q, coeff=0.1):
         ''' dissipation function for DCP's narrow interior stencils, entropy-stable scalar functions'''
         # TODO: for now we always take a simple sum at half-nodes, but should generalize.
+        avg_half_nodes = False
         w = self.entropy_var(q)
         dqdw = self.dqdw(q)
         if self.dim == 1:
             maxeig = self.maxeig_dEndq(q,self.dxidx) * dqdw
-            if self.s % 2 == 1:
+            if self.s % 2 == 1 and avg_half_nodes:
                 maxeig[:-1] = 0.5*(maxeig[:-1] + maxeig[1:])
             diss = fn.gm_gv(self.lhs_D, maxeig * (self.rhs_D @ w))
         elif self.dim == 2:
             maxeig = self.maxeig_dEndq(q,self.dxidx) * dqdw
-            if self.s % 2 == 1:
+            if self.s % 2 == 1 and avg_half_nodes:
                 maxeig[:-1] = 0.5*(maxeig[:-1] + maxeig[1:])
             diss = fn.gm_gv(self.lhs_Dxi, maxeig * (self.rhs_Dxi @ w)) # xi part
             maxeig = self.maxeig_dEndq(q,self.detadx) * dqdw
-            if self.s % 2 == 1:
+            if self.s % 2 == 1 and avg_half_nodes:
                 maxeig[:-1] = 0.5*(maxeig[:-1] + maxeig[1:])
             diss += fn.gm_gv(self.lhs_Deta, maxeig * (self.rhs_Deta @ w)) # eta part
         elif self.dim == 3:
@@ -420,26 +599,61 @@ class ADiss():
             raise Exception('TODO')
         return coeff*diss
     
+    def dissipation_entB_scalarscalar(self, q, coeff=0.1):
+        ''' DCP 2018 dissipation function for narrow interior stencils, scalar-scalar systems'''
+        w = self.entropy_var(q)
+        dqdw = self.dqdw(q)
+        rho = fn.spec_rad(dqdw,self.neq_node)
+        if self.dim == 1:
+            maxeig = self.maxeig_dEndq(q,self.dxidx)
+            A = fn.repeat_neq_gv(maxeig*rho,self.neq_node)
+            if self.s == 1:
+                diss = fn.gm_gv(self.lhs_D1, A * (self.rhs_D1 @ w)) + \
+                       fn.gm_gv(self.lhs_D2, A * (self.rhs_D2 @ w))
+            elif self.s == 2:
+                diss = fn.gm_gv(self.lhs_D2, A * (self.rhs_D2 @ w)) + \
+                       fn.gm_gv(self.lhs_D3, A * (self.rhs_D3 @ w)) + \
+                       fn.gm_gv(self.lhs_D4, A * (self.rhs_D4 @ w))
+            elif self.s == 3:
+                diss = fn.gm_gv(self.lhs_D3, A * (self.rhs_D3 @ w)) + \
+                       fn.gm_gv(self.lhs_D4, A * (self.rhs_D4 @ w)) + \
+                       fn.gm_gv(self.lhs_D5, A * (self.rhs_D5 @ w)) + \
+                       fn.gm_gv(self.lhs_D6, A * (self.rhs_D6 @ w))
+            elif self.s == 4:
+                diss = fn.gm_gv(self.lhs_D4, A * (self.rhs_D4 @ w)) + \
+                       fn.gm_gv(self.lhs_D5, A * (self.rhs_D5 @ w)) + \
+                       fn.gm_gv(self.lhs_D6, A * (self.rhs_D6 @ w)) + \
+                       fn.gm_gv(self.lhs_D7, A * (self.rhs_D7 @ w)) + \
+                       fn.gm_gv(self.lhs_D8, A * (self.rhs_D8 @ w))
+            else:
+                raise ValueError('only s=1,2,3,4 coded up for baseline dissipation.')
+        elif self.dim == 2:
+            raise Exception('TODO')
+        elif self.dim == 3:
+            raise Exception('TODO')
+        return coeff*diss
+    
     def dissipation_entdcp_scalarscalar(self, q, coeff=0.1):
         ''' dissipation function for DCP's narrow interior stencils, entropy-stable systems'''
         # TODO: for now we always take a simple sum at half-nodes, but should generalize.
+        avg_half_nodes = False
         w = self.entropy_var(q)
         dqdw = self.dqdw(q)
         rho = fn.spec_rad(dqdw,self.neq_node)
         if self.dim == 1:
             maxeig = self.maxeig_dEndq(q,self.dxidx) * rho
-            if self.s % 2 == 1:
+            if self.s % 2 == 1 and avg_half_nodes:
                 maxeig[:-1] = 0.5*(maxeig[:-1] + maxeig[1:])
             A = fn.repeat_neq_gv(maxeig,self.neq_node)
             diss = fn.gm_gv(self.lhs_D, A * (self.rhs_D @ w))
         elif self.dim == 2:
             maxeig = self.maxeig_dEndq(q,self.dxidx) * rho
-            if self.s % 2 == 1:
+            if self.s % 2 == 1 and avg_half_nodes:
                 maxeig[:-1] = 0.5*(maxeig[:-1] + maxeig[1:])
             A = fn.repeat_neq_gv(maxeig,self.neq_node)
             diss = fn.gm_gv(self.lhs_Dxi, A * (self.rhs_Dxi @ w)) # xi part
             maxeig = self.maxeig_dEndq(q,self.detadx) * rho
-            if self.s % 2 == 1:
+            if self.s % 2 == 1 and avg_half_nodes:
                 maxeig[:-1] = 0.5*(maxeig[:-1] + maxeig[1:])
             A = fn.repeat_neq_gv(maxeig,self.neq_node)
             diss += fn.gm_gv(self.lhs_Deta, A * (self.rhs_Deta @ w)) # eta part
@@ -463,24 +677,57 @@ class ADiss():
             raise Exception('TODO')
         return coeff*diss
     
-    def dissipation_entdcp_scalarmatrix(self, q, coeff=0.1):
-        ''' dissipation function for DCP's narrow interior stencils, entropy-stable systems'''
-        # TODO: for now we always take a simple sum at half-nodes, but should generalize.
+    def dissipation_entB_scalarmatrix(self, q, coeff=0.1):
+        ''' DCP 2018 dissipation function for narrow interior stencils, scalar-matrix systems'''
         w = self.entropy_var(q)
         dqdw = self.dqdw(q)
         if self.dim == 1:
             A = fn.repeat_neq_gv(self.maxeig_dEndq(q,self.dxidx),self.neq_node) * dqdw
-            if self.s % 2 == 1:
-                A[:,:,-1] = 0.5*(A[:,:,-1] + A[:,:,1:])
+            if self.s == 1:
+                diss = fn.gm_gv(self.lhs_D1, fn.gm_gv(A, self.rhs_D1 @ w)) + \
+                       fn.gm_gv(self.lhs_D2, fn.gm_gv(A, self.rhs_D2 @ w))
+            elif self.s == 2:
+                diss = fn.gm_gv(self.lhs_D2, fn.gm_gv(A, self.rhs_D2 @ w)) + \
+                       fn.gm_gv(self.lhs_D3, fn.gm_gv(A, self.rhs_D3 @ w)) + \
+                       fn.gm_gv(self.lhs_D4, fn.gm_gv(A, self.rhs_D4 @ w))
+            elif self.s == 3:
+                diss = fn.gm_gv(self.lhs_D3, fn.gm_gv(A, self.rhs_D3 @ w)) + \
+                       fn.gm_gv(self.lhs_D4, fn.gm_gv(A, self.rhs_D4 @ w)) + \
+                       fn.gm_gv(self.lhs_D5, fn.gm_gv(A, self.rhs_D5 @ w)) + \
+                       fn.gm_gv(self.lhs_D6, fn.gm_gv(A, self.rhs_D6 @ w))
+            elif self.s == 4:
+                diss = fn.gm_gv(self.lhs_D4, fn.gm_gv(A, self.rhs_D4 @ w)) + \
+                       fn.gm_gv(self.lhs_D5, fn.gm_gv(A, self.rhs_D5 @ w)) + \
+                       fn.gm_gv(self.lhs_D6, fn.gm_gv(A, self.rhs_D6 @ w)) + \
+                       fn.gm_gv(self.lhs_D7, fn.gm_gv(A, self.rhs_D7 @ w)) + \
+                       fn.gm_gv(self.lhs_D8, fn.gm_gv(A, self.rhs_D8 @ w))
+            else:
+                raise ValueError('only s=1,2,3,4 coded up for baseline dissipation.')
+        elif self.dim == 2:
+            raise Exception('TODO')
+        elif self.dim == 3:
+            raise Exception('TODO')
+        return coeff*diss
+    
+    def dissipation_entdcp_scalarmatrix(self, q, coeff=0.1):
+        ''' dissipation function for DCP's narrow interior stencils, entropy-stable systems'''
+        # TODO: for now we always take a simple sum at half-nodes, but should generalize.
+        avg_half_nodes = False
+        w = self.entropy_var(q)
+        dqdw = self.dqdw(q)
+        if self.dim == 1:
+            A = fn.repeat_neq_gv(self.maxeig_dEndq(q,self.dxidx),self.neq_node) * dqdw
+            if self.s % 2 == 1 and avg_half_nodes:
+                A[:,:,:-1] = 0.5*(A[:,:,:-1] + A[:,:,1:])
             diss = fn.gm_gv(self.lhs_D, fn.gm_gv(A, self.rhs_D @ w))
         elif self.dim == 2:
             A = fn.repeat_neq_gv(self.maxeig_dEndq(q,self.dxidx),self.neq_node) * dqdw
-            if self.s % 2 == 1:
-                A[:,:,-1] = 0.5*(A[:,:,-1] + A[:,:,1:])
+            if self.s % 2 == 1 and avg_half_nodes:
+                A[:,:,:-1] = 0.5*(A[:,:,:-1] + A[:,:,1:])
             diss = fn.gm_gv(self.lhs_Dxi, fn.gm_gv(A, self.rhs_Dxi @ w))
             A = fn.repeat_neq_gv(self.maxeig_dEndq(q,self.detadx),self.neq_node) * dqdw
-            if self.s % 2 == 1:
-                A[:,:,-1] = 0.5*(A[:,:,-1] + A[:,:,1:])
+            if self.s % 2 == 1 and avg_half_nodes:
+                A[:,:,:-1] = 0.5*(A[:,:,:-1] + A[:,:,1:])
             diss += fn.gm_gv(self.lhs_Deta, fn.gm_gv(A, self.rhs_Deta @ w))
         elif self.dim == 3:
             raise Exception('TODO')
@@ -506,416 +753,72 @@ class ADiss():
             diss += fn.gm_gv(self.lhs_Dzeta, fn.gm_gv(A, self.rhs_Dzeta @ w))
         return coeff*diss
     
-    def dissipation_entdcp_matrixmatrix(self, q, coeff=0.1):
-        ''' dissipation function for DCP's narrow interior stencils, entropy-stable systems'''
-        # TODO: for now we always take a simple sum at half-nodes, but should generalize.
+    def dissipation_entB_matrixmatrix(self, q, coeff=0.1):
+        ''' DCP 2018 dissipation function for narrow interior stencils, matrix-matrix systems'''
         w = self.entropy_var(q)
         if self.dim == 1:
             A = self.dEndw_abs(q,self.dxidx)
-            if self.s % 2 == 1:
-                A[:,:,-1] = 0.5*(A[:,:,-1] + A[:,:,1:])
+            if self.s == 1:
+                diss = fn.gm_gv(self.lhs_D1, fn.gm_gv(A, self.rhs_D1 @ w)) + \
+                       fn.gm_gv(self.lhs_D2, fn.gm_gv(A, self.rhs_D2 @ w))
+            elif self.s == 2:
+                diss = fn.gm_gv(self.lhs_D2, fn.gm_gv(A, self.rhs_D2 @ w)) + \
+                       fn.gm_gv(self.lhs_D3, fn.gm_gv(A, self.rhs_D3 @ w)) + \
+                       fn.gm_gv(self.lhs_D4, fn.gm_gv(A, self.rhs_D4 @ w))
+            elif self.s == 3:
+                diss = fn.gm_gv(self.lhs_D3, fn.gm_gv(A, self.rhs_D3 @ w)) + \
+                       fn.gm_gv(self.lhs_D4, fn.gm_gv(A, self.rhs_D4 @ w)) + \
+                       fn.gm_gv(self.lhs_D5, fn.gm_gv(A, self.rhs_D5 @ w)) + \
+                       fn.gm_gv(self.lhs_D6, fn.gm_gv(A, self.rhs_D6 @ w))
+            elif self.s == 4:
+                diss = fn.gm_gv(self.lhs_D4, fn.gm_gv(A, self.rhs_D4 @ w)) + \
+                       fn.gm_gv(self.lhs_D5, fn.gm_gv(A, self.rhs_D5 @ w)) + \
+                       fn.gm_gv(self.lhs_D6, fn.gm_gv(A, self.rhs_D6 @ w)) + \
+                       fn.gm_gv(self.lhs_D7, fn.gm_gv(A, self.rhs_D7 @ w)) + \
+                       fn.gm_gv(self.lhs_D8, fn.gm_gv(A, self.rhs_D8 @ w))
+            else:
+                raise ValueError('only s=1,2,3,4 coded up for baseline dissipation.')
+        elif self.dim == 2:
+            raise Exception('TODO')
+        elif self.dim == 3:
+            raise Exception('TODO')
+        return coeff*diss
+    
+    def dissipation_entdcp_matrixmatrix(self, q, coeff=0.1):
+        ''' dissipation function for DCP's narrow interior stencils, entropy-stable systems'''
+        # TODO: for now we always take a simple sum at half-nodes, but should generalize.
+        avg_half_nodes = False
+        w = self.entropy_var(q)
+        if self.dim == 1:
+            A = self.dEndw_abs(q,self.dxidx)
+            if self.s % 2 == 1 and avg_half_nodes:
+                A[:,:,:-1] = 0.5*(A[:,:,:-1] + A[:,:,1:])
             diss = fn.gm_gv(self.lhs_D, fn.gm_gv(A, self.rhs_D @ w))
         elif self.dim == 2:
             A = self.dEndw_abs(q,self.dxidx)
-            if self.s % 2 == 1:
-                A[:,:,-1] = 0.5*(A[:,:,-1] + A[:,:,1:])
+            if self.s % 2 == 1 and avg_half_nodes:
+                A[:,:,:-1] = 0.5*(A[:,:,:-1] + A[:,:,1:])
             diss = fn.gm_gv(self.lhs_Dxi, fn.gm_gv(A, self.rhs_Dxi @ w))
             A = self.dEndw_abs(q,self.detadx)
-            if self.s % 2 == 1:
-                A[:,:,-1] = 0.5*(A[:,:,-1] + A[:,:,1:])
+            if self.s % 2 == 1 and avg_half_nodes:
+                A[:,:,:-1] = 0.5*(A[:,:,:-1] + A[:,:,1:])
             diss += fn.gm_gv(self.lhs_Deta, fn.gm_gv(A, self.rhs_Deta @ w))
         elif self.dim == 3:
             A = self.dEndw_abs(q,self.dxidx)
-            if self.s % 2 == 1:
-                A[:,:,-1] = 0.5*(A[:,:,-1] + A[:,:,1:])
+            if self.s % 2 == 1 and avg_half_nodes:
+                A[:,:,:-1] = 0.5*(A[:,:,:-1] + A[:,:,1:])
             diss = fn.gm_gv(self.lhs_Dxi, fn.gm_gv(A, self.rhs_Dxi @ w))
             A = self.dEndw_abs(q,self.detadx)
-            if self.s % 2 == 1:
-                A[:,:,-1] = 0.5*(A[:,:,-1] + A[:,:,1:])
+            if self.s % 2 == 1 and avg_half_nodes:
+                A[:,:,:-1] = 0.5*(A[:,:,:-1] + A[:,:,1:])
             diss += fn.gm_gv(self.lhs_Deta, fn.gm_gv(A, self.rhs_Deta @ w))
             A = self.dEndw_abs(q,self.dzetadx)
-            if self.s % 2 == 1:
-                A[:,:,-1] = 0.5*(A[:,:,-1] + A[:,:,1:])
+            if self.s % 2 == 1 and avg_half_nodes:
+                A[:,:,:-1] = 0.5*(A[:,:,:-1] + A[:,:,1:])
             diss += fn.gm_gv(self.lhs_Dzeta, fn.gm_gv(A, self.rhs_Dzeta @ w))
         return coeff*diss
     
-    def make_dcp_diss_op(self, sbp_type, s, nen):
-        ''' make the relevant operators according to DCP implementation in diablo '''
-        if sbp_type.lower() == 'csbp':
-            # Initialize the matrix as a dense NumPy array
-            Ds = np.zeros((nen, nen))
-            B = np.ones(nen)
-
-            if s==2:
-                if nen < 3:
-                    raise ValueError(f"Invalid number of nodes. nen = {nen}")
-
-                # Row 1
-                Ds[0, 0] = 1.0
-                Ds[0, 1] = -2.0
-                Ds[0, 2] = 1.0
-                # Interior rows
-                for i in range(1, nen-1):
-                    Ds[i, i-1] = 1.0
-                    Ds[i, i] = -2.0
-                    Ds[i, i+1] = 1.0
-                # Row nen
-                Ds[nen-1, nen-3] = 1.0
-                Ds[nen-1, nen-2] = -2.0
-                Ds[nen-1, nen-1] = 1.0
-                
-                # correct boundary values
-                B[0] = 0.
-                B[-1] = 0.
-            
-            elif s==3:
-                if nen < 9:
-                    raise ValueError(f"Invalid number of nodes. nen = {nen}")
-                
-                # First half node
-                Ds[0, 0] = -1.0
-                Ds[0, 1] = 3.0
-                Ds[0, 2] = -3.0
-                Ds[0, 3] = 1.0
-
-                # Interior half-nodes
-                for i in range(1, nen-2):
-                    Ds[i, i-1] = -1.0
-                    Ds[i, i] = 3.0
-                    Ds[i, i+1] = -3.0
-                    Ds[i, i+2] = 1.0
-
-                # Last half node
-                Ds[nen-2, nen-4] = -1.0
-                Ds[nen-2, nen-3] = 3.0
-                Ds[nen-2, nen-2] = -3.0
-                Ds[nen-2, nen-1] = 1.0
-
-                # Last node; nothing is added to this node
-                # The last row of Ds remains zero
-
-                # correct boundary values
-                B[0] = 0.
-                #B[1] = 1.
-                B[-1] = 0.
-                B[-2] = 0.
-
-            elif s==4:
-                if nen < 13:
-                    raise ValueError(f"Invalid number of nodes. nen = {nen}")
-
-                # First node
-                Ds[0, 0] = 1.0
-                Ds[0, 1] = -4.0
-                Ds[0, 2] = 6.0
-                Ds[0, 3] = -4.0
-                Ds[0, 4] = 1.0
-
-                # Second node
-                Ds[1, 0] = 1.0
-                Ds[1, 1] = -4.0
-                Ds[1, 2] = 6.0
-                Ds[1, 3] = -4.0
-                Ds[1, 4] = 1.0
-
-                # Interior nodes
-                for i in range(2, nen-2):
-                    Ds[i, i-2] = 1.0
-                    Ds[i, i-1] = -4.0
-                    Ds[i, i] = 6.0
-                    Ds[i, i+1] = -4.0
-                    Ds[i, i+2] = 1.0
-
-                # Second last node
-                Ds[nen-2, nen-5] = 1.0
-                Ds[nen-2, nen-4] = -4.0
-                Ds[nen-2, nen-3] = 6.0
-                Ds[nen-2, nen-2] = -4.0
-                Ds[nen-2, nen-1] = 1.0
-
-                # Last node
-                Ds[nen-1, nen-5] = 1.0
-                Ds[nen-1, nen-4] = -4.0
-                Ds[nen-1, nen-3] = 6.0
-                Ds[nen-1, nen-2] = -4.0
-                Ds[nen-1, nen-1] = 1.0
-
-                # correct boundary values
-                B[0] = 0.
-                B[1] = 0.
-                B[-1] = 0.
-                B[-2] = 0.
-            
-            elif s==5:
-                if nen < 17:
-                    raise ValueError(f"Invalid number of nodes. nen = {nen}")
-
-                # First half-node
-                Ds[0, 0] = -1.0
-                Ds[0, 1] = 5.0
-                Ds[0, 2] = -10.0
-                Ds[0, 3] = 10.0
-                Ds[0, 4] = -5.0
-                Ds[0, 5] = 1.0
-
-                # Second half-node
-                Ds[1, 0] = -1.0
-                Ds[1, 1] = 5.0
-                Ds[1, 2] = -10.0
-                Ds[1, 3] = 10.0
-                Ds[1, 4] = -5.0
-                Ds[1, 5] = 1.0
-
-                # Interior half-nodes
-                for i in range(2, nen-3):
-                    Ds[i, i-2] = -1.0
-                    Ds[i, i-1] = 5.0
-                    Ds[i, i] = -10.0
-                    Ds[i, i+1] = 10.0
-                    Ds[i, i+2] = -5.0
-                    Ds[i, i+3] = 1.0
-
-                # Second last half-node
-                Ds[nen-3, nen-6] = -1.0
-                Ds[nen-3, nen-5] = 5.0
-                Ds[nen-3, nen-4] = -10.0
-                Ds[nen-3, nen-3] = 10.0
-                Ds[nen-3, nen-2] = -5.0
-                Ds[nen-3, nen-1] = 1.0
-
-                # Last half-node
-                Ds[nen-2, nen-6] = -1.0
-                Ds[nen-2, nen-5] = 5.0
-                Ds[nen-2, nen-4] = -10.0
-                Ds[nen-2, nen-3] = 10.0
-                Ds[nen-2, nen-2] = -5.0
-                Ds[nen-2, nen-1] = 1.0
-
-                # Last node; nothing is added to this node
-                # The last row of Ds remains zero
-
-                # correct boundary values
-                B[0] = 0.
-                B[1] = 0.
-                B[-1] = 0.
-                B[-2] = 0.
-                B[-3] = 0.
-
-            else:
-                raise Exception('Invalid choice of s. Only coded up s=2,3,4,5.')
-            
-        elif sbp_type.lower() == 'lgl':
-                    # Initialize the matrix as a dense NumPy array
-                    Ds = np.zeros((nen, nen))
-                    B = np.ones(nen)
-
-                    if s==1:
-                        if nen != 2:
-                            raise ValueError(f"Invalid number of nodes. nen = {nen}")
-
-                        # Row 1
-                        Ds[0, 0] = -1.0
-                        Ds[0, 1] = 1.0
-
-                        # Row 2
-                        Ds[1, 0] = -1.0
-                        Ds[1, 1] = 1.0
-
-                    elif s==2:
-                        if nen != 3:
-                            raise ValueError(f"Invalid number of nodes. nen = {nen}")
-
-                        # Row 1
-                        Ds[0, 0] = 1.0
-                        Ds[0, 1] = -2.0
-                        Ds[0, 2] = 1.0
-
-                        # Row 2
-                        Ds[1, 0] = 1.0
-                        Ds[1, 1] = -2.0
-                        Ds[1, 2] = 1.0
-
-                        # Row 3
-                        Ds[2, 0] = 1.0
-                        Ds[2, 1] = -2.0
-                        Ds[2, 2] = 1.0
-
-                    elif s==3:
-                        if nen != 4:
-                            raise ValueError(f"Invalid number of nodes. nen = {nen}")
-                        
-                        # Row 1
-                        Ds[0, 0] = -1.1111111111111111
-                        Ds[0, 1] = 2.484519974999766
-                        Ds[0, 2] = -2.484519974999766
-                        Ds[0, 3] = 1.1111111111111111
-
-                        # Row 2
-                        Ds[1, 0] = -1.1111111111111111
-                        Ds[1, 1] = 2.484519974999766
-                        Ds[1, 2] = -2.484519974999766
-                        Ds[1, 3] = 1.1111111111111111
-
-                        # Row 3
-                        Ds[2, 0] = -1.1111111111111111
-                        Ds[2, 1] = 2.484519974999766
-                        Ds[2, 2] = -2.484519974999766
-                        Ds[2, 3] = 1.1111111111111111
-
-                        # Row 4
-                        Ds[3, 0] = -1.1111111111111111
-                        Ds[3, 1] = 2.484519974999766
-                        Ds[3, 2] = -2.484519974999766
-                        Ds[3, 3] = 1.1111111111111111
-
-                    elif s==4:
-                        if nen != 5:
-                            raise ValueError(f"Invalid number of nodes. nen = {nen}")
-
-                        # Row 1
-                        Ds[0, 0] = 1.3125
-                        Ds[0, 1] = -3.0625
-                        Ds[0, 2] = 3.5
-                        Ds[0, 3] = -3.0625
-                        Ds[0, 4] = 1.3125
-
-                        # Row 2
-                        Ds[1, 0] = 1.3125
-                        Ds[1, 1] = -3.0625
-                        Ds[1, 2] = 3.5
-                        Ds[1, 3] = -3.0625
-                        Ds[1, 4] = 1.3125
-
-                        # Row 3
-                        Ds[2, 0] = 1.3125
-                        Ds[2, 1] = -3.0625
-                        Ds[2, 2] = 3.5
-                        Ds[2, 3] = -3.0625
-                        Ds[2, 4] = 1.3125
-
-                        # Row 4
-                        Ds[3, 0] = 1.3125
-                        Ds[3, 1] = -3.0625
-                        Ds[3, 2] = 3.5
-                        Ds[3, 3] = -3.0625
-                        Ds[3, 4] = 1.3125
-
-                        # Row 5
-                        Ds[4, 0] = 1.3125
-                        Ds[4, 1] = -3.0625
-                        Ds[4, 2] = 3.5
-                        Ds[4, 3] = -3.0625
-                        Ds[4, 4] = 1.3125
-
-                    else:
-                        raise Exception('Invalid choice of s. Only coded up s=1,2,3,4.')
-                    
-        elif sbp_type.lower() == 'lg':
-                    # Initialize the matrix as a dense NumPy array
-                    Ds = np.zeros((nen, nen))
-                    B = np.ones(nen)
-
-                    if s==1:
-                        if nen != 2:
-                            raise ValueError(f"Invalid number of nodes. nen = {nen}")
-
-                        # Row 1
-                        Ds[0, 0] = -1.732050807568877
-                        Ds[0, 1] = 1.732050807568877
-
-                        # Row 2
-                        Ds[1, 0] = -1.732050807568877
-                        Ds[1, 1] = 1.732050807568877
-
-                    elif s==2:
-                        if nen != 3:
-                            raise ValueError(f"Invalid number of nodes. nen = {nen}")
-
-                        # Row 1
-                        Ds[0, 0] = 6.666666666666667
-                        Ds[0, 1] = -13.333333333333334
-                        Ds[0, 2] = 6.666666666666667
-
-                        # Row 2
-                        Ds[1, 0] = 6.666666666666667
-                        Ds[1, 1] = -13.333333333333334
-                        Ds[1, 2] = 6.666666666666667
-
-                        # Row 3
-                        Ds[2, 0] = 6.666666666666667
-                        Ds[2, 1] = -13.333333333333334
-                        Ds[2, 2] = 6.666666666666667
-
-                    elif s==3:
-                        if nen != 4:
-                            raise ValueError(f"Invalid number of nodes. nen = {nen}")
-
-                        # Row 1
-                        Ds[0, 0] = -5.56540505102921
-                        Ds[0, 1] = 14.096587055666296
-                        Ds[0, 2] = -14.096587055666296
-                        Ds[0, 3] = 5.56540505102921
-
-                        # Row 2
-                        Ds[1, 0] = -5.56540505102921
-                        Ds[1, 1] = 14.096587055666296
-                        Ds[1, 2] = -14.096587055666296
-                        Ds[1, 3] = 5.56540505102921
-
-                        # Row 3
-                        Ds[2, 0] = -5.56540505102921
-                        Ds[2, 1] = 14.096587055666296
-                        Ds[2, 2] = -14.096587055666296
-                        Ds[2, 3] = 5.56540505102921
-
-                        # Row 4
-                        Ds[3, 0] = -5.56540505102921
-                        Ds[3, 1] = 14.096587055666296
-                        Ds[3, 2] = -14.096587055666296
-                        Ds[3, 3] = 5.56540505102921
-
-                    elif s==4:
-                        if nen != 5:
-                            raise ValueError(f"Invalid number of nodes. nen = {nen}")
-
-                        # Row 1
-                        Ds[0, 0] = 27.50958167164676
-                        Ds[0, 1] = -77.90958167164676
-                        Ds[0, 2] = 100.8
-                        Ds[0, 3] = -77.90958167164676
-                        Ds[0, 4] = 27.50958167164676
-
-                        # Row 2
-                        Ds[1, 0] = 27.50958167164676
-                        Ds[1, 1] = -77.90958167164676
-                        Ds[1, 2] = 100.8
-                        Ds[1, 3] = -77.90958167164676
-                        Ds[1, 4] = 27.50958167164676
-
-                        # Row 3
-                        Ds[2, 0] = 27.50958167164676
-                        Ds[2, 1] = -77.90958167164676
-                        Ds[2, 2] = 100.8
-                        Ds[2, 3] = -77.90958167164676
-                        Ds[2, 4] = 27.50958167164676
-
-                        # Row 4
-                        Ds[3, 0] = 27.50958167164676
-                        Ds[3, 1] = -77.90958167164676
-                        Ds[3, 2] = 100.8
-                        Ds[3, 3] = -77.90958167164676
-                        Ds[3, 4] = 27.50958167164676
-
-                        # Row 5
-                        Ds[4, 0] = 27.50958167164676
-                        Ds[4, 1] = -77.90958167164676
-                        Ds[4, 2] = 100.8
-                        Ds[4, 3] = -77.90958167164676
-                        Ds[4, 4] = 27.50958167164676
-
-                    else:
-                        raise Exception('Invalid choice of s. Only coded up s=1,2,3,4.')
-        return Ds,B
+    
     
     def get_LHS(self, q=None, step=1.0e-4):
         ''' could form explicitly... but for simplicity just do finite difference. '''

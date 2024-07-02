@@ -26,7 +26,10 @@ class Quasi1dEuler(PdeBase):
     pde_order = 1
     has_exa_sol = True
     para_names = (r'$R$',r'$\gamma$',)
-    nondimensionalize = True
+    nondimensionalize = False
+    t_scale = 1.
+    a_inf = 1.
+    rho_inf = 1.
 
     # Problem constants
     R_fix = 287
@@ -74,6 +77,7 @@ class Quasi1dEuler(PdeBase):
                 rhou_inf = 1.866846848484981e+02
                 e_inf = 6.156988102623681e+05
                 self.a_inf = self.calc_a(self.rho_inf, rhou_inf, e_inf)
+                self.t_scale = 1.0 # no need since it is steady
 
             
         elif self.test_case == 'transonic_nozzle':
@@ -98,6 +102,7 @@ class Quasi1dEuler(PdeBase):
                 rhou_inf = 1.
                 e_inf = 1.
                 self.a_inf = self.calc_a(self.rho_inf, rhou_inf, e_inf)
+                self.t_scale = 1.0 # no need since it is steady
             
         elif self.test_case == 'shock_tube':
             self.xmin_fix = 0  # should be the same as self.x_min
@@ -110,8 +115,12 @@ class Quasi1dEuler(PdeBase):
             self.t_final = 0.0061 # final time to run to, usually 0.0061. Set t_final=None to use this default.
             #self.k2 = 0.5         # coefficient for first order FD dissipation, usually 0.5
             #self.k4 = 0.02        # coefficient for third order FD dissipation, usually 0.02
-            self.nozzle_shape = 'constant'
-            self.q0_type = 'shock_tube'
+            if self.nozzle_shape != 'constant':
+                print("WARNING: Overwriting inputted nozzle_shape to 'constant'")
+                self.nozzle_shape = 'constant'
+            if self.q0_type != 'shock_tube':
+                print("WARNING: Overwriting inputted q0_type to 'shock_tube'")
+                self.q0_type = 'shock_tube'
             assert (bc == 'dirichlet' or bc == 'riemann'),\
                 "shock_tube must use bc='dirichlet' or bc='riemann'."
             self.steady = False
@@ -120,14 +129,19 @@ class Quasi1dEuler(PdeBase):
                 self.rho_inf = self.rhoL
                 p_inf = self.pL
                 self.a_inf = np.sqrt(self.g*p_inf/self.rho_inf)
+                self.t_scale = self.a_inf
             
         elif self.test_case == 'density_wave':
             self.xmin_fix = -1.  # should be the same as self.x_min
             self.xmax_fix = 1. # should be the same as self.x_max
-            self.u0 = 0.1         # initial (ideally constant) velocity
+            self.u0 = 0.1        # initial (ideally constant) velocity
             self.p0 = 20          # initial (ideally constant) pressure
-            self.nozzle_shape = 'constant'
-            self.q0_type = 'density_wave'
+            if self.nozzle_shape != 'constant':
+                print("WARNING: Overwriting inputted nozzle_shape to 'constant'.")
+                self.nozzle_shape = 'constant'
+            if self.q0_type != 'density_wave':
+                print("WARNING: Overwriting inputted q0_type to 'density_wave'.")
+                self.q0_type = 'density_wave'
             assert (bc == 'periodic'),\
                 "density_wave must use bc='periodic'."
             self.steady = False
@@ -136,6 +150,31 @@ class Quasi1dEuler(PdeBase):
                 self.rho_inf = 1.
                 p_inf = self.p0
                 self.a_inf = np.sqrt(self.g*p_inf/self.rho_inf)
+                self.t_scale = self.a_inf
+
+        elif self.test_case == 'manufactured_soln':
+            self.xmin_fix = 0.  # should be the same as self.x_min
+            self.xmax_fix = 2. # should be the same as self.x_max
+            if self.nozzle_shape != 'constant':
+                print("WARNING: Overwriting inputted nozzle_shape to 'constant'.")
+                self.nozzle_shape = 'constant'
+            if self.q0_type != 'manufactured_soln':
+                print("WARNING: Overwriting inputted q0_type to 'manufactured_soln'.")
+                self.q0_type = 'manufactured_soln'
+            assert (bc == 'periodic'),\
+                "manufactured_soln must use bc='periodic'."
+            self.steady = False
+            self.calcG = self.calcG_manufactured
+
+            if self.nondimensionalize:
+                # exact solution rho = 2 + 0.1*sin(pi*(x-t)), u = 1, e = rho**2
+                self.rho_inf = 2.
+                p_inf = (self.g-1)*(self.rho_inf**2 - 0.5*self.rho_inf)
+                self.a_inf = np.sqrt(self.g*p_inf/self.rho_inf)
+                self.t_scale = self.a_inf
+
+
+
             
         else: raise Exception("Test case not understood. Try 'subsonic_nozzle', 'transonic_nozzle', 'shock_tube', or 'density_wave'.")
         
@@ -143,7 +182,7 @@ class Quasi1dEuler(PdeBase):
             print('Using the fixed g={0} diffeq functions since params match.'.format(self.g_fix))
             self.calcEx = efn.calcEx_1D
             self.dExdq = efn.dExdq_1D
-            self.dEndq_eig_abs_dq = efn.dEndq_eig_abs_dq_1D #TODO: rewrite special Euler SAT to use this directly
+            self.dEndq_eig_abs_dq = efn.dEndq_eig_abs_dq_1D
             self.central_Ex = efn.Central_flux_1D
             self.ismail_roe_Ex = efn.Ismail_Roe_flux_1D
             self.ranocha_Ex = efn.Ranocha_flux_1D
@@ -357,6 +396,9 @@ class Quasi1dEuler(PdeBase):
 
         if nondimensionalize is None:
             nondimensionalize = self.nondimensionalize
+
+        if self.nondimensionalize:
+            time /= self.t_scale
         
         if x is None:
             x = self.x_elem   
@@ -668,6 +710,23 @@ class Quasi1dEuler(PdeBase):
             T = p / (rho * self.R)
             mach = u / a
             return mach, T, p
+        
+        def manufactured_soln(t):
+            ''' manufactured solution. '''
+            
+            assert(np.max(abs(svec-1))<1e-10),'svec must be =1 for wave solution'
+            if self.q0_type != 'manufactured_soln':
+                print("ERROR: for exact_sol, initial condition must be manufactured_soln, not '"+self.q0_type+"'")
+                return np.zeros(np.shape(x)), np.zeros(np.shape(x)), np.zeros(np.shape(x))
+            
+            rho = 2. + 0.1*np.sin(np.pi*(x-t))
+            u = np.ones_like(x)
+            e = rho*rho
+            p = (self.g - 1)*(e - 0.5*rho)
+            a =  np.sqrt(self.g*p/rho)
+            T = p / (rho * self.R)
+            mach = u / a
+            return mach, T, p
 
         reshape=False
         if self.test_case == 'subsonic_nozzle':
@@ -690,6 +749,8 @@ class Quasi1dEuler(PdeBase):
             mach, T, p = shocktube(time)
         elif self.test_case == 'density_wave':
             mach, T, p = density_wave(time)
+        elif self.test_case == 'manufactured_soln':
+            mach, T, p = manufactured_soln(time)
         else:
             raise Exception('Invalid test case.')
             
@@ -749,6 +810,14 @@ class Quasi1dEuler(PdeBase):
                 p = self.p0 * np.ones(rho.shape)
                 e = p/(self.g-1) + rho * u**2 /2
                 q0 = self.prim2cons(rho, u, e, svec)
+
+        elif self.test_case == 'manufactured_soln':
+            assert(q0_type == 'manufactured_soln'),"Must use q0_type == 'manufactured_soln'."
+            rho = 2 + 0.1*np.sin(np.pi*xy)
+            u = np.ones(rho.shape)
+            e = rho*rho
+            p = (self.g-1)*rho*(rho-0.5)
+            q0 = self.prim2cons(rho, u, e, svec)
                 
         elif self.test_case == 'shock_tube':
             if q0_type != 'shock_tube':
@@ -811,11 +880,14 @@ class Quasi1dEuler(PdeBase):
         if var2plot_name is None:
             var2plot_name = self.plt_var2plot_name
         rho, u, e, P, a = self.cons2prim(q, svec)
+        w = self.entropy_var(q)
 
         if var2plot_name == 'rho' or var2plot_name == r'$\rho$':
             return rho
         elif var2plot_name == 'u' or var2plot_name == r'$u$':
             return u
+        elif var2plot_name == 'rhou' or var2plot_name == r'$\rho u$':
+            return rho*u
         elif var2plot_name == 'e' or var2plot_name == r'$e$':
             return e
         elif var2plot_name == 'p' or var2plot_name == r'$p$':
@@ -824,6 +896,14 @@ class Quasi1dEuler(PdeBase):
             return a
         elif var2plot_name == 'mach' or var2plot_name == r'$M$' or var2plot_name == 'Ma':
             return u / a
+        elif var2plot_name == 'w1' or var2plot_name == r'$w_1$':
+            return w[::3]
+        elif var2plot_name == 'w2' or var2plot_name == r'$w_2$':
+            return w[1::3]
+        elif var2plot_name == 'w3' or var2plot_name == r'$w_3$':
+            return w[2::3]
+        elif var2plot_name == 's' or var2plot_name == r'$s$' or var2plot_name == 'entropy':
+            return self.entropy(q)
         else:
             raise Exception('Requested variable to plot is not available, '+var2plot_name)
 
@@ -881,12 +961,24 @@ class Quasi1dEuler(PdeBase):
         P = fn.block_diag(rho,rhou,e,rhou,r22,r23,e,r23,r33)
         return P
     
-    def calcG(self, q):
+    def calcG(self, q, t):
         q_0, q_1, q_2 = self.decompose_q(q)
         p = (self.g-1)*(q_2 - 0.5*q_1*q_1 /q_0) / self.svec_elem
         g2 = p * self.svec_der_elem
         zero_vec = np.zeros((self.nen,self.nelem))
         G = self.assemble_vec((zero_vec, g2, zero_vec))
+        return G
+    
+    def calcG_manufactured(self, q, t):
+        tmod = t/self.t_scale
+        h = (2. + 0.1*np.sin(np.pi*(self.x_elem-tmod)))
+        dhdt = -0.1*np.pi*np.cos(np.pi*(self.x_elem-tmod))
+        dpdx = -dhdt*(2.*h-0.5)*(self.g-1)/(self.rho_inf*self.a_inf*self.a_inf)
+        # for this problem, rho = h, dhdt = -dhdx, u=1
+        # if you work it out, the convective derivatives always cancel
+        G = np.zeros_like(q)
+        G[1::3,:] = dpdx
+        G[2::3,:] = dpdx/self.a_inf
         return G
     
     def dGdq(self, q):

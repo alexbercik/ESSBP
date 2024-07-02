@@ -41,8 +41,8 @@ bc = 'periodic'
 # Spatial discretization
 disc_type = 'div' # 'div', 'had'
 disc_nodes = 'lg' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
-p = 2
-nelem = (50,50) # optional, number of elements
+p = 3
+nelem = (3,3) # optional, number of elements
 # TODO: Error when nelem not equal sizes
 nen = 0 # optional, number of nodes per element
 surf_type = 'lf'
@@ -60,7 +60,7 @@ print_sol_norm = False
 
 cons_obj_name = ('Energy','Conservation') # 'Energy', 'Conservation', 'None'
 
-settings = {'warp_factor':0.1,               # Warps / stretches mesh.
+settings = {'warp_factor':0.15,               # Warps / stretches mesh.
             'warp_type': 'default',         # Options: 'defualt', 'papers', 'quad'
             'metric_method':'exact',   # Options: 'calculate', 'exact'
             'bdy_metric_method':'exact',   # Options: 'calculate', 'exact', 'extrapolate'
@@ -97,10 +97,10 @@ solver2D = solver_c(diffeq, settings,                     # Diffeq
 #solver2D.check_conservation()
 #solver2D.mesh.check_surface_metrics()
 
-solver2D.solve()
-solver2D.plot_sol(plot_exa=bool_plot_exa)
-solver2D.plot_cons_obj()
-print('Final Error: ', solver2D.calc_error())
+#solver2D.solve()
+#solver2D.plot_sol(plot_exa=bool_plot_exa)
+#solver2D.plot_cons_obj()
+#print('Final Error: ', solver2D.calc_error())
 
 from Source.Methods.Analysis import run_convergence, run_jacobian_convergence, run_invariants_convergence
 #schedule = [['disc_nodes','lg','lgl'],['p',3,4],['nelem',12,15,20,25,40]]
