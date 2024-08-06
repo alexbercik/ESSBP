@@ -2292,10 +2292,12 @@ class MakeMesh:
                                     print('Check: A is SPD')
                                 else:
                                     print('Check: A is NOT SPD')
+                                    #print('size of A is', A.shape)
+                                    #print('rank of A is', int(np.linalg.matrix_rank(A)))
                                 #print(np.linalg.eigvals(A))
                                 lam = np.linalg.lstsq(A,RHS,rcond=-1)[0]
-                                lam2 = np.linalg.solve(A,RHS)
-                                print('max difference in solve is ', np.max(abs(lam-lam2)))
+                                #lam2 = np.linalg.solve(A,RHS)
+                                #print('max difference in solve is ', np.max(abs(lam-lam2)))
                             else:
                                 lam = np.linalg.solve(A,RHS)
                             #print('... verify Ax-b=0 solution quality: ', np.max(A@lam - RHS))
@@ -2362,6 +2364,8 @@ class MakeMesh:
                     QyT = np.kron(np.kron(sbp.H, sbp.Q), sbp.H).T
                     QzT = np.kron(np.kron(sbp.H, sbp.H), sbp.Q).T
                     M = np.hstack((QxT,QyT,QzT))
+                    #print('size of M is', M.shape)
+                    #print('rank of M is', int(np.linalg.matrix_rank(M)))
                     Minv = np.linalg.pinv(M, rcond=1e-13)
                     if np.max(abs(Minv)) > 1e8:
                         print('WARNING: There may be an error in Minv of metric optimization. Try a higher rcond.')
