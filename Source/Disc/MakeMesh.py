@@ -1704,9 +1704,9 @@ class MakeMesh:
                     QxT = np.kron(sbp.Q, sbp.H).T
                     QyT = np.kron(sbp.H, sbp.Q).T
                     M = np.hstack((QxT,QyT))
-                    Minv = np.linalg.pinv(M, rcond=1e-13)
-                    if np.max(abs(Minv)) > 1e8:
-                        print('WARNING: There may be an error in Minv of metric optimization. Try a higher rcond.')
+                    #Minv = np.linalg.pinv(M, rcond=1e-13)
+                    #if np.max(abs(Minv)) > 1e8:
+                    #    print('WARNING: There may be an error in Minv of metric optimization. Try a higher rcond.')
                     for phys_dir in range(2):
                         if phys_dir == 0: # matrix entries for metric terms
                             term = 'x'
@@ -1723,7 +1723,12 @@ class MakeMesh:
                             print('WARNING: '+term+'surface integral GCL constraint violated by a max of {0:.2g}'.format(np.max(abs(np.sum(c,axis=0)))))
                             print('         the c_'+term+' vector in optimization will not add to zero => Optimization will not work!')
                         aex = np.vstack((self.metrics[:,xm,:],self.metrics[:,ym,:]))
-                        a = aex - Minv @ ( M @ aex - c )
+                        gcl = M @ aex - c
+                        if np.max(abs(gcl)) < 2e-16:
+                            a = aex
+                        else:
+                            #a = aex - Minv @ ( M @ aex - c )
+                            a = np.linalg.lstsq(M, c, rcond=1e-13)[0]
                         print('Metric Optz: modified '+term+' volume metrics by a max amount {0:.2g}'.format(np.max(abs(a - aex))))
                         self.metrics[:,xm,:] = np.copy(a[:self.nen**2,:])
                         self.metrics[:,ym,:] = np.copy(a[self.nen**2:,:])
