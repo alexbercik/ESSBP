@@ -402,7 +402,7 @@ class PdeBase:
                 savefile = savefile + '_exa'
             if title is not None:
                 title = 'Exact Solution'
-            exa_sol = self.var2plot(self.exact_sol(time),var2plot_name)
+            exa_sol = self.exact_sol(time)
             self.plot_sol(exa_sol, time=time, plot_exa=True, savefile=savefile,
                  show_fig=show_fig, solmin=solmin, solmax=solmax, display_time=display_time, 
                  title=title, plot_mesh=plot_mesh, save_format=save_format, dpi=dpi,
@@ -411,23 +411,22 @@ class PdeBase:
 
     ''' Terms for the first derivative: E '''
     
-    def central_Ex(self,qL,qR):
+    def central_flux(self,qL,qR):
         ''' a simple central 2-point flux, the default for the Hadamard form
         NOTE: Ideally this should NOT be used. Will be very slow. '''
         fx = fn.arith_mean(self.calcEx(qL),self.calcEx(qR))
         return fx
         
-    def central_Ey(self,qL,qR):
+    def central_fluxes(self,qL,qR):
         ''' a simple central 2-point flux, the default for the Hadamard form
         NOTE: Ideally this should NOT be used. Will be very slow. '''
+        fx = fn.arith_mean(self.calcEx(qL),self.calcEx(qR))
         fy = fn.arith_mean(self.calcEy(qL),self.calcEy(qR))
-        return fy
-    
-    def central_Ez(self,qL,qR):
-        ''' a simple central 2-point flux, the default for the Hadamard form
-        NOTE: Ideally this should NOT be used. Will be very slow. '''
-        fz = fn.arith_mean(self.calcEz(qL),self.calcEz(qR))
-        return fz
+        if self.dim == 3:
+            fz = fn.arith_mean(self.calcEy(qL),self.calcEy(qR))
+            return fx, fy, fz
+        else:
+            return fx, fy
 
     def maxeig_dExdq(self,q):
         ''' Calculate the constant for the Lax-Friedrichs flux, useful to set 

@@ -152,11 +152,7 @@ class PdeSolver:
         self.neq_node = self.diffeq.neq_node
         if disc_type.lower() == 'div' or disc_type.lower() == 'divergence':
             self.disc_type = 'div'
-            self.had_flux_Ex = None
-            if self.dim > 1:
-                self.had_flux_Ey = None
-            if self.dim > 2:
-                self.had_flux_Ez = None
+            self.calc_had_flux = None
             if hasattr(self.diffeq, 'dExdx'):
                 print('Using dExdx defined in specific DiffEq file.')
                 self.use_diffeq_dExdx = True
@@ -171,31 +167,32 @@ class PdeSolver:
         elif disc_type.lower() == 'had' or disc_type.lower() == 'hadamard':
             assert self.settings['skew_sym'],"If hadamard scheme must also use skew-sym metrics. Set settings['skew_sym']=True"
             self.disc_type = 'had'       
-            if hasattr(self.diffeq, had_flux.lower()+'_Ex'):
+            if hasattr(self.diffeq, had_flux.lower()+"_flux") or hasattr(self.diffeq, had_flux.lower()+"_fluxes"):
                 self.had_flux = had_flux.lower()
             else:
                 print("WARNING: 2-point flux '"+had_flux+"' not available for this Diffeq. Reverting to Central flux.")
                 self.had_flux = 'central'
         
-            self.had_flux_Ex = getattr(self.diffeq, self.had_flux+'_Ex')
+            if self.dim == 1:
+                self.calc_had_flux = getattr(self.diffeq, self.had_flux + '_flux')
             if self.dim > 1:
-                self.had_flux_Ey = getattr(self.diffeq, self.had_flux+'_Ey')
-            if self.dim > 2:
-                self.had_flux_Ez = getattr(self.diffeq, self.had_flux+'_Ez')
+                self.calc_had_flux = getattr(self.diffeq, self.had_flux + '_fluxes')
             # quick test
             try:
                 if self.neq_node == 1:
-                    from Source.Methods.Functions import build_F_sca
-                    test = build_F_sca(np.ones((2,3)), np.ones((2,3)), self.had_flux_Ex)
+                    from Source.Methods.Functions import build_F_sca, build_F_sca_2d
+                    if self.dim == 1:
+                        test = build_F_sca(np.ones((2,3)), np.ones((2,3)), self.calc_had_flux)
+                    elif self.dim == 2:
+                        test1, test2 = build_F_sca_2d(np.ones((2,3)), np.ones((2,3)), self.calc_had_flux)
                 else:
-                    from Source.Methods.Functions import build_F_sys
-                    test = build_F_sys(self.neq_node, np.ones((2*self.neq_node,3)), np.ones((2*self.neq_node,3)), self.had_flux_Ex)
+                    from Source.Methods.Functions import build_F_sys, build_F_sys_2d
+                    if self.dim == 1:
+                        test = build_F_sys(self.neq_node, np.ones((2*self.neq_node,3)), np.ones((2*self.neq_node,3)), self.calc_had_flux)
+                    elif self.dim == 2:
+                        test1, test2 = build_F_sys_2d(self.neq_node, np.ones((2*self.neq_node,3)), np.ones((2*self.neq_node,3)), self.calc_had_flux)
             except:
-                print('WARNING: The Hadamard Flux did not compile properly. Currently')
-                print('         supressing output, but most likely this is due to')
-                print('         passing class objects to the jitted function. The code')
-                print('         will not run as fast as it could, and may even fail.')
-                raise Exception('quitting. TODO: fix this exception.')
+                raise Exception('The Hadamard Flux did not compile properly.')
             
         else: raise Exception('Discretization type not understood. Try div or had.')
         self.surf_type = surf_type.lower()
@@ -639,7 +636,7 @@ class PdeSolver:
 
     
     def check_eigs(self, q=None, plot_eigs=True, returnA=False, exact_dfdq=True,
-                   step=1.0e-4, tol=1.0e-10, savefile=None, ymin=None, ymax=None,
+                   step=5.0e-6, tol=1.0e-10, savefile=None, ymin=None, ymax=None,
                    xmin=None, xmax=None, time=None, display_time=False, title=None, 
                    save_format='png', dpi=600, colour_by_k=False, overwrite=False, **kargs):
         '''

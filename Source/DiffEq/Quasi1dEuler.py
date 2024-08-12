@@ -26,7 +26,7 @@ class Quasi1dEuler(PdeBase):
     pde_order = 1
     has_exa_sol = True
     para_names = (r'$R$',r'$\gamma$',)
-    nondimensionalize = False
+    nondimensionalize = True
     t_scale = 1.
     a_inf = 1.
     rho_inf = 1.
@@ -183,9 +183,9 @@ class Quasi1dEuler(PdeBase):
             self.calcEx = efn.calcEx_1D
             self.dExdq = efn.dExdq_1D
             self.dEndq_eig_abs_dq = efn.dEndq_eig_abs_dq_1D
-            self.central_Ex = efn.Central_flux_1D
-            self.ismail_roe_Ex = efn.Ismail_Roe_flux_1D
-            self.ranocha_Ex = efn.Ranocha_flux_1D
+            self.central_flux = efn.Central_flux_1D
+            self.ismail_roe_flux = efn.Ismail_Roe_flux_1D
+            self.ranocha_flux = efn.Ranocha_flux_1D
             self.maxeig_dExdq = efn.maxeig_dExdq_1D
             self.maxeig_dExdq_cmplx = ecfn.maxeig_dExdq_1D
             self.maxeig_dEndq = efn.maxeig_dEndq_1D

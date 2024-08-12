@@ -40,7 +40,7 @@ class LinearConv(PdeBase):
             self.maxeig_dExdq = lambda q : np.ones(q.shape)
             self.dExdq = lambda q : fn.diag(np.ones(q.shape))
             self.dExdq_eig_abs = self.dExdq
-            self.central_Ex = self.central_fix_Ex
+            self.central_flux = self.central_fix_flux
         
         self.maxeig_dExdq_cmplx = self.maxeig_dExdq
             
@@ -104,7 +104,7 @@ class LinearConv(PdeBase):
         return abs(self.a)
 
     @njit   
-    def central_fix_Ex(qL,qR):
+    def central_fix_flux(qL,qR):
         ''' a central 2-point flux for hadamard form but with a fixed at 1.
         This allows us to jit the hadamard flux functions. '''
         f = fn.arith_mean(qL,qR)
