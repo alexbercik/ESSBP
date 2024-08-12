@@ -893,6 +893,25 @@ def build_F_vol_sca(q, flux):
     return F
 
 @njit
+def build_F_vol_sca_2d(q, flux):
+    ''' builds a Flux differencing matrix (used for Hadamard form) given 1 
+    solution vector q, the number of equations per node, and a 2-point 
+    flux function. Takes advantage of symmetry since q1 = q2 = q '''
+    nen_neq, nelem = q.shape 
+    Fx = np.zeros((nen_neq,nen_neq,nelem))  
+    Fy = np.zeros((nen_neq,nen_neq,nelem)) 
+    for e in range(nelem):
+        for i in range(nen_neq):
+            for j in range(i,nen_neq):
+                fx, fy = flux(q[i,e],q[j,e])
+                Fx[i,j,e] = fx
+                Fy[i,j,e] = fy
+                if i != j:
+                    Fx[j,i,e] = fx
+                    Fy[j,i,e] = fy
+    return Fx, Fy
+
+@njit
 def build_F_vol_sys(neq, q, flux):
     ''' builds a Flux differencing matrix (used for Hadamard form) given 1 
     solution vector q, the number of equations per node, and a 2-point 
@@ -913,6 +932,30 @@ def build_F_vol_sys(neq, q, flux):
                     F[idxj:idxj2,idxi:idxi2,e] = diag
     return F
 
+@njit
+def build_F_vol_sys_2d(neq, q, flux):
+    ''' builds a Flux differencing matrix (used for Hadamard form) given 1 
+    solution vector q, the number of equations per node, and a 2-point 
+    flux function. Takes advantage of symmetry since q1 = q2 = q '''
+    nen_neq, nelem = q.shape 
+    Fx = np.zeros((nen_neq,nen_neq,nelem))   
+    Fy = np.zeros((nen_neq,nen_neq,nelem))   
+    nen = int(nen_neq / neq)
+    for e in range(nelem):
+        for i in range(nen):
+            for j in range(i,nen):
+                idxi = i*neq
+                idxi2 = (i+1)*neq
+                idxj = j*neq
+                idxj2 = (j+1)*neq
+                fx, fy = flux(q[idxi:idxi2,e],q[idxj:idxj2,e])
+                Fx[idxi:idxi2,idxj:idxj2,e] = np.diag(fx)
+                Fy[idxi:idxi2,idxj:idxj2,e] = np.diag(fy)
+                if i != j:
+                    Fx[idxj:idxj2,idxi:idxi2,e] = np.diag(fx)
+                    Fy[idxj:idxj2,idxi:idxi2,e] = np.diag(fy)
+    return Fx, Fy
+
 # Don't use nopython @njit in case we need to pass class objects in ec_flux
 # June 2023: I put it back in becuase the keyword default of False is being depreciated and 
 # it threw a warning. Maybe I can get away with this if it supports class functions?
@@ -929,6 +972,22 @@ def build_F_sca(q1, q2, flux):
                 f = flux(q1[i,e],q2[j,e])
                 F[i,j,e] = f
     return F
+
+@njit
+def build_F_sca_2d(q1, q2, flux):
+    ''' builds a Flux differencing matrix (used for Hadamard form) given 2 
+    solution vectors q1, q2, the number of equations per node, and a 2-point 
+    flux function. for scalar equations, neq=1, simultaneously for x and y fluxes '''
+    nen_neq, nelem = q1.shape 
+    Fx = np.zeros((nen_neq,nen_neq,nelem))  
+    Fy = np.zeros((nen_neq,nen_neq,nelem)) 
+    for e in range(nelem):
+        for i in range(nen_neq):
+            for j in range(nen_neq):
+                fx, fy = flux(q1[i,e],q2[j,e])
+                Fx[i,j,e] = fx
+                Fy[i,j,e] = fy
+    return Fx, Fy
 
 @njit
 def build_F_sys(neq, q1, q2, flux):
@@ -948,6 +1007,27 @@ def build_F_sys(neq, q1, q2, flux):
                 diag = np.diag(flux(q1[idxi:idxi2,e],q2[idxj:idxj2,e]))
                 F[idxi:idxi2,idxj:idxj2,e] = diag
     return F
+
+@njit
+def build_F_sys_2d(neq, q1, q2, flux):
+    ''' builds a Flux differencing matrix (used for Hadamard form) given 2 
+    solution vectors q1, q2, the number of equations per node, and a 2-point 
+    flux function, simultaneously for x and y fluxes '''
+    nen_neq, nelem = q1.shape 
+    Fx = np.zeros((nen_neq,nen_neq,nelem))  
+    Fy = np.zeros((nen_neq,nen_neq,nelem))  
+    nen = int(nen_neq / neq)
+    for e in range(nelem):
+        for i in range(nen):
+            for j in range(nen):
+                idxi = i*neq
+                idxi2 = (i+1)*neq
+                idxj = j*neq
+                idxj2 = (j+1)*neq
+                fx, fy = flux(q1[idxi:idxi2,e],q2[idxj:idxj2,e])
+                Fx[idxi:idxi2,idxj:idxj2,e] = np.diag(fx)
+                Fy[idxi:idxi2,idxj:idxj2,e] = np.diag(fy)
+    return Fx, Fy
 
 
 
