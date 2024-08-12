@@ -1,6 +1,6 @@
 import numpy as np
 
-def make_dcp_diss_op(sbp_type, s, nen):
+def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
     ''' make the relevant operators according to DCP implementation in diablo '''
     if sbp_type.lower() == 'csbp':
         # Initialize the matrix as a dense NumPy array
@@ -10,6 +10,9 @@ def make_dcp_diss_op(sbp_type, s, nen):
         if s==1:
             if nen < 3:
                 raise ValueError(f"Invalid number of nodes. nen = {nen}")
+
+            print('WARNING: I am not sure that s=1 CSBP dissipation operator is correct')
+
             # Row 1
             Ds[0, 0] = -1.0
             Ds[0, 1] = 1.0
@@ -21,9 +24,10 @@ def make_dcp_diss_op(sbp_type, s, nen):
             Ds[nen-1, nen-2] = -1.0
             Ds[nen-1, nen-1] = 1.0
             
-            # correct boundary values
-            B[0] = 0.
-            B[-1] = 0.
+            if boundary_fix:
+                # correct boundary values
+                B[0] = 0.
+                B[-1] = 0.
 
         if s==2:
             if nen < 3:
@@ -43,9 +47,10 @@ def make_dcp_diss_op(sbp_type, s, nen):
             Ds[nen-1, nen-2] = -2.0
             Ds[nen-1, nen-1] = 1.0
             
-            # correct boundary values
-            B[0] = 0.
-            B[-1] = 0.
+            if boundary_fix:
+                # correct boundary values
+                B[0] = 0.
+                B[-1] = 0.
         
         elif s==3:
             if nen < 9:
@@ -73,11 +78,11 @@ def make_dcp_diss_op(sbp_type, s, nen):
             # Last node; nothing is added to this node
             # The last row of Ds remains zero
 
-            # correct boundary values
-            B[0] = 0.
-            #B[1] = 1.
-            B[-1] = 0.
-            B[-2] = 0.
+            if boundary_fix:
+                # correct boundary values
+                B[0] = 0.
+                B[-1] = 0.
+                B[-2] = 0.
 
         elif s==4:
             if nen < 13:
@@ -119,11 +124,12 @@ def make_dcp_diss_op(sbp_type, s, nen):
             Ds[nen-1, nen-2] = -4.0
             Ds[nen-1, nen-1] = 1.0
 
-            # correct boundary values
-            B[0] = 0.
-            B[1] = 0.
-            B[-1] = 0.
-            B[-2] = 0.
+            if boundary_fix:
+                # correct boundary values
+                B[0] = 0.
+                B[1] = 0.
+                B[-1] = 0.
+                B[-2] = 0.
         
         elif s==5:
             if nen < 17:
@@ -173,12 +179,13 @@ def make_dcp_diss_op(sbp_type, s, nen):
             # Last node; nothing is added to this node
             # The last row of Ds remains zero
 
-            # correct boundary values
-            B[0] = 0.
-            B[1] = 0.
-            B[-1] = 0.
-            B[-2] = 0.
-            B[-3] = 0.
+            if boundary_fix:
+                # correct boundary values
+                B[0] = 0.
+                B[1] = 0.
+                B[-1] = 0.
+                B[-2] = 0.
+                B[-3] = 0.
 
         else:
             raise Exception('Invalid choice of s. Only coded up s=2,3,4,5.')
