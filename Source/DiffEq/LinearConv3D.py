@@ -151,22 +151,8 @@ class LinearConv(PdeBase):
         return dEzdq
     
     @njit   
-    def central_fix_Ex(qL,qR):
-        ''' a central 2-point flux for hadamard form but with ax fixed at 1.
+    def central_fix_fluxes(qL,qR):
+        ''' a central 2-point flux for hadamard form but with ax fixed at (1,1,1).
         This allows us to jit the hadamard flux functions. '''
         f = fn.arith_mean(qL,qR)
-        return f
-    
-    @njit   
-    def central_fix_Ey(qL,qR):
-        ''' a central 2-point flux for hadamard form but with ay fixed at 1.
-        This allows us to jit the hadamard flux functions. '''
-        f = fn.arith_mean(qL,qR)
-        return f
-    
-    @njit   
-    def central_fix_Ez(qL,qR):
-        ''' a central 2-point flux for hadamard form but with az fixed at 1.
-        This allows us to jit the hadamard flux functions. '''
-        f = fn.arith_mean(qL,qR)
-        return f
+        return f, f, f

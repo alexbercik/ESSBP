@@ -50,11 +50,19 @@ class Sat(SatDer1, SatDer2):
         self.bc = solver.bc
 
         if self.neq_node == 1:
-            self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sca(q1, q2, flux))
-            self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sca(q1, q2, flux))
+            if self.dim == 1:
+                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sca(q1, q2, flux))
+                self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sca(q1, q2, flux))
+            elif self.dim == 2:
+                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sys_2d(self.neq_node, q1, q2, flux))
+                self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sys_2d(self.neq_node, q1, q2, flux))
         else:
-            self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sys(self.neq_node, q1, q2, flux))
-            self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sys(self.neq_node, q1, q2, flux))
+            if self.dim == 1:
+                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_vec(q1, q2, flux))
+                self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_vec(q1, q2, flux))
+            elif self.dim == 2:
+                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sys_2d(self.neq_node, q1, q2, flux))
+                self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sys_2d(self.neq_node, q1, q2, flux))
         
         if self.dim == 1:
             self.tL = solver.tL
@@ -67,29 +75,43 @@ class Sat(SatDer1, SatDer2):
             #self.maxeig_dExdq_cmplx = solver.diffeq.maxeig_dExdq_cmplx
             self.metrics = fn.repeat_neq_gv(solver.mesh.metrics[:,0,:],self.neq_node)
             self.bdy_metrics = np.repeat(np.reshape(solver.mesh.bdy_metrics, (1,2,self.nelem)),self.neq_node,0)
-            self.had_flux_Ex = solver.had_flux_Ex
+            self.calc_had_flux = solver.calc_had_flux
+
+            if self.neq_node == 1:
+                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sca(q1, q2, flux))
+                self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sca(q1, q2, flux))
+            else:
+                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sys(q1, q2, flux))
+                self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sys(q1, q2, flux))
             
         elif self.dim == 2:
-            eye = np.eye(self.nen*self.neq_node)
-            self.Hperp = solver.H_perp #TODO: Flatten this?
+            tL = solver.tL[::self.neq_node,::self.neq_node]
+            tR = solver.tR[::self.neq_node,::self.neq_node]
+            self.Hperp = solver.H_perp # should be flat
             if self.direction == 'x': # computational direction, not physical direction
-                self.tL = np.kron(solver.tL, eye)
-                self.tR = np.kron(solver.tR, eye)
+                self.tL = np.kron(np.kron(tL, np.eye(self.nen)), np.eye(self.neq_node))
+                self.tR = np.kron(np.kron(tR, np.eye(self.nen)), np.eye(self.neq_node))
                 self.set_metrics_2d_x(solver.mesh.metrics, solver.mesh.bdy_metrics)
             elif self.direction == 'y':
-                self.tL = np.kron(eye, solver.tL)
-                self.tR = np.kron(eye, solver.tR)
+                self.tL = np.kron(np.kron(np.eye(self.nen), tL), np.eye(self.neq_node))
+                self.tR = np.kron(np.kron(np.eye(self.nen), tR), np.eye(self.neq_node))
                 self.set_metrics_2d_y(solver.mesh.metrics, solver.mesh.bdy_metrics)
-            self.had_flux_Ex = solver.had_flux_Ex
-            self.had_flux_Ey = solver.had_flux_Ey
+            self.calc_had_flux = solver.calc_had_flux
             self.dExdq = solver.diffeq.dExdq
             self.dEydq = solver.diffeq.dEydq
-            self.d2Exdq2 = solver.diffeq.d2Exdq2
-            self.d2Eydq2 = solver.diffeq.d2Eydq2
+            #self.d2Exdq2 = solver.diffeq.d2Exdq2
+            #self.d2Eydq2 = solver.diffeq.d2Eydq2
             self.dExdq_eig_abs = solver.diffeq.dExdq_eig_abs
             self.dEydq_eig_abs = solver.diffeq.dEydq_eig_abs
             self.maxeig_dExdq = solver.diffeq.maxeig_dExdq
             self.maxeig_dEydq = solver.diffeq.maxeig_dEydq
+
+            if self.neq_node == 1:
+                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sca_2d(q1, q2, flux))
+                self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sca_2d(q1, q2, flux))
+            else:
+                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sys_2d(q1, q2, flux))
+                self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sys_2d(q1, q2, flux))
         
         elif self.dim == 3:
             eye = np.eye(self.nen*self.neq_node)
@@ -106,9 +128,7 @@ class Sat(SatDer1, SatDer2):
                 self.tL = np.kron(eye, np.kron(eye, solver.tL))
                 self.tR = np.kron(eye, np.kron(eye, solver.tR))
                 self.set_metrics_3d_z(solver.mesh.metrics, solver.mesh.bdy_metrics)
-            self.had_flux_Ex = solver.had_flux_Ex
-            self.had_flux_Ey = solver.had_flux_Ey
-            self.had_flux_Ez = solver.had_flux_Ez
+            self.calc_had_flux = solver.calc_had_flux
             self.dExdq = solver.diffeq.dExdq
             self.dEydq = solver.diffeq.dEydq
             self.dEzdq = solver.diffeq.dEzdq
@@ -121,6 +141,13 @@ class Sat(SatDer1, SatDer2):
             self.maxeig_dExdq = solver.diffeq.maxeig_dExdq
             self.maxeig_dEydq = solver.diffeq.maxeig_dEydq
             self.maxeig_dEzdq = solver.diffeq.maxeig_dEzdq
+
+            if self.neq_node == 1:
+                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sca(q1, q2, flux))
+                self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sca(q1, q2, flux))
+            else:
+                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sys(q1, q2, flux))
+                self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sys(q1, q2, flux))
             
             
         ''' save useful matrices so as not to calculate on each loop '''
@@ -134,18 +161,18 @@ class Sat(SatDer1, SatDer2):
             self.tbphys = fn.lm_gm(self.tR, fn.gdiag_lm(self.bdy_metrics[:,1,:],self.tLT))
     
         elif self.dim == 2:
-            self.Esurf = self.tR @ np.diag(self.Hperp[:,0]) @ self.tRT - self.tL @ np.diag(self.Hperp[:,0]) @ self.tLT
+            self.Esurf = self.tR @ np.diag(self.Hperp) @ self.tRT - self.tL @ np.diag(self.Hperp) @ self.tLT
             # for volume terms, matrices to contract with x_phys and y_phys flux matrices
             self.vol_x_mat = [fn.lm_gdiag(self.Esurf,metrics[:,0,:]) for metrics in self.metrics]
             self.vol_y_mat = [fn.lm_gdiag(self.Esurf,metrics[:,1,:]) for metrics in self.metrics]
             # for surface terms, matrices to contract with x_phys and y_phys flux matrices on a and b facets
-            self.taphysx = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp * bdy_metrics[:,0,0,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
-            self.taphysy = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp * bdy_metrics[:,0,1,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
-            self.tbphysx = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp * bdy_metrics[:,1,0,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
-            self.tbphysy = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp * bdy_metrics[:,1,1,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
+            self.taphysx = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,0,0,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
+            self.taphysy = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,0,1,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
+            self.tbphysx = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,1,0,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
+            self.tbphysy = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,1,1,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
         
         elif self.dim == 3:
-            self.Esurf = self.tR @ np.diag(self.Hperp[:,0]) @ self.tRT - self.tL @ np.diag(self.Hperp[:,0]) @ self.tLT
+            self.Esurf = self.tR @ np.diag(self.Hperp) @ self.tRT - self.tL @ np.diag(self.Hperp) @ self.tLT
             # for volume terms, matrices to contract with x_phys, y_phys, and z_phys flux matrices
             self.vol_x_mat = [fn.lm_gdiag(self.Esurf,metrics[:,0,:]) for metrics in self.metrics]
             self.vol_y_mat = [fn.lm_gdiag(self.Esurf,metrics[:,1,:]) for metrics in self.metrics]
@@ -266,69 +293,71 @@ class Sat(SatDer1, SatDer2):
                         else:
                             raise Exception("SAT type not understood. Try 'ec', 'es', 'ec_had', 'es_had', 'split', or 'split_diss'.")
 
-            elif self.diffeq_name=='Quasi1dEuler':
-                if self.dim >= 2:
-                    raise Exception('Burgers equation SATs only set up for 1D!')
-                else:
-                    if self.disc_type == 'had':
-                        if self.method.lower()=='ec':
-                            print(f'Using the base Hadamard SAT with {solver.had_flux} flux and no dissipation.')
-                            self.calc = self.base_had_1d
-                            self.diss = lambda *x: 0
-                        elif self.method.lower()=='lf_cons3':
-                            print(f'Using the base Hadamard SAT with {solver.had_flux} flux and diablo LF3 on conservative variables.')
-                            self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
-                            self.calc = self.base_had_1d
-                            self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,3)
-                        elif self.method.lower()=='lf_cons4':
-                            print(f'Using the base Hadamard SAT with {solver.had_flux} flux and diablo LF4 on conservative variables.')
-                            self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
-                            self.calc = self.base_had_1d
-                            self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,4)
-                        elif self.method.lower()=='roe_cons1':
-                            print(f'Using the base Hadamard SAT with {solver.had_flux} flux and diablo Roe1 (Hicken fix) on conservative variables.')
-                            self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
-                            self.calc = self.base_had_1d
-                            self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,1)
-                        elif self.method.lower()=='roe_cons2' or self.method.lower()=='roe':
-                            print(f'Using the base Hadamard SAT with {solver.had_flux} flux and diablo Roe2 (entropy fix) on conservative variables.')
-                            self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
-                            self.calc = self.base_had_1d
-                            self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,2)
-                        elif self.method.lower()=='es':
-                            self.dEndw_abs = solver.diffeq.dEndw_abs
-                            self.entropy_var = solver.diffeq.entropy_var
-                            self.calc = self.base_had_1d
-                            self.diss = self.lf_diss_ent_matmat_1d
-                            print(f'Using the base Hadamard SAT with {solver.had_flux} flux and matrix-matrix dissipation on entropy variables.')
-                        else:
-                            raise Exception("SAT type not understood. Try 'ec', 'es', 'lf', 'lf_cons3', 'lf_cons4', 'roe_cons1', 'roe_cons2'.")
-                        
-                    else:
-                        if self.method.lower()=='lf_cons3':
-                            print(f'Using the base conservative SAT and diablo LF3 on conservative variables.')
-                            self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
-                            self.calc = self.central_div_1d_base
-                            self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D_2(qL,qR,3)
-                        elif self.method.lower()=='lf_cons4':
-                            print(f'Using the base conservative SAT and diablo LF4 on conservative variables.')
-                            self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
-                            self.calc = self.central_div_1d_base
-                            self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D_2(qL,qR,4)
-                        elif self.method.lower()=='roe_cons1':
-                            print(f'Using the base conservative SAT and diablo Roe1 (Hicken fix) on conservative variables.')
-                            self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
-                            self.calc = self.central_div_1d_base
-                            self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D_2(qL,qR,1)
-                        elif self.method.lower()=='roe_cons2' or self.method.lower()=='roe':
-                            print(f'Using the base conservative SAT and diablo Roe2 (entropy fix) on conservative variables.')
-                            self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
-                            self.calc = self.central_div_1d_base
-                            self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D_2(qL,qR,2)
-                        else:
-                            raise Exception("SAT type not understood. Try 'lf', 'lf_cons3', 'lf_cons4', 'roe_cons1', 'roe_cons2'.")
+            elif self.diffeq_name=='Quasi1dEuler' or self.diffeq_name=='Euler2d':
 
+                if self.disc_type == 'had':
+                    if self.dim == 1:
+                        self.calc = self.base_had_1d
+                    elif self.dim == 2:
+                        self.calc = self.base_had_2d
+                elif self.disc_type == 'div':
+                    if self.dim == 1:
+                        self.calc = self.central_div_1d_base
+                    elif self.dim == 2:
+                        self.calc = self.central_div_2d_base
+
+                if self.dim >= 3:
+                    raise Exception('SATs only set up for 1D and 2D!')
+                
+                if self.disc_type == 'had':
+                    if self.method.lower()=='ec':
+                        print(f'Using the base Hadamard SAT with {solver.had_flux} flux and no dissipation.')
+                        self.diss = lambda *x: 0
+                    elif self.method.lower()=='lf_cons3':
+                        print(f'Using the base Hadamard SAT with {solver.had_flux} flux and diablo LF3 on conservative variables.')
+                        self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
+                        self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,3)
+                    elif self.method.lower()=='lf_cons4':
+                        print(f'Using the base Hadamard SAT with {solver.had_flux} flux and diablo LF4 on conservative variables.')
+                        self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
+                        self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,4)
+                    elif self.method.lower()=='roe_cons1':
+                        print(f'Using the base Hadamard SAT with {solver.had_flux} flux and diablo Roe1 (Hicken fix) on conservative variables.')
+                        self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
+                        self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,1)
+                    elif self.method.lower()=='roe_cons2' or self.method.lower()=='roe':
+                        print(f'Using the base Hadamard SAT with {solver.had_flux} flux and diablo Roe2 (entropy fix) on conservative variables.')
+                        self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
+                        self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,2)
+                    elif self.method.lower()=='es':
+                        self.dEndw_abs = solver.diffeq.dEndw_abs
+                        self.entropy_var = solver.diffeq.entropy_var
+                        self.diss = self.lf_diss_ent_matmat_1d
+                        print(f'Using the base Hadamard SAT with {solver.had_flux} flux and matrix-matrix dissipation on entropy variables.')
+                    else:
+                        raise Exception("SAT type not understood. Try 'ec', 'es', 'lf', 'lf_cons3', 'lf_cons4', 'roe_cons1', 'roe_cons2'.")
                     
+                else:
+                    if self.method.lower()=='lf_cons3':
+                        print(f'Using the base conservative SAT and diablo LF3 on conservative variables.')
+                        self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
+                        self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D_2(qL,qR,3)
+                    elif self.method.lower()=='lf_cons4':
+                        print(f'Using the base conservative SAT and diablo LF4 on conservative variables.')
+                        self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
+                        self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D_2(qL,qR,4)
+                    elif self.method.lower()=='roe_cons1':
+                        print(f'Using the base conservative SAT and diablo Roe1 (Hicken fix) on conservative variables.')
+                        self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
+                        self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D_2(qL,qR,1)
+                    elif self.method.lower()=='roe_cons2' or self.method.lower()=='roe':
+                        print(f'Using the base conservative SAT and diablo Roe2 (entropy fix) on conservative variables.')
+                        self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
+                        self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D_2(qL,qR,2)
+                    else:
+                        raise Exception("SAT type not understood. Try 'lf', 'lf_cons3', 'lf_cons4', 'roe_cons1', 'roe_cons2'.")
+
+
 
             else:
                 raise Exception('Choice of SAT not understood.')

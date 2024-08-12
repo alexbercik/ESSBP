@@ -41,11 +41,11 @@ class PdeSolverSbp(PdeSolver):
         elif self.dim == 2:
             self.nn = (self.nelem[0] * self.nen, self.nelem[1] * self.nen)
             self.qshape = (self.nen**2 * self.neq_node , self.nelem[0] * self.nelem[1])
-            self.H_perp = np.diag(self.sbp.H)[:,None]
+            self.H_perp = np.diag(self.sbp.H)
         elif self.dim == 3:
             self.nn = (self.nelem[0] * self.nen, self.nelem[1] * self.nen, self.nelem[2] * self.nen)
             self.qshape = (self.nen**3 * self.neq_node , self.nelem[0] * self.nelem[1] * self.nelem[2])   
-            self.H_perp = np.diag(np.kron(self.sbp.H,self.sbp.H))[:,None]
+            self.H_perp = np.diag(np.kron(self.sbp.H,self.sbp.H))
 
         ''' Setup the mesh and apply required transformations to SBP operators '''
 
@@ -98,8 +98,7 @@ class PdeSolverSbp(PdeSolver):
             self.Dy_phys = fn.kron_neq_gm(self.Dy_phys,self.neq_node)
             if self.Dy_phys_nd is not None:
                 self.Dy_phys_nd = fn.kron_neq_gm(self.Dy_phys_nd,self.neq_node)
-            #self.H_perp = fn.kron_neq_gm(self.H_perp,self.neq_node)
-            self.H_perp = np.kron(self.H_perp, np.eye(self.neq_node))
+            self.H_perp = np.repeat(self.H_perp,self.neq_node)
         if self.dim == 3:
             self.Dz_phys_unkronned = self.Dz_phys
             self.Dz_phys = fn.kron_neq_gm(self.Dz_phys,self.neq_node)
@@ -110,9 +109,15 @@ class PdeSolverSbp(PdeSolver):
         ''' Modify solver approach '''
 
         if self.neq_node == 1:
-            self.build_F_vol = staticmethod(fn.build_F_vol_sca)
+            if self.dim == 1:
+                self.build_F_vol = staticmethod(fn.build_F_vol_sca)
+            elif self.dim == 2: 
+                self.build_F_vol = staticmethod(fn.build_F_vol_sca_2d)
         else:
-            self.build_F_vol = staticmethod(lambda q, flux: fn.build_F_vol_sys(self.neq_node, q, flux))
+            if self.dim == 1:
+                self.build_F_vol = staticmethod(lambda q, flux: fn.build_F_vol_sys(self.neq_node, q, flux))
+            elif self.dim == 2:
+                self.build_F_vol = staticmethod(lambda q, flux: fn.build_F_vol_sys_2d(self.neq_node, q, flux))
 
         self.diffeq.set_mesh(self.mesh)
         if self.dim == 1:
@@ -263,7 +268,7 @@ class PdeSolverSbp(PdeSolver):
         
     def dqdt_1d_had(self, q, t):
         ''' the main dqdt function for hadamard form in 1D '''
-        Fvol = self.build_F_vol(q, self.had_flux_Ex)
+        Fvol = self.build_F_vol(q, self.calc_had_flux)
         dExdx = 2*fn.gm_gm_had_diff(self.Dx_phys, Fvol)
         
         if self.periodic:
@@ -280,8 +285,7 @@ class PdeSolverSbp(PdeSolver):
         
     def dqdt_2d_had(self, q, t):
         ''' the main dqdt function for hadamard form in 2D '''
-        Fxvol = self.build_F_vol(q, self.had_flux_Ex)
-        Fyvol = self.build_F_vol(q, self.had_flux_Ey)
+        Fxvol, Fyvol = self.build_F_vol(q, self.calc_had_flux)
         dExdx = 2*fn.gm_gm_had_diff(self.Dx_phys, Fxvol)
         dEydy = 2*fn.gm_gm_had_diff(self.Dy_phys, Fyvol)
         satx, saty = np.empty(self.qshape), np.empty(self.qshape)
@@ -311,9 +315,7 @@ class PdeSolverSbp(PdeSolver):
         
     def dqdt_3d_had(self, q, t):
         ''' the main dqdt function for hadamard form in 3D '''
-        Fxvol = self.build_F_vol(q, self.had_flux_Ex)
-        Fyvol = self.build_F_vol(q, self.had_flux_Ey)
-        Fzvol = self.build_F_vol(q, self.had_flux_Ez)
+        Fxvol, Fyvol, Fzvol = self.build_F_vol(q, self.calc_had_flux)
         dExdx = 2*fn.gm_gm_had_diff(self.Dx_phys, Fxvol)
         dEydy = 2*fn.gm_gm_had_diff(self.Dy_phys, Fyvol)
         dEzdz = 2*fn.gm_gm_had_diff(self.Dz_phys, Fzvol)

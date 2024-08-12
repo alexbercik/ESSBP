@@ -14,7 +14,7 @@ class SatDer1:
     ''' CENTRAL FLUXES '''
     ##########################################################################
 
-    def central_div_1d_base(self, q, E, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None, sigma=1, avg='simple'):
+    def central_div_1d_base(self, q, E, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None):
         '''
         A non-dissipative central flux in 1D, that calls an external dissipation function.
         '''
@@ -161,6 +161,31 @@ class SatDer1:
 #         EyphysR = self.bdy_metrics[idx][:,1,1,:] * (self.tLT @ EyR)
 #         sat = 0.5*(self.Esurf @ Ephys - (self.tR @ (self.Hperp * (ExphysR + EyphysR)) - self.tL @ (self.Hperp * (ExphysL + EyphysL))))
 # =============================================================================
+        
+        return sat
+    
+    def central_div_2d_base(self, q, Ex, Ey, idx, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None):
+        '''
+        A non-dissipative central flux in 2D, that calls an external dissipation function..
+        '''
+        
+        q_a = self.tLT @ q
+        q_b = self.tRT @ q
+        if q_bdyL is None: # periodic
+            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
+            qf_R = fn.pad_1dR(q_a, q_a[:,0])
+            ExL = fn.shift_right(Ex)
+            ExR = fn.shift_left(Ex)
+            EyL = fn.shift_right(Ey)
+            EyR = fn.shift_left(Ey)
+        else:
+            raise Exception('TODO: adding boundary condition.')
+        
+        diss = self.diss(qf_L,qf_R)
+        
+        sat = 0.5*( fn.gm_gv(self.vol_x_mat[idx], Ex) + fn.gm_gv(self.vol_y_mat[idx], Ey) 
+                  - fn.gm_gv(self.tbphysx[idx], ExR) - fn.gm_gv(self.tbphysy[idx], EyR)
+                  + fn.gm_gv(self.taphysx[idx], ExL) + fn.gm_gv(self.taphysy[idx], EyL)) - diss
         
         return sat
     
@@ -658,7 +683,7 @@ class SatDer1:
             qbdy = np.repeat(q_bdyR, self.nen)
             qR = fn.pad_1dL(q, qbdy) 
         
-        Fsurf = self.build_F(qL, qR, self.had_flux_Ex)
+        Fsurf = self.build_F(qL, qR, self.calc_had_flux)
         
         surfa = fn.gm_gm_had_diff(self.taphys,np.transpose(Fsurf[:,:,:-1],(1,0,2)))
         surfb = fn.gm_gm_had_diff(self.tbphys,Fsurf[:,:,1:])
@@ -691,8 +716,7 @@ class SatDer1:
             qR = fn.pad_1dL(q, q_bdyR)  # TODO: this definitely does not work (needs entire q, not extrapolation)
             raise Exception('TODO: adding boundary condition.')
         
-        Fsurfx = self.build_F(qL, qR, self.had_flux_Ex)
-        Fsurfy = self.build_F(qL, qR, self.had_flux_Ey)
+        Fsurfx, Fsurfy = self.build_F(qL, qR, self.calc_had_flux)
         
         surfa = fn.gm_gm_had_diff(self.taphysx[idx],np.transpose(Fsurfx[:,:,:-1],(1,0,2))) + \
                 fn.gm_gm_had_diff(self.taphysy[idx],np.transpose(Fsurfy[:,:,:-1],(1,0,2)))
@@ -729,9 +753,7 @@ class SatDer1:
             qR = fn.pad_1dL(q, q_bdyR)  # TODO: this definitely does not work
             raise Exception('TODO: adding boundary condition.')
         
-        Fsurfx = self.build_F(qL, qR, self.had_flux_Ex)
-        Fsurfy = self.build_F(qL, qR, self.had_flux_Ey)
-        Fsurfz = self.build_F(qL, qR, self.had_flux_Ez)
+        Fsurfx, Fsurfy, Fsurfz = self.build_F(qL, qR, self.calc_had_flux)
         
         surfa = fn.gm_gm_had_diff(self.taphysx[idx],np.transpose(Fsurfx[:,:,:-1],(1,0,2))) + \
                 fn.gm_gm_had_diff(self.taphysy[idx],np.transpose(Fsurfy[:,:,:-1],(1,0,2))) + \
@@ -770,8 +792,7 @@ class SatDer1:
             qR = fn.pad_1dL(q, q_bdyR)  # TODO: this definitely does not work
             raise Exception('TODO: adding boundary condition.')
         
-        Fsurfx = self.build_F(qL, qR, self.had_flux_Ex)
-        Fsurfy = self.build_F(qL, qR, self.had_flux_Ey)
+        Fsurfx, Fsurfy = self.build_F(qL, qR, self.calc_had_flux)
         
         surfa = self.had_gamma * (fn.gm_gm_had_diff(self.taphysx[idx],np.transpose(Fsurfx[:,:,:-1],(1,0,2))) + \
                                   fn.gm_gm_had_diff(self.taphysy[idx],np.transpose(Fsurfy[:,:,:-1],(1,0,2))) )

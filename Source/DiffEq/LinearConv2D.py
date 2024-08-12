@@ -43,14 +43,15 @@ class LinearConv(PdeBase):
             self.maxeig_dExdq = lambda q : np.ones(q.shape)
             self.dExdq = lambda q : fn.diag(np.ones(q.shape))
             self.dExdq_eig_abs = self.dExdq
-            self.central_Ex = self.central_fix_Ex
         
         if self.ay == self.ay_fix:
             print('Using the fixed ay={} diffeq functions since params match.'.format(self.ax_fix))
             self.maxeig_dEydq = lambda q : np.ones(q.shape)
             self.dEydq = lambda q : fn.diag(np.ones(q.shape))
             self.dEydq_eig_abs = self.dEydq
-            self.central_Ey = self.central_fix_Ey
+
+        if self.ax == self.ax_fix and self.ay == self.ay_fix:
+            self.central_fluxes = self.central_fix_fluxes
 
     def exact_sol(self, time=0, xy=None):
 
@@ -115,16 +116,9 @@ class LinearConv(PdeBase):
         dEydq = fn.diag(np.zeros(q.shape))
         return dEydq
 
-    @njit   
-    def central_fix_Ex(qL,qR):
-        ''' a central 2-point flux for hadamard form but with ax fixed at 1.
+    @njit
+    def central_fix_fluxes(qL,qR):
+        ''' a central 2-point flux for hadamard form but with ax fixed at (1,1).
         This allows us to jit the hadamard flux functions. '''
         f = fn.arith_mean(qL,qR)
-        return f
-    
-    @njit   
-    def central_fix_Ey(qL,qR):
-        ''' a central 2-point flux for hadamard form but with ay fixed at 1.
-        This allows us to jit the hadamard flux functions. '''
-        f = fn.arith_mean(qL,qR)
-        return f
+        return f, f
