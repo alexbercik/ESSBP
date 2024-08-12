@@ -81,11 +81,17 @@ class ADiss():
                     print('WARNING: No s provided to artificial dissipation. Defaulting to s=p')
                     self.s = self.solver.p
 
-            if 'coeff' in  self.solver.vol_diss.keys():
+            if 'coeff' in self.solver.vol_diss.keys():
                 assert isinstance(self.solver.vol_diss['coeff'], float), 'Artificial Dissipation: coeff must be a float, {0}'.format(self.solver.vol_diss['coeff'])
                 self.coeff = self.solver.vol_diss['coeff']
             else:
                 self.coeff = 0.1
+
+            if 'bdy_fix' in self.solver.vol_diss.keys():
+                assert isinstance(self.solver.vol_diss['bdy_fix'], bool), 'Artificial Dissipation: bdy_fix must be a boolean, {0}'.format(self.solver.vol_diss['bdy_fix'])
+                self.bdy_fix = self.solver.vol_diss['bdy_fix']
+            else:
+                self.bdy_fix = True
 
             if self.type.lower() == 'upwind':
                 print("WARNING: upwind volume dissipation is experimental and only provably stable for linear, constant-coeff. equations.")
@@ -231,7 +237,7 @@ class ADiss():
             #self.lhs_D = fn.gdiag_gm(-(self.solver.H_inv_phys * xavg**(2*self.s-1)), DsT * self.solver.H_phys)
             self.lhs_D = fn.gdiag_lm(-(self.solver.H_inv_phys * xavg**(2*self.s-1)),fn.kron_neq_lm(DsT @ self.solver.sbp.H,self.neq_node))
         elif self.type.lower() == 'dcp' or self.type.lower() == 'entdcp':
-            Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen)
+            Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen, self.bdy_fix)
             self.rhs_D = fn.kron_neq_lm(Ds,self.neq_node) 
             self.lhs_D = fn.gdiag_lm(-(self.solver.H_inv_phys/xavg),fn.kron_neq_lm(Ds.T @ np.diag(B) @ self.solver.sbp.H, self.neq_node))
         elif self.type.lower() == 'upwind':
@@ -339,7 +345,7 @@ class ADiss():
             self.lhs_Dxi = fn.kron_neq_gm(fn.gdiag_lm(-(self.solver.H_inv_phys * xavg**(2*self.s-1)),DsTxi),self.neq_node) 
             self.lhs_Deta = fn.kron_neq_gm(fn.gdiag_lm(-(self.solver.H_inv_phys * xavg**(2*self.s-1)),DsTeta),self.neq_node) 
         elif self.type == 'dcp':
-            Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen)
+            Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen, self.bdy_fix)
             eye = np.eye(self.mesh.nen)
             self.rhs_Dxi = fn.kron_neq_lm(np.kron(Ds, eye),self.neq_node) 
             self.rhs_Deta = fn.kron_neq_lm(np.kron(eye, Ds),self.neq_node) 
