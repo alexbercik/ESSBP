@@ -17,6 +17,7 @@ import time as tm
 class TimeMarching(TimeMarchingRk):
 
     idx_print = 100 # Calc norm after this number of iterations
+    return_failed_itn = False # include the last iteration in the return if it failed?
 
     def __init__(self, diffeq, tm_method,
                  keep_all_ts=True, skip_ts=0,
@@ -79,6 +80,7 @@ class TimeMarching(TimeMarchingRk):
         self.fun_calc_cons_obj = fun_calc_cons_obj
         self.check_resid_conv = check_resid_conv
         self.quitsim = False
+        self.enforce_positivity = self.diffeq.enforce_positivity
 
         ''' Extract other required parameters '''
 
@@ -129,9 +131,6 @@ class TimeMarching(TimeMarchingRk):
             3D array.
         '''
 
-        if self.bool_calc_cons_obj:
-            self.cons_obj = np.zeros((self.n_cons_obj, n_ts+1))
-
         self.shape_q = q0.shape
         self.len_q = q0.size
         self.t_final = dt*n_ts
@@ -152,10 +151,13 @@ class TimeMarching(TimeMarchingRk):
             Size of the time step.
         '''
 
-        if self.keep_all_ts:
+        if self.keep_all_ts or self.bool_calc_cons_obj:
             mod_t_idx = t_idx/(self.skip_ts+1)
             if mod_t_idx.is_integer():
-                q_sol[:, :, int(mod_t_idx)] = q
+                if self.keep_all_ts:
+                    q_sol[:, :, int(mod_t_idx)] = q
+                if self.bool_calc_cons_obj:
+                    self.cons_obj[:, int(mod_t_idx)] = self.fun_calc_cons_obj(q,t_idx * dt)
 
         if self.bool_plot_sol:
             tf = t_idx * dt
@@ -169,9 +171,6 @@ class TimeMarching(TimeMarchingRk):
         if self.check_resid_conv or self.print_residual:
             resid = np.linalg.norm(dqdt)
             resid = resid*resid # I actually want the norm squared
-
-        if self.bool_calc_cons_obj:
-            self.cons_obj[:, t_idx] = self.fun_calc_cons_obj(q,t_idx * dt)
         
         if (t_idx*100/n_ts).is_integer():
             if t_idx == 0:
@@ -196,16 +195,18 @@ class TimeMarching(TimeMarchingRk):
             print('\n ERROR: there are undefined values for q at t =',t_idx * dt,'t_idx =', t_idx)
             self.quitsim = True
             self.failsim = True
-            if self.bool_calc_cons_obj:
-                self.cons_obj = self.cons_obj[:, :t_idx]
+
+        if self.enforce_positivity:
+            if self.diffeq.check_positivity(q):
+                print('\n ERROR: there are negative values for q at t =',t_idx * dt,'t_idx =', t_idx)
+                self.quitsim = True
+                self.failsim = True
 
         if self.check_resid_conv:
             if (resid < 1E-10): 
                 print('Reached a residual tolerance of 1E-10 (L2 square norm). Ending simulation.')
                 self.quitsim = True
                 self.failsim = False
-                if self.bool_calc_cons_obj:
-                    self.cons_obj = self.cons_obj[:, :t_idx]
 
     def final_common(self, q, q_sol, t_idx, n_ts, dt, dqdt):
         ''' Like common, but intended for the final iteration '''
@@ -221,6 +222,14 @@ class TimeMarching(TimeMarchingRk):
                 if mod_t_idx.is_integer():
                     q_sol[:, :, int(mod_t_idx)] = q
 
+            if self.keep_all_ts or self.bool_calc_cons_obj:
+                mod_t_idx = t_idx/(self.skip_ts+1)
+                if mod_t_idx.is_integer():
+                    if self.keep_all_ts:
+                        q_sol[:, :, int(mod_t_idx)] = q
+                    if self.bool_calc_cons_obj:
+                        self.cons_obj[:, int(mod_t_idx)] = self.fun_calc_cons_obj(q,t_idx * dt)
+
             if self.bool_plot_sol:
                 tf = t_idx * dt
                 self.fun_plot_sol(q, tf)
@@ -233,9 +242,6 @@ class TimeMarching(TimeMarchingRk):
             if self.check_resid_conv or self.print_residual:
                 resid = np.linalg.norm(dqdt)
                 resid = resid*resid # I actually want the norm squared
-
-            if self.bool_calc_cons_obj:
-                self.cons_obj[:, t_idx] = self.fun_calc_cons_obj(q,t_idx * dt)
         
             sim_time = tm.time() - self.start_time
             suf = 'Complete.'
@@ -268,6 +274,10 @@ class TimeMarching(TimeMarchingRk):
            
             q_sol = np.zeros([*self.shape_q, frames])
             q_sol[:, :, 0] = q0
+            
+            if self.bool_calc_cons_obj:
+                self.cons_obj = np.zeros((self.n_cons_obj, frames))
+
             return q_sol
         else:
             return None
@@ -283,15 +293,19 @@ class TimeMarching(TimeMarchingRk):
                     mod_t_idx = (t_idx-1)/(self.skip_ts+1)
                     # recall we only saved q every mod_t_idx, but that may or many not be now
                     # since the program could have exited for a t_idx between these checkpoints
-                    if mod_t_idx.is_integer():
+                    if mod_t_idx.is_integer() and (not self.return_failed_itn):
                         # only return up to but not including this mod_t_idx 
                         self.t_final = (int(mod_t_idx)-1)*(self.skip_ts+1)*dt
-                        print("... returning q's up to and including t =", self.t_final)
+                        print("... returning q's up to and including t =", self.t_final, "t_idx =", int(mod_t_idx)-1)
+                        if self.bool_calc_cons_obj:
+                            self.cons_obj = self.cons_obj[:, :int(mod_t_idx)]
                         return q_sol[:,:,:int(mod_t_idx)]
                     else:
                         # safe to return up to last mod_t_idx 
                         self.t_final = int(mod_t_idx)*(self.skip_ts+1)*dt
-                        print("... returning q's up to and including t =", self.t_final)
+                        print("... returning q's up to and including t =", self.t_final, "t_idx =", int(mod_t_idx))
+                        if self.bool_calc_cons_obj:
+                            self.cons_obj = self.cons_obj[:, :int(mod_t_idx)+1]
                         return q_sol[:,:,:int(mod_t_idx)+1]
                 else:
                     # the simulation ended because convergence was reached.
@@ -302,22 +316,28 @@ class TimeMarching(TimeMarchingRk):
                     # since the program could have exited for a t_idx between these checkpoints
                     if mod_t_idx.is_integer():
                         # return up to and including this mod_t_idx, which is the most recent t_idx
-                        print("... returning q's up to and including t =", self.t_final)
+                        print("... returning q's up to and including t =", self.t_final, "t_idx =", int(mod_t_idx))
+                        if self.bool_calc_cons_obj:
+                            self.cons_obj = self.cons_obj[:, :int(mod_t_idx)+1]
                         return q_sol[:,:,:int(mod_t_idx)+1]
                     else:
                         # want to append final q even though it lies inbetween checkpoints
-                        print("... returning q's up to and including t =", self.t_final)
+                        print("... returning q's up to and including t =", self.t_final, "t_idx =", int(mod_t_idx))
                         print("... WARNING: this final timestep checkpoint was appended, so is not the same dt as all the ones before it, rather a bit shorter.")
+                        if self.bool_calc_cons_obj:
+                            self.cons_obj = self.cons_obj[:, :int(mod_t_idx)+1]
                         q_sol[:,:,int(mod_t_idx)+1] = q
                         return q_sol[:,:,:int(mod_t_idx)+2]
             else:
                 if self.failsim:
-                    print('... returning s at t =', self.t_final, '. Note: will contain NaNs. Consider running with keep_all_ts = True')
+                    print('... returning solution q at t =', self.t_final, '. Note: will contain NaNs. Consider running with keep_all_ts = True')
                 return q
         else:
             if self.keep_all_ts:
                 # might need to append the final solution value.
                 if self.append_qsol:
+                    if self.bool_calc_cons_obj:
+                        self.cons_obj[:, -1] = self.fun_calc_cons_obj(q,t_idx * dt)
                     q_sol[:,:,-1] = q
                 return q_sol
             else:
