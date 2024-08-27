@@ -375,21 +375,21 @@ def eigvec_history(solver, A=None, tfinal=None, save_file=None, window_size=1,
                     if plot_theory:
                         plt.plot(time_avg,100*(abs(C_theory_avg[i,:])-C0_theory)/C0_theory,label='Theory')
                     if fit_data:
-                        plt.plot(time_avg,100*(abs(C_fit_avg[i,:])-C0_fit)/C0_fit,label='Fit $\lambda = {0:.2f}$'.format(fit_vals[i]))
+                        plt.plot(time_avg,100*(abs(C_fit_avg[i,:])-C0_fit)/C0_fit,label=r'Fit $\lambda = {0:.2f}$'.format(fit_vals[i]))
                     plt.ylabel(r'\% Change in Coefficient',fontsize=14)
                 else:
                     plt.plot(time_avg,abs(C_avg[i,:])-C0,label='Numerical')
                     if plot_theory:
                         plt.plot(time_avg,abs(C_theory_avg[i,:])-C0_theory,label='Theory')
                     if plot_theory:
-                        plt.plot(time_avg,abs(C_fit_avg[i,:])-C0_fit,label='Fit $\lambda = {0:.2f}$'.format(fit_vals[i]))
+                        plt.plot(time_avg,abs(C_fit_avg[i,:])-C0_fit,label=r'Fit $\lambda = {0:.2f}$'.format(fit_vals[i]))
                     plt.ylabel(r'Change in Coefficient',fontsize=14)
             else:
                 plt.plot(time_avg,abs(C_avg[i,:]),label='Numerical')
                 if plot_theory:
                     plt.plot(time_avg,abs(C_theory_avg[i,:]),label='Theory')
                 if plot_theory:
-                    plt.plot(time_avg,abs(C_fit_avg[i,:]),label='Fit $\lambda = {0:.2f}$'.format(fit_vals[i]))
+                    plt.plot(time_avg,abs(C_fit_avg[i,:]),label=r'Fit $\lambda = {0:.2f}$'.format(fit_vals[i]))
                 plt.ylabel(r'Coefficient',fontsize=14)
             if plot_theory or fit_data:
                 plt.legend(loc='upper left',fontsize=12)
@@ -1469,6 +1469,93 @@ def read_from_diablo(filename=None):
         shape[i] = shape[i].decode("utf-8")
     
     dofs = np.sqrt(nodes)
+
+
+def plot_eigs(A, plot_hull=True, plot_all=False, labels=None, savefile=None,
+              save_format='png', dpi=600, line_width=1.5, equal_axes=False, 
+              title_size=12, legend_size=12):
+    if plot_hull:
+        from scipy.spatial import ConvexHull
+
+    # Define colors and linestyles for the hulls
+    colors = ['tab:blue', 'tab:orange', 'tab:green', 'k', 'm', 'tab:red', 'tab:brown']
+    linestyles = ['-', '--', '-.', ':', (0, (1, 1)), (0, (3, 5, 1, 5)), (0, (1, 2, 3, 2))]
+    
+    # Check if A is a list of matrices or a single matrix
+    if isinstance(A, list):
+        if labels is None:
+            labels = [f'A{i+1}' for i in range(len(A))]
+        elif len(labels) != len(A):
+            raise ValueError("Length of labels must match the number of matrices in A.")
+        
+        print(f"Calculating eigenvalues for {', '.join(labels)}")
+        
+        eig_values_list = [np.linalg.eigvals(matrix) for matrix in A]
+    else:
+        # Single matrix case
+        if labels is not None:
+            raise ValueError("Labels should be None when A is a single matrix.")
+        
+        print("Calculating eigenvalues for matrix A")
+        eig_values_list = [np.linalg.eigvals(A)]
+        labels = ["A"]  # Default label for a single matrix
+    
+    plt.figure(figsize=(6, 6))
+    
+    # Loop through each matrix's eigenvalues
+    for idx, (eig_values, label) in enumerate(zip(eig_values_list, labels)):
+        real_part = eig_values.real
+        imag_part = eig_values.imag
+        
+        # Check if eigenvalues are all purely imaginary (within tolerance)
+        if np.all(np.abs(real_part) < 1e-12):
+            # Plot a line along the imaginary axis
+            plt.plot(np.zeros_like(imag_part), imag_part, color=colors[idx % len(colors)], 
+                     linestyle=linestyles[idx % len(linestyles)], linewidth=line_width, label=label)
+        else:
+            # Plot individual eigenvalues as scatter if plot_all is True
+            if plot_all:
+                plt.scatter(real_part, imag_part, color=colors[idx % len(colors)], s=16)
+            
+            # Plot convex hull around the outermost eigenvalues
+            if plot_hull and len(eig_values) > 2:  # ConvexHull needs at least 3 points
+                points = np.column_stack((real_part, imag_part))
+                hull = ConvexHull(points)
+                
+                # Plot the convex hull with unique color and linestyle
+                for simplex in hull.simplices:
+                    plt.plot(points[simplex, 0], points[simplex, 1], color=colors[idx % len(colors)], 
+                             linestyle=linestyles[idx % len(linestyles)], linewidth=line_width)
+                
+                # Add the label only once for both the scatter and hull
+                plt.plot([], [], color=colors[idx % len(colors)], linestyle=linestyles[idx % len(linestyles)], 
+                         linewidth=line_width, label=label)
+    
+    # Add grid and labels
+    plt.axhline(0, color='black', linewidth=0.5)
+    plt.axvline(0, color='black', linewidth=0.5)
+    plt.xlabel('Real Part', fontsize=title_size)
+    plt.ylabel('Imaginary Part', fontsize=title_size)
+    plt.grid(True)
+    
+    # Fix axes ratio if equal_axes is True
+    if equal_axes:
+        plt.gca().set_aspect('equal', adjustable='box')
+
+    # Show legend only if A is a list
+    if isinstance(A, list):
+        plt.legend(fontsize=legend_size,loc='upper left')
+
+    # Save the plot if a savefile is provided
+    if savefile is not None:
+        plt.savefig(savefile, format=save_format, dpi=dpi)
+        print(f"Plot saved to {savefile}")
+    else:
+        plt.show()
+
+
+
+
 
 '''
 plot_conv(dofs[0,:,:], p_er[0,:,:], ops, 2, title=cases[0], ylabel=r'Pressure Error $\vert \vert p \vert \vert_H$', skip=[3,3,2,3,3,2])
