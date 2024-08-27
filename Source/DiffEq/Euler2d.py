@@ -11,7 +11,6 @@ import numpy as np
 from Source.DiffEq.DiffEqBase import PdeBase
 import Source.Methods.Functions as fn
 import Source.DiffEq.EulerFunctions as efn
-import Source.DiffEq.EulerFunctions_cmplx as ecfn
 
 class Euler(PdeBase):
     
@@ -23,6 +22,7 @@ class Euler(PdeBase):
     has_exa_sol = True
     para_names = (r'$R$',r'$\gamma$',)
     nondimensionalize = True
+    enforce_positivity = True
     t_scale = 1.
     a_inf = 1.
     rho_inf = 1.
@@ -157,6 +157,8 @@ class Euler(PdeBase):
             self.entropy_var = efn.entropy_var_2D
             self.dqdw = efn.symmetrizer_2D
             self.dEndw_abs = efn.dEndw_abs_2D
+            self.calc_p = efn.calc_p_2D
+
 
         if bc != 'periodic':
             
@@ -168,13 +170,26 @@ class Euler(PdeBase):
     ''' Begin  defining class functions'''
     ######################################
       
-    def calc_p(self,rho,rhou,rhov,e):
-        ''' function to calculate the pressure given Q variables '''
-        return (self.g-1)*(e-0.5*((rhou*rhou + rhov*rhov)/rho))
+    def calc_p(self,q):
+        ''' function to calculate the pressure given q '''
+        rho = q[::4,:]
+        rhou = q[1::4,:]
+        rhov = q[2::4,:]
+        e = q[3::4,:]
+        p = (self.g-1)*(e-0.5*(rhou*rhou + rhov*rhov)/rho)
+        return p
 
-    def calc_a(self,rho,rhou,rhov,e):
-        ''' function to calculate the sound speed given pressure and Q1 '''
-        return np.sqrt(self.g*self.calc_p(rho,rhou,rhov,e)/rho)    
+    def calc_a(self,q):
+        ''' function to calculate the sound speed '''
+        rho = q[::4,:]
+        return np.sqrt(self.g*self.calc_p(q)/rho)   
+
+    def check_positivity(self, q):
+        ''' Check if thermodynamic variables are positive '''
+        rho = q[::4,:]
+        p = self.calc_p(q)
+        not_ok = np.any(rho < 0) and np.any(p < 0)
+        return not_ok  
 
     def decompose_q(self, q):
         ''' splits q[nen*neq_node,nelem] or q[nen*neq_node] to q_i[nen,nelem] 
