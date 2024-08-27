@@ -27,6 +27,13 @@ import Source.Methods.Functions as fn
 g = 1.4
 g1 = g-1
 
+@njit
+def cabs(x):
+    ''' the standard abs(x) is not analytic. Replace with this version.'''
+    sgn = np.sign(np.real(x))
+    res = sgn * x
+    return res
+
 @njit 
 def calcEx_1D(q):
     ''' the flux vector in 1D, hard coded with g=1.4 '''
@@ -42,7 +49,7 @@ def calcEx_1D(q):
     p = (g-1)*(q_2 - 0.5*k) # = p * S if quasi1D Euler
 
     # assemble_vec 
-    E = np.zeros(q.shape)
+    E = np.zeros_like(q)
     E[::3,:] = q_1
     E[1::3,:] = k + p
     E[2::3,:] = u*(q_2 + p)
@@ -63,7 +70,7 @@ def calcEx_2D(q):
     p = (g-1)*(q_3 - 0.5*(u*q_1 + v*q_2))  
 
     # assemble_vec
-    E = np.zeros(q.shape)
+    E = np.zeros_like(q)
     E[::4,:] = q_1
     E[1::4,:] = q_1*u + p
     E[2::4,:] = q_1*v
@@ -85,7 +92,7 @@ def calcEy_2D(q):
     p = (g-1)*(q_3 - 0.5*(u*q_1 + v*q_2))  
 
     # assemble_vec
-    E = np.zeros(q.shape)
+    E = np.zeros_like(q)
     E[::4,:] = q_2
     E[1::4,:] = q_2*u
     E[2::4,:] = q_2*v + p
@@ -107,14 +114,14 @@ def calcExEy_2D(q):
     p = (g-1)*(q_3 - 0.5*(u*q_1 + v*q_2))  
 
     #assemble_xvec
-    Ex = np.zeros(q.shape)
+    Ex = np.zeros_like(q)
     Ex[::4,:] = q_1
     Ex[1::4,:] = q_1*u + p
     Ex[2::4,:] = q_1*v
     Ex[3::4,:] = u*(q_3 + p)
 
     # assemble_yvec
-    Ey = np.zeros(q.shape)
+    Ey = np.zeros_like(q)
     Ey[::4,:] = q_2
     Ey[1::4,:] = q_2*u
     Ey[2::4,:] = q_2*v + p
@@ -132,8 +139,8 @@ def dExdq_1D(q):
     g_e_rho = g * q[2::3,:]/rho # = g_e_rho if quasi1D Euler
 
     # entries of the dEdq (A) matrix
-    r1 = np.ones(np.shape(rho))
-    r0 = np.zeros(np.shape(rho))
+    r1 = np.ones_like(rho)
+    r0 = np.zeros_like(rho)
     r21 = (g-3) * k
     r22 = (3-g) * u
     r23 = r1*(g-1)
@@ -159,7 +166,7 @@ def dEndq_1D(q,dxidx):
     un = dxidx*u
 
     # entries of the dEdq (A) matrix
-    r0 = np.zeros(np.shape(rho))
+    r0 = np.zeros_like(rho)
     r21 = (g-3) * dxidx * k 
     r22 = (3-g) * un
     r23 = g1 * dxidx
@@ -172,30 +179,30 @@ def dEndq_1D(q,dxidx):
 
 #@njit    # fails in nopython mode :/
 def dEndw_abs_1D(q,dxidx):
-    ''' uses the Barth scaling to compute X @ abs(Lam) @ X.T, where X
+    ''' uses the Barth scaling to compute X @ cabs(Lam) @ X.T, where X
      are the eigenvectors of dExdq that symmetrixe P=dqdw, and Lam
      are the eigenvalues of dExdq '''
     
     Lam, X, _, XT = dEndq_eigs_1D(q,dxidx,val=True,vec=True,inv=False,trans=True)
-    dEndw_abs = fn.gm_gm(X, fn.gdiag_gm(abs(Lam), XT))
+    dEndw_abs = fn.gm_gm(X, fn.gdiag_gm(cabs(Lam), XT))
     return dEndw_abs
 
 def dEndw_abs_2D(q,dxidx):
-    ''' uses the Barth scaling to compute X @ abs(Lam) @ X.T, where X
+    ''' uses the Barth scaling to compute X @ cabs(Lam) @ X.T, where X
      are the eigenvectors of dExdq that symmetrixe P=dqdw, and Lam
      are the eigenvalues of dExdq '''
     
     Lam, X, _, XT = dEndq_eigs_2D(q,dxidx,val=True,vec=True,inv=False,trans=True)
-    dEndw_abs = fn.gm_gm(X, fn.gdiag_gm(abs(Lam), XT))
+    dEndw_abs = fn.gm_gm(X, fn.gdiag_gm(cabs(Lam), XT))
     return dEndw_abs
 
 def dEndw_abs_3D(q,dxidx):
-    ''' uses the Barth scaling to compute X @ abs(Lam) @ X.T, where X
+    ''' uses the Barth scaling to compute X @ cabs(Lam) @ X.T, where X
      are the eigenvectors of dExdq that symmetrixe P=dqdw, and Lam
      are the eigenvalues of dExdq '''
     
     Lam, X, _, XT = dEndq_eigs_3D(q,dxidx,val=True,vec=True,inv=False,trans=True)
-    dEndw_abs = fn.gm_gm(X, fn.gdiag_gm(abs(Lam), XT))
+    dEndw_abs = fn.gm_gm(X, fn.gdiag_gm(cabs(Lam), XT))
     return dEndw_abs
 
 @njit    
@@ -211,8 +218,8 @@ def dExdq_2D(q):
     g_e_rho = g * q[3::4,:]/rho
 
     # entries of the dEdq (A) matrix
-    r1 = np.ones(np.shape(rho))
-    r0 = np.zeros(np.shape(rho))
+    r1 = np.ones_like(rho)
+    r0 = np.zeros_like(rho)
     r21 = g1 * k - u2
     r22 = (3-g) * u
     r23 = -g1 * v
@@ -239,8 +246,8 @@ def dEydq_2D(q):
     g_e_rho = g * q[3::4,:]/rho
 
     # entries of the dEdq (A) matrix
-    r1 = np.ones(np.shape(rho))
-    r0 = np.zeros(np.shape(rho))
+    r1 = np.ones_like(rho)
+    r0 = np.zeros_like(rho)
     r21 = -u * v  
     r31 = g1 * k - v2
     r32 = -g1 * u
@@ -274,7 +281,7 @@ def dEndq_2D(q,n):
     uvn = nx*u + ny*v
 
     # entries of the dEdq (A) matrix
-    r0 = np.zeros(np.shape(rho))
+    r0 = np.zeros_like(rho)
     r21 = nx*(g1 * k - u2) - ny*uv
     r22 = (2-g)*nx*u + uvn
     r23 = -g1*nx*v + ny*u
@@ -305,8 +312,8 @@ def dExdq_3D(q):
     g_e_rho = g * q[4::5,:]/rho
 
     # entries of the dEdq (A) matrix
-    r1 = np.ones(np.shape(rho))
-    r0 = np.zeros(np.shape(rho))
+    r1 = np.ones_like(rho)
+    r0 = np.zeros_like(rho)
     r21 = g1 * k - u2
     r22 = (3-g) * u
     r23 = -g1 * v
@@ -337,8 +344,8 @@ def dEydq_3D(q):
     g_e_rho = g * q[4::5,:]/rho
 
     # entries of the dEdq (A) matrix
-    r1 = np.ones(np.shape(rho))
-    r0 = np.zeros(np.shape(rho))
+    r1 = np.ones_like(rho)
+    r0 = np.zeros_like(rho)
     r21 = -u * v  
     r31 = g1 * k - v2
     r32 = -g1 * u
@@ -369,8 +376,8 @@ def dEzdq_3D(q):
     g_e_rho = g * q[4::5,:]/rho
 
     # entries of the dEdq (A) matrix
-    r1 = np.ones(np.shape(rho))
-    r0 = np.zeros(np.shape(rho))
+    r1 = np.ones_like(rho)
+    r0 = np.zeros_like(rho)
     r21 = -u * w  
     r31 = -v * w
     r41 = g1 * k - w2
@@ -412,7 +419,7 @@ def dEndq_3D(q,n):
     uvwn = nx*u + ny*v + nz*w
     
     # entries of the dEdq (A) matrix
-    r0 = np.zeros(np.shape(rho))
+    r0 = np.zeros_like(rho)
     r21 = nx*(g1 * k - u2) - ny*uv - nz*uw
     r22 = uvwn + (nx*(2-g))*u
     r23 = -(nx*g1) * v + ny*u
@@ -460,7 +467,7 @@ def dExdq_eigs_1D(q,val=True,vec=True,inv=True,trans=False):
     a = np.sqrt(g*p/rho)
     
     if val:
-        Lam = np.zeros(np.shape(q))
+        Lam = np.zeros_like(q)
         Lam[::3,:] = u - a
         Lam[1::3,:] = u 
         Lam[2::3,:] = u + a
@@ -520,14 +527,14 @@ def dEndq_eigs_1D(q,n,val=True,vec=True,inv=True,trans=False):
     k = (u*u)/2
     #e = q[2::3,:]
     p = g1*(q[2::3,:]-rho*k) # pressure
-    norm = np.abs(n)
+    norm = cabs(n)
     #a2_g1 = g*(q[2::3,:]/rho-k) # = (g*p)/(rho*g1)
     #a = np.sqrt(a2_g1*g1) # sound speed = np.sqrt(g*p/rho)
     a = np.sqrt(g*p/rho)
     un = u*n
     
     if val:
-        Lam = np.zeros(np.shape(q))
+        Lam = np.zeros_like(q)
         Lam[::3,:] = un - norm*a
         Lam[1::3,:] = un
         Lam[2::3,:] = un + norm*a
@@ -591,7 +598,7 @@ def dExdq_eigs_2D(q,val=True,vec=True,inv=True,trans=False):
     a = np.sqrt(a2_g1*g1) # sound speed = np.sqrt(g*p/rho)
     
     if val:
-        Lam = np.zeros(np.shape(q))
+        Lam = np.zeros_like(q)
         Lam[::4,:] = u
         Lam[1::4,:] = u
         Lam[2::4,:] = u + a
@@ -603,7 +610,7 @@ def dExdq_eigs_2D(q,val=True,vec=True,inv=True,trans=False):
         r11 = np.sqrt(rho*(g1/g))
         r13 = np.sqrt(rho/(2*g))
         r32 = -np.sqrt(p)   
-        r0 = np.zeros(np.shape(rho))
+        r0 = np.zeros_like(rho)
         r21 = u*r11
         r23 = u*r13 - r32/np.sqrt(2)
         r24 = u*r13 + r32/np.sqrt(2)
@@ -669,7 +676,7 @@ def dEydq_eigs_2D(q,val=True,vec=True,inv=True,trans=False):
     a = np.sqrt(a2_g1*g1) # sound speed = np.sqrt(g*p/rho)
     
     if val:
-        Lam = np.zeros(np.shape(q))
+        Lam = np.zeros_like(q)
         #a = np.sqrt(g*p/rho) # sound speed
         Lam[::4,:] = v
         Lam[1::4,:] = v
@@ -764,7 +771,7 @@ def dEndq_eigs_2D(q,n,val=True,vec=True,inv=True,trans=False):
     uvn2 = ny*u -nx*v
     
     if val:
-        Lam = np.zeros(np.shape(q))
+        Lam = np.zeros_like(q)
         Lam[::4,:] = uvn
         Lam[1::4,:] = uvn
         Lam[2::4,:] = uvn + norm*a
@@ -946,7 +953,7 @@ def dExdq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
     p = g1*(e-rho*k) # pressure
     
     if val:
-        Lam = np.zeros(np.shape(q))
+        Lam = np.zeros_like(q)
         a = np.sqrt(g*p/rho) # sound speed
         Lam[::5,:] = u
         Lam[1::5,:] = u
@@ -960,7 +967,7 @@ def dExdq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
         b = np.sqrt(rho/(2*g))
         c = np.sqrt(p/2)   
         # entries of the eigenvector (Y) matrix
-        r0 = np.zeros(np.shape(rho))
+        r0 = np.zeros_like(rho)
         r21 = u*a
         r24 = u*b + c
         r25 = u*b - c
@@ -994,9 +1001,9 @@ def dExdq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
         r15 = -a/p
         r33 = np.sqrt(2)*c
         r21 = r33*w
-        r0 = np.zeros(np.shape(rho))
+        r0 = np.zeros_like(rho)
         r31 = -r33*v
-        r0 = np.zeros(np.shape(rho))
+        r0 = np.zeros_like(rho)
         r41 = k*b - u*c
         r42 = c - u*b
         r43 = -v*b
@@ -1029,7 +1036,7 @@ def dEydq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
     p = g1*(e-rho*k) # pressure
     
     if val:
-        Lam = np.zeros(np.shape(q))
+        Lam = np.zeros_like(q)
         a = np.sqrt(g*p/rho) # sound speed
         Lam[::5,:] = v
         Lam[1::5,:] = v
@@ -1043,7 +1050,7 @@ def dEydq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
         b = np.sqrt(rho/(2*g))
         c = np.sqrt(p/2)   
         # entries of the eigenvector (Y) matrix
-        r0 = np.zeros(np.shape(rho))
+        r0 = np.zeros_like(rho)
         r41 = np.sqrt(2)*c
         r22 = u*a
         r24 = u*b
@@ -1072,7 +1079,7 @@ def dEydq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
         # entries of the eigenvector (Y) matrix
         r14 = -np.sqrt(2)*c
         r11 = w*r14
-        r0 = np.zeros(np.shape(rho))
+        r0 = np.zeros_like(rho)
         r21 = 1/a - a*k/p
         r22 = a*u/p
         r23 = a*v/p
@@ -1111,7 +1118,7 @@ def dEzdq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
     p = g1*(e-rho*k) # pressure
     
     if val:
-        Lam = np.zeros(np.shape(q))
+        Lam = np.zeros_like(q)
         a = np.sqrt(g*p/rho) # sound speed
         Lam[::5,:] = w
         Lam[1::5,:] = w
@@ -1125,7 +1132,7 @@ def dEzdq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
         b = np.sqrt(rho/(2*g))
         c = np.sqrt(p/2)   
         # entries of the eigenvector (Y) matrix
-        r0 = np.zeros(np.shape(rho))
+        r0 = np.zeros_like(rho)
         r22 = np.sqrt(2)*c
         r23 = u*a
         r24 = u*b
@@ -1154,7 +1161,7 @@ def dEzdq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
         # entries of the eigenvector (Y) matrix
         r22 = np.sqrt(2)*c
         r11 = v*r22
-        r0 = np.zeros(np.shape(rho))
+        r0 = np.zeros_like(rho)
         r21 = -u*r22
         r31 = 1/a - a*k/p
         r32 = a*u/p
@@ -1196,7 +1203,7 @@ def dEndq_eigs_3D(q,n,val=True,vec=True,inv=True,trans=False):
     uvwn = nx*u + ny*v + nz*w
     
     if val:
-        Lam = np.zeros(np.shape(q))
+        Lam = np.zeros_like(q)
         a = np.sqrt(g*p/rho) # sound speed
         Lam[::5,:] = uvwn
         Lam[1::5,:] = uvwn
@@ -1285,7 +1292,7 @@ def maxeig_dExdq_1D(q):
     e_rho = q[2::3,:]/rhoS 
     p_rho = g1*(e_rho-0.5*u*u) # pressure / rho, even if quasi1D Euler
     a = np.sqrt(g*p_rho) # sound speed, = a if quasi1D Euler
-    lam = np.maximum(np.abs(u+a),np.abs(u-a))
+    lam = np.maximum(cabs(u+a),cabs(u-a))
     return lam
 
 @njit
@@ -1300,8 +1307,8 @@ def maxeig_dEndq_1D(q,dxidx):
     p_rho = g1*(e_rho-0.5*u*u) # pressure / rho, even if quasi1D Euler
     a = np.sqrt(g*p_rho) # sound speed, = a if quasi1D Euler
     un = dxidx*u
-    dA = np.abs(dxidx)
-    lam = np.maximum(np.abs(un+dA*a),np.abs(un-dA*a))
+    dA = cabs(dxidx)
+    lam = np.maximum(cabs(un+dA*a),cabs(un-dA*a))
     return lam
 
 @njit
@@ -1314,7 +1321,7 @@ def maxeig_dExdq_2D(q):
     e_rho = q[3::4,:] * fac
     p_rho = g1*(e_rho-0.5*(u*u+v*v)) # pressure / rho
     a = np.sqrt(g*p_rho) # sound speed
-    lam = np.maximum(np.abs(u+a),np.abs(u-a))
+    lam = np.maximum(cabs(u+a),cabs(u-a))
     return lam 
 
 @njit
@@ -1327,7 +1334,7 @@ def maxeig_dEydq_2D(q):
     e_rho = q[3::4,:] * fac
     p_rho = g1*(e_rho-0.5*(u*u+v*v)) # pressure / rho
     a = np.sqrt(g*p_rho) # sound speed
-    lam = np.maximum(np.abs(v+a),np.abs(v-a))
+    lam = np.maximum(cabs(v+a),cabs(v-a))
     return lam 
 
 @njit
@@ -1344,7 +1351,7 @@ def maxeig_dEndq_2D(q,n):
     e_rho = q[3::4,:] * fac
     p_rho = g1*(e_rho-0.5*(u*u+v*v)) # pressure / rho
     a = np.sqrt(g*p_rho) # sound speed
-    lam = np.maximum(np.abs(uvn+norm*a),np.abs(uvn-norm*a))
+    lam = np.maximum(cabs(uvn+norm*a),cabs(uvn-norm*a))
     return lam 
 
 @njit
@@ -1358,7 +1365,7 @@ def maxeig_dExdq_3D(q):
     e_rho = q[4::5,:] * fac
     p_rho = g1*(e_rho-0.5*(u*u+v*v+w*w)) # pressure / rho
     a = np.sqrt(g*p_rho) # sound speed
-    lam = np.maximum(np.abs(u+a),np.abs(u-a))
+    lam = np.maximum(cabs(u+a),cabs(u-a))
     return lam 
 
 @njit
@@ -1372,7 +1379,7 @@ def maxeig_dEydq_3D(q):
     e_rho = q[4::5,:] * fac
     p_rho = g1*(e_rho-0.5*(u*u+v*v+w*w)) # pressure / rho
     a = np.sqrt(g*p_rho) # sound speed
-    lam = np.maximum(np.abs(v+a),np.abs(v-a))
+    lam = np.maximum(cabs(v+a),cabs(v-a))
     return lam 
 
 @njit
@@ -1386,7 +1393,7 @@ def maxeig_dEzdq_3D(q):
     e_rho = q[4::5,:] * fac
     p_rho = g1*(e_rho-0.5*(u*u+v*v+w*w)) # pressure / rho
     a = np.sqrt(g*p_rho) # sound speed
-    lam = np.maximum(np.abs(w+a),np.abs(w-a))
+    lam = np.maximum(cabs(w+a),cabs(w-a))
     return lam 
 
 @njit
@@ -1405,7 +1412,7 @@ def maxeig_dEndq_3D(q,n):
     e_rho = q[4::5,:] * fac
     p_rho = g1*(e_rho-0.5*(u*u+v*v+w*w)) # pressure / rho
     a = np.sqrt(g*p_rho) # sound speed
-    lam = np.maximum(np.abs(uvwn+norm*a),np.abs(uvwn-norm*a))
+    lam = np.maximum(cabs(uvwn+norm*a),cabs(uvwn-norm*a))
     return lam 
 
 @njit
@@ -1435,7 +1442,7 @@ def entropy_var_1D(q):
     fac = rho/p 
 
     # assemble_vec 
-    w = np.zeros(q.shape)
+    w = np.zeros_like(q)
     w[::3,:] = (g-s)/(g-1) - 0.5*fac*k
     w[1::3,:] = fac*u
     w[2::3,:] = -fac
@@ -1468,7 +1475,7 @@ def entropy_var_2D(q):
     fac = rho/p 
 
     # assemble_vec 
-    w = np.zeros(q.shape)
+    w = np.zeros_like(q)
     w[::4,:] = (g-s)/(g-1) - 0.5*fac*k
     w[1::4,:] = fac*u
     w[2::4,:] = fac*v
@@ -1504,7 +1511,7 @@ def entropy_var_3D(q):
     fac = rho/p 
 
     # assemble_vec 
-    w = np.zeros(q.shape)
+    w = np.zeros_like(q)
     w[::4,:] = (g-s)/(g-1) - 0.5*fac*k
     w[1::4,:] = fac*u
     w[2::4,:] = fac*v
@@ -1564,7 +1571,7 @@ def Ismail_Roe_flux_1D(qL,qR):
     H_avg = a_avg2/(g - 1) + 0.5*u_avg**2
     rhou_avg = rho_avg*u_avg
 
-    E = np.zeros(3)
+    E = np.zeros(3,dtype=qL.dtype)
     E[0] = rhou_avg
     E[1] = rhou_avg*u_avg + p_avg
     E[2] = rhou_avg*H_avg
@@ -1627,13 +1634,13 @@ def Ismail_Roe_fluxes_2D(qL,qR):
     rhou_avg = rho_avg*u_avg
     rhov_avg = rho_avg*v_avg
 
-    Fx = np.zeros(qL.shape)
+    Fx = np.zeros_like(qL)
     Fx[0] = rhou_avg
     Fx[1] = rhou_avg*u_avg + p_avg
     Fx[2] = rhou_avg*v_avg
     Fx[3] = rhou_avg*H_avg
 
-    Fy = np.zeros(qL.shape)
+    Fy = np.zeros_like(qL)
     Fy[0] = rhov_avg
     Fy[1] = rhov_avg*u_avg
     Fy[2] = rhov_avg*v_avg + p_avg
@@ -1664,7 +1671,7 @@ def Central_flux_1D(qL,qR):
     pR = (g-1)*(q_2R - 0.5*kR)   
 
     #assemble_vec
-    E = np.zeros(3)
+    E = np.zeros(3,dtype=qL.dtype)
     E[0] = 0.5*(q_1L + q_1R)
     E[1] = 0.5*(kL + pL + kR + pR)
     E[2] = 0.5*(uL*(q_2L + pL) + uR*(q_2R + pR))
@@ -1696,14 +1703,14 @@ def Central_fluxes_2D(qL,qR):
     pR = (g-1)*(q_3R - 0.5*(uR*q_1R + vR*q_2R))  
 
     #assemble_xvec
-    Ex = np.zeros(4)
+    Ex = np.zeros(4,dtype=qL.dtype)
     Ex[0] = 0.5*(q_1L + q_1R)
     Ex[1] = 0.5*(q_1L*uL + pL + q_1R*uR + pR)
     Ex[2] = 0.5*(q_1L*vL + q_1R*vR)
     Ex[3] = 0.5*(uL*(q_3L + pL) + uR*(q_3R + pR))
 
     # assemble_yvec
-    Ey = np.zeros(4)
+    Ey = np.zeros(4,dtype=qL.dtype)
     Ey[0] = 0.5*(q_2L + q_2R)
     Ey[1] = 0.5*(q_2L*uL + q_2R*uR)
     Ey[2] = 0.5*(q_2L*vL + pL + q_2R*vR + pR)
@@ -1761,7 +1768,7 @@ def Ranocha_flux_1D(qL,qR):
 
     #assemble_xvec
     fac = rho_ln*(1./(rhop_ln*(g-1)) + 0.5*uL*uR)
-    E = np.zeros(3)
+    E = np.zeros(3,dtype=qL.dtype)
     E[0] = rho_ln*u_avg
     E[1] = E[0]*u_avg + 0.5*(pL+pR)
     E[2] = fac*u_avg + 0.5*(pL*uR + pR*uL)
@@ -1825,14 +1832,14 @@ def Ranocha_fluxes_2D(qL,qR):
 
     #assemble_xvec
     fac = rho_ln*(1./(rhop_ln*(g-1)) + 0.5*(uL*uR + vL*vR))
-    Ex = np.zeros(4)
+    Ex = np.zeros(4,dtype=qL.dtype)
     Ex[0] = rho_ln*u_avg
     Ex[1] = Ex[0]*u_avg + p_avg
     Ex[2] = Ex[0]*v_avg
     Ex[3] = fac*u_avg + 0.5*(pL*uR + pR*uL)
 
     # assemble_yvec
-    Ey = np.zeros(4)
+    Ey = np.zeros(4,dtype=qL.dtype)
     Ey[0] = rho_ln*v_avg
     Ey[1] = Ex[2]
     Ey[2] = Ey[0]*v_avg + p_avg
@@ -1847,17 +1854,17 @@ def StegerWarming_diss_1D(q, n):
     k = (u*u)/2
     e = q[2::3,:]
     p = g1*(q[2::3,:]-rho*k) # pressure
-    norm = np.abs(n)
+    norm = cabs(n)
     a = np.sqrt(g*p/rho)
     un = u*n
 
     H = (e + p)/rho
-    lam1 = np.abs(un - norm*a)
-    lam2 = np.abs(un)
-    lam3 = np.abs(un + norm*a)
+    lam1 = cabs(un - norm*a)
+    lam2 = cabs(un)
+    lam3 = cabs(un + norm*a)
 
     # assemble_vec 
-    f = np.zeros(q.shape)
+    f = np.zeros_like(q)
     f[::3,:] = rho*(lam1 + 2*g1*lam2 + lam3)
     f[1::3,:] = rho*((u-a)*lam1 + 2*g1*u*lam2 + (u+a)*lam3)
     f[2::3,:] = rho*((H-un*a/norm)*lam1 + 2*g1*k*lam2 + (H+un*a/norm)*lam3)
@@ -1881,12 +1888,12 @@ def StegerWarming_diss_2D(q, n):
     H = (e + p)/rho
     uvn = nx*u + ny*v
 
-    lam1 = abs(uvn - norm*a)
-    lam2 = abs(uvn)
-    lam3 = abs(uvn + norm*a)
+    lam1 = cabs(uvn - norm*a)
+    lam2 = cabs(uvn)
+    lam3 = cabs(uvn + norm*a)
 
     # assemble_vec 
-    f = np.zeros(q.shape)
+    f = np.zeros_like(q)
     f[::4,:] = rho*(lam1 + 2*g1*lam2 + lam3)
     f[1::4,:] = rho*((u-a)*lam1 + 2*g1*u*lam2 + (u+a)*lam3)
     f[2::4,:] = rho*((v-a)*lam1 + 2*g1*v*lam2 + (v+a)*lam3)
@@ -1897,7 +1904,7 @@ def StegerWarming_diss_2D(q, n):
 @njit
 def dEndq_eig_abs_dq_1D(dxidx, q, qg, flux_type):
     '''
-    calculates -0.5*abs(A)@(q-qg) according to the implentation in diablo. Used in SATs.
+    calculates -0.5*cabs(A)@(q-qg) according to the implentation in diablo. Used in SATs.
     INPUTS:
     dxidx = the metric terms in the desired direction (indpendent of J), shape(nen,nelem)
     q = the flow state of the "local" node, shape (nen*3,nelem)
@@ -1917,7 +1924,7 @@ def dEndq_eig_abs_dq_1D(dxidx, q, qg, flux_type):
     eL = q[2::3,:]
     HL = gamma*eL*fac - gami*phi
 
-    dA = np.abs(dxidx)
+    dA = cabs(dxidx)
 
     rhoR = qg[::3,:] 
     fac = 1.0/rhoR
@@ -1936,9 +1943,9 @@ def dEndq_eig_abs_dq_1D(dxidx, q, qg, flux_type):
     a = np.sqrt(gami*(H - phi))
     Un = u*dxidx
 
-    lambda1 = np.abs(Un + dA*a)
-    lambda2 = np.abs(Un - dA*a)
-    lambda3 = np.abs(Un)
+    lambda1 = cabs(Un + dA*a)
+    lambda2 = cabs(Un - dA*a)
+    lambda3 = cabs(Un)
     rhoA = lambda3 + dA*a
 
     # The structure here follows exactly Swanson & Turkel 1992 to construct |A|*dq
@@ -1974,32 +1981,32 @@ def dEndq_eig_abs_dq_1D(dxidx, q, qg, flux_type):
         lambda3 = -0.5*(tau*np.maximum(lmax,sat_Vl *rhoA))
     elif (flux_type == 4):
         # Alex Bercik's local Lax-Friedrichs flux (more simple & dissipative)
-        lambda1 = np.abs(u) + a #max possible eigenvalue
-        rhoA = np.abs(lambda1*dxidx)
+        lambda1 = cabs(u) + a #max possible eigenvalue
+        rhoA = cabs(lambda1*dxidx)
         fi = - 0.5*tau*fn.repeat_neq_gv(rhoA,3)*(q - qg)
         return fi
     else:
-        return np.zeros(q.shape)
+        return np.zeros_like(q)
 
     dq1 = rhoL - rhoR
     dq2 = uL - uR
     dq3 = eL - eR
 
     # diagonal matrix multiply
-    fi = np.zeros(q.shape)
+    fi = np.zeros_like(q)
     fi[::3,:] = lambda3*dq1
     fi[1::3,:] = lambda3*dq2
     fi[2::3,:] = lambda3*dq3
 
     # get E1*dq
-    E1dq = np.zeros(q.shape)
+    E1dq = np.zeros_like(q)
     fac = phi*dq1 - u*dq2 + dq3
     E1dq[::3,:] = fac
     E1dq[1::3,:] = fac*u
     E1dq[2::3,:] = fac*H
 
     # get E2*dq
-    E2dq = np.zeros(q.shape)
+    E2dq = np.zeros_like(q)
     fac2 = -Un*dq1 + dxidx*dq2
     E2dq[1::3,:] = fac2*dxidx
     E2dq[2::3,:] = fac2*Un
@@ -2025,10 +2032,10 @@ def dEndq_eig_abs_dq_1D(dxidx, q, qg, flux_type):
     fi = fi + tmp1*(E1dq + gami*E2dq)
     return fi
 
-@njit
+#@njit
 def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
     '''
-    calculates -0.5*abs(An)@(q-qg) according to the implentation in diablo. Used in SATs.
+    calculates -0.5*cabs(An)@(q-qg) according to the implentation in diablo. Used in SATs.
     INPUTS:
     dxidx = the metric terms in the desired direction (indpendent of J), shape(nen,2,nelem)
             these are the dxi_x, dxi_dy, where xi is a fixed computational direction
@@ -2047,7 +2054,7 @@ def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
     uL = q[1::4,:]*fac
     vL = q[2::4,:]*fac
     phi = 0.5*(uL*uL + vL*vL)
-    eL = q[4::4,:]
+    eL = q[3::4,:]
     HL = gamma*eL*fac - gami*phi
 
     nx = dxidx[:,0,:]
@@ -2073,9 +2080,9 @@ def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
     a = np.sqrt(gami*(H - phi))
     Un = u*nx + v*ny
 
-    lambda1 = np.abs(Un + dA*a)
-    lambda2 = np.abs(Un - dA*a)
-    lambda3 = np.abs(Un)
+    lambda1 = cabs(Un + dA*a)
+    lambda2 = cabs(Un - dA*a)
+    lambda3 = cabs(Un)
     rhoA = lambda3 + dA*a
 
     # The structure here follows exactly Swanson & Turkel 1992 to construct |A|*dq
@@ -2111,9 +2118,9 @@ def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
         lambda3 = -0.5*(tau*np.maximum(lmax,sat_Vl *rhoA))
     elif (flux_type == 4):
         # Alex Bercik's local Lax-Friedrichs flux (more simple & dissipative)
-        lambda1 = np.abs(u) + a #max eigenvalue in x
-        lambda2 = np.abs(v) + a #max eigenvalue in y
-        rhoA = np.abs(lambda1*nx + lambda2*ny)
+        lambda1 = cabs(u) + a #max eigenvalue in x
+        lambda2 = cabs(v) + a #max eigenvalue in y
+        rhoA = cabs(lambda1*nx + lambda2*ny)
         # Note: definition of rhoA is very slightly different to above (L1 norm isntead of L2 on n_i)
         fi = - 0.5*tau*fn.repeat_neq_gv(rhoA,5)*(q - qg)
         return fi
@@ -2127,7 +2134,7 @@ def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
                 dij = d[i,j]
 
     else:
-        return np.zeros(q.shape)
+        return np.zeros_like(q)
 
     dq1 = rhoL - rhoR
     dq2 = uL - uR
@@ -2135,14 +2142,14 @@ def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
     dq4 = eL - eR
 
     # diagonal matrix multiply
-    fi = np.zeros(q.shape)
+    fi = np.zeros_like(q)
     fi[::4,:] = lambda3*dq1
     fi[1::4,:] = lambda3*dq2
     fi[2::4,:] = lambda3*dq3
     fi[3::4,:] = lambda3*dq4
 
     # get E1*dq
-    E1dq = np.zeros(q.shape)
+    E1dq = np.zeros_like(q)
     fac = phi*dq1 - u*dq2 - v*dq3 + dq4
     E1dq[::4,:] = fac
     E1dq[1::4,:] = fac*u
@@ -2150,7 +2157,7 @@ def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
     E1dq[3::4,:] = fac*H
 
     # get E2*dq
-    E2dq = np.zeros(q.shape)
+    E2dq = np.zeros_like(q)
     fac2 = -Un*dq1 + nx*dq2 + ny*dq3
     E2dq[1::4,:] = fac2*nx
     E2dq[2::4,:] = fac2*ny
@@ -2182,7 +2189,7 @@ def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
 @njit
 def dEndq_eig_abs_dq_3D(dxidx, q, qg, flux_type):
     '''
-    calculates -0.5*abs(An)@(q-qg) according to the implentation in diablo. Used in SATs.
+    calculates -0.5*cabs(An)@(q-qg) according to the implentation in diablo. Used in SATs.
     INPUTS:
     dxidx = the metric terms in the desired direction (indpendent of J), shape(nen,3,nelem)
             these are the dxi_x, dxi_dy, dxi_dz, where xi is a fixed computational direction
@@ -2231,9 +2238,9 @@ def dEndq_eig_abs_dq_3D(dxidx, q, qg, flux_type):
     a = np.sqrt(gami*(H - phi))
     Un = u*nx + v*ny + w*nz
 
-    lambda1 = np.abs(Un + dA*a)
-    lambda2 = np.abs(Un - dA*a)
-    lambda3 = np.abs(Un)
+    lambda1 = cabs(Un + dA*a)
+    lambda2 = cabs(Un - dA*a)
+    lambda3 = cabs(Un)
     rhoA = lambda3 + dA*a
 
     # The structure here follows exactly Swanson & Turkel 1992 to construct |A|*dq
@@ -2269,10 +2276,10 @@ def dEndq_eig_abs_dq_3D(dxidx, q, qg, flux_type):
         lambda3 = -0.5*(tau*np.maximum(lmax,sat_Vl *rhoA))
     elif (flux_type == 4):
         # Alex Bercik's local Lax-Friedrichs flux (more simple & dissipative)
-        lambda1 = np.abs(u) + a #max eigenvalue in x
-        lambda2 = np.abs(v) + a #max eigenvalue in y
-        lambda3 = np.abs(w) + a #max eigenvalue in z
-        rhoA = np.abs(lambda1*nx + lambda2*ny + lambda3*nz)
+        lambda1 = cabs(u) + a #max eigenvalue in x
+        lambda2 = cabs(v) + a #max eigenvalue in y
+        lambda3 = cabs(w) + a #max eigenvalue in z
+        rhoA = cabs(lambda1*nx + lambda2*ny + lambda3*nz)
         # Note: definition of rhoA is very slightly different to above (L1 norm isntead of L2 on n_i)
         #if (skew_sym):
         fi = - 0.5*tau*fn.repeat_neq_gv(rhoA,5)*(q - qg)
@@ -2281,7 +2288,7 @@ def dEndq_eig_abs_dq_3D(dxidx, q, qg, flux_type):
         #        - d0_5*tau*rhoA*(q(:) - qg(:))
         return fi
     else:
-        return np.zeros(q.shape)
+        return np.zeros_like(q)
 
     dq1 = rhoL - rhoR
     dq2 = uL - uR
@@ -2290,7 +2297,7 @@ def dEndq_eig_abs_dq_3D(dxidx, q, qg, flux_type):
     dq5 = eL - eR
 
     # diagonal matrix multiply
-    fi = np.zeros(q.shape)
+    fi = np.zeros_like(q)
     fi[::5,:] = lambda3*dq1
     fi[1::5,:] = lambda3*dq2
     fi[2::5,:] = lambda3*dq3
@@ -2298,7 +2305,7 @@ def dEndq_eig_abs_dq_3D(dxidx, q, qg, flux_type):
     fi[4::5,:] = lambda3*dq5
 
     # get E1*dq
-    E1dq = np.zeros(q.shape)
+    E1dq = np.zeros_like(q)
     fac = phi*dq1 - u*dq2 - v*dq3 - w*dq4 + dq5
     E1dq[::5,:] = fac
     E1dq[1::5,:] = fac*u
@@ -2307,7 +2314,7 @@ def dEndq_eig_abs_dq_3D(dxidx, q, qg, flux_type):
     E1dq[4::5,:] = fac*H
 
     # get E2*dq
-    E2dq = np.zeros(q.shape)
+    E2dq = np.zeros_like(q)
     fac2 = -Un*dq1 + nx*dq2 + ny*dq3 + nz*dq4
     E2dq[1::5,:] = fac2*nx
     E2dq[2::5,:] = fac2*ny
@@ -2342,6 +2349,39 @@ def dEndq_eig_abs_dq_3D(dxidx, q, qg, flux_type):
     #    fi(:) = fi(:) + sgn*d0_5*(eulerFlux(dxidx,q) + eulerFlux(dxidx,qg))
     #end if
     return fi
+
+@njit
+def calc_p_1D(q):
+    ''' function to calculate the pressure given q '''
+    rho = q[::3,:]
+    rhou = q[1::3,:]
+    e = q[2::3,:]
+    p = g1*(e-0.5*rhou*rhou/rho)
+    return p
+
+@njit
+def calc_a_1D(q):
+    ''' function to calculate the sound speed '''
+    rho = q[::3,:]
+    a = np.sqrt(g*calc_p_1d(q)/rho)
+    return a
+
+@njit
+def calc_p_2D(q):
+    ''' function to calculate the pressure given q '''
+    rho = q[::4,:]
+    rhou = q[1::4,:]
+    rhov = q[2::4,:]
+    e = q[3::4,:]
+    p = g1*(e-0.5*(rhou*rhou + rhov*rhov)/rho)
+    return p
+
+@njit
+def calc_a_2D(q):
+    ''' function to calculate the sound speed '''
+    rho = q[::4,:]
+    a = np.sqrt(g*calc_p_2d(q)/rho)
+    return a
 
 
 
@@ -2380,22 +2420,22 @@ if __name__ == "__main__":
     F_Ranocha = Ranocha_flux_1D(q,q)
     
     print('---- Testing 1D functions (all should be zero) ----')
-    print('An = nx*Ax: ', np.max(abs(An1D[:,:,0]-An21D)))
-    print('maxeig(An): ', np.max(abs(maxeig - fn.spec_rad(An1D,3))))
-    print('n eigenvectors: ', np.max(abs(Y1D*Lam1D - fn.gm_gm(An1D, Y1D))))
-    print('x eigenvectors: ', np.max(abs(Yx1D*Lamx1D - fn.gm_gm(Ax1D, Yx1D))))
-    print('n eigenvector inverse: ', np.max(abs(np.linalg.inv(Y1D[:,:,0])-Yinv1D[:,:,0])))
-    print('x eigenvector inverse: ', np.max(abs(np.linalg.inv(Yx1D[:,:,0])-Yinvx1D[:,:,0])))
-    print('n eigenvector transpose: ', np.max(abs(Y1D[:,:,0].T - YT1D[:,:,0])))
-    print('x eigenvector transpose: ', np.max(abs(Yx1D[:,:,0].T - YTx1D[:,:,0])))
-    print('n eigendecomposition: ', np.max(abs(An1D - fn.gm_gm(Y1D,fn.gdiag_gm(Lam1D,Yinv1D)))))
-    print('x eigendecomposition: ', np.max(abs(Ax1D - fn.gm_gm(Yx1D,fn.gdiag_gm(Lamx1D,Yinvx1D)))))
-    print('A @ P symmetrizer: ', np.max(abs(AP1D[:,:,0] - AP1D[:,:,0].T)))
-    print('P = Y@Y.T symmetrizer: ', np.max(abs(P1D - fn.gm_gm(Y1D,YT1D))))
+    print('An = nx*Ax: ', np.max(cabs(An1D[:,:,0]-An21D)))
+    print('maxeig(An): ', np.max(cabs(maxeig - fn.spec_rad(An1D,3))))
+    print('n eigenvectors: ', np.max(cabs(Y1D*Lam1D - fn.gm_gm(An1D, Y1D))))
+    print('x eigenvectors: ', np.max(cabs(Yx1D*Lamx1D - fn.gm_gm(Ax1D, Yx1D))))
+    print('n eigenvector inverse: ', np.max(cabs(np.linalg.inv(Y1D[:,:,0])-Yinv1D[:,:,0])))
+    print('x eigenvector inverse: ', np.max(cabs(np.linalg.inv(Yx1D[:,:,0])-Yinvx1D[:,:,0])))
+    print('n eigenvector transpose: ', np.max(cabs(Y1D[:,:,0].T - YT1D[:,:,0])))
+    print('x eigenvector transpose: ', np.max(cabs(Yx1D[:,:,0].T - YTx1D[:,:,0])))
+    print('n eigendecomposition: ', np.max(cabs(An1D - fn.gm_gm(Y1D,fn.gdiag_gm(Lam1D,Yinv1D)))))
+    print('x eigendecomposition: ', np.max(cabs(Ax1D - fn.gm_gm(Yx1D,fn.gdiag_gm(Lamx1D,Yinvx1D)))))
+    print('A @ P symmetrizer: ', np.max(cabs(AP1D[:,:,0] - AP1D[:,:,0].T)))
+    print('P = Y@Y.T symmetrizer: ', np.max(cabs(P1D - fn.gm_gm(Y1D,YT1D))))
     print('----')
-    print('Consistency of Ismail Roe flux: ', np.max(abs(F-F_IsmailRoe)))
-    print('Consistency of Central flux: ', np.max(abs(F-F_Central)))
-    print('Consistency of Ranocha flux: ', np.max(abs(F-F_Ranocha)))
+    print('Consistency of Ismail Roe flux: ', np.max(cabs(F-F_IsmailRoe)))
+    print('Consistency of Central flux: ', np.max(cabs(F-F_Central)))
+    print('Consistency of Ranocha flux: ', np.max(cabs(F-F_Ranocha)))
     print('')
     
     q2D = np.random.rand(nen*4,nelem) + 10
@@ -2440,36 +2480,36 @@ if __name__ == "__main__":
     
     
     print('---- Testing 2D functions (all should be zero) ----')
-    print('An = nx*Ax + ny*Ay: ', np.max(abs(An2D[:,:,0]-An22D)))
-    print('maxeig(An): ', np.max(abs(maxeig - fn.spec_rad(An2D,4))))
-    print('x eigenvectors: ', np.max(abs(Yx2D*Lamx2D - fn.gm_gm(Ax2D, Yx2D))))
-    print('y eigenvectors: ', np.max(abs(Yy2D*Lamy2D - fn.gm_gm(Ay2D, Yy2D))))
-    print('n eigenvectors: ', np.max(abs(Y2D*Lam2D - fn.gm_gm(An2D, Y2D))))
-    print('x/nx eigenvalues: ', np.max(abs(Lamx2D-Lamx22D)))
-    print('y/ny eigenvalues: ', np.max(abs(Lamy2D-Lamy22D)))
-    print('x/nx eigenvectors: ', np.max(abs(Yx2D-Yx22D)))
-    print('y/ny eigenvectors: ', np.max(abs(Yy2D-Yy22D)))
-    print('x/nx eigenvector transpose: ', np.max(abs(YTx2D-YTx22D)))
-    print('y/ny eigenvector transpose: ', np.max(abs(YTy2D-YTy22D)))
-    print('x/nx eigenvector inverse: ', np.max(abs(Yinvx2D-Yinvx22D)))
-    print('y/ny eigenvector inverse: ', np.max(abs(Yinvy2D-Yinvy22D)))
-    print('x eigenvector inverse: ', np.max(abs(np.linalg.inv(Yx2D[:,:,0])-Yinvx2D[:,:,0])))
-    print('y eigenvector inverse: ', np.max(abs(np.linalg.inv(Yy2D[:,:,0])-Yinvy2D[:,:,0])))
-    print('n eigenvector inverse: ', np.max(abs(np.linalg.inv(Y2D[:,:,0])-Yinv2D[:,:,0])))
-    print('x eigenvector transpose: ', np.max(abs(Yx2D[:,:,0].T - YTx2D[:,:,0])))
-    print('y eigenvector transpose: ', np.max(abs(Yy2D[:,:,0].T - YTy2D[:,:,0])))
-    print('n eigenvector transpose: ', np.max(abs(Y2D[:,:,0].T - YT2D[:,:,0])))
-    print('x eigendecomposition: ', np.max(abs(Ax2D - fn.gm_gm(Yx2D,fn.gdiag_gm(Lamx2D,Yinvx2D)))))
-    print('y eigendecomposition: ', np.max(abs(Ay2D - fn.gm_gm(Yy2D,fn.gdiag_gm(Lamy2D,Yinvy2D)))))
-    print('nx eigendecomposition: ', np.max(abs(Ax2D - fn.gm_gm(Yx22D,fn.gdiag_gm(Lamx22D,Yinvx22D)))))
-    print('ny eigendecomposition: ', np.max(abs(Ay2D - fn.gm_gm(Yy22D,fn.gdiag_gm(Lamy22D,Yinvy22D)))))
-    print('n eigendecomposition: ', np.max(abs(An2D - fn.gm_gm(Y2D,fn.gdiag_gm(Lam2D,Yinv2D)))))
-    print('P = Y@Y.T symmetrizer:', np.max(abs(P2D-P22D))) 
-    print('An @ P symmetry: ', np.max(abs(AP2D[:,:,0] - AP2D[:,:,0].T)))
+    print('An = nx*Ax + ny*Ay: ', np.max(cabs(An2D[:,:,0]-An22D)))
+    print('maxeig(An): ', np.max(cabs(maxeig - fn.spec_rad(An2D,4))))
+    print('x eigenvectors: ', np.max(cabs(Yx2D*Lamx2D - fn.gm_gm(Ax2D, Yx2D))))
+    print('y eigenvectors: ', np.max(cabs(Yy2D*Lamy2D - fn.gm_gm(Ay2D, Yy2D))))
+    print('n eigenvectors: ', np.max(cabs(Y2D*Lam2D - fn.gm_gm(An2D, Y2D))))
+    print('x/nx eigenvalues: ', np.max(cabs(Lamx2D-Lamx22D)))
+    print('y/ny eigenvalues: ', np.max(cabs(Lamy2D-Lamy22D)))
+    print('x/nx eigenvectors: ', np.max(cabs(Yx2D-Yx22D)))
+    print('y/ny eigenvectors: ', np.max(cabs(Yy2D-Yy22D)))
+    print('x/nx eigenvector transpose: ', np.max(cabs(YTx2D-YTx22D)))
+    print('y/ny eigenvector transpose: ', np.max(cabs(YTy2D-YTy22D)))
+    print('x/nx eigenvector inverse: ', np.max(cabs(Yinvx2D-Yinvx22D)))
+    print('y/ny eigenvector inverse: ', np.max(cabs(Yinvy2D-Yinvy22D)))
+    print('x eigenvector inverse: ', np.max(cabs(np.linalg.inv(Yx2D[:,:,0])-Yinvx2D[:,:,0])))
+    print('y eigenvector inverse: ', np.max(cabs(np.linalg.inv(Yy2D[:,:,0])-Yinvy2D[:,:,0])))
+    print('n eigenvector inverse: ', np.max(cabs(np.linalg.inv(Y2D[:,:,0])-Yinv2D[:,:,0])))
+    print('x eigenvector transpose: ', np.max(cabs(Yx2D[:,:,0].T - YTx2D[:,:,0])))
+    print('y eigenvector transpose: ', np.max(cabs(Yy2D[:,:,0].T - YTy2D[:,:,0])))
+    print('n eigenvector transpose: ', np.max(cabs(Y2D[:,:,0].T - YT2D[:,:,0])))
+    print('x eigendecomposition: ', np.max(cabs(Ax2D - fn.gm_gm(Yx2D,fn.gdiag_gm(Lamx2D,Yinvx2D)))))
+    print('y eigendecomposition: ', np.max(cabs(Ay2D - fn.gm_gm(Yy2D,fn.gdiag_gm(Lamy2D,Yinvy2D)))))
+    print('nx eigendecomposition: ', np.max(cabs(Ax2D - fn.gm_gm(Yx22D,fn.gdiag_gm(Lamx22D,Yinvx22D)))))
+    print('ny eigendecomposition: ', np.max(cabs(Ay2D - fn.gm_gm(Yy22D,fn.gdiag_gm(Lamy22D,Yinvy22D)))))
+    print('n eigendecomposition: ', np.max(cabs(An2D - fn.gm_gm(Y2D,fn.gdiag_gm(Lam2D,Yinv2D)))))
+    print('P = Y@Y.T symmetrizer:', np.max(cabs(P2D-P22D))) 
+    print('An @ P symmetry: ', np.max(cabs(AP2D[:,:,0] - AP2D[:,:,0].T)))
     print('----')
-    print('Consistency of Ismail Roe flux: ', np.max(abs(np.array([Fx-Fx_IsmailRoe,Fy-Fy_IsmailRoe]))))
-    print('Consistency of Central flux: ', np.max(abs(np.array([Fx-Fx_Central,Fy-Fy_Central]))))
-    print('Consistency of Ranocha flux: ', np.max(abs(np.array([Fx-Fx_Ranocha,Fy-Fy_Ranocha]))))
+    print('Consistency of Ismail Roe flux: ', np.max(cabs(np.array([Fx-Fx_IsmailRoe,Fy-Fy_IsmailRoe]))))
+    print('Consistency of Central flux: ', np.max(cabs(np.array([Fx-Fx_Central,Fy-Fy_Central]))))
+    print('Consistency of Ranocha flux: ', np.max(cabs(np.array([Fx-Fx_Ranocha,Fy-Fy_Ranocha]))))
     print('')
     
 
@@ -2518,34 +2558,34 @@ if __name__ == "__main__":
     
     print('---- Testing 3D functions (all should be zero) ----')
     print('THERE ARE SOME ERRORS: MUST REDO SCALING AS FOR 2D')
-    print('An = nx*Ax + ny*Ay + nz*Az: ', np.max(abs(An3D[:,:,0]-An23D)))
-    print('x/nx eigenvalues: ', np.max(abs(Lamx3D-Lamx23D)))
-    print('y/ny eigenvalues: ', np.max(abs(Lamy3D-Lamy23D)))
-    print('z/nz eigenvalues: ', np.max(abs(Lamz3D-Lamz23D)))
-    print('x/nx eigenvectors: ', np.max(abs(Yx3D-Yx23D)))
-    print('y/ny eigenvectors: ', np.max(abs(Yy3D-Yy23D)))
-    print('z/nz eigenvectors: ', np.max(abs(Yz3D-Yz23D)))
-    print('x/nx eigenvector transpose: ', np.max(abs(YTx3D-YTx23D)))
-    print('y/ny eigenvector transpose: ', np.max(abs(YTy3D-YTy23D)))
-    print('z/nz eigenvector transpose: ', np.max(abs(YTz3D-YTz23D)))
-    print('x/nx eigenvector inverse: ', np.max(abs(Yinvx3D-Yinvx23D)))
-    print('y/ny eigenvector inverse: ', np.max(abs(Yinvy3D-Yinvy23D)))
-    print('z/nz eigenvector inverse: ', np.max(abs(Yinvz3D-Yinvz23D)))
-    print('x eigenvector inverse: ', np.max(abs(np.linalg.inv(Yx3D[:,:,0])-Yinvx3D[:,:,0])))
-    print('y eigenvector inverse: ', np.max(abs(np.linalg.inv(Yy3D[:,:,0])-Yinvy3D[:,:,0])))
-    print('z eigenvector inverse: ', np.max(abs(np.linalg.inv(Yz3D[:,:,0])-Yinvz3D[:,:,0])))
-    print('n eigenvector inverse: ', np.max(abs(np.linalg.inv(Y3D[:,:,0])-Yinv3D[:,:,0])))
-    print('x eigenvector transpose: ', np.max(abs(Yx3D[:,:,0].T - YTx3D[:,:,0])))
-    print('y eigenvector transpose: ', np.max(abs(Yy3D[:,:,0].T - YTy3D[:,:,0])))
-    print('z eigenvector transpose: ', np.max(abs(Yz3D[:,:,0].T - YTz3D[:,:,0])))
-    print('n eigenvector transpose: ', np.max(abs(Y3D[:,:,0].T - YT3D[:,:,0])))
-    print('x eigendecomposition: ', np.max(abs(Ax3D - fn.gm_gm(Yx3D,fn.gdiag_gm(Lamx3D,Yinvx3D)))))
-    print('y eigendecomposition: ', np.max(abs(Ay3D - fn.gm_gm(Yy3D,fn.gdiag_gm(Lamy3D,Yinvy3D)))))
-    print('z eigendecomposition: ', np.max(abs(Az3D - fn.gm_gm(Yz3D,fn.gdiag_gm(Lamz3D,Yinvz3D)))))
-    print('nx eigendecomposition: ', np.max(abs(Ax3D - fn.gm_gm(Yx23D,fn.gdiag_gm(Lamx23D,Yinvx23D)))))
-    print('ny eigendecomposition: ', np.max(abs(Ay3D - fn.gm_gm(Yy23D,fn.gdiag_gm(Lamy23D,Yinvy23D)))))
-    print('nz eigendecomposition: ', np.max(abs(Az3D - fn.gm_gm(Yz23D,fn.gdiag_gm(Lamz23D,Yinvz23D)))))
-    print('n eigendecomposition: ', np.max(abs(An3D - fn.gm_gm(Y3D,fn.gdiag_gm(Lam3D,Yinv3D)))))
-    print('An @ P symmetrizer: ', np.max(abs(AP3D[:,:,0] - AP3D[:,:,0].T)))
-    print('P - eigenvector scaling: ', np.max(abs(P3D - fn.gm_gm(Y3D,YT3D))))
+    print('An = nx*Ax + ny*Ay + nz*Az: ', np.max(cabs(An3D[:,:,0]-An23D)))
+    print('x/nx eigenvalues: ', np.max(cabs(Lamx3D-Lamx23D)))
+    print('y/ny eigenvalues: ', np.max(cabs(Lamy3D-Lamy23D)))
+    print('z/nz eigenvalues: ', np.max(cabs(Lamz3D-Lamz23D)))
+    print('x/nx eigenvectors: ', np.max(cabs(Yx3D-Yx23D)))
+    print('y/ny eigenvectors: ', np.max(cabs(Yy3D-Yy23D)))
+    print('z/nz eigenvectors: ', np.max(cabs(Yz3D-Yz23D)))
+    print('x/nx eigenvector transpose: ', np.max(cabs(YTx3D-YTx23D)))
+    print('y/ny eigenvector transpose: ', np.max(cabs(YTy3D-YTy23D)))
+    print('z/nz eigenvector transpose: ', np.max(cabs(YTz3D-YTz23D)))
+    print('x/nx eigenvector inverse: ', np.max(cabs(Yinvx3D-Yinvx23D)))
+    print('y/ny eigenvector inverse: ', np.max(cabs(Yinvy3D-Yinvy23D)))
+    print('z/nz eigenvector inverse: ', np.max(cabs(Yinvz3D-Yinvz23D)))
+    print('x eigenvector inverse: ', np.max(cabs(np.linalg.inv(Yx3D[:,:,0])-Yinvx3D[:,:,0])))
+    print('y eigenvector inverse: ', np.max(cabs(np.linalg.inv(Yy3D[:,:,0])-Yinvy3D[:,:,0])))
+    print('z eigenvector inverse: ', np.max(cabs(np.linalg.inv(Yz3D[:,:,0])-Yinvz3D[:,:,0])))
+    print('n eigenvector inverse: ', np.max(cabs(np.linalg.inv(Y3D[:,:,0])-Yinv3D[:,:,0])))
+    print('x eigenvector transpose: ', np.max(cabs(Yx3D[:,:,0].T - YTx3D[:,:,0])))
+    print('y eigenvector transpose: ', np.max(cabs(Yy3D[:,:,0].T - YTy3D[:,:,0])))
+    print('z eigenvector transpose: ', np.max(cabs(Yz3D[:,:,0].T - YTz3D[:,:,0])))
+    print('n eigenvector transpose: ', np.max(cabs(Y3D[:,:,0].T - YT3D[:,:,0])))
+    print('x eigendecomposition: ', np.max(cabs(Ax3D - fn.gm_gm(Yx3D,fn.gdiag_gm(Lamx3D,Yinvx3D)))))
+    print('y eigendecomposition: ', np.max(cabs(Ay3D - fn.gm_gm(Yy3D,fn.gdiag_gm(Lamy3D,Yinvy3D)))))
+    print('z eigendecomposition: ', np.max(cabs(Az3D - fn.gm_gm(Yz3D,fn.gdiag_gm(Lamz3D,Yinvz3D)))))
+    print('nx eigendecomposition: ', np.max(cabs(Ax3D - fn.gm_gm(Yx23D,fn.gdiag_gm(Lamx23D,Yinvx23D)))))
+    print('ny eigendecomposition: ', np.max(cabs(Ay3D - fn.gm_gm(Yy23D,fn.gdiag_gm(Lamy23D,Yinvy23D)))))
+    print('nz eigendecomposition: ', np.max(cabs(Az3D - fn.gm_gm(Yz23D,fn.gdiag_gm(Lamz23D,Yinvz23D)))))
+    print('n eigendecomposition: ', np.max(cabs(An3D - fn.gm_gm(Y3D,fn.gdiag_gm(Lam3D,Yinv3D)))))
+    print('An @ P symmetrizer: ', np.max(cabs(AP3D[:,:,0] - AP3D[:,:,0].T)))
+    print('P - eigenvector scaling: ', np.max(cabs(P3D - fn.gm_gm(Y3D,YT3D))))
     """
