@@ -7,6 +7,7 @@ Created on Tue Feb 23 19:02:07 2021
 """
 import numpy as np
 import Source.Methods.Functions as fn
+from Source.Methods.Sparse import sparse_gm_gv
 
 class SatDer1:
     
@@ -14,7 +15,7 @@ class SatDer1:
     ''' CENTRAL FLUXES '''
     ##########################################################################
 
-    def central_div_1d_base(self, q, E, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None):
+    def base_div_1d(self, q, E, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None):
         '''
         A non-dissipative central flux in 1D, that calls an external dissipation function.
         '''
@@ -164,7 +165,7 @@ class SatDer1:
         
         return sat
     
-    def central_div_2d_base(self, q, Ex, Ey, idx, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None):
+    def base_div_2d(self, q, Ex, Ey, idx, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None):
         '''
         A non-dissipative central flux in 2D, that calls an external dissipation function..
         '''
@@ -181,11 +182,16 @@ class SatDer1:
         else:
             raise Exception('TODO: adding boundary condition.')
         
-        diss = self.diss(qf_L,qf_R)
+        diss = self.diss(qf_L,qf_R,idx)
         
+        """
         sat = 0.5*( fn.gm_gv(self.vol_x_mat[idx], Ex) + fn.gm_gv(self.vol_y_mat[idx], Ey) 
                   - fn.gm_gv(self.tbphysx[idx], ExR) - fn.gm_gv(self.tbphysy[idx], EyR)
                   + fn.gm_gv(self.taphysx[idx], ExL) + fn.gm_gv(self.taphysy[idx], EyL)) - diss
+        """
+        sat = 0.5*( sparse_gm_gv(self.vol_x_mat_sp[idx], Ex) + sparse_gm_gv(self.vol_y_mat_sp[idx], Ey) 
+                  - sparse_gm_gv(self.tbphysx_sp[idx], ExR) - sparse_gm_gv(self.tbphysy_sp[idx], EyR)
+                  + sparse_gm_gv(self.taphysx_sp[idx], ExL) + sparse_gm_gv(self.taphysy_sp[idx], EyL)) - diss
         
         return sat
     
@@ -688,7 +694,7 @@ class SatDer1:
         surfa = fn.gm_gm_had_diff(self.taphys,np.transpose(Fsurf[:,:,:-1],(1,0,2)))
         surfb = fn.gm_gm_had_diff(self.tbphys,Fsurf[:,:,1:])
         
-        diss = self.diss(qL,qR)
+        diss = self.diss(self.tRT @ qL, self.tLT @ qR)
         
         sat = vol + surfa - surfb - diss 
         return sat
@@ -723,7 +729,7 @@ class SatDer1:
         surfb = fn.gm_gm_had_diff(self.tbphysx[idx],Fsurfx[:,:,1:]) + \
                 fn.gm_gm_had_diff(self.tbphysy[idx],Fsurfy[:,:,1:])
         
-        diss = self.diss(qL,qR,idx)
+        diss = self.diss(self.tRT @ qL, self.tLT @ qR, idx)
         
         sat = vol + surfa - surfb - diss
         return sat
@@ -762,7 +768,7 @@ class SatDer1:
                 fn.gm_gm_had_diff(self.tbphysy[idx],Fsurfy[:,:,1:]) + \
                 fn.gm_gm_had_diff(self.tbphysz[idx],Fsurfz[:,:,1:])
         
-        diss = self.diss(qL,qR,idx)
+        diss = self.diss(self.tRT @ qL, self.tLT @ qR, idx)
         
         sat = vol + surfa - surfb - diss 
         return sat
