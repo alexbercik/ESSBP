@@ -582,7 +582,7 @@ class PdeSolver:
                       cons_obj_name=self.cons_obj_name,
                       bool_plot_sol=self.bool_plot_sol, print_sol_norm=self.print_sol_norm)
         
-    def get_LHS(self, q=None, t=0., exact_dfdq=True, step=1.0e-4):
+    def get_LHS(self, q=None, t=0., exact_dfdq=True, step=1.0e-4, istep=1.0e-15, finite_diff=False):
         '''
         Either get the exact LHS operator on q if the problem is linear, or the
         linearization (LHS) of it at a particular state q. Either done exactly with
@@ -619,25 +619,45 @@ class PdeSolver:
                 A = self.dfdq(q)
             except:
                 exact_dfdq = False
-                print('WARNING: self.dfdq(q) returned errors. Using finite diff approximation')
+                if finite_diff:
+                    print('WARNING: self.dfdq(q) returned errors. Using finite difference.')
+                else:
+                    print('WARNING: self.dfdq(q) returned errors. Using complex step.')
         if not exact_dfdq:
-            nen,nelem = q.shape    
-            A = np.zeros((nelem*nen,nelem*nen))      
-            assert(self.qshape==q.shape),"ERROR: sizes don't match"           
-            for i in range(nen):
-                for j in range(nelem):
-                    ei = np.zeros((nen,nelem))
-                    ei[i,j] = 1.*step
-                    q_r = self.dqdt(q+ei, t).flatten('F')
-                    q_l = self.dqdt(q-ei, t).flatten('F')
-                    idx = np.where(ei.flatten('F')>step/10)[0][0]
-                    A[:,idx] = (q_r - q_l)/(2*step)
+            from Source.Methods.Analysis import printProgressBar
+            nen,nelem = q.shape      
+            assert(self.qshape==q.shape),"ERROR: sizes don't match"
+            if not finite_diff:
+                try:
+                    A = np.zeros((nelem*nen,nelem*nen),dtype=np.complex128)    
+                    for i in range(nen):
+                        printProgressBar(i, nen, prefix = 'Complex Step Progress:')
+                        for j in range(nelem):
+                            ei = np.zeros((nen,nelem),dtype=np.complex128)
+                            ei[i,j] = istep*1j
+                            qi = self.dqdt(np.complex128(q)+ei, t).flatten('F')
+                            idx = np.where(np.imag(ei.flatten('F'))>istep/10)[0][0]
+                            A[:,idx] = np.imag(qi)/istep
+                except:  
+                    print('WARNING: complex step returned errors. Using finite difference.') 
+                    finite_diff = True
+            if finite_diff:
+                A = np.zeros((nelem*nen,nelem*nen))            
+                for i in range(nen):
+                    printProgressBar(i, nen, prefix = 'Complex Step Progress:')
+                    for j in range(nelem):
+                        ei = np.zeros((nen,nelem))
+                        ei[i,j] = 1.*step
+                        q_r = self.dqdt(q+ei, t).flatten('F')
+                        q_l = self.dqdt(q-ei, t).flatten('F')
+                        idx = np.where(ei.flatten('F')>step/10)[0][0]
+                        A[:,idx] = (q_r - q_l)/(2*step)
         return A
 
     
-    def check_eigs(self, q=None, plot_eigs=True, returnA=False, exact_dfdq=True,
-                   step=5.0e-6, tol=1.0e-10, savefile=None, ymin=None, ymax=None,
-                   xmin=None, xmax=None, time=None, display_time=False, title=None, 
+    def check_eigs(self, q=None, plot_eigs=True, returnA=False, returneigs=False, exact_dfdq=True,
+                   finite_diff=False, step=5.0e-6, istep=1e-15, tol=1.0e-10, savefile=None, 
+                   ymin=None, ymax=None, xmin=None, xmax=None, time=None, display_time=False, title=None, 
                    save_format='png', dpi=600, colour_by_k=False, overwrite=False, **kargs):
         '''
         Call on self.diffeq.dqdt to check the stability of the spatial operator
@@ -673,7 +693,7 @@ class PdeSolver:
             Approximate RHS spatial operator
 
         '''
-        A = self.get_LHS(q=q, exact_dfdq=exact_dfdq, step=step)
+        A = self.get_LHS(q=q, exact_dfdq=exact_dfdq, step=step, istep=istep, finite_diff=finite_diff)
         if (colour_by_k) and self.dim==1 and self.neq_node==1 and plot_eigs:
             eigs, eigvecs = np.linalg.eig(A)
         else:
@@ -783,10 +803,14 @@ class PdeSolver:
                     plt.savefig(filename, format=save_format, dpi=dpi)
             plt.show()
         
-        if returnA:
+        if returnA and returneigs:
+            return A, eigs
+        elif returnA:
             return A
+        elif returneigs:
+            return eigs
 
-    def plot_cons_obj(self,savefile=None):
+    def plot_cons_obj(self,savefile=None,final_idx=-1):
         '''
         Plot the conservation objectives
 
@@ -800,36 +824,37 @@ class PdeSolver:
             norm = self.cons_obj[i,0]
             plt.figure(figsize=(6,4))
             plt.xlabel(r'Time $t$',fontsize=16)
+            time = np.linspace(0,self.t_final,len(self.cons_obj[i]))
 
             if cons_obj_name_i == 'energy':
                 plt.title(r'Change in Energy',fontsize=18)
                 plt.ylabel(r'$\vert \vert u(x,t)^2 \vert \vert_H$ - $\vert \vert u_0(x)^2 \vert \vert_H$',fontsize=16)
-                plt.plot(np.linspace(0,self.t_final,len(self.cons_obj[i])),self.cons_obj[i]-norm) 
+                plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]-norm) 
                 #plt.ylabel(r'$- ( \vert \vert u(x,t)^2 \vert \vert_H$ - $\vert \vert u_0(x)^2 \vert \vert_H )$',fontsize=16)
-                #plt.plot(np.linspace(0,self.t_final,len(self.cons_obj[i])),abs(self.cons_obj[i]-norm)) 
+                #plt.plot(time[:final_idx],abs(self.cons_obj[i]-norm)) 
                 #plt.yscale('log')
                 #plt.gca().invert_yaxis()
                 
             elif cons_obj_name_i == 'entropy':
                 plt.title(r'Change in Entropy',fontsize=18)
                 plt.ylabel(r'$ 1 H s(x,t) - 1 H s(x,0) $',fontsize=16)
-                plt.plot(np.linspace(0,self.t_final,len(self.cons_obj[i])),self.cons_obj[i]-norm) 
+                plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]-norm) 
     
             elif cons_obj_name_i == 'conservation':
                 plt.title(r'Change in Conservation',fontsize=18)
                 plt.ylabel(r'$\vert \vert u(x,t) \vert \vert_H$ - $\vert \vert u_0(x) \vert \vert_H$',fontsize=16)
                 plt.ticklabel_format(axis='y',style='sci',scilimits=(0,1))
-                plt.plot(np.linspace(0,self.t_final,len(self.cons_obj[i])),self.cons_obj[i]-norm)              
+                plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]-norm)              
             
             elif cons_obj_name_i == 'a_energy':
                 plt.title(r'Change in A-norm Energy',fontsize=18)
                 plt.ylabel(r'$\vert \vert u(x,t)^2 \vert \vert_{AH}$ - $\vert \vert u_0(x)^2 \vert \vert_{AH}$',fontsize=16)
-                plt.plot(np.linspace(0,self.t_final,len(self.cons_obj[i])),self.cons_obj[i]-norm) 
+                plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]-norm) 
                 
             else:
                 print('WARNING: No default plotting set up for '+cons_obj_name_i)
                 plt.title(cons_obj_name_i,fontsize=18)
-                plt.plot(np.linspace(0,self.t_final,len(self.cons_obj[i])),self.cons_obj[i]) 
+                plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]) 
                 
             if savefile is not None:
                 plt.savefig(savefile+'_'+cons_obj_name_i+'.jpg',dpi=600)
