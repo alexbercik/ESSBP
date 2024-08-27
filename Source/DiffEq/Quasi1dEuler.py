@@ -15,7 +15,6 @@ from scipy.optimize import newton, bisect
 from Source.DiffEq.DiffEqBase import PdeBase
 import Source.Methods.Functions as fn
 import Source.DiffEq.EulerFunctions as efn
-import Source.DiffEq.EulerFunctions_cmplx as ecfn
 
 class Quasi1dEuler(PdeBase):
     
@@ -27,6 +26,7 @@ class Quasi1dEuler(PdeBase):
     has_exa_sol = True
     para_names = (r'$R$',r'$\gamma$',)
     nondimensionalize = True
+    enforce_positivity = True
     t_scale = 1.
     a_inf = 1.
     rho_inf = 1.
@@ -152,6 +152,29 @@ class Quasi1dEuler(PdeBase):
                 self.a_inf = np.sqrt(self.g*p_inf/self.rho_inf)
                 self.t_scale = self.a_inf
 
+        elif self.test_case == 'vortex':
+            self.xmin_fix = 0.  # should be the same as self.x_min
+            self.xmax_fix = 10. # should be the same as self.x_max
+            self.u0 = 1.        # initial constant velocity
+            self.p0 = 1.         # initial constant pressure
+            self.rho0 = 1.       # initial constant density
+            self.chi2 = 25.     # vortex strength
+            if self.nozzle_shape != 'constant':
+                print("WARNING: Overwriting inputted nozzle_shape to 'constant'.")
+                self.nozzle_shape = 'constant'
+            if self.q0_type != 'vortex':
+                print("WARNING: Overwriting inputted q0_type to 'vortex'.")
+                self.q0_type = 'vortex'
+            assert (bc == 'periodic'),\
+                "vortex must use bc='periodic'."
+            self.steady = False
+
+            if self.nondimensionalize:
+                self.rho_inf = self.rho0
+                p_inf = self.p0
+                self.a_inf = np.sqrt(self.g*p_inf/self.rho_inf)
+                self.t_scale = self.a_inf
+
         elif self.test_case == 'manufactured_soln':
             self.xmin_fix = 0.  # should be the same as self.x_min
             self.xmax_fix = 2. # should be the same as self.x_max
@@ -187,12 +210,12 @@ class Quasi1dEuler(PdeBase):
             self.ismail_roe_flux = efn.Ismail_Roe_flux_1D
             self.ranocha_flux = efn.Ranocha_flux_1D
             self.maxeig_dExdq = efn.maxeig_dExdq_1D
-            self.maxeig_dExdq_cmplx = ecfn.maxeig_dExdq_1D
             self.maxeig_dEndq = efn.maxeig_dEndq_1D
             self.entropy = efn.entropy_1D
             self.entropy_var = efn.entropy_var_1D
             self.dqdw = efn.symmetrizer_1D
             self.dEndw_abs = efn.dEndw_abs_1D
+            self.calc_p = efn.calc_p_1D
 
         if bc != 'periodic':
             
@@ -297,15 +320,23 @@ class Quasi1dEuler(PdeBase):
             raise Exception('Unknown nozzle shape')
 
       
-    def calc_p(self,rho,rhou,e):
+    def calc_p(self,q):
         ''' function to calculate the pressure given Q variables '''
         # Note: If fed in variables Q*S instead of Q, will return p*S instead of p, as desired
+        rho, rhou, e = self.decompose_q(q)
         return (self.g-1)*(e-0.5*(rhou*rhou/rho))
 
     def calc_a(self,rho,rhou,e):
         ''' function to calculate the sound speed given pressure and Q1 '''
         # Note: Regardless if fed Q*S or Q, will always return a, not a*S
-        return np.sqrt(self.g*self.calc_p(rho,rhou,e)/rho)    
+        return np.sqrt(self.g*self.calc_p(rho,rhou,e)/rho)   
+
+    def check_positivity(self, q):
+        ''' Check if thermodynamic variables are positive '''
+        rho = q[::3,:]
+        p = self.calc_p(q)
+        not_ok = np.any(rho < 0) and np.any(p < 0)
+        return not_ok  
 
     def decompose_q(self, q):
         ''' splits q[nen*neq_node,nelem] or q[nen*neq_node] to q_i[nen,nelem] 
@@ -699,7 +730,7 @@ class Quasi1dEuler(PdeBase):
                         self.R , self.gamma = flow variables '''
             
             assert(np.max(abs(svec-1))<1e-10),'svec must be =1 for wave solution'
-            if self.q0_type != 'density_wave':
+            if self.q0_type != 'density_wave' or self.q0_type != 'vortex':
                 print("ERROR: for exact_sol, initial condition must be density_wave, not '"+self.q0_type+"'")
                 return np.zeros(np.shape(x)), np.zeros(np.shape(x)), np.zeros(np.shape(x))
             
@@ -748,6 +779,8 @@ class Quasi1dEuler(PdeBase):
                 svec = svec.flatten('F')
             mach, T, p = shocktube(time)
         elif self.test_case == 'density_wave':
+            mach, T, p = density_wave(time)
+        elif self.test_case == 'vortex':
             mach, T, p = density_wave(time)
         elif self.test_case == 'manufactured_soln':
             mach, T, p = manufactured_soln(time)
@@ -817,6 +850,18 @@ class Quasi1dEuler(PdeBase):
             u = np.ones(rho.shape)
             e = rho*rho
             p = (self.g-1)*rho*(rho-0.5)
+            q0 = self.prim2cons(rho, u, e, svec)
+
+        elif self.test_case == 'vortex':
+            assert(q0_type == 'vortex'),"Must use q0_type == 'vortex'."
+            # taken from 2019 Wanai Want Ren paper
+            print('WARNING: vortex test case not tested / debugged yet.')
+            dT = ((self.g-1)*self.chi2/(8*self.g*np.pi*np.pi))*np.exp(1-(xy-5.)**2)
+            rho = self.rho0 * np.ones(dT.shape)
+            u = self.u0 * np.ones(dT.shape)
+            T0 = self.p0 / (self.R * self.rho0)
+            p = (self.g-1) * (self.g * self.R * (T0 + dT) )**(1./(self.g-1))
+            e = p/(self.g-1) + rho * u**2 /2
             q0 = self.prim2cons(rho, u, e, svec)
                 
         elif self.test_case == 'shock_tube':
