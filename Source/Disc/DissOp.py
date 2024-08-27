@@ -226,6 +226,11 @@ def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
                     Ds[2, 1] = -2.0
                     Ds[2, 2] = 1.0
 
+                    if boundary_fix:
+                        # correct boundary values
+                        B[0] = 0.
+                        B[-1] = 0.
+
                 elif s==3:
                     if nen != 4:
                         raise ValueError(f"Invalid number of nodes. nen = {nen}")
@@ -253,6 +258,11 @@ def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
                     Ds[3, 1] = 2.484519974999766
                     Ds[3, 2] = -2.484519974999766
                     Ds[3, 3] = 1.1111111111111111
+
+                    if boundary_fix:
+                        # correct boundary values
+                        B[0] = 0.
+                        B[-1] = 0.
 
                 elif s==4:
                     if nen != 5:
@@ -293,6 +303,13 @@ def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
                     Ds[4, 3] = -3.0625
                     Ds[4, 4] = 1.3125
 
+                    if boundary_fix:
+                        # correct boundary values
+                        B[0] = 0.
+                        B[1] = 0.
+                        B[-1] = 0.
+                        B[-2] = 0.
+
                 else:
                     raise Exception('Invalid choice of s. Only coded up s=1,2,3,4.')
                 
@@ -332,6 +349,11 @@ def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
                     Ds[2, 1] = -13.333333333333334
                     Ds[2, 2] = 6.666666666666667
 
+                    if boundary_fix:
+                        # correct boundary values
+                        B[0] = 0.
+                        B[-1] = 0.
+
                 elif s==3:
                     if nen != 4:
                         raise ValueError(f"Invalid number of nodes. nen = {nen}")
@@ -359,6 +381,11 @@ def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
                     Ds[3, 1] = 14.096587055666296
                     Ds[3, 2] = -14.096587055666296
                     Ds[3, 3] = 5.56540505102921
+
+                    if boundary_fix:
+                        # correct boundary values
+                        B[0] = 0.
+                        B[-1] = 0.
 
                 elif s==4:
                     if nen != 5:
@@ -398,6 +425,13 @@ def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
                     Ds[4, 2] = 100.8
                     Ds[4, 3] = -77.90958167164676
                     Ds[4, 4] = 27.50958167164676
+
+                    if boundary_fix:
+                        # correct boundary values
+                        B[0] = 0.
+                        B[1] = 0.
+                        B[-1] = 0.
+                        B[-2] = 0.
 
                 else:
                     raise Exception('Invalid choice of s. Only coded up s=1,2,3,4.')

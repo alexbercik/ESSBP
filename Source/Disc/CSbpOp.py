@@ -334,7 +334,7 @@ def CSbpOp(p,nn):
     D = np.linalg.inv(H)@Q
     S = Q - E/2
     
-    return H, D, Q, S
+    return H, D, Q, S, dx
         
         
         
