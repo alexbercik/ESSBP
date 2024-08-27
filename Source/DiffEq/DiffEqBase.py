@@ -68,6 +68,7 @@ class PdeBase:
     steady = False          # Whether or not steady or transient flow
     check_resid_conv = False # Whether to check for residual convergence to stop sim
     nondimensionalize = False
+    enforce_positivity = False
 
     # Ploting options
     plt_fig_size = (6,4)
@@ -483,6 +484,9 @@ class PdeBase:
         # This is a base method and should not be used, as it in general will be slow
         dEzdq = self.dEzdq(q)
         return fn.abs_eig_mat(dEzdq) 
+    
+    def check_positivity(self,q):
+        raise Exception('This base method should not be called.')
 
     ''' Source term '''
 
@@ -491,6 +495,7 @@ class PdeBase:
 
     def dGdq(self, q):
         return 0
+
     
     ''' functions setting up operators '''
     # TODO: Do I need these? At least for split forms, yes
