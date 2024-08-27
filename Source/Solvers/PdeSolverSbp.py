@@ -202,7 +202,7 @@ class PdeSolverSbp(PdeSolver):
         dExdx = fn.gm_gv(self.Dx_phys, Ex)
         Ey = self.diffeq.calcEy(q)
         dEydy = fn.gm_gv(self.Dy_phys, Ey)
-        satx, saty = np.empty(self.qshape), np.empty(self.qshape)
+        satx, saty = np.zeros_like(q), np.zeros_like(q)
  
         if self.periodic[0]:   # x sat (in ref space) 
             for row in range(self.nelem[1]):
@@ -235,7 +235,7 @@ class PdeSolverSbp(PdeSolver):
         dEydy = fn.gm_gv(self.Dy_phys, Ey)
         Ez = self.diffeq.calcEz(q)
         dEzdz = fn.gm_gv(self.Dz_phys, Ez)
-        satx, saty, satz = np.empty(self.qshape), np.empty(self.qshape), np.empty(self.qshape)
+        satx, saty, satz = np.zeros_like(q), np.zeros_like(q), np.zeros_like(q)
         
         skipx = self.nelem[1]*self.nelem[2]
         skipz = self.nelem[0]*self.nelem[1]
@@ -288,7 +288,7 @@ class PdeSolverSbp(PdeSolver):
         Fxvol, Fyvol = self.build_F_vol(q, self.calc_had_flux)
         dExdx = 2*fn.gm_gm_had_diff(self.Dx_phys, Fxvol)
         dEydy = 2*fn.gm_gm_had_diff(self.Dy_phys, Fyvol)
-        satx, saty = np.empty(self.qshape), np.empty(self.qshape)
+        satx, saty = np.zeros_like(q), np.zeros_like(q)
         
         if self.periodic[0]:   # x sat (in ref space) 
             for row in range(self.nelem[1]):
@@ -319,7 +319,7 @@ class PdeSolverSbp(PdeSolver):
         dExdx = 2*fn.gm_gm_had_diff(self.Dx_phys, Fxvol)
         dEydy = 2*fn.gm_gm_had_diff(self.Dy_phys, Fyvol)
         dEzdz = 2*fn.gm_gm_had_diff(self.Dz_phys, Fzvol)
-        satx, saty, satz, = np.empty(self.qshape), np.empty(self.qshape), np.empty(self.qshape)
+        satx, saty, satz, = np.zeros_like(q), np.zeros_like(q), np.zeros_like(q)
         
         skipx = self.nelem[1]*self.nelem[2]
         skipz = self.nelem[0]*self.nelem[1]
@@ -607,8 +607,8 @@ class PdeSolverSbp(PdeSolver):
                 - self.satz.tL @ np.diag(self.satz.Hperp[:,0]) @ self.satz.tLT
             Ez = self.diffeq.calcEz(q) 
         
-        bdy1 = np.zeros(self.qshape)
-        bdy2 = np.zeros(self.qshape)
+        bdy1 = np.zeros_like(q)
+        bdy2 = np.zeros_like(q)
         
         if self.dim == 2:
             for col in range(self.nelem[0]):
