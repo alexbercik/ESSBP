@@ -4,6 +4,17 @@ from julia import Main
 
 julia_code = """
 
+# Check if virtual environment has already been set up & compiled. If not, activate.
+if !haskey(ENV, "JULIA_UPWIND_ENV_READY")
+    using Pkg
+    Pkg.activate("//Users/alex/julia_environments/upwindOP")
+
+    # Precompile packages
+    Pkg.add("SummationByPartsOperators")
+    Pkg.precompile()
+    ENV["JULIA_UPWIND_READY"] = "true"
+end
+
 using SummationByPartsOperators
 using LinearAlgebra
 
