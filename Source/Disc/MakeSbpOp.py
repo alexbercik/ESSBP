@@ -94,7 +94,7 @@ class MakeSbpOp:
 
             # Do things manually (operator is built later)
             self.x = np.linspace(0, 1,self.nn)
-            self.H, self.D, self.Q, self.S = CSbpOp(self.p,self.nn)
+            self.H, self.D, self.Q, self.S, self.dx = CSbpOp(self.p,self.nn)
             self.E = np.zeros((self.nn,self.nn))
             self.E[0,0], self.E[-1,-1] = -1 , 1
             self.tL, self.tR = np.zeros(self.nn), np.zeros(self.nn)
@@ -125,6 +125,10 @@ class MakeSbpOp:
                 elif p==2 and self.nn==30:
                     warp_factor1, warp_factor2, warp_factor3 = 4.19668524183192, 1.0903630402992481, 0.1871758767436309
                     trans = 'corners'
+                elif p==1 and self.nn==51:
+                    # this is not optimal, but is what Julia / Kaxie are using
+                    warp_factor1, warp_factor2, warp_factor3 = np.sqrt(1-(1/1.01)), 0., 0.
+                    trans = 'tanh'
                 else:
                     print('WARNING: Not set up yet, defaulting to CSBP.')
                     warp_factor1, warp_factor2, warp_factor3 = 0., 0., 0.
@@ -163,6 +167,7 @@ class MakeSbpOp:
                 self.nn = 17
 
             self.D, self.Dp, self.Dm, self.Q, self.H, self.E, self.S, self.tL, self.tR, self.x, self.Ddiss = UpwindOp(p,self.nn)
+            self.dx = 1./(nn-1)
 
         else:
             ''' Build Element-type SBP Operators '''
@@ -185,6 +190,7 @@ class MakeSbpOp:
             if ((self.nn != len(self.x)) and (self.nn>0)):
                 print('WARNING: Overwriting given nn, {0}, with size of given quadrature, {1}.'.format(nn,len(self.x)))
             self.nn = len(self.x)
+            self.dx = 1.
         
             # Get the Vandermonde matrix at the element nodes
             elem_basis = BasisFun(self.quad.xq, self.p, self.basis_type)
