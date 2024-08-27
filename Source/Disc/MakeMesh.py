@@ -266,7 +266,7 @@ class MakeMesh:
         
         def stretch_line(x):
             ''' Try to keep the warp_factor <0.26 '''
-            assert self.xmin==0,'Chosen warping function is only set up for domains [0,L]'
+            #assert self.xmin==0,'Chosen warping function is only set up for domains [0,L]'
             arg = (x-self.xmin)/self.dom_len
             new_x = x + self.warp_factor*self.dom_len*np.exp(1-arg)*np.sin(np.pi*arg)
             return new_x
@@ -1728,7 +1728,9 @@ class MakeMesh:
                             a = aex
                         else:
                             #a = aex - Minv @ ( M @ aex - c )
-                            a = np.linalg.lstsq(M, c, rcond=1e-13)[0]
+                            #print(np.max(abs(gcl)))
+                            cor = np.linalg.lstsq(M, gcl, rcond=1e-13)[0]
+                            a = aex - cor
                         print('Metric Optz: modified '+term+' volume metrics by a max amount {0:.2g}'.format(np.max(abs(a - aex))))
                         self.metrics[:,xm,:] = np.copy(a[:self.nen**2,:])
                         self.metrics[:,ym,:] = np.copy(a[self.nen**2:,:])
