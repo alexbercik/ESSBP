@@ -347,6 +347,31 @@ def gdiag_gv(H,q):
     return c
 
 @njit
+def ldiag_gv(H,q):
+    '''
+    Takes a local array of shape (nen) that simulates a local diagonal
+    matrix of shape (nen,nen), and a global vector of shape (nen,nelem) 
+    and returns a global vector of shape (nen,nelem), i.e. H @ q
+
+    Parameters
+    ----------
+    H : numpy array of shape (nen,nelem)
+    D : numpy array of shape (nen,nelem)
+
+    Returns
+    -------
+    c : numpy array of shape (nen1,nen2,nelem)
+    ''' 
+    nen = len(H)
+    nenb,nelemb = np.shape(q)
+    if nen!=nenb:
+        raise Exception('array shapes do not match')   
+    c = np.zeros((nen,nelemb),dtype=q.dtype) 
+    for e in range(nelemb):
+        c[:,e] = H * q[:,e]  
+    return c
+
+@njit
 def gm_gv_colmultiply(A,q):
     '''
     Takes a global matrix of shape (nen1,nen2,nelem) and a global vector of
@@ -651,7 +676,7 @@ def lm_gm_had_diff(A,B):
 @njit
 def gm_gm_had(A,B):
     '''
-    Compute the hadamard product between a local matrix (nen1,nen2) and 
+    Compute the hadamard product between a global matrix (nen1,nen2,nelem) and 
     global matrix (nen1,nen2,nelem)
 
     Returns
@@ -668,19 +693,19 @@ def gm_gm_had(A,B):
 @njit
 def gm_gm_had_diff(A,B):
     '''
-    Compute the hadamard product between a local matrix (nen1,nen2) and 
+    Compute the hadamard product between a global matrix (nen1,nen2,nelem) and 
     global matrix (nen1,nen2,nelem) then sum rows
 
     Returns
     -------
-    C : numpy array of shape (nen1,nen2,nelem)
+    c : numpy array of shape (nen2,nelem)
     '''
     nen,nen2,nelem = B.shape
-    C = np.zeros((nen,nen2,nelem),dtype=B.dtype)
+    c = np.zeros((nen,nelem),dtype=B.dtype)
     for e in range(nelem):
-        C[:,:,e] = np.multiply(A[:,:,e],B[:,:,e])
-    
-    c = np.sum(C,axis=1)
+        for j in range(nen2):
+            for i in range(nen):
+                c[i,e] += A[i,j,e]*B[i,j,e]
     return c
 
 
@@ -786,6 +811,42 @@ def pad_ndR(q,qR):
     if qR.shape!=(nen,dim):
         raise Exception('shapes do not match') 
     qpad = np.zeros((nen,dim,nelem+1),dtype=q.dtype)
+    qpad[:,:,:-1] = q
+    qpad[:,:,-1] = qR          
+    return qpad
+
+@njit
+def pad_gm_1dL(q,qL):
+    '''
+    Take a global vector (nen,nen2, nelem) and pad it so that it becomes a global
+    matrix (nen,nen2,nelem+1) where the first element is qL. Used in Sat calculations.
+
+    Returns
+    -------
+    qpad : numpy array of shape (nen,nelem+1)
+    '''
+    nen,nen2,nelem = q.shape
+    if qL.shape!=(nen,nen2):
+        raise Exception('shapes do not match') 
+    qpad = np.zeros((nen,nen2,nelem+1),dtype=q.dtype)
+    qpad[:,:,1:] = q
+    qpad[:,:,0] = qL         
+    return qpad
+
+@njit
+def pad_gm_1dR(q,qR):
+    '''
+    Take a global vector (nen,nen2,nelem) and pad it so that it becomes a global
+    vector (nen,nen2,nelem+1) where the last element is qR. Used in Sat calculations.
+
+    Returns
+    -------
+    qpad : numpy array of shape (nen,nelem+1)
+    '''
+    nen,nen2,nelem = q.shape
+    if qR.shape!=(nen,nen2):
+        raise Exception('shapes do not match') 
+    qpad = np.zeros((nen,nen2,nelem+1),dtype=q.dtype)
     qpad[:,:,:-1] = q
     qpad[:,:,-1] = qR          
     return qpad
@@ -936,9 +997,9 @@ def build_F_vol_sys(neq, q, flux):
     nen = int(nen_neq / neq)
     for e in range(nelem):
         for i in range(nen):
+            idxi = i*neq
+            idxi2 = (i+1)*neq
             for j in range(i,nen):
-                idxi = i*neq
-                idxi2 = (i+1)*neq
                 idxj = j*neq
                 idxj2 = (j+1)*neq
                 diag = np.diag(flux(q[idxi:idxi2,e],q[idxj:idxj2,e]))
@@ -1108,6 +1169,21 @@ def kron_neq_gm(A,neq_node):
                 i2 = i*neq_node + n
                 for j in range(nen2):
                     An[i2,j*neq_node+n::neq_node,e] = A[i,j,e]
+    return An
+
+@njit
+def unkron_neq_gm(A,neq):
+    ''' take array of shape (nen*neq_node,nen2*neq_node,nelem) and return (nen,nen2,nelem)
+        undoes the proper kronecker product for the operator acting on a vector (nen2*neq_node,nelem). '''
+    nen_neq, nen_neq2, nelem = A.shape
+    nen, nen2 = nen_neq // neq, nen_neq2 // neq
+    An = np.zeros((nen,nen2,nelem),dtype=A.dtype) 
+    for e in range(nelem):
+        for i in range(nen):
+            i2 = i*neq
+            for j in range(nen2):
+                j2 = j*neq
+                An[i,j,e] = A[i2,j2,e]
     return An
 
 @njit
