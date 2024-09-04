@@ -177,7 +177,7 @@ def dEndq_1D(q,dxidx):
     dEdq = fn.block_diag(r0,dxidx,r0,r21,r22,r23,r31,r32,r33)
     return dEdq
 
-#@njit    # fails in nopython mode :/
+@njit    # fails in nopython mode :/
 def dEndw_abs_1D(q,dxidx):
     ''' uses the Barth scaling to compute X @ cabs(Lam) @ X.T, where X
      are the eigenvectors of dExdq that symmetrixe P=dqdw, and Lam
@@ -187,6 +187,7 @@ def dEndw_abs_1D(q,dxidx):
     dEndw_abs = fn.gm_gm(X, fn.gdiag_gm(cabs(Lam), XT))
     return dEndw_abs
 
+@njit
 def dEndw_abs_2D(q,dxidx):
     ''' uses the Barth scaling to compute X @ cabs(Lam) @ X.T, where X
      are the eigenvectors of dExdq that symmetrixe P=dqdw, and Lam
@@ -196,6 +197,7 @@ def dEndw_abs_2D(q,dxidx):
     dEndw_abs = fn.gm_gm(X, fn.gdiag_gm(cabs(Lam), XT))
     return dEndw_abs
 
+@njit
 def dEndw_abs_3D(q,dxidx):
     ''' uses the Barth scaling to compute X @ cabs(Lam) @ X.T, where X
      are the eigenvectors of dExdq that symmetrixe P=dqdw, and Lam
@@ -533,13 +535,12 @@ def dEndq_eigs_1D(q,n,val=True,vec=True,inv=True,trans=False):
     a = np.sqrt(g*p/rho)
     un = u*n
     
+    Lam = np.zeros_like(q)
     if val:
         Lam = np.zeros_like(q)
         Lam[::3,:] = un - norm*a
         Lam[1::3,:] = un
         Lam[2::3,:] = un + norm*a
-    else:
-        Lam = None
     if vec:
         r11 = np.sqrt(rho/(2*g))
         t1 = np.sqrt(p/2)
@@ -555,10 +556,10 @@ def dEndq_eigs_1D(q,n,val=True,vec=True,inv=True,trans=False):
         if trans:
             YT = fn.block_diag(r11,r21,r31,r12,r22,r32,r11,r23,r33)
         else:
-            YT = None        
+            YT = np.zeros_like(Y)       
     else:
-        Y = None
-        YT = None
+        Y = np.zeros((1,1,1),dtype=q.dtype)
+        YT = np.zeros((1,1,1),dtype=q.dtype)
     if inv:
         t1 = np.sqrt(g1/p)
         r23 = -t1/a
@@ -573,7 +574,7 @@ def dEndq_eigs_1D(q,n,val=True,vec=True,inv=True,trans=False):
         r31 = r13*k - t1
         Yinv = fn.block_diag(r11,r12,r13,r21,r22,r23,r31,r32,r13)
     else:
-        Yinv = None
+        Yinv = np.zeros((1,1,1),dtype=q.dtype)
     
     return Lam, Y, Yinv, YT 
         
@@ -770,14 +771,12 @@ def dEndq_eigs_2D(q,n,val=True,vec=True,inv=True,trans=False):
     uvn = nx*u + ny*v
     uvn2 = ny*u -nx*v
     
+    Lam = np.zeros_like(q)
     if val:
-        Lam = np.zeros_like(q)
         Lam[::4,:] = uvn
         Lam[1::4,:] = uvn
         Lam[2::4,:] = uvn + norm*a
         Lam[3::4,:] = uvn - norm*a
-    else:
-        Lam = None
     if vec:
         t3 = 1/np.sqrt(nx**2 + 2*ny**2)
         t4 = np.sign(nx - ny)
@@ -810,10 +809,10 @@ def dEndq_eigs_2D(q,n,val=True,vec=True,inv=True,trans=False):
         if trans:
             YT = fn.block_diag(r11,r21,r31,r41,r12,r22,r32,r42,r13,r23,r33,r43,r13,r24,r34,r44)
         else:
-            YT = None        
+            YT = np.zeros((1,1,1),dtype=q.dtype)
     else:
-        Y = None
-        YT = None
+        Y = np.zeros((1,1,1),dtype=q.dtype)
+        YT = np.zeros((1,1,1),dtype=q.dtype)
     if inv:
         t4 = np.sqrt(g/rho)
         r44 = t4/a2_g1/np.sqrt(2)
@@ -848,7 +847,7 @@ def dEndq_eigs_2D(q,n,val=True,vec=True,inv=True,trans=False):
         r23 = -r24*v - t1*t3
         Yinv = fn.block_diag(r11,r12,r13,r14,r21,r22,r23,r24,r31,r32,r33,r44,r41,r42,r43,r44)
     else:
-        Yinv = None
+        Yinv = np.zeros((1,1,1),dtype=q.dtype)
     
     return Lam, Y, Yinv, YT 
 
@@ -872,6 +871,62 @@ def symmetrizer_1D(q):
     r33 = g*e*e/rho - ((g-1)/4)*rhou2*rhou2/rho
     
     P = fn.block_diag(rho,rhou,e,rhou,r22,r23,e,r23,r33)
+    return P
+
+@njit    
+def symmetrizer_jump_1D(q,qg):
+    ''' take a q and qg of shape (nen*3,nelem) and builds the symmetrizing matrix P.
+    P is the symmetric positive definite matrix that symmetrizes the flux
+    jacobian A=dEndq upon multiplication from the right. This is equal to the
+    derivative of conservative variables with respect to entropy variables,
+    or the Hessian of the entropy potential. 
+    From Derigs et al 2017, A novel averaging technique for discrete entropy-stable
+    dissipation operators for ideal MHD'''
+    rho = q[0::3]
+    rhog = qg[0::3]
+    u = q[1::3]/rho
+    ug = qg[1::3]/rhog
+    p = (g-1)*(q[2::3] - (rho * (u*u))/2)
+    pg = (g-1)*(qg[2::3] - (rhog * (ug*ug))/2)
+
+    # logarithmic mean of rho
+    xi = rho/rhog
+    zeta = (1-xi)/(1+xi)
+    zeta2 = zeta**2
+    F = np.where(
+        zeta2 < 0.01,
+        2 * (1. + zeta2 / 3. + zeta2**2 / 5. + zeta2**3 / 7.),
+        -np.log(xi) / zeta2
+    )
+    rho_ln = (rho+rhog)/F
+
+    # logarithmic mean of p
+    xi = p/pg
+    zeta = (1-xi)/(1+xi)
+    zeta2 = zeta**2
+    F = np.where(
+        zeta2 < 0.01,
+        2 * (1. + zeta2 / 3. + zeta2**2 / 5. + zeta2**3 / 7.),
+        -np.log(xi) / zeta2
+    )
+    p_ln = (p+pg)/F
+
+    # arithmetic means of u, p
+    u_avg = 0.5*(u+ug)
+    p_avg = 0.5*(p+pg)
+
+    # additional useful quantities
+    u2 = (u_avg*u_avg)
+    e_bar = p_ln/g1 + rho_ln*u2 - 0.25*rho_ln*(u*u+ug*ug)
+    rho_ln_u_avg = rho_ln*u_avg
+    
+    r22 = rho_ln_u_avg*u_avg + p_avg
+    r23 = (e_bar+p_avg)*u_avg
+    r33 = (p_ln*p_ln/g1 + e_bar*e_bar)/rho_ln + p_avg*u2
+    
+    P = fn.block_diag(rho_ln,rho_ln_u_avg,e_bar,
+                      rho_ln_u_avg,r22,r23,
+                      e_bar,r23,r33)
     return P
 
 @njit    
@@ -899,6 +954,70 @@ def symmetrizer_2D(q):
     r44 = g*e**2/rho - (g-1)*(rhou2+rhov2)**2/4/rho
     
     P = fn.block_diag(rho,rhou,rhov,e,rhou,r22,r23,r24,rhov,r23,r33,r34,e,r24,r34,r44)
+    return P
+
+@njit    
+def symmetrizer_jump_2D(q,qg):
+    ''' take a q and qg of shape (nen*4,nelem) and builds the symmetrizing matrix P.
+    P is the symmetric positive definite matrix that symmetrizes the flux
+    jacobian A=dEndq upon multiplication from the right. This is equal to the
+    derivative of conservative variables with respect to entropy variables,
+    or the Hessian of the entropy potential. 
+    From Derigs et al 2017, A novel averaging technique for discrete entropy-stable
+    dissipation operators for ideal MHD'''
+    rho = q[0::4]
+    rhog = qg[0::4]
+    u = q[1::4]/rho
+    ug = qg[1::4]/rhog
+    v = q[2::4]/rho
+    vg = qg[2::4]/rhog
+    p = (g-1)*(q[3::4] - (rho * (u*u + v*v))/2)
+    pg = (g-1)*(qg[3::4] - (rhog * (ug*ug + vg*vg))/2)
+
+    # logarithmic mean of rho
+    xi = rho/rhog
+    zeta = (1-xi)/(1+xi)
+    zeta2 = zeta**2
+    F = np.where(
+        zeta2 < 0.01,
+        2 * (1. + zeta2 / 3. + zeta2**2 / 5. + zeta2**3 / 7.),
+        -np.log(xi) / zeta2
+    )
+    rho_ln = (rho+rhog)/F
+
+    # logarithmic mean of p
+    xi = p/pg
+    zeta = (1-xi)/(1+xi)
+    zeta2 = zeta**2
+    F = np.where(
+        zeta2 < 0.01,
+        2 * (1. + zeta2 / 3. + zeta2**2 / 5. + zeta2**3 / 7.),
+        -np.log(xi) / zeta2
+    )
+    p_ln = (p+pg)/F
+
+    # arithmetic means of u, v, w, p
+    u_avg = 0.5*(u+ug)
+    v_avg = 0.5*(v+vg)
+    p_avg = 0.5*(p+pg)
+
+    # additional useful quantities
+    u2 = (u_avg*u_avg + v_avg*v_avg)
+    e_bar = p_ln/g1 + rho_ln*u2 - 0.25*rho_ln*(u*u+ug*ug + v*v+vg*vg)
+    rho_ln_u_avg = rho_ln*u_avg
+    rho_ln_v_avg = rho_ln*v_avg
+    
+    r22 = rho_ln_u_avg*u_avg + p_avg
+    r23 = rho_ln_u_avg*v_avg
+    r24 = (e_bar+p_avg)*u_avg
+    r33 = rho_ln_v_avg*v_avg + p_avg
+    r34 = (e_bar+p_avg)*v_avg
+    r44 = (p_ln*p_ln/g1 + e_bar*e_bar)/rho_ln + p_avg*u2
+    
+    P = fn.block_diag(rho_ln,rho_ln_u_avg,rho_ln_v_avg,e_bar,
+                      rho_ln_u_avg,r22,r23,r24,
+                      rho_ln_v_avg,r23,r33,r34,
+                      e_bar,r24,r34,r44)
     return P
 
 @njit    
@@ -931,6 +1050,79 @@ def symmetrizer_3D(q):
     r55 = g*e**2/rho - (g-1)*(rhou2+rhov2+rhow2)**2/4/rho
     
     P = fn.block_diag(rho,rhou,rhov,rhow,e,rhou,r22,r23,r24,r25,rhov,r23,r33,r34,r35,rhow,r24,r34,r44,r45,e,r25,r35,r45,r55)
+    return P
+
+@njit    
+def symmetrizer_jump_3D(q,qg):
+    ''' take a q and qg of shape (nen*5,nelem) and builds the symmetrizing matrix P.
+    P is the symmetric positive definite matrix that symmetrizes the flux
+    jacobian A=dEndq upon multiplication from the right. This is equal to the
+    derivative of conservative variables with respect to entropy variables,
+    or the Hessian of the entropy potential. 
+    From Derigs et al 2017, A novel averaging technique for discrete entropy-stable
+    dissipation operators for ideal MHD'''
+    rho = q[0::5]
+    rhog = qg[0::5]
+    u = q[1::5]/rho
+    ug = qg[1::5]/rhog
+    v = q[2::5]/rho
+    vg = qg[2::5]/rhog
+    w = q[3::5]/rho
+    wg = qg[3::5]/rhog
+    p = (g-1)*(q[4::5] - (rho * (u*u + v*v + w*w))/2)
+    pg = (g-1)*(qg[4::5] - (rhog * (ug*ug + vg*vg + wg*wg))/2)
+
+    # logarithmic mean of rho
+    xi = rho/rhog
+    zeta = (1-xi)/(1+xi)
+    zeta2 = zeta**2
+    F = np.where(
+        zeta2 < 0.01,
+        2 * (1. + zeta2 / 3. + zeta2**2 / 5. + zeta2**3 / 7.),
+        -np.log(xi) / zeta2
+    )
+    rho_ln = (rho+rhog)/F
+
+    # logarithmic mean of p
+    xi = p/pg
+    zeta = (1-xi)/(1+xi)
+    zeta2 = zeta**2
+    F = np.where(
+        zeta2 < 0.01,
+        2 * (1. + zeta2 / 3. + zeta2**2 / 5. + zeta2**3 / 7.),
+        -np.log(xi) / zeta2
+    )
+    p_ln = (p+pg)/F
+
+    # arithmetic means of u, v, w, p
+    u_avg = 0.5*(u+ug)
+    v_avg = 0.5*(v+vg)
+    w_avg = 0.5*(w+wg)
+    p_avg = 0.5*(p+pg)
+
+    # additional useful quantities
+    u2 = (u_avg*u_avg + v_avg*v_avg + w_avg*w_avg)
+    e_bar = p_ln/g1 + rho_ln*u2 - 0.25*rho_ln*(u*u+ug*ug + v*v+vg*vg + w*w+wg*wg)
+    rho_ln_u_avg = rho_ln*u_avg
+    rho_ln_v_avg = rho_ln*v_avg
+    rho_ln_w_avg = rho_ln*w_avg
+    
+    r22 = rho_ln_u_avg*u_avg + p_avg
+    r23 = rho_ln_u_avg*v_avg
+    r24 = rho_ln_u_avg*w_avg
+    r25 = (e_bar+p_avg)*u_avg
+    r33 = rho_ln_v_avg*v_avg + p_avg
+    r34 = rho_ln_v_avg*w_avg
+    r35 = (e_bar+p_avg)*v_avg
+    r44 = rho_ln_w_avg*w_avg + p_avg
+    r45 = (e_bar+p_avg)*w_avg
+    r55 = (p_ln*p_ln/g1 + e_bar*e_bar)/rho_ln + p_avg*u2
+    
+    P = fn.block_diag(rho_ln,rho_ln_u_avg,rho_ln_v_avg,rho_ln_w_avg,e_bar,
+                      rho_ln_u_avg,r22,r23,r24,r25,
+                      rho_ln_v_avg,r23,r33,r34,r35,
+                      rho_ln_w_avg,r24,r34,r44,r45,
+                      e_bar,r25,r35,r45,r55)
     return P
 
 @njit    
@@ -1308,7 +1500,7 @@ def maxeig_dEndq_1D(q,dxidx):
     a = np.sqrt(g*p_rho) # sound speed, = a if quasi1D Euler
     un = dxidx*u
     dA = cabs(dxidx)
-    lam = np.maximum(cabs(un+dA*a),cabs(un-dA*a))
+    lam = lam = cabs(un) + dA*a
     return lam
 
 @njit
@@ -1351,7 +1543,7 @@ def maxeig_dEndq_2D(q,n):
     e_rho = q[3::4,:] * fac
     p_rho = g1*(e_rho-0.5*(u*u+v*v)) # pressure / rho
     a = np.sqrt(g*p_rho) # sound speed
-    lam = np.maximum(cabs(uvn+norm*a),cabs(uvn-norm*a))
+    lam = cabs(uvn) + norm*a
     return lam 
 
 @njit
@@ -1412,7 +1604,7 @@ def maxeig_dEndq_3D(q,n):
     e_rho = q[4::5,:] * fac
     p_rho = g1*(e_rho-0.5*(u*u+v*v+w*w)) # pressure / rho
     a = np.sqrt(g*p_rho) # sound speed
-    lam = np.maximum(cabs(uvwn+norm*a),cabs(uvwn-norm*a))
+    lam = lam = cabs(uvwn) + norm*a
     return lam 
 
 @njit
@@ -1989,7 +2181,7 @@ def dEndq_eig_abs_dq_1D(dxidx, q, qg, flux_type):
         return np.zeros_like(q)
 
     dq1 = rhoL - rhoR
-    dq2 = uL - uR
+    dq2 = q[1::3,:] - qg[1::3,:]
     dq3 = eL - eR
 
     # diagonal matrix multiply
@@ -2032,7 +2224,7 @@ def dEndq_eig_abs_dq_1D(dxidx, q, qg, flux_type):
     fi = fi + tmp1*(E1dq + gami*E2dq)
     return fi
 
-#@njit
+@njit
 def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
     '''
     calculates -0.5*cabs(An)@(q-qg) according to the implentation in diablo. Used in SATs.
@@ -2096,16 +2288,16 @@ def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
     elif (flux_type == 2):
         # Roe average flux with entropy fix
         lmax = np.maximum(np.maximum(lambda1,lambda2),lambda3)
-        d = 0.2 * lmax
+        d = np.real(0.2 * lmax)
         ilen,jlen = lambda1.shape
         for j in range(jlen):
             for i in range(ilen):
                 dij = d[i,j]
-                if (lambda1[i,j] < dij): 
+                if (np.real(lambda1[i,j]) < dij): 
                     lambda1[i,j] = (lambda1[i,j]**2 + dij*dij)/(2.*dij)
-                if (lambda2[i,j] < dij): 
+                if (np.real(lambda2[i,j]) < dij): 
                     lambda2[i,j] = (lambda2[i,j]**2 + dij*dij)/(2.*dij)
-                if (lambda3[i,j] < dij): 
+                if (np.real(lambda3[i,j]) < dij): 
                     lambda3[i,j] = (lambda3[i,j]**2 + dij*dij)/(2.*dij)
         lambda1 = (-0.5*tau)*lambda1
         lambda2 = (-0.5*tau)*lambda2
@@ -2122,7 +2314,7 @@ def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
         lambda2 = cabs(v) + a #max eigenvalue in y
         rhoA = cabs(lambda1*nx + lambda2*ny)
         # Note: definition of rhoA is very slightly different to above (L1 norm isntead of L2 on n_i)
-        fi = - 0.5*tau*fn.repeat_neq_gv(rhoA,5)*(q - qg)
+        fi = - 0.5*tau*fn.repeat_neq_gv(rhoA,4)*(q - qg)
         return fi
     elif (flux_type == 5):
         # Roe average flux with entropy fix like from Zingg textbook
@@ -2132,13 +2324,14 @@ def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
         for j in range(jlen):
             for i in range(ilen):
                 dij = d[i,j]
+        # TODO: Not finished
 
     else:
         return np.zeros_like(q)
 
     dq1 = rhoL - rhoR
-    dq2 = uL - uR
-    dq3 = vL - vR
+    dq2 = q[1::4,:] - qg[1::4,:]
+    dq3 = q[2::4,:] - qg[2::4,:]
     dq4 = eL - eR
 
     # diagonal matrix multiply
@@ -2291,9 +2484,9 @@ def dEndq_eig_abs_dq_3D(dxidx, q, qg, flux_type):
         return np.zeros_like(q)
 
     dq1 = rhoL - rhoR
-    dq2 = uL - uR
-    dq3 = vL - vR
-    dq4 = wL - wR
+    dq2 = q[1::5,:] - qg[1::5,:]
+    dq3 = q[2::5,:] - qg[2::5,:]
+    dq4 = q[3::5,:] - qg[3::5,:]
     dq5 = eL - eR
 
     # diagonal matrix multiply
@@ -2363,7 +2556,7 @@ def calc_p_1D(q):
 def calc_a_1D(q):
     ''' function to calculate the sound speed '''
     rho = q[::3,:]
-    a = np.sqrt(g*calc_p_1d(q)/rho)
+    a = np.sqrt(g*calc_p_1D(q)/rho)
     return a
 
 @njit
@@ -2380,11 +2573,8 @@ def calc_p_2D(q):
 def calc_a_2D(q):
     ''' function to calculate the sound speed '''
     rho = q[::4,:]
-    a = np.sqrt(g*calc_p_2d(q)/rho)
+    a = np.sqrt(g*calc_p_2D(q)/rho)
     return a
-
-
-
 
 
 if __name__ == "__main__":
@@ -2405,6 +2595,7 @@ if __name__ == "__main__":
     Ax1D = dExdq_1D(q1D)
     maxeig = maxeig_dEndq_1D(q1D,n1D)
     P1D = symmetrizer_1D(q1D)
+    P31D = symmetrizer_jump_1D(q1D,q1D)
     AP1D = fn.gm_gm(An1D,P1D)
     from scipy.linalg import block_diag
     xblocks = []
@@ -2432,6 +2623,7 @@ if __name__ == "__main__":
     print('x eigendecomposition: ', np.max(cabs(Ax1D - fn.gm_gm(Yx1D,fn.gdiag_gm(Lamx1D,Yinvx1D)))))
     print('A @ P symmetrizer: ', np.max(cabs(AP1D[:,:,0] - AP1D[:,:,0].T)))
     print('P = Y@Y.T symmetrizer: ', np.max(cabs(P1D - fn.gm_gm(Y1D,YT1D))))
+    print('P = Pjump(q,q): ', np.max(cabs(P1D-P31D))) 
     print('----')
     print('Consistency of Ismail Roe flux: ', np.max(cabs(F-F_IsmailRoe)))
     print('Consistency of Central flux: ', np.max(cabs(F-F_Central)))
@@ -2460,6 +2652,7 @@ if __name__ == "__main__":
     Ay2D = dEydq_2D(q2D)
     P2D = symmetrizer_2D(q2D)
     P22D = fn.gm_gm(Y2D,YT2D)
+    P32D = symmetrizer_jump_2D(q2D,q2D)
     AP2D = fn.gm_gm(An2D,P2D)
     from scipy.linalg import block_diag
     xblocks = []
@@ -2505,6 +2698,7 @@ if __name__ == "__main__":
     print('ny eigendecomposition: ', np.max(cabs(Ay2D - fn.gm_gm(Yy22D,fn.gdiag_gm(Lamy22D,Yinvy22D)))))
     print('n eigendecomposition: ', np.max(cabs(An2D - fn.gm_gm(Y2D,fn.gdiag_gm(Lam2D,Yinv2D)))))
     print('P = Y@Y.T symmetrizer:', np.max(cabs(P2D-P22D))) 
+    print('P = Pjump(q,q): ', np.max(cabs(P2D-P32D))) 
     print('An @ P symmetry: ', np.max(cabs(AP2D[:,:,0] - AP2D[:,:,0].T)))
     print('----')
     print('Consistency of Ismail Roe flux: ', np.max(cabs(np.array([Fx-Fx_IsmailRoe,Fy-Fy_IsmailRoe]))))

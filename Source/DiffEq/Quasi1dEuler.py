@@ -215,6 +215,7 @@ class Quasi1dEuler(PdeBase):
             self.entropy_var = efn.entropy_var_1D
             self.dqdw = efn.symmetrizer_1D
             self.dEndw_abs = efn.dEndw_abs_1D
+            self.dqdw_jump = efn.symmetrizer_jump_1D
             self.calc_p = efn.calc_p_1D
 
         if bc != 'periodic':
@@ -730,7 +731,7 @@ class Quasi1dEuler(PdeBase):
                         self.R , self.gamma = flow variables '''
             
             assert(np.max(abs(svec-1))<1e-10),'svec must be =1 for wave solution'
-            if self.q0_type != 'density_wave' or self.q0_type != 'vortex':
+            if self.q0_type != 'density_wave' and self.q0_type != 'vortex':
                 print("ERROR: for exact_sol, initial condition must be density_wave, not '"+self.q0_type+"'")
                 return np.zeros(np.shape(x)), np.zeros(np.shape(x)), np.zeros(np.shape(x))
             
