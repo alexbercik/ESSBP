@@ -11,6 +11,7 @@ from Source.Disc.SatDer1 import SatDer1
 from Source.Disc.SatDer2 import SatDer2
 import numpy as np
 import Source.Methods.Functions as fn
+import Source.Methods.Sparse as sp
 
 
 class Sat(SatDer1, SatDer2):
@@ -48,21 +49,8 @@ class Sat(SatDer1, SatDer2):
         self.met_form = met_form
         assert met_form=='skew_sym','SATs not currently set up for divergence form metrics'
         self.bc = solver.bc
-
-        if self.neq_node == 1:
-            if self.dim == 1:
-                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sca(q1, q2, flux))
-                self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sca(q1, q2, flux))
-            elif self.dim == 2:
-                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sys_2d(self.neq_node, q1, q2, flux))
-                self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sys_2d(self.neq_node, q1, q2, flux))
-        else:
-            if self.dim == 1:
-                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_vec(q1, q2, flux))
-                self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_vec(q1, q2, flux))
-            elif self.dim == 2:
-                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sys_2d(self.neq_node, q1, q2, flux))
-                self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sys_2d(self.neq_node, q1, q2, flux))
+        self.sparsity = None
+        self.sparsity_unkronned = None
         
         if self.dim == 1:
             self.tL = solver.tL
@@ -72,17 +60,18 @@ class Sat(SatDer1, SatDer2):
             self.d2Exdq2 = solver.diffeq.d2Exdq2
             self.dExdq_eig_abs = solver.diffeq.dExdq_eig_abs
             self.maxeig_dExdq = solver.diffeq.maxeig_dExdq
-            #self.maxeig_dExdq_cmplx = solver.diffeq.maxeig_dExdq_cmplx
+            self.maxeig_dEndq = solver.diffeq.maxeig_dEndq
             self.metrics = fn.repeat_neq_gv(solver.mesh.metrics[:,0,:],self.neq_node)
             self.bdy_metrics = np.repeat(np.reshape(solver.mesh.bdy_metrics, (1,2,self.nelem)),self.neq_node,0)
             self.calc_had_flux = solver.calc_had_flux
 
             if self.neq_node == 1:
                 self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sca(q1, q2, flux))
-                self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sca(q1, q2, flux))
+                #self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sca(q1, q2, flux))
             else:
-                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sys(q1, q2, flux))
-                self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sys(q1, q2, flux))
+                self.build_F = staticmethod(lambda q1, q2, flux: sp.build_F_sys(self.neq_node, q1, q2, flux, 
+                                                                                self.sparsity_unkronned, self.sparsity))
+                #self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sys(q1, q2, flux))
             
         elif self.dim == 2:
             tL = solver.tL[::self.neq_node,::self.neq_node]
@@ -105,13 +94,14 @@ class Sat(SatDer1, SatDer2):
             self.dEydq_eig_abs = solver.diffeq.dEydq_eig_abs
             self.maxeig_dExdq = solver.diffeq.maxeig_dExdq
             self.maxeig_dEydq = solver.diffeq.maxeig_dEydq
+            self.maxeig_dEndq = solver.diffeq.maxeig_dEndq
 
             if self.neq_node == 1:
                 self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sca_2d(q1, q2, flux))
-                self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sca_2d(q1, q2, flux))
+                #self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sca_2d(q1, q2, flux))
             else:
-                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sys_2d(q1, q2, flux))
-                self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sys_2d(q1, q2, flux))
+                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sys_2d(self.neq_node, q1, q2, flux))
+                #self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sys_2d(q1, q2, flux))
         
         elif self.dim == 3:
             eye = np.eye(self.nen*self.neq_node)
@@ -141,13 +131,14 @@ class Sat(SatDer1, SatDer2):
             self.maxeig_dExdq = solver.diffeq.maxeig_dExdq
             self.maxeig_dEydq = solver.diffeq.maxeig_dEydq
             self.maxeig_dEzdq = solver.diffeq.maxeig_dEzdq
+            self.maxeig_dEndq = solver.diffeq.maxeig_dEndq
 
             if self.neq_node == 1:
                 self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sca(q1, q2, flux))
-                self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sca(q1, q2, flux))
+                #self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sca(q1, q2, flux))
             else:
-                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sys(q1, q2, flux))
-                self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sys(q1, q2, flux))
+                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sys(self.neq_node, q1, q2, flux))
+                #self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sys(q1, q2, flux))
             
             
         ''' save useful matrices so as not to calculate on each loop '''
@@ -159,6 +150,18 @@ class Sat(SatDer1, SatDer2):
             self.vol_mat = fn.lm_gdiag(self.Esurf,self.metrics)
             self.taphys = fn.lm_gm(self.tL, fn.gdiag_lm(self.bdy_metrics[:,0,:],self.tRT))
             self.tbphys = fn.lm_gm(self.tR, fn.gdiag_lm(self.bdy_metrics[:,1,:],self.tLT))
+
+            if self.neq_node > 1:
+                self.vol_mat_sp = sp.gm_to_sp(self.vol_mat)
+                self.taphysT_sp = sp.gm_to_sp(np.transpose(self.taphys,(1,0,2)))
+                self.tbphys_sp = sp.gm_to_sp(self.tbphys)
+
+                taphysT = np.ascontiguousarray(np.transpose(self.taphys,(1,0,2)))
+                taphysT_pad = fn.pad_gm_1dR(taphysT,self.tbphys[:,:,-1])
+                tbphys_pad = fn.pad_gm_1dL(self.tbphys,taphysT[:,:,0])
+                self.sparsity = sp.set_gm_sparsity([taphysT_pad,tbphys_pad])
+                self.sparsity_unkronned = sp.set_gm_sparsity([fn.unkron_neq_gm(taphysT_pad,self.neq_node),
+                                                            fn.unkron_neq_gm(tbphys_pad,self.neq_node)])
     
         elif self.dim == 2:
             self.Esurf = self.tR @ np.diag(self.Hperp) @ self.tRT - self.tL @ np.diag(self.Hperp) @ self.tLT
@@ -171,13 +174,12 @@ class Sat(SatDer1, SatDer2):
             self.tbphysx = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,1,0,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
             self.tbphysy = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,1,1,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
 
-            from Source.Methods.Sparse import gm_to_sparse
-            self.vol_x_mat_sp = [gm_to_sparse(gm_mat) for gm_mat in self.vol_x_mat]   
-            self.vol_y_mat_sp = [gm_to_sparse(gm_mat) for gm_mat in self.vol_x_mat]
-            self.taphysx_sp = [gm_to_sparse(gm_mat) for gm_mat in self.taphysx]
-            self.taphysy_sp = [gm_to_sparse(gm_mat) for gm_mat in self.taphysy]
-            self.tbphysx_sp = [gm_to_sparse(gm_mat) for gm_mat in self.tbphysx]
-            self.tbphysy_sp = [gm_to_sparse(gm_mat) for gm_mat in self.tbphysy]         
+            self.vol_x_mat_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.vol_x_mat]   
+            self.vol_y_mat_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.vol_y_mat]
+            self.taphysx_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.taphysx]
+            self.taphysy_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.taphysy]
+            self.tbphysx_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.tbphysx]
+            self.tbphysy_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.tbphysy]         
         
         elif self.dim == 3:
             self.Esurf = self.tR @ np.diag(self.Hperp) @ self.tRT - self.tL @ np.diag(self.Hperp) @ self.tLT

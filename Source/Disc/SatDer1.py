@@ -7,7 +7,7 @@ Created on Tue Feb 23 19:02:07 2021
 """
 import numpy as np
 import Source.Methods.Functions as fn
-from Source.Methods.Sparse import sparse_gm_gv
+import Source.Methods.Sparse as sp
 
 class SatDer1:
     
@@ -189,9 +189,9 @@ class SatDer1:
                   - fn.gm_gv(self.tbphysx[idx], ExR) - fn.gm_gv(self.tbphysy[idx], EyR)
                   + fn.gm_gv(self.taphysx[idx], ExL) + fn.gm_gv(self.taphysy[idx], EyL)) - diss
         """
-        sat = 0.5*( sparse_gm_gv(self.vol_x_mat_sp[idx], Ex) + sparse_gm_gv(self.vol_y_mat_sp[idx], Ey) 
-                  - sparse_gm_gv(self.tbphysx_sp[idx], ExR) - sparse_gm_gv(self.tbphysy_sp[idx], EyR)
-                  + sparse_gm_gv(self.taphysx_sp[idx], ExL) + sparse_gm_gv(self.taphysy_sp[idx], EyL)) - diss
+        sat = 0.5*( sp.gm_gv(self.vol_x_mat_sp[idx], Ex) + sp.gm_gv(self.vol_y_mat_sp[idx], Ey) 
+                  - sp.gm_gv(self.tbphysx_sp[idx], ExR) - sp.gm_gv(self.tbphysy_sp[idx], EyR)
+                  + (self.taphysx_sp[idx], ExL) + sp.gm_gv(self.taphysy_sp[idx], EyL)) - diss
         
         return sat
     
@@ -430,8 +430,8 @@ class SatDer1:
         else:
             raise Exception('Averaging method not understood.')
             
-        maxeigsx = self.maxeig_dExdq(qf_avg)
-        maxeigsy = self.maxeig_dEydq(qf_avg)
+        maxeigsx = fn.repeat_neq_gv(self.maxeig_dExdq(qf_avg), self.neq_node)
+        maxeigsy = fn.repeat_neq_gv(self.maxeig_dEydq(qf_avg), self.neq_node)
         
 # =============================================================================
 #         # This is equivalent to below, but tested to be slower
@@ -444,7 +444,7 @@ class SatDer1:
         # This is equivalent to above, but tested to be slightly faster
         metricsx = fn.pad_1dR(self.bdy_metrics[idx][:,0,0,:], self.bdy_metrics[idx][:,1,0,-1])
         metricsy = fn.pad_1dR(self.bdy_metrics[idx][:,0,1,:], self.bdy_metrics[idx][:,1,1,-1])
-        H_Lambda = self.Hperp * np.abs(maxeigsx * metricsx + maxeigsy * metricsy)
+        H_Lambda = fn.ldiag_gv(self.Hperp, np.abs(maxeigsx * metricsx + maxeigsy * metricsy))
         Lambda_q_jump = fn.gdiag_gv(H_Lambda, qf_jump)
         dissL = self.tL @ Lambda_q_jump[:,:-1]
         dissR = self.tR @ Lambda_q_jump[:,1:]
@@ -462,11 +462,17 @@ class SatDer1:
 #         
 #         sat = self.tR @ (self.Hperp * (EphysR - EnumR)) - self.tL @ (self.Hperp * (EphysL - EnumL))
 # =============================================================================
-        
+        """
         # This is equivalent to above, but tested to be slightly faster
         sat = 0.5*( fn.gm_gv(self.vol_x_mat[idx], Ex) + fn.gm_gv(self.vol_y_mat[idx], Ey) 
                   - fn.gm_gv(self.tbphysx[idx], ExR) - fn.gm_gv(self.tbphysy[idx], EyR)
                   + fn.gm_gv(self.taphysx[idx], ExL) + fn.gm_gv(self.taphysy[idx], EyL)
+                  + dissR - dissL )
+        
+        """
+        sat = 0.5*( sp.gm_gv(self.vol_x_mat_sp[idx], Ex) + sp.gm_gv(self.vol_y_mat_sp[idx], Ey) 
+                  - sp.gm_gv(self.tbphysx_sp[idx], ExR) - sp.gm_gv(self.tbphysy_sp[idx], EyR)
+                  + sp.gm_gv(self.taphysx_sp[idx], ExL) + sp.gm_gv(self.taphysy_sp[idx], EyL)
                   + dissR - dissL )
         
         return sat
@@ -669,10 +675,6 @@ class SatDer1:
         '''
         The base conservative flux in Hadamard Form. Then add dissipative term.
         '''
-        vol = fn.gm_gm_had_diff(self.vol_mat, Fvol)
-        
-        # TODO: Modify build_F and hadamard functions to only consider non-zero entries
-        
         # Here we work in terms of facets, starting from the left-most facet.
         # This is NOT the same as elements. i.e. qR is to the right of the
         # facet and qL is to the left of the facet, opposite of element-wise.
@@ -690,9 +692,25 @@ class SatDer1:
             qR = fn.pad_1dL(q, qbdy) 
         
         Fsurf = self.build_F(qL, qR, self.calc_had_flux)
-        
-        surfa = fn.gm_gm_had_diff(self.taphys,np.transpose(Fsurf[:,:,:-1],(1,0,2)))
-        surfb = fn.gm_gm_had_diff(self.tbphys,Fsurf[:,:,1:])
+        if self.neq_node == 1:
+            vol = fn.gm_gm_had_diff(self.vol_mat, Fvol)
+            surfa = fn.gm_gm_had_diff(self.taphys,np.transpose(Fsurf[:,:,:-1],(1,0,2)))
+            surfb = fn.gm_gm_had_diff(self.tbphys,Fsurf[:,:,1:])
+        else:
+            vol = sp.gm_gm_had_diff(self.vol_mat_sp, Fvol)
+            surfa = sp.gmT_gm_had_diff(self.taphysT_sp,Fsurf[:-1])
+            surfb = sp.gm_gm_had_diff(self.tbphys_sp,Fsurf[1:])
+
+            # debugging: OK
+            #Fvol2 = fn.build_F_vol_sys(self.neq_node, q, self.calc_had_flux)
+            #Fsurf2 = fn.build_F_sys(self.neq_node, qL, qR, self.calc_had_flux)
+            #vol2 = fn.gm_gm_had_diff(self.vol_mat, Fvol2)
+            #surfa2 = fn.gm_gm_had_diff(self.taphys,np.transpose(Fsurf2[:,:,:-1],(1,0,2)))
+            #surfb2 = fn.gm_gm_had_diff(self.tbphys,Fsurf2[:,:,1:])
+            #print('vol:', np.max(np.abs(vol - vol2)))
+            #print('surfa:', np.max(np.abs(surfa - surfa2)))
+            #print('surfb:', np.max(np.abs(surfb - surfb2)))
+
         
         diss = self.diss(self.tRT @ qL, self.tLT @ qR)
         
@@ -1152,97 +1170,3 @@ class SatDer1:
 
         return dSatLdqL, dSatLdqR, dSatRdqL, dSatRdqR
 
-    def der1_crean_ec(self, q_L, q_R):
-        '''
-        Purpose
-        ----------
-        Calculate the SATs for the entropy consistent scheme by Crean et al 2018
-        NOTE: ONLY WORKS FOR ELEMENTS WITH BOUNDARY NODES! Should use more
-        general matrix formulations for other cases. See notes.
-        
-        Parameters
-        ----------
-        q_fL : np array, shape (neq_node,nelem)
-            The extrapolated solution of the left element(s) to the facet(s).
-        q_fR : np array, shape (neq_node,nelem)
-            The extrapolated solution of the left element(s) to the facet(s).
-
-        Returns
-        -------
-        satL : np array
-            The contribution of the SAT for the first derivative to the element(s)
-            on the left.
-        satR : np array
-            The contribution of the SAT for the first derivative to the element(s)
-            on the right.
-        '''
-        q_fL, q_fR = self.get_interface_sol(q_L, q_R)
-        
-        #TODO: Rework Ismail_Roe to accept shapes (neq_node,nelem) rather than (neq_node,)
-        neq,nelem = q_fL.shape
-        numflux = np.zeros((neq,nelem))
-        for e in range(nelem):
-            numflux[:,e] = self.ec_flux(q_fL[:,e], q_fR[:,e])
-        
-        satL = self.tR @ ( self.calcEx(q_fL) - numflux )
-        satR = self.tR @ ( numflux - self.calcEx(q_fR) )
-        
-        #F_vol = build_F_vol(q, self.neq_node, self.diffeq.ec_flux)
-        #build_F_int(q1, q2, neq, ec_flux)
-        #build_F_vol(q, neq, ec_flux)
-
-        return satL, satR   
-    
-    def der1_crean_es(self, qL, qR):
-        '''
-        Purpose
-        ----------
-        Calculate the SATs for the entropy dissipative scheme by Crean et al 2018
-        NOTE: ONLY WORKS FOR ELEMENTS WITH BOUNDARY NODES! Should use more
-        general matrix formulations for other cases. See notes.
-        
-        Parameters
-        ----------
-        q_fL : np array, shape (neq_node,nelem)
-            The extrapolated solution of the left element(s) to the facet(s).
-        q_fR : np array, shape (neq_node,nelem)
-            The extrapolated solution of the left element(s) to the facet(s).
-
-        Returns
-        -------
-        satL : np array
-            The contribution of the SAT for the first derivative to the element(s)
-            on the left.
-        satR : np array
-            The contribution of the SAT for the first derivative to the element(s)
-            on the right.
-        '''
-        q_fL, q_fR = self.get_interface_sol(qL, qR)
-        
-        #TODO: Rework Ismail_Roe to accept shapes (neq_node,nelem) rather than (neq_node,)
-        neq,nelem = q_fL.shape
-        numflux = np.zeros((neq,nelem))
-        for e in range(nelem):
-            numflux[:,e] = self.ec_flux(q_fL[:,e], q_fR[:,e])
-        
-        qfacet = (q_fL + q_fR)/2 # Assumes simple averaging, can generalize
-        # TODO: This will get all fucked up by svec
-        # TODO: Move all of these smaller things to diffeq?
-        rhoL, rhouL, eL = self.diffeq.decompose_q(qL)
-        uL = rhouL / rhoL
-        pL = (self.diffeq.g-1)*(eL - (rhoL * uL**2)/2)
-        aL = np.sqrt(self.diffeq.g * pL/rhoL)
-        rhoR, rhouR, eR = self.diffeq.decompose_q(qR)
-        uR = rhouR / rhoR
-        pR = (self.diffeq.g-1)*(eR - (rhoR * uR**2)/2)
-        aR = np.sqrt(self.diffeq.g * pR/rhoR)
-        LF_const = np.max([np.abs(uL)+aL,np.abs(uR)+aR],axis=(0,1))
-        Lambda = self.diffeq.dqdw(qfacet)*LF_const
-        
-        w_fL= self.tRT @ self.diffeq.entropy_var(qL) 
-        w_fR= self.tLT @ self.diffeq.entropy_var(qR)
-        
-        satL = self.tR @ ( self.diffeq.calcEx(q_fL) - numflux - fn.gm_gv(Lambda, w_fL - w_fR))
-        satR = self.tR @ ( numflux - self.diffeq.calcEx(q_fR) - fn.gm_gv(Lambda, w_fR - w_fL))
-
-        return satL, satR 
