@@ -1523,10 +1523,19 @@ def plot_eigs(A, plot_hull=True, plot_all=False, labels=None, savefile=None,
                 hull = ConvexHull(points)
                 
                 # Plot the convex hull with unique color and linestyle
-                for simplex in hull.simplices:
-                    plt.plot(points[simplex, 0], points[simplex, 1], color=colors[idx % len(colors)], 
-                             linestyle=linestyles[idx % len(linestyles)], linewidth=line_width)
+                #for simplex in hull.simplices:
+                #    plt.plot(points[simplex, 0], points[simplex, 1], color=colors[idx % len(colors)], 
+                #             linestyle=linestyles[idx % len(linestyles)], linewidth=line_width)
                 
+                # Extract the vertices of the convex hull and add the first point at the end to close the loop
+                hull_vertices = np.append(hull.vertices, hull.vertices[0])
+
+                # Plot the convex hull as a single continuous line
+                plt.plot(points[hull_vertices, 0], points[hull_vertices, 1], 
+                        color=colors[idx % len(colors)], 
+                        linestyle=linestyles[idx % len(linestyles)], 
+                        linewidth=line_width)
+
                 # Add the label only once for both the scatter and hull
                 plt.plot([], [], color=colors[idx % len(colors)], linestyle=linestyles[idx % len(linestyles)], 
                          linewidth=line_width, label=label)
@@ -1540,7 +1549,8 @@ def plot_eigs(A, plot_hull=True, plot_all=False, labels=None, savefile=None,
     
     # Fix axes ratio if equal_axes is True
     if equal_axes:
-        plt.gca().set_aspect('equal', adjustable='box')
+        #plt.gca().set_aspect('equal', adjustable='box')
+        plt.gca().set_aspect('equal', adjustable='datalim')
 
     # Show legend only if A is a list
     if isinstance(A, list):
