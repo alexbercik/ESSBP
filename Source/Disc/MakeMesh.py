@@ -15,7 +15,7 @@ from contextlib import redirect_stderr
 class MakeMesh:
     
     def __init__(self, dim, xmin, xmax, 
-                 nelem, x_op, warp_factor=0, warp_factor2=0, warp_factor3=0,
+                 nelem, x_op, warp_factor=0,
                  warp_type='default'):
         '''
         Parameters
@@ -39,9 +39,24 @@ class MakeMesh:
         self.xmax = xmax
         self.nelem = nelem
         self.x_op = x_op
-        self.warp_factor = warp_factor
-        self.warp_factor2 = warp_factor2
-        self.warp_factor3 = warp_factor3
+        if isinstance(warp_factor,float) or isinstance(warp_factor,int):
+            self.warp_factor = warp_factor
+            self.warp_factor2 = 0
+            self.warp_factor3 = 0
+        elif isinstance(warp_factor,list) or (isinstance(warp_factor,np.ndarray) and np.ndim(warp_factor)==1):
+            self.warp_factor = warp_factor[0]
+            if len(warp_factor)>1:
+                self.warp_factor2 = warp_factor[1]
+            else:
+                self.warp_factor2 = 0
+            if len(warp_factor)>2:
+                self.warp_factor3 = warp_factor[2]
+            else:
+                self.warp_factor3 = 0
+            if len(warp_factor)>3:
+                raise Exception('Only set up for 1, 2, or 3 warp factors')
+        else:
+            raise Exception('warp_factor must be a float / int, or list / 1d array of len <= 3, not', warp_factor)
         self.warp_type = warp_type
 
         ''' Additional terms '''
@@ -257,7 +272,7 @@ class MakeMesh:
         Stretches a 1d mesh to test coordinate trasformations.
     
         '''
-        assert self.dim == 1 , 'Stretching only set up for 2D'
+        assert self.dim == 1 , 'Stretching only set up for 1D'
         if self.warp_factor2 != 0 or self.warp_factor3 != 0:
             print('... Stretching mesh by factors of {0}, {1}, {2}'.format(self.warp_factor,self.warp_factor2,self.warp_factor3))
         else:

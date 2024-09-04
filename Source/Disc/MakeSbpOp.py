@@ -102,41 +102,48 @@ class MakeSbpOp:
 
             if sbp_type.lower()=='optz':
                 if p==1 and self.nn==3:
-                    warp_factor1, warp_factor2, warp_factor3 = 0.0, 0., 0.
+                    warp_factors = 0.0
                     trans = 'sigmoid'
                 elif p==1 and self.nn==20:
-                    warp_factor1, warp_factor2, warp_factor3 = 2.593505526588188, 1.84727641471781, 0.2359412051939956
+                    warp_factors = [2.593505526588188, 1.84727641471781, 0.2359412051939956]
                     trans = 'corners'
                 elif p==2 and self.nn==9:
-                    warp_factor1, warp_factor2, warp_factor3 = 0.18991350096392648, 0., 0.
+                    warp_factors = 0.18991350096392648
                     trans = 'sigmoid'
                 elif p==2 and self.nn==20:
-                    warp_factor1, warp_factor2, warp_factor3 = 2.770906371088635, 1.2849104355129346, 0.288447754977867
+                    warp_factors = [2.770906371088635, 1.2849104355129346, 0.288447754977867]
                     trans = 'corners'
                 elif p==3 and self.nn==13:
-                    warp_factor1, warp_factor2, warp_factor3 = 0.1035576820946656, 0., 0.
+                    warp_factors = 0.1035576820946656
                     trans = 'sigmoid'
                 elif p==3 and self.nn==20:
-                    warp_factor1, warp_factor2, warp_factor3 = 5.024511643375132, 19.999041198274156, 0.1866586054617816
+                    warp_factors = [5.024511643375132, 19.999041198274156, 0.1866586054617816]
                     trans = 'corners'
                 elif p==4 and self.nn==17:
-                    warp_factor1, warp_factor2, warp_factor3 = 0.03464339479945, 0., 0.
+                    warp_factors = 0.03464339479945
                     trans = 'sigmoid'
                 elif p==2 and self.nn==30:
-                    warp_factor1, warp_factor2, warp_factor3 = 4.19668524183192, 1.0903630402992481, 0.1871758767436309
+                    warp_factors = [4.19668524183192, 1.0903630402992481, 0.1871758767436309]
+                    trans = 'corners'
+                elif p==2 and self.nn==51:
+                    warp_factors = [3.88219157126648, 29.986780432571532, 0.1041278770541774]
+                    trans = 'corners'
+                elif p==4 and self.nn==51:
+                    #warp_factors = [3.00145084, 2.99917623, 0.35528195]
+                    warp_factors = [1.9515004691739295, 1.0668208330264204, 0.3740774535232256]
                     trans = 'corners'
                 elif p==1 and self.nn==51:
                     # this is not optimal, but is what Julia / Kaxie are using
-                    warp_factor1, warp_factor2, warp_factor3 = np.sqrt(1-(1/1.01)), 0., 0.
+                    warp_factors = np.sqrt(1-(1/1.01)), 0., 0.
                     trans = 'tanh'
                 else:
                     print('WARNING: Not set up yet, defaulting to CSBP.')
-                    warp_factor1, warp_factor2, warp_factor3 = 0., 0., 0.
+                    warp_factors = 0.
                     trans = 'default'
 
                 with redirect_stdout(None):
                     mesh = MakeMesh(dim=1,xmin=0,xmax=1,nelem=1,x_op=self.x,warp_type=trans,
-                                    warp_factor=warp_factor1,warp_factor2=warp_factor2,warp_factor3=warp_factor3)
+                                    warp_factor=warp_factors)
                     mesh.get_jac_metrics(self, periodic=False,
                             metric_method = 'exact', 
                             bdy_metric_method = 'exact',
