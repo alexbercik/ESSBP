@@ -178,6 +178,7 @@ class PdeSolver:
             if self.dim > 1:
                 self.calc_had_flux = getattr(self.diffeq, self.had_flux + '_fluxes')
             # quick test
+            '''
             try:
                 if self.neq_node == 1:
                     from Source.Methods.Functions import build_F_sca, build_F_sca_2d
@@ -193,6 +194,7 @@ class PdeSolver:
                         test1, test2 = build_F_sys_2d(self.neq_node, np.ones((2*self.neq_node,3)), np.ones((2*self.neq_node,3)), self.calc_had_flux)
             except:
                 raise Exception('The Hadamard Flux did not compile properly.')
+            '''
             
         else: raise Exception('Discretization type not understood. Try div or had.')
         self.surf_type = surf_type.lower()
@@ -631,7 +633,8 @@ class PdeSolver:
                 try:
                     A = np.zeros((nelem*nen,nelem*nen),dtype=np.complex128)    
                     for i in range(nen):
-                        printProgressBar(i, nen, prefix = 'Complex Step Progress:')
+                        if nen>=400:
+                            printProgressBar(i, nen-1, prefix = 'Complex Step Progress:')
                         for j in range(nelem):
                             ei = np.zeros((nen,nelem),dtype=np.complex128)
                             ei[i,j] = istep*1j
@@ -644,7 +647,8 @@ class PdeSolver:
             if finite_diff:
                 A = np.zeros((nelem*nen,nelem*nen))            
                 for i in range(nen):
-                    printProgressBar(i, nen, prefix = 'Complex Step Progress:')
+                    if nen>=400:
+                        printProgressBar(i, nen-1, prefix = 'Complex Step Progress:')
                     for j in range(nelem):
                         ei = np.zeros((nen,nelem))
                         ei[i,j] = 1.*step
@@ -694,6 +698,14 @@ class PdeSolver:
 
         '''
         A = self.get_LHS(q=q, exact_dfdq=exact_dfdq, step=step, istep=istep, finite_diff=finite_diff)
+        nen1, nen2 = A.shape
+        if nen1 >= 5000:
+            import datetime
+            time_est = 1.02e-7*nen1**2.24
+            start_time = datetime.datetime.now()
+            end_time = start_time + datetime.timedelta(seconds=time_est)
+            print('HEADS UP: Large matrix size. This may take a while.')
+            print(f"Estimating will take {int(time_est)} seconds, i.e. finish around {end_time.strftime('%H:%M:%S')}" )
         if (colour_by_k) and self.dim==1 and self.neq_node==1 and plot_eigs:
             eigs, eigvecs = np.linalg.eig(A)
         else:
