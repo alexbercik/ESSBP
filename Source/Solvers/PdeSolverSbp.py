@@ -14,6 +14,7 @@ from Source.Disc.Sat import Sat
 from Source.Disc.ADiss import ADiss
 from Source.Solvers.PdeSolver import PdeSolver
 import Source.Methods.Functions as fn
+import Source.Methods.Sparse as sp
 
 
 class PdeSolverSbp(PdeSolver):
@@ -151,6 +152,43 @@ class PdeSolverSbp(PdeSolver):
             self.saty = Sat(self, 'y', form)
             self.satz = Sat(self, 'z', form)
 
+        # save sparsity information
+        if self.disc_type == 'had':
+            if self.dim == 1 and self.neq_node > 1:
+                self.vol_sparsity_unkronned = sp.set_gm_sparsity([self.Dx_phys_unkronned,
+                                                     fn.unkron_neq_gm(self.sat.vol_mat,self.neq_node)])
+                self.vol_sparsity = sp.set_gm_sparsity([self.Dx_phys, self.sat.vol_mat])
+                self.Dx_phys_sp = sp.gm_to_sp(self.Dx_phys)
+            elif self.dim == 2:
+                self.vol_sparsity_unkronned = sp.set_gm_sparsity([self.Dx_phys_unkronned,self.Dy_phys_unkronned,
+                                                    fn.unkron_neq_gm(self.satx.vol_x_mat,self.neq_node),
+                                                    fn.unkron_neq_gm(self.satx.vol_y_mat,self.neq_node),
+                                                    fn.unkron_neq_gm(self.saty.vol_x_mat,self.neq_node),
+                                                    fn.unkron_neq_gm(self.saty.vol_y_mat,self.neq_node)])
+                self.vol_sparsity = sp.set_gm_sparsity([self.Dx_phys, self.Dy_phys,
+                                                    self.satx.vol_x_mat, self.satx.vol_y_mat,
+                                                    self.saty.vol_x_mat, self.saty.vol_y_mat])
+                self.Dx_phys_sp = sp.gm_to_sp(self.Dx_phys)
+                self.Dy_phys_sp = sp.gm_to_sp(self.Dy_phys)
+            elif self.dim == 3:
+                self.vol_sparsity_unkronned = sp.set_gm_sparsity([self.Dx_phys_unkronned,self.Dy_phys_unkronned,self.Dz_phys_unkronned,
+                                                    fn.unkron_neq_gm(self.satx.vol_x_mat,self.neq_node),
+                                                    fn.unkron_neq_gm(self.satx.vol_y_mat,self.neq_node),
+                                                    fn.unkron_neq_gm(self.satx.vol_z_mat,self.neq_node),
+                                                    fn.unkron_neq_gm(self.saty.vol_x_mat,self.neq_node),
+                                                    fn.unkron_neq_gm(self.saty.vol_y_mat,self.neq_node),
+                                                    fn.unkron_neq_gm(self.saty.vol_z_mat,self.neq_node),
+                                                    fn.unkron_neq_gm(self.satz.vol_x_mat,self.neq_node),
+                                                    fn.unkron_neq_gm(self.satz.vol_y_mat,self.neq_node),
+                                                    fn.unkron_neq_gm(self.satz.vol_z_mat,self.neq_node),])
+                self.vol_sparsity = sp.set_gm_sparsity([self.Dx_phys,self.Dy_phys,self.Dz_phys,
+                                                    self.satx.vol_x_mat, self.satx.vol_y_mat, self.satx.vol_z_mat,
+                                                    self.saty.vol_x_mat, self.saty.vol_y_mat, self.saty.vol_z_mat,
+                                                    self.satz.vol_x_mat, self.satz.vol_y_mat, self.satz.vol_z_mat,])
+                self.Dx_phys_sp = sp.gm_to_sp(self.Dx_phys)
+                self.Dy_phys_sp = sp.gm_to_sp(self.Dy_phys)
+                self.Dz_phys_sp = sp.gm_to_sp(self.Dz_phys)
+
     def dqdt_1d_div(self, q, t):
         ''' the main dqdt function for divergence form in 1D '''
         E = self.diffeq.calcEx(q)
@@ -192,16 +230,18 @@ class PdeSolverSbp(PdeSolver):
         else:
             raise Exception('Not coded up yet')
         
-        dfdq = fn.sparse_block_diag(vol) + self.diffeq.dGdq(q) \
+        dfdq = fn.sp_block_diag(vol) + self.diffeq.dGdq(q) \
             + self.H_inv_phys.flatten('f')[:, np.newaxis] * sat
         return dfdq
         
     def dqdt_2d_div(self, q, t):
         ''' the main dqdt function for divergence form in 2D '''
         Ex = self.diffeq.calcEx(q)
-        dExdx = fn.gm_gv(self.Dx_phys, Ex)
+        #dExdx = fn.gm_gv(self.Dx_phys, Ex)
+        dExdx = sp.gm_gv(self.Dx_phys_sp, Ex)
         Ey = self.diffeq.calcEy(q)
-        dEydy = fn.gm_gv(self.Dy_phys, Ey)
+        #dEydy = fn.gm_gv(self.Dy_phys, Ey)
+        dEydy = sp.gm_gv(self.Dy_phys_sp, Ey)
         satx, saty = np.zeros_like(q), np.zeros_like(q)
  
         if self.periodic[0]:   # x sat (in ref space) 
@@ -220,7 +260,7 @@ class PdeSolverSbp(PdeSolver):
         else:
             raise Exception('Not coded up yet')
         
-        dqdt = - dExdx - dEydy + self.H_inv_phys * (satx + saty) + self.diffeq.calcG(q,t)
+        dqdt = - dExdx - dEydy + self.H_inv_phys * (satx + saty) + self.diffeq.calcG(q,t) + self.dissipation(q)
         return dqdt
     
     def dfdq_2d_div(self, q, t):
@@ -230,11 +270,14 @@ class PdeSolverSbp(PdeSolver):
     def dqdt_3d_div(self, q, t):
         ''' the main dqdt function for divergence form in 3D '''
         Ex = self.diffeq.calcEx(q)
-        dExdx = fn.gm_gv(self.Dx_phys, Ex)
+        #dExdx = fn.gm_gv(self.Dx_phys, Ex)
+        dExdx = sp.gm_gv(self.Dx_phys_sp, Ex)
         Ey = self.diffeq.calcEy(q)
-        dEydy = fn.gm_gv(self.Dy_phys, Ey)
+        #dEydy = fn.gm_gv(self.Dy_phys, Ey)
+        dEydy = sp.gm_gv(self.Dy_phys_sp, Ey)
         Ez = self.diffeq.calcEz(q)
-        dEzdz = fn.gm_gv(self.Dz_phys, Ez)
+        #dEzdz = fn.gm_gv(self.Dz_phys, Ez)
+        dEzdz = sp.gm_gv(self.Dz_phys_sp, Ez)
         satx, saty, satz = np.zeros_like(q), np.zeros_like(q), np.zeros_like(q)
         
         skipx = self.nelem[1]*self.nelem[2]
@@ -268,8 +311,19 @@ class PdeSolverSbp(PdeSolver):
         
     def dqdt_1d_had(self, q, t):
         ''' the main dqdt function for hadamard form in 1D '''
-        Fvol = self.build_F_vol(q, self.calc_had_flux)
-        dExdx = 2*fn.gm_gm_had_diff(self.Dx_phys, Fvol)
+        if self.neq_node == 1:
+            #Fvol = self.build_F_vol(q, self.calc_had_flux)
+            Fvol = fn.build_F_vol_sca(q, self.calc_had_flux)
+            dExdx = 2*fn.gm_gm_had_diff(self.Dx_phys, Fvol)
+        else:
+            Fvol = sp.build_F_vol_sys(self.neq_node, q, self.calc_had_flux, 
+                                      self.vol_sparsity_unkronned, self.vol_sparsity)
+            dExdx = 2*sp.gm_gm_had_diff(self.Dx_phys_sp, Fvol)
+            
+            # debugging: OK
+            #Fvol2 = fn.build_F_vol_sys(self.neq_node, q, self.calc_had_flux)
+            #dExdx2 = 2*fn.gm_gm_had_diff(self.Dx_phys, Fvol2)
+            #print('dExdx:', np.max(np.abs(dExdx-dExdx2)))
         
         if self.periodic:
             sat = self.sat.calc(q,Fvol)

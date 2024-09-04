@@ -10,6 +10,7 @@ Created on Mon Mar 4 2024
 import numpy as np
 import Source.Methods.Functions as fn
 from Source.Disc.DissOp import BaselineDiss, make_dcp_diss_op
+import Source.Methods.Sparse as sp
 
 
 class ADiss():
@@ -94,8 +95,21 @@ class ADiss():
                 self.bdy_fix = True
 
             if 'use_H' in self.solver.vol_diss.keys():
-                assert isinstance(self.solver.vol_diss['use_H'], bool), 'Artificial Dissipation: use_H must be a boolean, {0}'.format(self.solver.vol_diss['use_H'])
-                self.use_H = self.solver.vol_diss['use_H']
+                if isinstance(self.solver.vol_diss['use_H'], bool):
+                    self.use_H = self.solver.vol_diss['use_H']
+                    self.use_noH = False
+                else:
+                    assert (isinstance(self.solver.vol_diss['use_H'], str) and (self.solver.vol_diss['use_H'] in ['True','False','noH'])), \
+                            "Artificial Dissipation: use_H must be a boolean or one of 'True','False','Diablo', {0}".format(self.solver.vol_diss['use_H'])
+                    self.use_H = self.solver.vol_diss['use_H']
+                    if self.use_H == 'True':
+                        self.use_H = True
+                    elif self.use_H == 'False':
+                        self.use_H = False
+                        self.use_noH = False
+                    else:
+                        self.use_H = False
+                        self.use_noH = True
             else:
                 self.use_H = True
 
@@ -184,6 +198,7 @@ class ADiss():
                 print("WARNING: Only scalar dissipation set up for type='DCP' dissipation. Defaulting to jac_type = 'scalar'.")
                 self.jac_type = 'scalar'
                 self.dissipation = lambda q: self.dissipation_dcp_scalar(q,self.coeff)
+
 
         elif self.type.lower() == 'entdcp':
             self.entropy_var = self.solver.diffeq.entropy_var
@@ -365,13 +380,26 @@ class ADiss():
             self.rhs_Deta = fn.kron_neq_lm(np.kron(eye, Ds),self.neq_node) 
             if self.use_H:
                 Hundvd = self.solver.sbp.H / self.solver.sbp.dx
-                DsTxi = np.kron(Ds.T @ np.diag(B) @ Hundvd, eye)
-                DsTeta = np.kron(eye, Ds.T @ np.diag(B) @ Hundvd)
+                DsTxi = np.kron(Ds.T @ np.diag(B) @ Hundvd, Hundvd)
+                DsTeta = np.kron(Hundvd, Ds.T @ np.diag(B) @ Hundvd)
             else:
-                DsTxi = np.kron(Ds.T @ np.diag(B), eye)
-                DsTeta = np.kron(eye, Ds.T @ np.diag(B))
+                if self.use_noH:
+                    # uses no H at all
+                    DsTxi = np.kron(Ds.T @ np.diag(B), eye)
+                    DsTeta = np.kron(eye, Ds.T @ np.diag(B))
+                else:
+                    # uses H in the perpendicular direction only
+                    Hundvd = self.solver.sbp.H
+                    DsTxi = np.kron(Ds.T @ np.diag(B), eye) @ np.kron(eye, Hundvd)
+                    DsTeta = np.kron(eye, Ds.T @ np.diag(B)) @ np.kron(Hundvd, eye)
             self.lhs_Dxi = fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(DsTxi,self.neq_node))
             self.lhs_Deta = fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(DsTeta,self.neq_node))
+
+            self.rhs_Dxi_sp = sp.lm_to_sp(self.rhs_Dxi)
+            self.rhs_Deta_sp = sp.lm_to_sp(self.rhs_Deta)
+            self.lhs_Dxi_sp = sp.gm_to_sp(self.lhs_Dxi)
+            self.lhs_Deta_sp = sp.gm_to_sp(self.lhs_Deta)
+
         elif self.type.lower() == 'upwind':
             if self.solver.disc_nodes.lower() == 'upwind':
                 Ddiss = self.solver.sbp.Ddiss
@@ -491,7 +519,9 @@ class ADiss():
     def dissipation_dcp_scalar(self, q, coeff=0.1):
         ''' dissipation function for DCP's narrow interior stencils, scalar functions or systems'''
         # TODO: for now we always take a simple sum at half-nodes, but should generalize.
-        avg_half_nodes = False
+        # TODO: sparsify these operators
+        # TODO: fix averaging at half-nodes for other diss types
+        avg_half_nodes = True
         if self.dim == 1:
             maxeig = self.maxeig_dEndq(q,self.dxidx)
             if self.s % 2 == 1 and avg_half_nodes:
@@ -501,14 +531,17 @@ class ADiss():
         elif self.dim == 2:
             maxeig = self.maxeig_dEndq(q,self.dxidx)
             if self.s % 2 == 1 and avg_half_nodes:
-                maxeig[:-1] = 0.5*(maxeig[:-1] + maxeig[1:])
+                maxeig[:-self.nen:self.nen] = 0.5*(maxeig[:-self.nen:self.nen] + maxeig[self.nen::self.nen])
             A = fn.repeat_neq_gv(maxeig,self.neq_node)
-            diss = fn.gm_gv(self.lhs_Dxi, A * (self.rhs_Dxi @ q)) # xi part
+            #diss = fn.gm_gv(self.lhs_Dxi, A * (self.rhs_Dxi @ q)) # xi part
+            diss = sp.gm_gv(self.lhs_Dxi_sp, A * sp.lm_gv(self.rhs_Dxi_sp, q)) # xi part
             maxeig = self.maxeig_dEndq(q,self.detadx)
             if self.s % 2 == 1 and avg_half_nodes:
-                maxeig[:-1] = 0.5*(maxeig[:-1] + maxeig[1:])
+                for xi_idx in range(self.nen):
+                    maxeig[xi_idx*self.nen:(xi_idx+1)*self.nen-1] = 0.5*(maxeig[xi_idx*self.nen:(xi_idx+1)*self.nen-1] + maxeig[xi_idx*self.nen+1:(xi_idx+1)*self.nen])
             A = fn.repeat_neq_gv(maxeig,self.neq_node)
-            diss += fn.gm_gv(self.lhs_Deta, A * (self.rhs_Deta @ q)) # eta part
+            #diss += fn.gm_gv(self.lhs_Deta, A * (self.rhs_Deta @ q)) # eta part
+            diss += sp.gm_gv(self.lhs_Deta_sp, A * sp.lm_gv(self.rhs_Deta_sp, q)) # eta part
         elif self.dim == 3:
             maxeig = self.maxeig_dEndq(q,self.dxidx)
             if self.s % 2 == 1 and avg_half_nodes:
