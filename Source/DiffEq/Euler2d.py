@@ -157,6 +157,7 @@ class Euler(PdeBase):
             self.entropy_var = efn.entropy_var_2D
             self.dqdw = efn.symmetrizer_2D
             self.dEndw_abs = efn.dEndw_abs_2D
+            self.dqdw_jump = efn.symmetrizer_jump_2D
             self.calc_p = efn.calc_p_2D
 
 
@@ -295,7 +296,7 @@ class Euler(PdeBase):
             
             if self.q0_type != 'density_wave':
                 print("ERROR: for exact_sol, initial condition must be density_wave, not '"+self.q0_type+"'")
-                return np.zeros(np.shape(x)), np.zeros(np.shape(x)), np.zeros(np.shape(x)), np.zeros(np.shape(x))
+                return np.zeros(np.shape(xy)), np.zeros(np.shape(xy)), np.zeros(np.shape(xy)), np.zeros(np.shape(xy))
             
             # just like linear convection equation. See Gassner et al 2020
             xy_mod = np.empty(xy.shape)
@@ -310,7 +311,7 @@ class Euler(PdeBase):
             
             if self.q0_type != 'vortex':
                 print("ERROR: for exact_sol, initial condition must be vortex, not '"+self.q0_type+"'")
-                return np.zeros(np.shape(x)), np.zeros(np.shape(x)), np.zeros(np.shape(x)), np.zeros(np.shape(x))
+                return np.zeros(np.shape(xy)), np.zeros(np.shape(xy)), np.zeros(np.shape(xy)), np.zeros(np.shape(xy))
             
             # just like linear convection equation.
             xy_mod = np.empty(xy.shape)

@@ -256,13 +256,13 @@ class Sat(SatDer1, SatDer2):
                     elif self.dim == 3:
                         self.calc = self.llf_div_3d
                 elif self.disc_type == 'had':
-                    print(f'Using the base Hadamard SAT with {solver.had_flux} flux and LF dissipation on conservative variables.')
+                    print(f'Using the base Hadamard SAT with {solver.had_flux} flux and scalar dissipation on conservative variables.')
                     if self.dim == 1:
                         self.calc = self.base_had_1d
-                        self.diss = self.lf_diss_cons_1d
+                        self.diss = lambda qL,qR: self.diss_cons_1d(qL,qR,1)
                     elif self.dim == 2:
                         self.calc = self.base_had_2d
-                        self.diss = self.lf_diss_cons_2d
+                        self.diss = lambda qL,qR,idx: self.diss_cons_2d(qL,qR,idx,1)
                     elif self.dim == 3:
                         self.calc = self.base_had_3d
                         self.diss = self.lf_diss_cons_3d
@@ -324,44 +324,54 @@ class Sat(SatDer1, SatDer2):
                 if self.method.lower()=='ec' or self.method.lower()=='symmetric':
                     print(str_base + ' and no dissipation.')
                     self.diss = lambda *x: 0
-                elif self.method.lower()=='lf_cons3':
-                    print(str_base + ' and diablo LF3 on conservative variables.')
+                elif self.method.lower()=='lf_cons3' or self.method.lower()=='cons_sca':
+                    print(str_base + ' and diablo LF3 (scalar w/ roe avg) on conservative variables.')
                     self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
                     if self.dim == 1:
                         self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,3)
                     else:
                         self.diss = lambda qL,qR, idx: self.diss_dEndq_eig_abs_dq_nD(qL,qR,idx,3)
                 elif self.method.lower()=='lf_cons4':
-                    print(str_base + ' and diablo LF4 on conservative variables.')
+                    print(str_base + ' and diablo LF4 (scalar w/ roe avg) on conservative variables.')
                     self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
                     if self.dim == 1:
                         self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,4)
                     else:
                         self.diss = lambda qL,qR,idx: self.diss_dEndq_eig_abs_dq_nD(qL,qR,idx,4)
-                elif self.method.lower()=='roe_cons1':
-                    print(str_base + ' and diablo Roe1 (Hicken fix) on conservative variables.')
+                elif self.method.lower()=='roe_cons1' or self.method.lower()=='cons_mat':
+                    print(str_base + ' and diablo Roe1 + Hicken fix (matrix w/ roe avg) on conservative variables.')
                     self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
                     if self.dim == 1:
                         self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,1)
                     else:
                         self.diss = lambda qL,qR,idx: self.diss_dEndq_eig_abs_dq_nD(qL,qR,idx,1)
                 elif self.method.lower()=='roe_cons2' or self.method.lower()=='roe':
-                    print(str_base + ' and diablo Roe2 (entropy fix) on conservative variables.')
+                    print(str_base + ' and diablo Roe2 + entropy fix (matrix w/ roe avg) on conservative variables.')
                     self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
                     if self.dim == 1:
                         self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,2)
                     else:
                         self.diss = lambda qL,qR,idx: self.diss_dEndq_eig_abs_dq_nD(qL,qR,idx,2)
-                elif self.method.lower()=='es' or self.method.lower()=='lf_ent':
+                elif self.method.lower()=='ent_scamat':
+                    print(str_base + ' and scalar-matrix (w/ Derigs et. al. avg) on entropy variables.')
+                    self.dqdw_jump = solver.diffeq.dqdw_jump
+                    self.entropy_var = solver.diffeq.entropy_var
+                    if self.dim == 1:
+                        self.diss = lambda qL,qR: self.diss_ent_1d(qL,qR,3)
+                    elif self.dim == 2:
+                        self.diss = lambda qL,qR, idx: self.diss_ent_2d(qL,qR,3)
+                    else:
+                        raise Exception('dim=3 not set up yet')
+                elif self.method.lower()=='ent_matmat':
+                    print(str_base + ' and matrix-matrix (w/ arith. avg) on entropy variables.')
                     self.dEndw_abs = solver.diffeq.dEndw_abs
                     self.entropy_var = solver.diffeq.entropy_var
                     if self.dim == 1:
-                        self.diss = self.lf_diss_ent_matmat_1d
+                        self.diss = lambda qL,qR: self.diss_ent_1d(qL,qR,2)
                     elif self.dim == 2:
-                        self.diss = self.lf_diss_ent_matmat_2d
+                        self.diss = lambda qL,qR, idx: self.diss_ent_2d(qL,qR,2)
                     else:
                         raise Exception('dim=3 not set up yet')
-                    print(str_base + ' and matrix-matrix LF dissipation on entropy variables.')
                 
                 else:
                     raise Exception("SAT type not understood. Try 'ec', 'symmetric', 'es', 'roe', 'lf', 'lf_ent', 'lf_cons3', 'lf_cons4', 'roe_cons1', 'roe_cons2'.")
@@ -522,136 +532,150 @@ class Sat(SatDer1, SatDer2):
         # remember that metric have been repeated neq times, unecessary here
         metrics = fn.pad_ndR(self.bdy_metrics[idx][::self.neq_node,0,:,:], self.bdy_metrics[idx][::self.neq_node,1,:,-1])
         A_q_jump = self.dEndq_eig_abs_dq(metrics, qRf, qLf, flux_type)
-        dissL = self.tL @ A_q_jump[:,:-1]
-        dissR = self.tR @ A_q_jump[:,1:]
+        dissL = (self.tL * self.Hperp) @ A_q_jump[:,:-1]
+        dissR = (self.tR * self.Hperp) @ A_q_jump[:,1:]
 
         diss = dissR - dissL # diablo function outputs 2 * negative of the convention used here
         return diss
 
-    def lf_diss_cons_1d(self,qL,qR,avg='simple'):
-        ''' lax-friedrichs dissipation in conservative variables '''
+    def diss_cons_1d(self,qL,qR,flux_type):
+        ''' dissipation in conservative variables '''
         qLf = self.tRT @ qL
         qRf = self.tLT @ qR
-        
         q_jump = qRf - qLf
         
-        if avg=='simple': # Alternatively, a Roe average can be used
+        if flux_type==1: 
+            # simple arithmetic average, scalar dissipation (LF)
             q_avg = (qLf + qRf)/2
-        elif avg=='roe':
-            raise Exception('Roe Average not coded up yet')
+            maxeigs = self.maxeig_dExdq(q_avg)
+            metrics = fn.pad_1dR(self.bdy_metrics[:,0,:], self.bdy_metrics[:,1,-1])
+            Lambda = np.abs(maxeigs * metrics)
+            absA_dq = fn.gdiag_gv(Lambda, q_jump)
         else:
             raise Exception('Averaging method not understood.')
         
-        maxeigs = self.maxeig_dExdq(q_avg)
-        metrics = fn.pad_1dR(self.bdy_metrics[:,0,:], self.bdy_metrics[:,1,-1])
-        Lambda = np.abs(maxeigs * metrics)
-        Lambda_q_jump = fn.gdiag_gv(Lambda, q_jump)
-        dissL = self.tL @ Lambda_q_jump[:,:-1]
-        dissR = self.tR @ Lambda_q_jump[:,1:]
+        dissL = self.tL @ absA_dq[:,:-1]
+        dissR = self.tR @ absA_dq[:,1:]
         
         diss = (dissL - dissR)/2
         return diss
     
-    def lf_diss_ent_matmat_1d(self,qL,qR,avg='simple'):
-        ''' lax-friedrichs dissipation in entropy variables, matrix-matrix form '''
+    def diss_ent_1d(self,qL,qR,flux_type):
+        ''' dissipation in entropy variables '''
+        wLf = self.entropy_var(qL)
+        wRf = self.entropy_var(qR)
+        
+        w_jump = wRf - wLf
+
+        if flux_type==1:
+            # simple arithmetic average, scalar-scalar dissipation (LF)
+            q_avg = (qL + qR)/2
+            pass
+        elif flux_type==2:
+            # simple arithmetic average, matrix-matrix dissipation (LF)
+            q_avg = (qL + qR)/2
+            # remember that metric have been repeated neq times, unecessary here
+            metrics = fn.pad_1dR(self.bdy_metrics[::self.neq_node,0,:], self.bdy_metrics[::self.neq_node,1,-1])
+            absAP = self.dEndw_abs(q_avg,metrics)
+            absAP_dw = fn.gm_gv(absAP, w_jump)
+            pass
+        elif flux_type==3:
+            # averaging from Derigs et al 2017, scalar-matrix dissipation
+            P = self.dqdw_jump(qL,qR)
+            # remember that metric have been repeated neq times, unecessary here
+            metrics = fn.pad_1dR(self.bdy_metrics[::self.neq_node,0,:], self.bdy_metrics[::self.neq_node,1,-1])
+            lam = np.maximum(self.maxeig_dEndq(qL,metrics), self.maxeig_dEndq(qR,metrics))
+            absAP_dw = fn.gdiag_gv(fn.repeat_neq_gv(lam,self.neq_node), fn.gm_gv(P, w_jump))
+        elif flux_type==4:
+            # averaging from Derigs et al 2017, matrix-matrix dissipation
+            pass
+        else:
+            raise Exception('Averaging method not understood.')
+        
+        dissL = self.tL @ absAP_dw[:,:-1]
+        dissR = self.tR @ absAP_dw[:,1:]
+        
+        diss = (dissL - dissR)/2
+        return diss
+        
+    def diss_cons_2d(self,qL,qR,idx,flux_type):
+        ''' dissipation in conservative variables '''
         qLf = self.tRT @ qL
         qRf = self.tLT @ qR
-        wLf = self.entropy_var(qLf)
-        wRf = self.entropy_var(qRf)
+        q_jump = qRf - qLf
+        if flux_type==1:
+            # simple arithmetic average, scalar dissipation (LF)
+            q_avg = (qLf + qRf)/2
+            maxeigsx = self.maxeig_dExdq(q_avg)
+            maxeigsy = self.maxeig_dEydq(q_avg)
+            metricsx = fn.pad_1dR(self.bdy_metrics[idx][:,0,0,:], self.bdy_metrics[idx][:,1,0,-1])
+            metricsy = fn.pad_1dR(self.bdy_metrics[idx][:,0,1,:], self.bdy_metrics[idx][:,1,1,-1])
+            H_Lambda = self.Hperp * np.abs(maxeigsx * metricsx + maxeigsy * metricsy)
+            absA_dq = fn.gdiag_gv(H_Lambda, q_jump)
+        else:
+            raise Exception('Averaging method not understood.')
+        
+        dissL = self.tL @ absA_dq
+        dissR = self.tR @ absA_dq
+        
+        diss = (dissL - dissR)/2
+        return diss
+    
+    def diss_ent_2d(self,qL,qR,idx,flux_type):
+        ''' dissipation in entropy variables '''
+        wLf = self.entropy_var(qL)
+        wRf = self.entropy_var(qR)
         
         w_jump = wRf - wLf
         
-        if avg=='simple': # Alternatively, a Roe average can be used
-            q_avg = (qLf + qRf)/2
-        elif avg=='roe':
-            raise Exception('Roe Average not coded up yet')
+        if flux_type==1:
+            # simple arithmetic average, scalar-scalar dissipation (LF)
+            q_avg = (qL + qR)/2
+            pass
+        elif flux_type==2:
+            # simple arithmetic average, matrix-matrix dissipation (LF)
+            # remember that metric have been repeated neq times, unecessary here
+            metrics = fn.pad_1dR(self.bdy_metrics[idx][::self.neq_node,0,:,:], self.bdy_metrics[idx][::self.neq_node,1,:,-1])
+            absAP = self.dEndw_abs(q_avg,metrics)
+            absAP_dw = fn.gm_gv(absAP, w_jump)
+        elif flux_type==3:
+            # averaging from Derigs et al 2017, scalar-matrix dissipation
+            P = self.dqdw_jump(qL,qR)
+            # remember that metric have been repeated neq times, unecessary here
+            metrics = fn.pad_1dR(self.bdy_metrics[idx][::self.neq_node,0,:,:], self.bdy_metrics[idx][::self.neq_node,1,:,-1])
+            lam = np.maximum(self.maxeig_dEndq(qL,metrics), self.maxeig_dEndq(qR,metrics))
+            absAP_dw = fn.gdiag_gv(fn.repeat_neq_gv(lam,self.neq_node), fn.gm_gv(P, w_jump))
         else:
             raise Exception('Averaging method not understood.')
-        
-        # remember that metric have been repeated neq times, unecessary here
-        metrics = fn.pad_1dR(self.bdy_metrics[::self.neq_node,0,:], self.bdy_metrics[::self.neq_node,1,-1])
-        A = self.dEndw_abs(q_avg,metrics)
-        A_w_jump = fn.gm_gv(A, w_jump)
-        dissL = self.tL @ A_w_jump[:,:-1]
-        dissR = self.tR @ A_w_jump[:,1:]
-        
-        diss = (dissL - dissR)/2
-        return diss
-        
-    def lf_diss_cons_2d(self,qL,qR,idx,avg='simple'):
-        ''' lax-friedrichs dissipation in conservative variables '''
-        qLf = self.tRT @ qL
-        qRf = self.tLT @ qR
-        if avg=='simple': # Alternatively, a Roe average can be used
-            q_avg = (qLf + qRf)/2
-        elif avg=='roe':
-            raise Exception('Roe Average not coded up yet')
-        else:
-            raise Exception('Averaging method not understood.')
-        
-        q_jump = qRf - qLf
-        
-        maxeigsx = self.maxeig_dExdq(q_avg)
-        maxeigsy = self.maxeig_dEydq(q_avg)
-        metricsx = fn.pad_1dR(self.bdy_metrics[idx][:,0,0,:], self.bdy_metrics[idx][:,1,0,-1])
-        metricsy = fn.pad_1dR(self.bdy_metrics[idx][:,0,1,:], self.bdy_metrics[idx][:,1,1,-1])
-        H_Lambda = self.Hperp * np.abs(maxeigsx * metricsx + maxeigsy * metricsy)
-        Lambda_q_jump = fn.gdiag_gv(H_Lambda, q_jump)
-        dissL = self.tL @ Lambda_q_jump[:,:-1]
-        dissR = self.tR @ Lambda_q_jump[:,1:]
+    
+        dissL = self.tL @ absAP_dw[:,:-1]
+        dissR = self.tR @ absAP_dw[:,1:]
         
         diss = (dissL - dissR)/2
         return diss
     
-    def lf_diss_ent_matmat_2d(self,qL,qR,idx,avg='simple'):
-        ''' lax-friedrichs dissipation in entropy variables, matrix-matrix form '''
+    def diss_cons_3d(self,qL,qR,idx,flux_type=1):
+        ''' dissipation in conservative variables '''
         qLf = self.tRT @ qL
         qRf = self.tLT @ qR
-        wLf = self.entropy_var(qLf)
-        wRf = self.entropy_var(qRf)
-        
-        w_jump = wRf - wLf
-        
-        if avg=='simple': # Alternatively, a Roe average can be used
-            q_avg = (qLf + qRf)/2
-        elif avg=='roe':
-            raise Exception('Roe Average not coded up yet')
-        else:
-            raise Exception('Averaging method not understood.')
-        
-        # remember that metric have been repeated neq times, unecessary here
-        metrics = fn.pad_1dR(self.bdy_metrics[idx][::self.neq_node,0,:,:], self.bdy_metrics[idx][::self.neq_node,1,:,-1])
-        A = self.dEndw_abs(q_avg,metrics)
-        A_w_jump = fn.gm_gv(A, w_jump)
-        dissL = self.tL @ A_w_jump[:,:-1]
-        dissR = self.tR @ A_w_jump[:,1:]
-        
-        diss = (dissL - dissR)/2
-        return diss
-    
-    def lf_diss_cons_3d(self,qL,qR,idx,avg='simple'):
-        ''' lax-friedrichs dissipation in conservative variables '''
-        qLf = self.tRT @ qL
-        qRf = self.tLT @ qR
-        if avg=='simple': # Alternatively, a Roe average can be used
-            q_avg = (qLf + qRf)/2
-        elif avg=='roe':
-            raise Exception('Roe Average not coded up yet')
-        else:
-            raise Exception('Averaging method not understood.')
-        
         q_jump = qRf - qLf
-        
-        maxeigsx = self.maxeig_dExdq(q_avg)
-        maxeigsy = self.maxeig_dEydq(q_avg)
-        maxeigsz = self.maxeig_dEzdq(q_avg)
-        metricsx = fn.pad_1dR(self.bdy_metrics[idx][:,0,0,:], self.bdy_metrics[idx][:,1,0,-1])
-        metricsy = fn.pad_1dR(self.bdy_metrics[idx][:,0,1,:], self.bdy_metrics[idx][:,1,1,-1])
-        metricsz = fn.pad_1dR(self.bdy_metrics[idx][:,0,2,:], self.bdy_metrics[idx][:,1,2,-1])
-        H_Lambda = self.Hperp * np.abs(maxeigsx * metricsx + maxeigsy * metricsy + maxeigsz * metricsz)
-        Lambda_q_jump = fn.gdiag_gv(H_Lambda, q_jump)
-        dissL = self.tL @ Lambda_q_jump[:,:-1]
-        dissR = self.tR @ Lambda_q_jump[:,1:]
+
+        if flux_type==1: 
+            # simple arithmetic average, scalar dissipation (LF)
+            q_avg = (qLf + qRf)/2
+            maxeigsx = self.maxeig_dExdq(q_avg)
+            maxeigsy = self.maxeig_dEydq(q_avg)
+            maxeigsz = self.maxeig_dEzdq(q_avg)
+            metricsx = fn.pad_1dR(self.bdy_metrics[idx][:,0,0,:], self.bdy_metrics[idx][:,1,0,-1])
+            metricsy = fn.pad_1dR(self.bdy_metrics[idx][:,0,1,:], self.bdy_metrics[idx][:,1,1,-1])
+            metricsz = fn.pad_1dR(self.bdy_metrics[idx][:,0,2,:], self.bdy_metrics[idx][:,1,2,-1])
+            H_Lambda = self.Hperp * np.abs(maxeigsx * metricsx + maxeigsy * metricsy + maxeigsz * metricsz)
+            absA_dq = fn.gdiag_gv(H_Lambda, q_jump)
+        else:
+            raise Exception('Averaging method not understood.')
+
+        dissL = self.tL @ absA_dq[:,:-1]
+        dissR = self.tR @ absA_dq[:,1:]
         
         diss = (dissL - dissR)/2
         return diss
