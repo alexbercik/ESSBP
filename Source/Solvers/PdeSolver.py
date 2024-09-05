@@ -627,13 +627,14 @@ class PdeSolver:
                     print('WARNING: self.dfdq(q) returned errors. Using complex step.')
         if not exact_dfdq:
             from Source.Methods.Analysis import printProgressBar
-            nen,nelem = q.shape      
+            nen,nelem = q.shape   
+            nn = nelem*nen   
             assert(self.qshape==q.shape),"ERROR: sizes don't match"
             if not finite_diff:
                 try:
-                    A = np.zeros((nelem*nen,nelem*nen),dtype=np.complex128)    
+                    A = np.zeros((nn,nn),dtype=np.complex128)    
                     for i in range(nen):
-                        if nen>=400:
+                        if nn>=400:
                             printProgressBar(i, nen-1, prefix = 'Complex Step Progress:')
                         for j in range(nelem):
                             ei = np.zeros((nen,nelem),dtype=np.complex128)
@@ -645,9 +646,9 @@ class PdeSolver:
                     print('WARNING: complex step returned errors. Using finite difference.') 
                     finite_diff = True
             if finite_diff:
-                A = np.zeros((nelem*nen,nelem*nen))            
+                A = np.zeros((nn,nn))            
                 for i in range(nen):
-                    if nen>=400:
+                    if nn>=400:
                         printProgressBar(i, nen-1, prefix = 'Complex Step Progress:')
                     for j in range(nelem):
                         ei = np.zeros((nen,nelem))

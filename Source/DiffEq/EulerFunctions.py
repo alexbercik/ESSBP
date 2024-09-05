@@ -873,6 +873,22 @@ def symmetrizer_1D(q):
     P = fn.block_diag(rho,rhou,e,rhou,r22,r23,e,r23,r33)
     return P
 
+@njit
+def logmean_vec(p,pg):
+    xi = p/pg
+    zeta = (1-xi)/(1+xi)
+    zeta2 = zeta**2
+    nen,nelem = p.shape
+    F = np.zeros((nen,nelem),dtype=p.dtype)
+    for e in range(nelem):
+        for i in range(nen):
+            if np.real(zeta2[i,e]) < 0.01:
+                F[i,e] = 2 * (1. + zeta2[i,e] / 3. + zeta2[i,e]**2 / 5. + zeta2[i,e]**3 / 7.)
+            else:
+                F[i,e] = -np.log(xi[i,e]) / zeta2[i,e]
+    p_ln = (p+pg)/F
+    return p_ln
+
 @njit    
 def symmetrizer_jump_1D(q,qg):
     ''' take a q and qg of shape (nen*3,nelem) and builds the symmetrizing matrix P.
@@ -890,26 +906,10 @@ def symmetrizer_jump_1D(q,qg):
     pg = (g-1)*(qg[2::3] - (rhog * (ug*ug))/2)
 
     # logarithmic mean of rho
-    xi = rho/rhog
-    zeta = (1-xi)/(1+xi)
-    zeta2 = zeta**2
-    F = np.where(
-        zeta2 < 0.01,
-        2 * (1. + zeta2 / 3. + zeta2**2 / 5. + zeta2**3 / 7.),
-        -np.log(xi) / zeta2
-    )
-    rho_ln = (rho+rhog)/F
+    rho_ln = logmean_vec(rho,rhog)
 
     # logarithmic mean of p
-    xi = p/pg
-    zeta = (1-xi)/(1+xi)
-    zeta2 = zeta**2
-    F = np.where(
-        zeta2 < 0.01,
-        2 * (1. + zeta2 / 3. + zeta2**2 / 5. + zeta2**3 / 7.),
-        -np.log(xi) / zeta2
-    )
-    p_ln = (p+pg)/F
+    p_ln = logmean_vec(p,pg)
 
     # arithmetic means of u, p
     u_avg = 0.5*(u+ug)
@@ -975,26 +975,10 @@ def symmetrizer_jump_2D(q,qg):
     pg = (g-1)*(qg[3::4] - (rhog * (ug*ug + vg*vg))/2)
 
     # logarithmic mean of rho
-    xi = rho/rhog
-    zeta = (1-xi)/(1+xi)
-    zeta2 = zeta**2
-    F = np.where(
-        zeta2 < 0.01,
-        2 * (1. + zeta2 / 3. + zeta2**2 / 5. + zeta2**3 / 7.),
-        -np.log(xi) / zeta2
-    )
-    rho_ln = (rho+rhog)/F
+    rho_ln = logmean_vec(rho,rhog)
 
     # logarithmic mean of p
-    xi = p/pg
-    zeta = (1-xi)/(1+xi)
-    zeta2 = zeta**2
-    F = np.where(
-        zeta2 < 0.01,
-        2 * (1. + zeta2 / 3. + zeta2**2 / 5. + zeta2**3 / 7.),
-        -np.log(xi) / zeta2
-    )
-    p_ln = (p+pg)/F
+    p_ln = logmean_vec(p,pg)
 
     # arithmetic means of u, v, w, p
     u_avg = 0.5*(u+ug)
@@ -1073,26 +1057,10 @@ def symmetrizer_jump_3D(q,qg):
     pg = (g-1)*(qg[4::5] - (rhog * (ug*ug + vg*vg + wg*wg))/2)
 
     # logarithmic mean of rho
-    xi = rho/rhog
-    zeta = (1-xi)/(1+xi)
-    zeta2 = zeta**2
-    F = np.where(
-        zeta2 < 0.01,
-        2 * (1. + zeta2 / 3. + zeta2**2 / 5. + zeta2**3 / 7.),
-        -np.log(xi) / zeta2
-    )
-    rho_ln = (rho+rhog)/F
+    rho_ln = logmean_vec(rho,rhog)
 
     # logarithmic mean of p
-    xi = p/pg
-    zeta = (1-xi)/(1+xi)
-    zeta2 = zeta**2
-    F = np.where(
-        zeta2 < 0.01,
-        2 * (1. + zeta2 / 3. + zeta2**2 / 5. + zeta2**3 / 7.),
-        -np.log(xi) / zeta2
-    )
-    p_ln = (p+pg)/F
+    p_ln = logmean_vec(p,pg)
 
     # arithmetic means of u, v, w, p
     u_avg = 0.5*(u+ug)
@@ -1735,7 +1703,7 @@ def Ismail_Roe_flux_1D(qL,qR):
     xi = alphaL/alphaR
     zeta = (1-xi)/(1+xi)
     zeta2 = zeta**2
-    if zeta2 < 0.01:
+    if np.real(zeta2) < 0.01:
         F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
     else:
         F = - np.log(xi)/zeta
@@ -1745,7 +1713,7 @@ def Ismail_Roe_flux_1D(qL,qR):
     xi = betaL/betaR
     zeta = (1-xi)/(1+xi)
     zeta2 = zeta**2
-    if zeta2 < 0.01:
+    if np.real(zeta2) < 0.01:
         F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
     else:
         F = - np.log(xi)/zeta
@@ -1796,7 +1764,7 @@ def Ismail_Roe_fluxes_2D(qL,qR):
     xi = alphaL/alphaR
     zeta = (1-xi)/(1+xi)
     zeta2 = zeta**2
-    if zeta2 < 0.01:
+    if np.real(zeta2) < 0.01:
         F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
     else:
         F = - np.log(xi)/zeta
@@ -1806,7 +1774,7 @@ def Ismail_Roe_fluxes_2D(qL,qR):
     xi = betaL/betaR
     zeta = (1-xi)/(1+xi)
     zeta2 = zeta**2
-    if zeta2 < 0.01:
+    if np.real(zeta2) < 0.01:
         F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
     else:
         F = - np.log(xi)/zeta
@@ -1934,7 +1902,7 @@ def Ranocha_flux_1D(qL,qR):
     xi = q_0L/q_0R
     zeta = (1-xi)/(1+xi)
     zeta2 = zeta**2
-    if zeta2 < 0.01:
+    if np.real(zeta2) < 0.01:
         F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
     else:
         F = - np.log(xi)/zeta
@@ -1944,7 +1912,7 @@ def Ranocha_flux_1D(qL,qR):
     xi = q_0L*pR/(q_0R*pL)
     zeta = (1-xi)/(1+xi)
     zeta2 = zeta**2
-    if zeta2 < 0.01:
+    if np.real(zeta2) < 0.01:
         F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
     else:
         F = - np.log(xi)/zeta
@@ -1995,7 +1963,7 @@ def Ranocha_fluxes_2D(qL,qR):
     xi = q_0L/q_0R
     zeta = (1-xi)/(1+xi)
     zeta2 = zeta**2
-    if zeta2 < 0.01:
+    if np.real(zeta2) < 0.01:
         F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
     else:
         F = - np.log(xi)/zeta
@@ -2005,7 +1973,7 @@ def Ranocha_fluxes_2D(qL,qR):
     xi = q_0L*pR/(q_0R*pL)
     zeta = (1-xi)/(1+xi)
     zeta2 = zeta**2
-    if zeta2 < 0.01:
+    if np.real(zeta2) < 0.01:
         F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
     else:
         F = - np.log(xi)/zeta

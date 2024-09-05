@@ -242,7 +242,7 @@ def set_gm_sparsity(gm_list):
 
     for gm in gm_list:
         if gm.shape != (nen1, nen2, nelem):
-            raise ValueError('Dimensions do not match')
+            raise ValueError('Dimensions do not match', gm.shape, (nen1, nen2, nelem))
         
     sp_gm_list = List()
 
@@ -504,7 +504,157 @@ def build_F_sys(neq, q1, q2, flux, sparsity_unkronned, sparsity):
         F.append((new_data, new_indices, new_indptr))
     return F
     
+@njit 
+def build_F_vol_sys_2d(neq, q, flux, xsparsity_unkronned, xsparsity,
+                                     ysparsity_unkronned, ysparsity):
+    ''' Builds a sparsified Flux differencing matrix (used for Hadamard form) given a 
+    solution vector q, the number of equations per node, a 2-point flux function, and 
+    a sparsity pattern. Only computes the entries specified by indices and indptr.
+    Takes advantage of symmetry since q1 = q2 = q '''
+    nen_neq, nelem = q.shape 
+    Fx_vol = List()
+    Fy_vol = List()
+    nen = nen_neq // neq
+    for e in range(nelem):
+        # Initialize lists to store CSR data
+        xindices = xsparsity_unkronned[e][0]
+        xindptr = xsparsity_unkronned[e][1]
+        xnew_indices = xsparsity[e][0]
+        xnew_indptr = xsparsity[e][1]
+        yindices = ysparsity_unkronned[e][0]
+        yindptr = ysparsity_unkronned[e][1]
+        ynew_indices = ysparsity[e][0]
+        ynew_indptr = ysparsity[e][1]
+        xnew_data = np.zeros((len(xnew_indices)), dtype=q.dtype)      
+        ynew_data = np.zeros((len(ynew_indices)), dtype=q.dtype)      
+        xcolptrs = np.zeros(nen, dtype=np.int32)
+        ycolptrs = np.zeros(nen, dtype=np.int32)
+        
+        for i in range(nen): # loop over rows, NOT kroned with neq
+            idxi = i * neq # actual dense initial row index
+            idxi2 = (i + 1) * neq # actual dense final row index
 
+            xcol_start = xindptr[i]
+            xcol_end = xindptr[i + 1]
+            ycol_start = yindptr[i]
+            ycol_end = yindptr[i + 1]
+
+            for j in range(i,nen): # loop over columns, NOT kroned with neq
+
+                xcol_start_T = xindptr[j]
+                xcol_end_T = xindptr[j + 1]
+                ycol_start_T = yindptr[j]
+                ycol_end_T = yindptr[j + 1]
+
+                xadd_entry = (j in xindices[xcol_start:xcol_end])
+                xadd_entry_T = (i in xindices[xcol_start_T:xcol_end_T]) and (i != j)
+                yadd_entry = (j in yindices[ycol_start:ycol_end])
+                yadd_entry_T = (i in yindices[ycol_start_T:ycol_end_T]) and (i != j)
+
+                if xadd_entry or xadd_entry_T or yadd_entry or yadd_entry_T:
+
+                    idxj = j * neq # actual dense initial column index
+                    idxj2 = (j + 1) * neq  # actual dense final colum index
+                    xdiag, ydiag = flux(q[idxi:idxi2, e], q[idxj:idxj2, e])
+
+                    for k in range(neq):
+                        new_row = i * neq + k # actual dense row index
+                        new_col = j * neq + k  # actual dense column index
+                        
+                        if xadd_entry:
+                            xnew_col_start = xnew_indptr[new_row]
+                            xnew_col_ptr = xnew_col_start + xcolptrs[i]
+                            xnew_data[xnew_col_ptr] = xdiag[k]
+
+                        if xadd_entry_T:
+                            xnew_col_start = xnew_indptr[new_col]
+                            xnew_col_ptr = xnew_col_start + xcolptrs[j]
+                            xnew_data[xnew_col_ptr] = xdiag[k]
+
+                        if yadd_entry:
+                            ynew_col_start = ynew_indptr[new_row]
+                            ynew_col_ptr = ynew_col_start + ycolptrs[i]
+                            ynew_data[ynew_col_ptr] = ydiag[k]
+
+                        if yadd_entry_T:
+                            ynew_col_start = ynew_indptr[new_col]
+                            ynew_col_ptr = ynew_col_start + ycolptrs[j]
+                            ynew_data[ynew_col_ptr] = ydiag[k]
+
+                    if xadd_entry: xcolptrs[i] += 1
+                    if xadd_entry_T: xcolptrs[j] += 1
+                    if yadd_entry: ycolptrs[i] += 1
+                    if yadd_entry_T: ycolptrs[j] += 1
+
+
+        Fx_vol.append((xnew_data, xnew_indices, xnew_indptr))
+        Fy_vol.append((ynew_data, ynew_indices, ynew_indptr))
+    return Fx_vol, Fy_vol
+
+@njit 
+def build_F_sys_2d(neq, q1, q2, flux, xsparsity_unkronned, xsparsity,
+                                      ysparsity_unkronned, ysparsity):
+    ''' Builds a sparsified Flux differencing matrix (used for Hadamard form) given a 
+    solution vector q, the number of equations per node, a 2-point flux function, and 
+    a sparsity pattern. Only computes the entries specified by indices and indptr.'''
+    nen_neq, nelem = q1.shape 
+    Fx = List()
+    Fy = List()
+    nen = nen_neq // neq
+    for e in range(nelem):
+        # Initialize lists to store CSR data
+        xindices = xsparsity_unkronned[e][0]
+        xindptr = xsparsity_unkronned[e][1]
+        xnew_indices = xsparsity[e][0]
+        xnew_indptr = xsparsity[e][1]
+        xnew_data = np.zeros((len(xnew_indices)), dtype=q1.dtype)   
+        yindices = ysparsity_unkronned[e][0]
+        yindptr = ysparsity_unkronned[e][1]
+        ynew_indices = ysparsity[e][0]
+        ynew_indptr = ysparsity[e][1]
+        ynew_data = np.zeros((len(ynew_indices)), dtype=q1.dtype)    
+        
+        for i in range(nen): # loop over rows, NOT kroned with neq
+            idxi = i * neq # actual dense initial row index
+            idxi2 = (i + 1) * neq # actual dense final row index
+            xcolptr = 0
+            ycolptr = 0
+            xcol_start = xindptr[i]
+            xcol_end = xindptr[i + 1]
+            ycol_start = yindptr[i]
+            ycol_end = yindptr[i + 1]
+
+            for j in range(nen): # loop over columns, NOT kroned with neq
+                
+                xadd_entry = (j in xindices[xcol_start:xcol_end])
+                yadd_entry = (j in yindices[ycol_start:ycol_end])
+
+                if xadd_entry or yadd_entry:
+
+                    idxj = j * neq # actual dense initial column index
+                    idxj2 = (j + 1) * neq  # actual dense final colum index
+                    xdiag, ydiag = flux(q1[idxi:idxi2, e], q2[idxj:idxj2, e])
+
+                    for k in range(neq):
+                        new_row = i * neq + k # actual dense row index
+                        #new_col = j * neq + k # actual dense column index
+                        
+                        if xadd_entry:
+                            xnew_col_start = xnew_indptr[new_row]
+                            xnew_col_ptr = xnew_col_start + xcolptr
+                            xnew_data[xnew_col_ptr] = xdiag[k]
+                        
+                        if yadd_entry:
+                            ynew_col_start = ynew_indptr[new_row]
+                            ynew_col_ptr = ynew_col_start + ycolptr
+                            ynew_data[ynew_col_ptr] = ydiag[k]
+
+                    if xadd_entry: xcolptr += 1
+                    if yadd_entry: ycolptr += 1
+
+        Fx.append((xnew_data, xnew_indices, xnew_indptr))
+        Fy.append((ynew_data, ynew_indices, ynew_indptr))
+    return Fx, Fy
 
 
 if __name__ == '__main__':
@@ -564,6 +714,16 @@ if __name__ == '__main__':
     gm_kron_sp = gm_to_sp(gm_kron)
     sparsity_unkronned = set_gm_sparsity([gm])
     sparsity_kron = set_gm_sparsity([gm_kron])
+    gm2 = np.random.rand(nen, nen, nelem)
+    # add some sparsity
+    gm2[0, 1, 0] = 0.
+    gm2[1, 1, 0] = 0.
+    gm2[1, 2, 1] = 0.
+    gm2[1, 1, 1] = 0.
+    gm2_kron = fn.kron_neq_gm(gm2, neq)
+    gm2_kron_sp = gm_to_sp(gm2_kron)
+    sparsity_unkronned2 = set_gm_sparsity([gm2])
+    sparsity_kron2 = set_gm_sparsity([gm2_kron])
 
     @njit
     def flux(q1,q2):
@@ -580,6 +740,24 @@ if __name__ == '__main__':
     F2 = fn.build_F_sys(neq, q, q2, flux)
     c2 = fn.gm_gm_had_diff(gm_kron, F2)
     print('test build_F_sys:', np.max(abs(c-c2)))
+
+    @njit
+    def flux(q1,q2):
+        return 0.5*(q1 + q2), 2*(q1 - 0.5*q2)
+
+    F, F2 = build_F_vol_sys_2d(neq, q, flux, sparsity_unkronned, sparsity_kron,
+                                      sparsity_unkronned2, sparsity_kron2)
+    c = gm_gm_had_diff(gm_kron_sp, F) + gm_gm_had_diff(gm2_kron_sp, F2)
+    F, F2 = fn.build_F_vol_sys_2d(neq, q, flux)
+    c2 = fn.gm_gm_had_diff(gm_kron, F) + fn.gm_gm_had_diff(gm2_kron, F2)
+    print('test build_F_vol_sys_2d:', np.max(abs(c-c2)))
+
+    F, F2 = build_F_sys_2d(neq, q, q2, flux, sparsity_unkronned, sparsity_kron,
+                                      sparsity_unkronned2, sparsity_kron2)
+    c = gm_gm_had_diff(gm_kron_sp, F) + gm_gm_had_diff(gm2_kron_sp, F2)
+    F, F2 = fn.build_F_sys_2d(neq, q, q2, flux)
+    c2 = fn.gm_gm_had_diff(gm_kron, F) + fn.gm_gm_had_diff(gm2_kron, F2)
+    print('test build_F_sys_2d:', np.max(abs(c-c2)))
 
 
 

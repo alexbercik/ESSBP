@@ -100,7 +100,9 @@ class Sat(SatDer1, SatDer2):
                 self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sca_2d(q1, q2, flux))
                 #self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sca_2d(q1, q2, flux))
             else:
-                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sys_2d(self.neq_node, q1, q2, flux))
+                self.build_F = staticmethod(lambda q1, q2, flux: sp.build_F_sys_2d(self.neq_node, q1, q2, flux, 
+                                                                                self.xsparsity_unkronned, self.xsparsity,
+                                                                                self.ysparsity_unkronned, self.ysparsity))
                 #self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sys_2d(q1, q2, flux))
         
         elif self.dim == 3:
@@ -151,12 +153,12 @@ class Sat(SatDer1, SatDer2):
             self.taphys = fn.lm_gm(self.tL, fn.gdiag_lm(self.bdy_metrics[:,0,:],self.tRT))
             self.tbphys = fn.lm_gm(self.tR, fn.gdiag_lm(self.bdy_metrics[:,1,:],self.tLT))
 
-            if self.neq_node > 1:
+            if (self.disc_type == 'had') and (self.neq_node > 1):
                 self.vol_mat_sp = sp.gm_to_sp(self.vol_mat)
-                self.taphysT_sp = sp.gm_to_sp(np.transpose(self.taphys,(1,0,2)))
+                taphysT = np.ascontiguousarray(np.transpose(self.taphys,(1,0,2)))
+                self.taphysT_sp = sp.gm_to_sp(taphysT)
                 self.tbphys_sp = sp.gm_to_sp(self.tbphys)
 
-                taphysT = np.ascontiguousarray(np.transpose(self.taphys,(1,0,2)))
                 taphysT_pad = fn.pad_gm_1dR(taphysT,self.tbphys[:,:,-1])
                 tbphys_pad = fn.pad_gm_1dL(self.tbphys,taphysT[:,:,0])
                 self.sparsity = sp.set_gm_sparsity([taphysT_pad,tbphys_pad])
@@ -174,12 +176,31 @@ class Sat(SatDer1, SatDer2):
             self.tbphysx = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,1,0,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
             self.tbphysy = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,1,1,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
 
-            self.vol_x_mat_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.vol_x_mat]   
-            self.vol_y_mat_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.vol_y_mat]
-            self.taphysx_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.taphysx]
-            self.taphysy_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.taphysy]
-            self.tbphysx_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.tbphysx]
-            self.tbphysy_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.tbphysy]         
+            if self.neq_node > 1:
+                self.vol_x_mat_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.vol_x_mat]   
+                self.vol_y_mat_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.vol_y_mat]
+                if (self.disc_type == 'had'):
+                    taphysxT = [np.ascontiguousarray(np.transpose(gm_mat,(1,0,2))) for gm_mat in self.taphysx]
+                    taphysyT = [np.ascontiguousarray(np.transpose(gm_mat,(1,0,2))) for gm_mat in self.taphysy]
+                    self.taphysxT_sp = [sp.gm_to_sp(gm_mat) for gm_mat in taphysxT]
+                    self.taphysyT_sp = [sp.gm_to_sp(gm_mat) for gm_mat in taphysyT]
+                else:
+                    self.taphysx_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.taphysx]
+                    self.taphysy_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.taphysy]
+                self.tbphysx_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.tbphysx]
+                self.tbphysy_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.tbphysy]  
+
+                if (self.disc_type == 'had'):
+                    taphysxT_pad = [fn.pad_gm_1dR(taphysxT[i],self.tbphysx[i][:,:,-1]) for i in range(len(taphysxT))]
+                    taphysyT_pad = [fn.pad_gm_1dR(taphysyT[i],self.tbphysy[i][:,:,-1]) for i in range(len(taphysxT))]
+                    tbphysx_pad = [fn.pad_gm_1dL(self.tbphysx[i],taphysxT[i][:,:,0]) for i in range(len(taphysxT))]
+                    tbphysy_pad = [fn.pad_gm_1dL(self.tbphysy[i],taphysyT[i][:,:,0]) for i in range(len(taphysyT))]
+                    self.xsparsity = sp.set_gm_sparsity([*taphysxT_pad,*tbphysx_pad])
+                    self.xsparsity_unkronned = sp.set_gm_sparsity([*[fn.unkron_neq_gm(mat,self.neq_node) for mat in taphysxT_pad],
+                                                                *[fn.unkron_neq_gm(mat,self.neq_node) for mat in tbphysx_pad]]) 
+                    self.ysparsity = sp.set_gm_sparsity([*taphysyT_pad,*tbphysy_pad])
+                    self.ysparsity_unkronned = sp.set_gm_sparsity([*[fn.unkron_neq_gm(mat,self.neq_node) for mat in taphysyT_pad],
+                                                                *[fn.unkron_neq_gm(mat,self.neq_node) for mat in tbphysy_pad]])          
         
         elif self.dim == 3:
             self.Esurf = self.tR @ np.diag(self.Hperp) @ self.tRT - self.tL @ np.diag(self.Hperp) @ self.tLT
@@ -361,7 +382,7 @@ class Sat(SatDer1, SatDer2):
                     if self.dim == 1:
                         self.diss = lambda qL,qR: self.diss_ent_1d(qL,qR,3)
                     elif self.dim == 2:
-                        self.diss = lambda qL,qR, idx: self.diss_ent_2d(qL,qR,3)
+                        self.diss = lambda qL,qR, idx: self.diss_ent_2d(qL,qR,idx,3)
                     else:
                         raise Exception('dim=3 not set up yet')
                 elif self.method.lower()=='ent_matmat':
@@ -371,7 +392,7 @@ class Sat(SatDer1, SatDer2):
                     if self.dim == 1:
                         self.diss = lambda qL,qR: self.diss_ent_1d(qL,qR,2)
                     elif self.dim == 2:
-                        self.diss = lambda qL,qR, idx: self.diss_ent_2d(qL,qR,2)
+                        self.diss = lambda qL,qR, idx: self.diss_ent_2d(qL,qR,idx,2)
                     else:
                         raise Exception('dim=3 not set up yet')
                 
@@ -636,15 +657,16 @@ class Sat(SatDer1, SatDer2):
             pass
         elif flux_type==2:
             # simple arithmetic average, matrix-matrix dissipation (LF)
+            q_avg = (qL + qR)/2
             # remember that metric have been repeated neq times, unecessary here
-            metrics = fn.pad_1dR(self.bdy_metrics[idx][::self.neq_node,0,:,:], self.bdy_metrics[idx][::self.neq_node,1,:,-1])
+            metrics = fn.pad_ndR(self.bdy_metrics[idx][::self.neq_node,0,:,:], self.bdy_metrics[idx][::self.neq_node,1,:,-1])
             absAP = self.dEndw_abs(q_avg,metrics)
             absAP_dw = fn.gm_gv(absAP, w_jump)
         elif flux_type==3:
             # averaging from Derigs et al 2017, scalar-matrix dissipation
             P = self.dqdw_jump(qL,qR)
             # remember that metric have been repeated neq times, unecessary here
-            metrics = fn.pad_1dR(self.bdy_metrics[idx][::self.neq_node,0,:,:], self.bdy_metrics[idx][::self.neq_node,1,:,-1])
+            metrics = fn.pad_ndR(self.bdy_metrics[idx][::self.neq_node,0,:,:], self.bdy_metrics[idx][::self.neq_node,1,:,-1])
             lam = np.maximum(self.maxeig_dEndq(qL,metrics), self.maxeig_dEndq(qR,metrics))
             absAP_dw = fn.gdiag_gv(fn.repeat_neq_gv(lam,self.neq_node), fn.gm_gv(P, w_jump))
         else:
