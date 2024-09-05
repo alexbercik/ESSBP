@@ -184,14 +184,16 @@ class SatDer1:
         
         diss = self.diss(qf_L,qf_R,idx)
         
-        """
-        sat = 0.5*( fn.gm_gv(self.vol_x_mat[idx], Ex) + fn.gm_gv(self.vol_y_mat[idx], Ey) 
-                  - fn.gm_gv(self.tbphysx[idx], ExR) - fn.gm_gv(self.tbphysy[idx], EyR)
-                  + fn.gm_gv(self.taphysx[idx], ExL) + fn.gm_gv(self.taphysy[idx], EyL)) - diss
-        """
         sat = 0.5*( sp.gm_gv(self.vol_x_mat_sp[idx], Ex) + sp.gm_gv(self.vol_y_mat_sp[idx], Ey) 
                   - sp.gm_gv(self.tbphysx_sp[idx], ExR) - sp.gm_gv(self.tbphysy_sp[idx], EyR)
-                  + (self.taphysx_sp[idx], ExL) + sp.gm_gv(self.taphysy_sp[idx], EyL)) - diss
+                  + sp.gm_gv(self.taphysx_sp[idx], ExL) + sp.gm_gv(self.taphysy_sp[idx], EyL)) - diss
+        """
+        # Debugging: ok
+        sat2 = 0.5*( fn.gm_gv(self.vol_x_mat[idx], Ex) + fn.gm_gv(self.vol_y_mat[idx], Ey) 
+                  - fn.gm_gv(self.tbphysx[idx], ExR) - fn.gm_gv(self.tbphysy[idx], EyR)
+                  + fn.gm_gv(self.taphysx[idx], ExL) + fn.gm_gv(self.taphysy[idx], EyL)) - diss
+        print('sat:', np.max(np.abs(sat-sat2)))
+        """
         
         return sat
     
@@ -721,11 +723,6 @@ class SatDer1:
         '''
         The base conservative flux in Hadamard Form. Then add dissipative term.
         '''
-        
-        vol = fn.gm_gm_had_diff(self.vol_x_mat[idx], Fxvol) + fn.gm_gm_had_diff(self.vol_y_mat[idx], Fyvol)
-        
-        # TODO: Modify build_F and hadamard functions to only consider non-zero entries
-        
         # Here we work in terms of facets, starting from the left-most facet.
         # This is NOT the same as elements. i.e. qR is to the right of the
         # facet and qL is to the left of the facet, opposite of element-wise.
@@ -741,11 +738,32 @@ class SatDer1:
             raise Exception('TODO: adding boundary condition.')
         
         Fsurfx, Fsurfy = self.build_F(qL, qR, self.calc_had_flux)
-        
-        surfa = fn.gm_gm_had_diff(self.taphysx[idx],np.transpose(Fsurfx[:,:,:-1],(1,0,2))) + \
-                fn.gm_gm_had_diff(self.taphysy[idx],np.transpose(Fsurfy[:,:,:-1],(1,0,2)))
-        surfb = fn.gm_gm_had_diff(self.tbphysx[idx],Fsurfx[:,:,1:]) + \
-                fn.gm_gm_had_diff(self.tbphysy[idx],Fsurfy[:,:,1:])
+        if self.neq_node == 1:
+            vol = fn.gm_gm_had_diff(self.vol_x_mat[idx], Fxvol) + fn.gm_gm_had_diff(self.vol_y_mat[idx], Fyvol)            
+            surfa = fn.gm_gm_had_diff(self.taphysx[idx],np.transpose(Fsurfx[:,:,:-1],(1,0,2))) + \
+                    fn.gm_gm_had_diff(self.taphysy[idx],np.transpose(Fsurfy[:,:,:-1],(1,0,2)))
+            surfb = fn.gm_gm_had_diff(self.tbphysx[idx],Fsurfx[:,:,1:]) + \
+                    fn.gm_gm_had_diff(self.tbphysy[idx],Fsurfy[:,:,1:])
+        else:
+            vol = sp.gm_gm_had_diff(self.vol_x_mat_sp[idx], Fxvol) + sp.gm_gm_had_diff(self.vol_y_mat_sp[idx], Fyvol)            
+            surfa = sp.gmT_gm_had_diff(self.taphysxT_sp[idx],Fsurfx[:-1]) + \
+                    sp.gmT_gm_had_diff(self.taphysyT_sp[idx],Fsurfy[:-1])
+            surfb = sp.gm_gm_had_diff(self.tbphysx_sp[idx],Fsurfx[1:]) + \
+                    sp.gm_gm_had_diff(self.tbphysy_sp[idx],Fsurfy[1:])
+            
+            # debugging: OK
+            """
+            Fxvol2, Fyvol2 = fn.build_F_vol_sys_2d(self.neq_node, q, self.calc_had_flux)
+            Fsurfx2, Fsurfy2 = fn.build_F_sys_2d(self.neq_node, qL, qR, self.calc_had_flux)
+            vol2 = fn.gm_gm_had_diff(self.vol_x_mat[idx], Fxvol2) + fn.gm_gm_had_diff(self.vol_y_mat[idx], Fyvol2)
+            surfa2 = fn.gm_gm_had_diff(self.taphysx[idx],np.transpose(Fsurfx2[:,:,:-1],(1,0,2))) + \
+                    fn.gm_gm_had_diff(self.taphysy[idx],np.transpose(Fsurfy2[:,:,:-1],(1,0,2)))
+            surfb2 = fn.gm_gm_had_diff(self.tbphysx[idx],Fsurfx2[:,:,1:]) + \
+                    fn.gm_gm_had_diff(self.tbphysy[idx],Fsurfy2[:,:,1:])
+            print('vol:', np.max(np.abs(vol - vol2)))
+            print('surfa:', np.max(np.abs(surfa - surfa2)))
+            print('surfb:', np.max(np.abs(surfb - surfb2)))
+            """
         
         diss = self.diss(self.tRT @ qL, self.tLT @ qR, idx)
         

@@ -1252,6 +1252,44 @@ def sparse_block_diag_L_1D(A):
     #mat.eliminate_zeros()
     return mat
 
+@njit
+def assemble_satx_2d(mat_list,nelemx,nelemy):
+    ''' given a list of matrices of shape (nen,nen2,nelem[idx]), 
+    put them back in global order (nen,nen2,nelem)
+    where each entry idx is one row in x'''
+    nelemy2 = len(mat_list)
+    if nelemy2 != nelemy:
+        raise Exception('nelemy does not match',nelemy2,nelemy)
+    nen1,nen2,nelemx2 = mat_list[0].shape
+    if nelemx2 != nelemx:
+        raise Exception('nelemx does not match',nelemx2,nelemx)
+    
+    mat_glob = np.zeros((nen1, nen2, nelemx*nelemy),dtype=mat_list[0].dtype)
+    for ey in range(nelemy):
+        for ex in range(nelemx):
+            idx = ex*nelemy + ey
+            mat_glob[:,:,idx] = mat_list[ey][:,:,ex]
+    return mat_glob
+
+@njit
+def assemble_saty_2d(mat_list,nelemx,nelemy):
+    ''' given a list of matrices of shape (nen,nen2,nelem[idx]), 
+    put them back in global order (nen,nen2,nelem)
+    where each entry idx is one row in y'''
+    nelemx2 = len(mat_list)
+    if nelemx2 != nelemx:
+        raise Exception('nelemy does not match',nelemx2,nelemx)
+    nen1,nen2,nelemy2 = mat_list[0].shape
+    if nelemy2 != nelemy:
+        raise Exception('nelemx does not match',nelemy2,nelemy)
+    
+    mat_glob = np.zeros((nen1, nen2, nelemx*nelemy),dtype=mat_list[0].dtype)
+    for ex in range(nelemx):
+        for ey in range(nelemy):
+            idx = ex*nelemy + ey
+            mat_glob[:,:,idx] = mat_list[ex][:,:,ex]
+    return mat_glob
+
 
 """ Old functions (no longer useful)
 
