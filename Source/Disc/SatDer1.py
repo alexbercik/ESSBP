@@ -42,7 +42,7 @@ class SatDer1:
             qf_L = fn.pad_1dL(q_b, q_bdyL)
             qf_R = fn.pad_1dR(q_a, q_bdyR)
 
-        diss = self.diss(qf_L,qf_R)
+        diss = self.coeff*self.diss(qf_L,qf_R)
 
         sat = 0.5*( fn.gm_gv(self.vol_mat, E) - intR + intL ) - diss
         return sat
@@ -182,7 +182,7 @@ class SatDer1:
         else:
             raise Exception('TODO: adding boundary condition.')
         
-        diss = self.diss(qf_L,qf_R,idx)
+        diss = self.coeff*self.diss(qf_L,qf_R,idx)
         
         sat = 0.5*( sp.gm_gv(self.vol_x_mat_sp[idx], Ex) + sp.gm_gv(self.vol_y_mat_sp[idx], Ey) 
                   - sp.gm_gv(self.tbphysx_sp[idx], ExR) - sp.gm_gv(self.tbphysy_sp[idx], EyR)
@@ -232,10 +232,10 @@ class SatDer1:
     ''' LAX-FRIEDRICHS FLUXES '''
     ##########################################################################
     
-    def llf_div_1d(self, q, E, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None, sigma=1, avg='simple'):
+    def llf_div_1d(self, q, E, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None):
         '''
         A Local Lax-Fridriechs dissipative flux in 1D. 
-        sigma=0 turns off dissipation, recovering central_div_1d.
+        self.coeff=0 turns off dissipation, recovering central_div_1d.
         '''
         q_a = self.tLT @ q
         q_b = self.tRT @ q
@@ -275,27 +275,32 @@ class SatDer1:
             intR[:,-1] = self.tR @ (self.bdy_metrics[:,1,-1] * E_bdyR)
             intL[:,0] = self.tL @ (self.bdy_metrics[:,0,0] * E_bdyL)
         
-        if avg=='simple': # Alternatively, a Roe average can be used
+        if self.average=='simple': # Alternatively, a Roe average can be used
             qf_avg = (qf_L + qf_R)/2
-        elif avg=='roe':
-            raise Exception('Roe Average not coded up yet')
+        elif self.average=='roe':
+            raise Exception('Roe Average not coded up yet for LF SAT')
         else:
-            raise Exception('Averaging method not understood.')
-            
-        maxeigs = self.maxeig_dExdq(qf_avg)
+            raise Exception('Averaging method not understood.', self.average)
+        
+        if self.maxeig_type == 'lf':
+            maxeigs = self.maxeig_dExdq(qf_avg)
+        elif self.maxeig_type == 'rusanov':
+            maxeigs = np.maximum(self.maxeig_dExdq(qf_L), self.maxeig_dExdq(qf_R))
+        else:
+            raise Exception('maxeig type not understood.', self.maxeig_type)
         
 # =============================================================================
 #         # This is equivalent to below, but tested to be slightly slower
-#         dissL = sigma* (self.tL @ np.abs(maxeigs[:,:-1] * self.bdy_metrics[:,0,:])*qf_jump[:,:-1])
-#         dissR = sigma* (self.tR @ np.abs(maxeigs[:,1:] * self.bdy_metrics[:,1,:])*qf_jump[:,1:])
+#         dissL = self.coeff* (self.tL @ np.abs(maxeigs[:,:-1] * self.bdy_metrics[:,0,:])*qf_jump[:,:-1])
+#         dissR = self.coeff* (self.tR @ np.abs(maxeigs[:,1:] * self.bdy_metrics[:,1,:])*qf_jump[:,1:])
 # =============================================================================
         
         # This is equivalent to above, but tested to be slightly faster
         metrics = fn.pad_1dR(self.bdy_metrics[:,0,:], self.bdy_metrics[:,1,-1])
         Lambda = np.abs(maxeigs * metrics)
         Lambda_q_jump = fn.gdiag_gv(Lambda, qf_jump)
-        dissL = sigma * self.tL @ Lambda_q_jump[:,:-1]
-        dissR = sigma * self.tR @ Lambda_q_jump[:,1:]
+        dissL = self.coeff * self.tL @ Lambda_q_jump[:,:-1]
+        dissR = self.coeff * self.tR @ Lambda_q_jump[:,1:]
         
 # =============================================================================
 #         # This is equivalent to below, but tested to be slightly slower
@@ -315,10 +320,10 @@ class SatDer1:
         sat = 0.5*( fn.gm_gv(self.vol_mat, E) - intR + intL + dissR - dissL )
         return sat
     
-    def llf_div_1d_dfdq(self, q, A, q_bdyL=None, q_bdyR=None, sigma=1, eps_imag=1e-20, avg='simple'):
+    def llf_div_1d_dfdq(self, q, A, q_bdyL=None, q_bdyR=None, eps_imag=1e-20):
         '''
         A Local Lax-Fridriechs dissipative flux in 1D. 
-        sigma=0 turns off dissipation, recovering central_div_1d.
+        self.coeff=0 turns off dissipation, recovering central_div_1d.
         '''
 
         q_a = self.tLT @ q
@@ -359,7 +364,7 @@ class SatDer1:
             intR[:,:,-1] = 0.
             intL[:,:,0] = 0.
         
-        if avg=='simple': # Alternatively, a Roe average can be used
+        if self.average=='simple': # Alternatively, a Roe average can be used
             qf_avg = (qf_L + qf_R)/2
             ''' I give up on linearizing dissipative part
             dqf_avg_dqR = fn.sparse_block_R_1D(self.tLT) + fn.sparse_block_diag(self.tRT) # wrong... facet centred, not element
@@ -369,7 +374,7 @@ class SatDer1:
                 # assume dirichlet boundaries, remove periodic dependence on corner
                 dqf_avg_dqR
             '''
-        elif avg=='roe':
+        elif self.average=='roe':
             raise Exception('Roe Average not coded up yet')
         else:
             raise Exception('Averaging method not understood.')
@@ -402,9 +407,9 @@ class SatDer1:
         return dfdq
     
     
-    def llf_div_2d(self, q, Ex, Ey, idx, q_bdyL=None, q_bdyR=None, sigma=1, avg='simple'):
+    def llf_div_2d(self, q, Ex, Ey, idx, q_bdyL=None, q_bdyR=None):
         '''
-        A Local Lax-Fridriechs dissipative flux in 2D. sigma=0 turns off dissipation.
+        A Local Lax-Fridriechs dissipative flux in 2D. self.coeff=0 turns off dissipation.
         '''
 
         q_a = self.tLT @ q
@@ -425,21 +430,27 @@ class SatDer1:
             raise Exception('TODO: adding boundary condition.')
         qf_jump = qf_R - qf_L
         
-        if avg=='simple': # Alternatively, a Roe average can be used
+        if self.average=='simple': # Alternatively, a Roe average can be used
             qf_avg = (qf_L + qf_R)/2
-        elif avg=='roe':
-            raise Exception('Roe Average not coded up yet')
+        elif self.average=='roe':
+            raise Exception('Roe Average not coded up yet for LF SAT')
         else:
-            raise Exception('Averaging method not understood.')
-            
-        maxeigsx = fn.repeat_neq_gv(self.maxeig_dExdq(qf_avg), self.neq_node)
-        maxeigsy = fn.repeat_neq_gv(self.maxeig_dEydq(qf_avg), self.neq_node)
+            raise Exception('Averaging method not understood.', self.average)
+
+        if self.maxeig_type == 'lf':
+            maxeigsx = fn.repeat_neq_gv(self.maxeig_dExdq(qf_avg), self.neq_node)
+            maxeigsy = fn.repeat_neq_gv(self.maxeig_dEydq(qf_avg), self.neq_node)
+        elif self.maxeig_type == 'rusanov':
+            maxeigsx = fn.repeat_neq_gv(np.maximum(self.maxeig_dExdq(qf_L), self.maxeig_dExdq(qf_R)), self.neq_node)
+            maxeigsy = fn.repeat_neq_gv(np.maximum(self.maxeig_dEydq(qf_L), self.maxeig_dEydq(qf_R)), self.neq_node)
+        else:
+            raise Exception('maxeig type not understood.', self.maxeig_type)
         
 # =============================================================================
 #         # This is equivalent to below, but tested to be slower
-#         dissL = sigma* self.tL @ ( self.Hperp * (np.abs(maxeigsx[:,:-1] * self.bdy_metrics[idx][:,0,0,:]) \
+#         dissL = self.coeff* self.tL @ ( self.Hperp * (np.abs(maxeigsx[:,:-1] * self.bdy_metrics[idx][:,0,0,:]) \
 #               + np.abs( maxeigsy[:,:-1] * self.bdy_metrics[idx][:,0,1,:])) * qf_jump[:,:-1])
-#         dissR = sigma* self.tR @ ( self.Hperp * (np.abs(maxeigsx[:,1:] * self.bdy_metrics[idx][:,1,0,:]) \
+#         dissR = self.coeff* self.tR @ ( self.Hperp * (np.abs(maxeigsx[:,1:] * self.bdy_metrics[idx][:,1,0,:]) \
 #               + np.abs( maxeigsy[:,1:] * self.bdy_metrics[idx][:,1,1,:])) * qf_jump[:,1:])
 # =============================================================================
             
@@ -479,9 +490,9 @@ class SatDer1:
         
         return sat
     
-    def llf_div_3d(self, q, Ex, Ey, Ez, idx, q_bdyL=None, q_bdyR=None, sigma=1, avg='simple'):
+    def llf_div_3d(self, q, Ex, Ey, Ez, idx, q_bdyL=None, q_bdyR=None):
         '''
-        A Local Lax-Fridriechs dissipative flux in 3D. sigma=0 turns off dissipation.
+        A Local Lax-Fridriechs dissipative flux in 3D. self.coeff=0 turns off dissipation.
         '''
         
         q_a = self.tLT @ q
@@ -504,20 +515,28 @@ class SatDer1:
             raise Exception('TODO: adding boundary condition.')
         qf_jump = qf_R - qf_L
         
-        if avg=='simple': # Alternatively, a Roe average can be used
+        if self.average=='simple': # Alternatively, a Roe average can be used
             qf_avg = (qf_L + qf_R)/2
-        elif avg=='roe':
-            raise Exception('Roe Average not coded up yet')
+        elif self.average=='roe':
+            raise Exception('Roe Average not coded up yet for LF SAT')
         else:
-            raise Exception('Averaging method not understood.')
+            raise Exception('Averaging method not understood.', self.average)
         
         Ephys = self.metrics[idx][:,0,:] * Ex + self.metrics[idx][:,1,:] * Ey + self.metrics[idx][:,2,:] * Ez
         EphysL = self.tLT @ Ephys
         EphysR = self.tRT @ Ephys
         
-        maxeigsx = self.maxeig_dExdq(qf_avg)
-        maxeigsy = self.maxeig_dEydq(qf_avg)
-        maxeigsz = self.maxeig_dEzdq(qf_avg)
+        if self.maxeig_type == 'lf':
+            maxeigsx = fn.repeat_neq_gv(self.maxeig_dExdq(qf_avg), self.neq_node)
+            maxeigsy = fn.repeat_neq_gv(self.maxeig_dEydq(qf_avg), self.neq_node)
+            maxeigsz = fn.repeat_neq_gv(self.maxeig_dEzdq(qf_avg), self.neq_node)
+        elif self.maxeig_type == 'rusanov':
+            maxeigsx = fn.repeat_neq_gv(np.maximum(self.maxeig_dExdq(qf_L), self.maxeig_dExdq(qf_R)), self.neq_node)
+            maxeigsy = fn.repeat_neq_gv(np.maximum(self.maxeig_dEydq(qf_L), self.maxeig_dEydq(qf_R)), self.neq_node)
+            maxeigsz = fn.repeat_neq_gv(np.maximum(self.maxeig_dEzdq(qf_L), self.maxeig_dEzdq(qf_R)), self.neq_node)
+        else:
+            raise Exception('maxeig type not understood.', self.maxeig_type)
+
         dissL = np.abs(maxeigsx[:,:-1] * self.bdy_metrics[idx][:,0,0,:]) \
               + np.abs(maxeigsy[:,:-1] * self.bdy_metrics[idx][:,0,1,:]) \
               + np.abs(maxeigsz[:,:-1] * self.bdy_metrics[idx][:,0,2,:])
@@ -528,11 +547,11 @@ class SatDer1:
         EnumL = 0.5*(self.bdy_metrics[idx][:,0,0,:] * (self.tRT @ ExL) \
                    + self.bdy_metrics[idx][:,0,1,:] * (self.tRT @ EyL) \
                    + self.bdy_metrics[idx][:,0,2,:] * (self.tRT @ EzL) + EphysL \
-                   - sigma*dissL*qf_jump[:,:-1])
+                   - self.coeff*dissL*qf_jump[:,:-1])
         EnumR = 0.5*(self.bdy_metrics[idx][:,1,0,:] * (self.tLT @ ExR) \
                    + self.bdy_metrics[idx][:,1,1,:] * (self.tLT @ EyR) \
                    + self.bdy_metrics[idx][:,1,2,:] * (self.tLT @ EzR) + EphysR \
-                   - sigma*dissR*qf_jump[:,1:])
+                   - self.coeff*dissR*qf_jump[:,1:])
         
         sat = self.tR @ (self.Hperp * (EphysR - EnumR)) - self.tL @ (self.Hperp * (EphysL - EnumL))
         return sat
@@ -542,9 +561,9 @@ class SatDer1:
     # in general, these are NOT stable because of the treatment of metric terms
     ##########################################################################
     
-    def upwind_div_1d(self, q, E, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None, sigma=1, avg='simple'):
+    def upwind_div_1d(self, q, E, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None):
         '''
-        An upwind dissipative flux in 1D. sigma=0 turns off dissipation.
+        An upwind dissipative flux in 1D. self.coeff=0 turns off dissipation.
         '''
         q_a = self.tLT @ q
         q_b = self.tRT @ q
@@ -560,30 +579,29 @@ class SatDer1:
         qf_jump = -(qf_R - qf_L)
         bdy_metrics = fn.pad_1dR(self.bdy_metrics[:,0,:], self.bdy_metrics[:,1,-1])
         
-        if avg=='simple': # Alternatively, a Roe average can be used
+        if self.average=='simple': # Alternatively, a Roe average can be used
             qf_avg = (qf_L + qf_R)/2
-        elif avg=='roe':
-            raise Exception('Roe Average not coded up yet')
+        elif self.average=='roe':
+            raise Exception('Roe Average not coded up yet for upwind SAT')
         else:
-            raise Exception('Averaging method not understood.')
+            raise Exception('Averaging method not understood.', self.average)
         
         A = self.dExdq(qf_avg)            
         A_abs = self.dExdq_eig_abs(qf_avg)
         
         # Upwinding flux
-        A_upwind = (A + sigma*A_abs)/2 * bdy_metrics
-        A_downwind = (A - sigma*A_abs)/2 * bdy_metrics
+        A_upwind = (A + self.coeff*A_abs)/2 * bdy_metrics
+        A_downwind = (A - self.coeff*A_abs)/2 * bdy_metrics
         
         sat = self.tR @ fn.gm_gv(A_downwind, qf_jump)[:,1:] \
             + self.tL @ fn.gm_gv(A_upwind, qf_jump)[:,:-1]
         return sat
 
     
-    def upwind_div_2d(self, q, Ex, Ey, idx, q_bdyL=None, q_bdyR=None, sigma=1, avg='simple'):
+    def upwind_div_2d(self, q, Ex, Ey, idx, q_bdyL=None, q_bdyR=None):
         '''
-        An upwind dissipative flux in 2D. sigma=0 turns off dissipation.
+        An upwind dissipative flux in 2D. self.coeff=0 turns off dissipation.
         '''
-        sigma = 0
         q_a = self.tLT @ q
         q_b = self.tRT @ q
         # Here we work in terms of facets, starting from the left-most facet.
@@ -600,12 +618,12 @@ class SatDer1:
         bdy_metricsx = fn.pad_1dR(self.bdy_metrics[idx][:,0,0,:], self.bdy_metrics[idx][:,1,0,-1])
         bdy_metricsy = fn.pad_1dR(self.bdy_metrics[idx][:,0,1,:], self.bdy_metrics[idx][:,1,1,-1])
         
-        if avg=='simple': # Alternatively, a Roe average can be used
+        if self.average=='simple': # Alternatively, a Roe average can be used
             qf_avg = (qf_L + qf_R)/2
-        elif avg=='roe':
-            raise Exception('Roe Average not coded up yet')
+        elif self.average=='roe':
+            raise Exception('Roe Average not coded up yet for upwind SAT')
         else:
-            raise Exception('Averaging method not understood.')
+            raise Exception('Averaging method not understood.', self.average)
         
         Ax = self.dExdq(qf_avg)            
         Ax_abs = self.dExdq_eig_abs(qf_avg)
@@ -613,18 +631,17 @@ class SatDer1:
         Ay_abs = self.dEydq_eig_abs(qf_avg)
         
         # Upwinding flux
-        A_upwind = (Ax + sigma*Ax_abs)/2 * bdy_metricsx + (Ay + sigma*Ay_abs)/2 * bdy_metricsy
-        A_downwind = (Ax - sigma*Ax_abs)/2 * bdy_metricsx + (Ay - sigma*Ay_abs)/2 * bdy_metricsy
+        A_upwind = (Ax + self.coeff*Ax_abs)/2 * bdy_metricsx + (Ay + self.coeff*Ay_abs)/2 * bdy_metricsy
+        A_downwind = (Ax - self.coeff*Ax_abs)/2 * bdy_metricsx + (Ay - self.coeff*Ay_abs)/2 * bdy_metricsy
         
         sat = self.tR @ (self.Hperp * fn.gm_gv(A_downwind, qf_jump)[:,1:]) \
             + self.tL @ (self.Hperp * fn.gm_gv(A_upwind, qf_jump)[:,:-1])
         return sat
     
-    def upwind_div_3d(self, q, Ex, Ey, Ez, idx, q_bdyL=None, q_bdyR=None, sigma=1, avg='simple'):
+    def upwind_div_3d(self, q, Ex, Ey, Ez, idx, q_bdyL=None, q_bdyR=None):
         '''
-        An upwind dissipative flux in 3D. sigma=0 turns off dissipation.
+        An upwind dissipative flux in 3D. self.coeff=0 turns off dissipation.
         '''
-        
         q_a = self.tLT @ q
         q_b = self.tRT @ q
         # Here we work in terms of facets, starting from the left-most facet.
@@ -642,12 +659,12 @@ class SatDer1:
         bdy_metricsy = fn.pad_1dR(self.bdy_metrics[idx][:,0,1,:], self.bdy_metrics[idx][:,1,1,-1])
         bdy_metricsz = fn.pad_1dR(self.bdy_metrics[idx][:,0,2,:], self.bdy_metrics[idx][:,1,2,-1])
         
-        if avg=='simple': # Alternatively, a Roe average can be used
+        if self.average=='simple': # Alternatively, a Roe average can be used
             qf_avg = (qf_L + qf_R)/2
-        elif avg=='roe':
-            raise Exception('Roe Average not coded up yet')
+        elif self.average=='roe':
+            raise Exception('Roe Average not coded up yet for upwind SAT')
         else:
-            raise Exception('Averaging method not understood.')
+            raise Exception('Averaging method not understood.', self.average)
         
         Ax = self.dExdq(qf_avg)            
         Ax_abs = self.dExdq_eig_abs(qf_avg)
@@ -657,12 +674,12 @@ class SatDer1:
         Az_abs = self.dEzdq_eig_abs(qf_avg)
         
         # Upwinding flux
-        A_upwind = (Ax + sigma*Ax_abs)/2 * bdy_metricsx \
-                 + (Ay + sigma*Ay_abs)/2 * bdy_metricsy \
-                 + (Az + sigma*Az_abs)/2 * bdy_metricsz
-        A_downwind = (Ax - sigma*Ax_abs)/2 * bdy_metricsx \
-                   + (Ay - sigma*Ay_abs)/2 * bdy_metricsy \
-                   + (Az - sigma*Az_abs)/2 * bdy_metricsz
+        A_upwind = (Ax + self.coeff*Ax_abs)/2 * bdy_metricsx \
+                 + (Ay + self.coeff*Ay_abs)/2 * bdy_metricsy \
+                 + (Az + self.coeff*Az_abs)/2 * bdy_metricsz
+        A_downwind = (Ax - self.coeff*Ax_abs)/2 * bdy_metricsx \
+                   + (Ay - self.coeff*Ay_abs)/2 * bdy_metricsy \
+                   + (Az - self.coeff*Az_abs)/2 * bdy_metricsz
         
         sat = self.tR @ (self.Hperp * fn.gm_gv(A_downwind, qf_jump)[:,1:]) \
             + self.tL @ (self.Hperp * fn.gm_gv(A_upwind, qf_jump)[:,:-1])
@@ -714,7 +731,7 @@ class SatDer1:
             #print('surfb:', np.max(np.abs(surfb - surfb2)))
 
         
-        diss = self.diss(self.tRT @ qL, self.tLT @ qR)
+        diss = self.coeff*self.diss(self.tRT @ qL, self.tLT @ qR)
         
         sat = vol + surfa - surfb - diss 
         return sat
@@ -765,7 +782,7 @@ class SatDer1:
             print('surfb:', np.max(np.abs(surfb - surfb2)))
             """
         
-        diss = self.diss(self.tRT @ qL, self.tLT @ qR, idx)
+        diss = self.coeff*self.diss(self.tRT @ qL, self.tLT @ qR, idx)
         
         sat = vol + surfa - surfb - diss
         return sat
@@ -804,7 +821,7 @@ class SatDer1:
                 fn.gm_gm_had_diff(self.tbphysy[idx],Fsurfy[:,:,1:]) + \
                 fn.gm_gm_had_diff(self.tbphysz[idx],Fsurfz[:,:,1:])
         
-        diss = self.diss(self.tRT @ qL, self.tLT @ qR, idx)
+        diss = self.coeff*self.diss(self.tRT @ qL, self.tLT @ qR, idx)
         
         sat = vol + surfa - surfb - diss 
         return sat
@@ -845,7 +862,7 @@ class SatDer1:
         surfb2 = (1-self.had_gamma) * (fn.gm_gm_had_diff(self.tbphysx2[idx],Fsurfx[:,:,1:]) + \
                                   fn.gm_gm_had_diff(self.tbphysy2[idx],Fsurfy[:,:,1:]) )
         
-        diss = self.diss(qL,qR,idx)
+        diss = self.coeff*self.diss(qL,qR,idx)
         
         sat = vol + vol2 + vol3 + surfa - surfb + surfa2 - surfb2 - diss
         return sat
@@ -904,10 +921,10 @@ class SatDer1:
     ''' SPECIAL FUNCTIONS ''' 
     ##########################################################################
     
-    def llf_div_1d_varcoeff(self, q, E, q_bdyL=None, q_bdyR=None, sigma=1, extrapolate_flux=True):
+    def llf_div_1d_varcoeff(self, q, E, q_bdyL=None, q_bdyR=None):
         '''
         A Local Lax-Fridriechs dissipative flux in 1D, specific for the variable
-        coefficient linear convection equation. sigma=0 turns off dissipation.
+        coefficient linear convection equation. self.coeff=0 turns off dissipation.
         '''
 
         sat = self.alpha * self.Esurf @ E + (1 - self.alpha) * self.a * (self.Esurf @ q)
@@ -920,7 +937,7 @@ class SatDer1:
             qf_L = fn.pad_1dL(q_b, q_bdyL)
             qf_R = fn.pad_1dR(q_a, q_bdyR)
             # make sure boundaries have upwind SATs
-            sigma = sigma * np.ones((1,self.nelem+1))
+            sigma = self.coeff * np.ones((1,self.nelem+1))
             sigma[0] = 1
             sigma[-1] = 1
         x_f = fn.pad_1dR(self.bdy_x[[0],:], self.bdy_x[[1],-1])
@@ -943,11 +960,11 @@ class SatDer1:
         sat = sat - self.tR @ numflux[:,1:] + self.tL @ numflux[:,:-1]
         return sat
     
-    def div_1d_burgers_split(self, q, E, q_bdyL=None, q_bdyR=None, sigma=1, extrapolate_flux=True):
+    def div_1d_burgers_split(self, q, E, q_bdyL=None, q_bdyR=None, extrapolate_flux=True):
         '''
         A general split form SAT for Burgers equation, treating it as a variable coefficient problem with a=u/2
         Note: the entropy conservative SAT is NOT recovered with self.split_alpha=2/3
-        sigma=0 is conservative, sigma=1 is disspative
+        self.coeff=0 is conservative, self.coeff=1 is disspative
         TODO: check metric terms for curvilinear transformation
         '''        
         
@@ -961,7 +978,7 @@ class SatDer1:
             qf_L = fn.pad_1dL(q_b, q_bdyL)
             qf_R = fn.pad_1dR(q_a, q_bdyR)
             # make sure boundaries have upwind SATs
-            sigma = sigma * np.ones((1,self.nelem+1))
+            sigma = self.coeff * np.ones((1,self.nelem+1))
             sigma[0] = 1
             sigma[-1] = 1
         qf_jump = qf_R - qf_L
@@ -984,11 +1001,11 @@ class SatDer1:
         sat = sat - self.tR @ numflux[:,1:] + self.tL @ numflux[:,:-1]
         return sat
             
-    def div_1d_burgers_es(self, q, E, q_bdyL=None, q_bdyR=None, sigma=1):
+    def div_1d_burgers_es(self, q, E, q_bdyL=None, q_bdyR=None):
         '''
         Entropy-conservative/stable SATs for self.split_alpha=2/3 found in SBP book
         (uses extrapolation of the solution from the coupled elements)
-        sigma=0 is conservative, sigma=1 is disspative
+        self.coeff=0 is conservative, self.coeff=1 is disspative
         TODO: check metric terms for curvilinear transformation
         '''
         q_a = self.tLT @ q
@@ -1000,14 +1017,14 @@ class SatDer1:
             q_L = fn.pad_1dL(q_b, q_bdyL)
             q_R = fn.pad_1dR(q_a, q_bdyR)
             # make sure boundaries have upwind SATs
-            sigma = sigma * np.ones((1,self.nelem+1))
+            sigma = self.coeff * np.ones((1,self.nelem+1))
             sigma[0] = 1
             sigma[-1] = 1
 
         sat = (1./6.) * ( self.tR @ (4. * self.tRT @ E - q_b*q_R - q_R*q_R)
                         - self.tL @ (4. * self.tLT @ E - q_a*q_L - q_L*q_L) )
         
-        if sigma != 0.:
+        if self.coeff != 0.:
             Rusanov = False # controls whether we try the ED rusanov flux (Gasser Local-Linear Stability 2022 eq 25)
                             # or use a standard Lax-Friedrichs
             q_Rjump = q_b - q_R
@@ -1022,10 +1039,10 @@ class SatDer1:
         
         return sat
     
-    def div_1d_burgers_had(self, q, E, q_bdyL=None, q_bdyR=None, sigma=1):
+    def div_1d_burgers_had(self, q, E, q_bdyL=None, q_bdyR=None):
         '''
         Entropy-conservative/stable SATs for self.split_alpha=2/3
-        sigma=0 is conservative, sigma=1 is disspative
+        self.coeff=0 is conservative, self.coeff=1 is disspative
         Not the same SAT found in SBP book, but this is the SAT 
         one recovers from the hadamard formulation
         (uses extrapolation of the flux from the coupled elements)
@@ -1060,7 +1077,7 @@ class SatDer1:
         #sat2 = (1./6.) * ( q**2 * self.tR[:] + q * (self.tR @ q_b) + self.tR @ q2_b - self.tR @ (q_b*q_b + q_b*q_R + q_R*q_R)
         #                 - q**2 * self.tL[:] - q * (self.tL @ q_a) - self.tL @ q2_a + self.tL @ (q_a*q_a + q_a*q_L + q_L*q_L) )
         
-        if sigma != 0.:
+        if self.coeff != 0.:
             Rusanov = False # controls whether we try the ED rusanov flux (Gasser Local-Linear Stability 2022 eq 25)
                             # or use a standard Lax-Friedrichs
             q_Rjump = q_b - q_R
@@ -1071,7 +1088,7 @@ class SatDer1:
             else:
                 q_Rlambda = np.abs(q_b + q_R) / 2.
                 q_Llambda = np.abs(q_a + q_L) / 2.
-            sat -= sigma*(self.tR @ (q_Rlambda * q_Rjump) + self.tL @ (q_Llambda * q_Ljump))
+            sat -= self.coeff*(self.tR @ (q_Rlambda * q_Rjump) + self.tL @ (q_Llambda * q_Ljump))
         
         return sat
 

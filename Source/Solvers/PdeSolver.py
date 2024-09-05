@@ -30,7 +30,7 @@ class PdeSolver:
                  tm_method, dt, t_final,                    # Time marching
                  q0=None,                                   # Initial solution
                  p=2, disc_type='div',                      # Discretization
-                 surf_type='upwind', vol_diss=None, had_flux='central',
+                 surf_diss=None, vol_diss=None, had_flux='central',
                  nelem=0, nen=0,  disc_nodes='lgl',
                  bc=None, xmin=0, xmax=1,     # Domain
                  cons_obj_name=None,         # Other
@@ -59,8 +59,8 @@ class PdeSolver:
         disc_type : str, optional
             Indicates the form of spatial discretization that is used, either 
             'div' for divergence or 'had' for hadamard.
-        surf_type : str, optional
-            The numerical flux to use along surface element boudnaries
+        surf_diss : dic or None, optional
+            The numerical surface dissipation to use along surface element boudnaries
         vol_diss : dic or None, optional
             The numerical volume dissipation to use
         had_flux : str, optional
@@ -197,7 +197,12 @@ class PdeSolver:
             '''
             
         else: raise Exception('Discretization type not understood. Try div or had.')
-        self.surf_type = surf_type.lower()
+        if surf_diss == None:
+            self.surf_diss = {'diss_type':'ND'}
+        else:
+            self.surf_diss = surf_diss
+            assert(isinstance(self.surf_diss, dict)),"surf_diss must be a dictionary"
+            assert(isinstance(self.surf_diss['diss_type'], str)),"surf_diss must contain a key 'diss_type'"
         if vol_diss == None:
             self.vol_diss = {'diss_type':'ND'}
         else:
@@ -578,7 +583,7 @@ class PdeSolver:
                       self.tm_method, self.dt, self.t_final, 
                       q0=self.q0, 
                       p=self.p, disc_type=self.disc_type,
-                      surf_type=self.surf_type, vol_diss=self.vol_diss,
+                      surf_diss=self.surf_diss, vol_diss=self.vol_diss,
                       nelem=self.nelem, nen=self.nen, disc_nodes=self.disc_nodes,
                       bc=self.bc, xmin=self.xmin, xmax=self.xmax,
                       cons_obj_name=self.cons_obj_name,

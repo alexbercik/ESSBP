@@ -36,7 +36,7 @@ nozzle_shape = 'constant' # book, constant, linear, smooth
 # Time marching
 tm_method = 'rk4' # 'explicit_euler', 'rk4'
 dt = 0.0001
-tf = 2.0 #nts * dt # set to None to do automatically or use a convergence criterion, or 'steady'
+tf = 1.0 #nts * dt # set to None to do automatically or use a convergence criterion, or 'steady'
 check_resid_conv = False
 
 # Domain
@@ -44,14 +44,14 @@ xmin = -1.
 xmax = 1.
 bc = 'periodic' # 'periodic', 'dirichlet'
 # Spatial discretization
-disc_type = 'div' # 'div', 'had'
-disc_nodes = 'upwind' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
-p = 6
-nelem = 4 # number of elements
-nen = 20 # optional, number of nodes per element
-surf_type = 'lf'
+disc_type = 'had' # 'div', 'had'
+disc_nodes = 'csbp' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
+p = 4
+nelem =1 # number of elements
+nen = 30 # optional, number of nodes per element
+surf_diss = {'diss_type':'ent', 'jac_type':'scamat', 'coeff':1.0, 'average':'derigs', 'maxeig':'rusanov', 'entropy_fix':False}
 had_flux = 'ranocha' # 2-point numerical flux used in hadamard form
-vol_diss = {'diss_type':'upwind', 'jac_type':'scalarmatrix', 's':'p', 'coeff':1.0, 'fluxvec':'sw'}
+vol_diss = {'diss_type':'nd', 'jac_type':'scalar', 's':'p+1', 'coeff':0.001, 'fluxvec':'sw', 'bdy_fix':True, 'use_H':True}
 
 # output
 #savefile = None
@@ -72,7 +72,8 @@ bool_plot_sol = False
 print_sol_norm = False
 print_residual = False
 cons_obj_name=('Energy','Entropy') # note: should I modify this for systems?
-settings = {} # extra things like for metrics
+settings = {'warp_factor':0.1,               # Warps / stretches mesh.
+            'warp_type': 'default'} # extra things like for metrics
 skip_ts = 0
 
 
@@ -86,7 +87,7 @@ solver = PdeSolverSbp(diffeq, settings,
                   tm_method, dt, tf,   
                   q0,                
                   p, disc_type,      
-                  surf_type, vol_diss, had_flux,
+                  surf_diss, vol_diss, had_flux,
                   nelem, nen, disc_nodes,
                   bc, xmin, xmax,     
                   cons_obj_name,      
@@ -105,6 +106,11 @@ else:
     err_savefile = None
     cons_savefile = None
 
+solver.check_eigs()
+#solver.solve()
+#solver.plot_sol()
+#solver.plot_cons_obj()
+
 #A = solver.check_eigs(returnA=True)
 #solver.check_eigs(savefile=eigs_savefile,returnA=False,title=title,plot_eigs=True,exact_dfdq=False,xmin=-1,xmax=1,ymin=-1700,ymax=1700,overwrite=True)
 #solver.check_eigs(savefile=eigs_savefile,returnA=False,title=title,plot_eigs=True,exact_dfdq=False,xmin=-6,xmax=2,ymin=-400,ymax=400,overwrite=True)
@@ -115,9 +121,8 @@ else:
 #    return 0.001*np.exp(max_eig * time)
 
 #diffeq.plt_style_sol[0] = {'color':'b','linestyle':'-','marker':'','linewidth':3}
-#solver.solve()
-solver.check_eigs()
-#ssolver.plot_sol()
+
+#solver.plot_sol()
 #solver.plot_cons_obj()
 #solver.plot_sol(savefile=sol_savefile,title=title,display_time=True)
 #solver.plot_error(method='max diff',savefile=err_savefile, title=title)
