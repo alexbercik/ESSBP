@@ -52,18 +52,19 @@ class Sat(SatDer1, SatDer2):
         self.sparsity = None
         self.sparsity_unkronned = None
 
-        if self.diss_type not in ['nd','conservative','symmetric']:
+        if self.diss_type not in ['nd','symmetric','upwind','lf','llf','lax_friedrichs','ec']:
             if 'jac_type' in solver.surf_diss.keys():
                 assert isinstance(solver.surf_diss['jac_type'], str), 'SAT: jac_type must be a str, {0}'.format(solver.surf_diss['jac_type'])
                 self.jac_type = solver.surf_diss['jac_type'].lower()
             else:
-                self.jac_type = ''
+                self.jac_type = 'sca'
             if self.jac_type == 'scalar': self.jac_type = 'sca'
             if self.jac_type == 'matrix': self.jac_type = 'mat'
             if self.jac_type == 'scalar_matrix' or self.jac_type == 'scalarmatrix': self.jac_type = 'scamat'
             if self.jac_type == 'scalar_scalar' or self.jac_type == 'scalarscalar': self.jac_type = 'scasca'
             if self.jac_type == 'matrix_matrix' or self.jac_type == 'matrixmatrix': self.jac_type = 'matmat'
-            assert self.jac_type in ['sca','mat','scasca','scamat','matmat',''], "SAT: jac_type must be either 'sca','mat','scasca','scamat','matmat' or ''"
+            options = ['sca','mat','scasca','scamat','matmat']
+            assert self.jac_type in options, "SAT: jac_type must be one of" + str(options)
 
             if 'coeff' in solver.surf_diss.keys():
                 assert isinstance(solver.surf_diss['coeff'], float), 'SAT: diss coeff must be a float, {0}'.format(solver.surf_diss['coeff'])
@@ -72,13 +73,8 @@ class Sat(SatDer1, SatDer2):
                 self.coeff = 1.0
 
             if 'entropy_fix' in solver.surf_diss.keys():
-                assert isinstance(solver.surf_diss['entropy_fix'], bool) or \
-                        isinstance(solver.surf_diss['entropy_fix'], str), 'SAT: entropy_fix must be a bool or str, {0}'.format(solver.surf_diss['entropy_fix'])
+                assert isinstance(solver.surf_diss['entropy_fix'], bool), 'SAT: entropy_fix must be a bool, {0}'.format(solver.surf_diss['entropy_fix'])
                 self.entropy_fix = solver.surf_diss['entropy_fix']
-                if isinstance(solver.surf_diss['entropy_fix'], str): 
-                    self.entropy_fix = self.entropy_fix.lower()
-                if self.entropy_fix == 'none' or self.entropy_fix == 'false':
-                    self.entropy_fix = False
             else:
                 self.entropy_fix = True
 
@@ -87,16 +83,35 @@ class Sat(SatDer1, SatDer2):
                 self.average = solver.surf_diss['average'].lower()
             else:
                 self.average = 'simple' # roe, simple, derigs
-            assert self.average in ['simple','roe','derigs'], 'SAT: average must be either "simple" or "roe" or "derigs"'
+            options = ['simple','arithmetic','roe','derigs','ismailroe']
+            assert self.average in options, "SAT: average must be one of" + str(options)
 
             if 'maxeig' in solver.surf_diss.keys():
                 assert isinstance(solver.surf_diss['maxeig'], str), 'SAT: maxeig must be a str, {0}'.format(solver.surf_diss['maxeig'])
                 self.maxeig_type = solver.surf_diss['maxeig'].lower()
             else:
-                self.maxeig_type = 'qavg' # lf, rusanov
-            assert self.maxeig_type in ['lf','rusanov','qavg'], 'SAT: maxeig must be either "lf" or "rusanov"'
+                self.maxeig_type = 'lf'
+            options = ['lf','rusanov','lf2','rusanov2']
+            assert self.maxeig_type in options, "SAT: maxeig must be one of" + str(options)
+
+            if 'A_derigs' in solver.surf_diss.keys():
+                assert isinstance(solver.surf_diss['A_derigs'], bool), 'SAT: A_derigs must be a bool, {0}'.format(solver.surf_diss['A_derigs'])
+                self.A_derigs = solver.surf_diss['A_derigs']
+            else:
+                self.A_derigs = False
+
+            if 'P_derigs' in solver.surf_diss.keys():
+                assert isinstance(solver.surf_diss['P_derigs'], bool), 'SAT: P_derigs must be a bool, {0}'.format(solver.surf_diss['P_derigs'])
+                self.P_derigs = solver.surf_diss['P_derigs']
+            else:
+                self.P_derigs = False
         else:
-            self.coeff = 0.
+            # Default fluxes, no need for choices - set defaults.
+            self.coeff = 1.
+            self.average = 'simple'
+            self.maxeig_type = 'lf'
+            self.jac_type = 'sca'
+            self.entropy_fix = False
         
         if self.dim == 1:
             self.tL = solver.tL
@@ -106,9 +121,10 @@ class Sat(SatDer1, SatDer2):
             self.d2Exdq2 = solver.diffeq.d2Exdq2
             self.dExdq_eig_abs = solver.diffeq.dExdq_eig_abs
             self.maxeig_dExdq = solver.diffeq.maxeig_dExdq
-            self.maxeig_dEndq = solver.diffeq.maxeig_dEndq
-            self.metrics = fn.repeat_neq_gv(solver.mesh.metrics[:,0,:],self.neq_node)
-            self.bdy_metrics = np.repeat(np.reshape(solver.mesh.bdy_metrics, (1,2,self.nelem)),self.neq_node,0)
+            # self.metrics = fn.repeat_neq_gv(solver.mesh.metrics[:,0,:],self.neq_node)
+            #self.bdy_metrics = np.repeat(np.reshape(solver.mesh.bdy_metrics, (1,2,self.nelem)),self.neq_node,0)
+            #self.bdy_metrics_neq = np.repeat(self.bdy_metrics,self.neq_node,0)
+            # NOTE: metrics and bdy_metrics = 1 for 1D
             self.calc_had_flux = solver.calc_had_flux
 
             if self.neq_node == 1:
@@ -195,18 +211,22 @@ class Sat(SatDer1, SatDer2):
         self.tRT = self.tR.T
         if self.dim == 1:
             self.Esurf = self.tR @ self.tRT - self.tL @ self.tLT
-            self.vol_mat = fn.lm_gdiag(self.Esurf,self.metrics)
-            self.taphys = fn.lm_gm(self.tL, fn.gdiag_lm(self.bdy_metrics[:,0,:],self.tRT))
-            self.tbphys = fn.lm_gm(self.tR, fn.gdiag_lm(self.bdy_metrics[:,1,:],self.tLT))
+            #self.vol_mat = fn.lm_gdiag(self.Esurf,self.metrics) # metrics are = 1 fpr 1D
+            self.ta = self.tL @ self.tRT
+            self.tb = self.tR @ self.tLT
+            #self.taphys = fn.lm_gm(self.tL, fn.gdiag_lm(self.bdy_metrics[:,0,:],self.tRT))
+            #self.tbphys = fn.lm_gm(self.tR, fn.gdiag_lm(self.bdy_metrics[:,1,:],self.tLT))
 
             if (self.disc_type == 'had') and (self.neq_node > 1):
-                self.vol_mat_sp = sp.gm_to_sp(self.vol_mat)
-                taphysT = np.ascontiguousarray(np.transpose(self.taphys,(1,0,2)))
-                self.taphysT_sp = sp.gm_to_sp(taphysT)
-                self.tbphys_sp = sp.gm_to_sp(self.tbphys)
+                self.Esurf_sp = sp.lm_to_sp(self.Esurf)
+                taT = np.ascontiguousarray(self.ta.T)
+                self.taT_sp = sp.lm_to_sp(taT)
+                self.tb_sp = sp.lm_to_sp(self.tb)
 
-                taphysT_pad = fn.pad_gm_1dR(taphysT,self.tbphys[:,:,-1])
-                tbphys_pad = fn.pad_gm_1dL(self.tbphys,taphysT[:,:,0])
+                taphysT_pad = np.repeat(taT[:,:,np.newaxis], self.nelem + 1, axis=2)
+                taphysT_pad[:,:,-1] = self.tb.T
+                tbphys_pad = np.repeat(self.tb[:,:,np.newaxis], self.nelem + 1, axis=2)
+                tbphys_pad[:,:,0] = self.ta
                 self.sparsity = sp.set_gm_sparsity([taphysT_pad,tbphys_pad])
                 self.sparsity_unkronned = sp.set_gm_sparsity([fn.unkron_neq_gm(taphysT_pad,self.neq_node),
                                                             fn.unkron_neq_gm(tbphys_pad,self.neq_node)])
@@ -222,31 +242,30 @@ class Sat(SatDer1, SatDer2):
             self.tbphysx = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,1,0,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
             self.tbphysy = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,1,1,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
 
-            if self.neq_node > 1:
-                self.vol_x_mat_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.vol_x_mat]   
-                self.vol_y_mat_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.vol_y_mat]
-                if (self.disc_type == 'had'):
-                    taphysxT = [np.ascontiguousarray(np.transpose(gm_mat,(1,0,2))) for gm_mat in self.taphysx]
-                    taphysyT = [np.ascontiguousarray(np.transpose(gm_mat,(1,0,2))) for gm_mat in self.taphysy]
-                    self.taphysxT_sp = [sp.gm_to_sp(gm_mat) for gm_mat in taphysxT]
-                    self.taphysyT_sp = [sp.gm_to_sp(gm_mat) for gm_mat in taphysyT]
-                else:
-                    self.taphysx_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.taphysx]
-                    self.taphysy_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.taphysy]
-                self.tbphysx_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.tbphysx]
-                self.tbphysy_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.tbphysy]  
+            self.vol_x_mat_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.vol_x_mat]   
+            self.vol_y_mat_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.vol_y_mat]
+            if (self.disc_type == 'had'):
+                taphysxT = [np.ascontiguousarray(np.transpose(gm_mat,(1,0,2))) for gm_mat in self.taphysx]
+                taphysyT = [np.ascontiguousarray(np.transpose(gm_mat,(1,0,2))) for gm_mat in self.taphysy]
+                self.taphysxT_sp = [sp.gm_to_sp(gm_mat) for gm_mat in taphysxT]
+                self.taphysyT_sp = [sp.gm_to_sp(gm_mat) for gm_mat in taphysyT]
+            else:
+                self.taphysx_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.taphysx]
+                self.taphysy_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.taphysy]
+            self.tbphysx_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.tbphysx]
+            self.tbphysy_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.tbphysy]  
 
-                if (self.disc_type == 'had'):
-                    taphysxT_pad = [fn.pad_gm_1dR(taphysxT[i],self.tbphysx[i][:,:,-1]) for i in range(len(taphysxT))]
-                    taphysyT_pad = [fn.pad_gm_1dR(taphysyT[i],self.tbphysy[i][:,:,-1]) for i in range(len(taphysxT))]
-                    tbphysx_pad = [fn.pad_gm_1dL(self.tbphysx[i],taphysxT[i][:,:,0]) for i in range(len(taphysxT))]
-                    tbphysy_pad = [fn.pad_gm_1dL(self.tbphysy[i],taphysyT[i][:,:,0]) for i in range(len(taphysyT))]
-                    self.xsparsity = sp.set_gm_sparsity([*taphysxT_pad,*tbphysx_pad])
-                    self.xsparsity_unkronned = sp.set_gm_sparsity([*[fn.unkron_neq_gm(mat,self.neq_node) for mat in taphysxT_pad],
-                                                                *[fn.unkron_neq_gm(mat,self.neq_node) for mat in tbphysx_pad]]) 
-                    self.ysparsity = sp.set_gm_sparsity([*taphysyT_pad,*tbphysy_pad])
-                    self.ysparsity_unkronned = sp.set_gm_sparsity([*[fn.unkron_neq_gm(mat,self.neq_node) for mat in taphysyT_pad],
-                                                                *[fn.unkron_neq_gm(mat,self.neq_node) for mat in tbphysy_pad]])          
+            if (self.disc_type == 'had'):
+                taphysxT_pad = [fn.pad_gm_1dR(taphysxT[i],self.tbphysx[i][:,:,-1]) for i in range(len(taphysxT))]
+                taphysyT_pad = [fn.pad_gm_1dR(taphysyT[i],self.tbphysy[i][:,:,-1]) for i in range(len(taphysxT))]
+                tbphysx_pad = [fn.pad_gm_1dL(self.tbphysx[i],taphysxT[i][:,:,0]) for i in range(len(taphysxT))]
+                tbphysy_pad = [fn.pad_gm_1dL(self.tbphysy[i],taphysyT[i][:,:,0]) for i in range(len(taphysyT))]
+                self.xsparsity = sp.set_gm_sparsity([*taphysxT_pad,*tbphysx_pad])
+                self.xsparsity_unkronned = sp.set_gm_sparsity([*[fn.unkron_neq_gm(mat,self.neq_node) for mat in taphysxT_pad],
+                                                            *[fn.unkron_neq_gm(mat,self.neq_node) for mat in tbphysx_pad]]) 
+                self.ysparsity = sp.set_gm_sparsity([*taphysyT_pad,*tbphysy_pad])
+                self.ysparsity_unkronned = sp.set_gm_sparsity([*[fn.unkron_neq_gm(mat,self.neq_node) for mat in taphysyT_pad],
+                                                            *[fn.unkron_neq_gm(mat,self.neq_node) for mat in tbphysy_pad]])          
         
         elif self.dim == 3:
             self.Esurf = self.tR @ np.diag(self.Hperp) @ self.tRT - self.tL @ np.diag(self.Hperp) @ self.tLT
@@ -266,12 +285,48 @@ class Sat(SatDer1, SatDer2):
 
         ''' Set the methods that will be used to calculate the SATs '''
 
-        if solver.pde_order == 1:          
-                
-            if self.diss_type == 'nd' or self.diss_type == 'conservative' or self.diss_type == 'symmetric':
+        if solver.pde_order == 1: 
+
+            # set averaging method
+            if self.average=='simple' or self.average=='arithmetic':
+                self.calc_avgq = fn.arith_mean
+            elif self.average=='roe':
+                self.calc_avgq = solver.diffeq.roe_avg
+            elif self.average=='ismailroe':
+                self.calc_avgq = solver.diffeq.ismail_roe_avg
+            elif self.average=='derigs':
+                self.calc_avgq = solver.diffeq.derigs_avg
+            else:
+                print(f"WARNING: desired average method '{self.average}' not recognized. Defaulting to 'simple'." )
+                self.calc_avgq = fn.arith_mean 
+
+            # set scalar abs(A) method
+            if (self.jac_type == 'sca') or (self.jac_type == 'scasca') or (self.jac_type == 'scamat'):
+                if self.maxeig_type == 'lf':
+                    if self.dim == 1: self.calc_absA = self.calc_absA_lf_1d
+                    else: self.calc_absA = self.calc_absA_lfn_nd
+                elif self.maxeig_type == 'rusanov':
+                    if self.dim == 1: self.calc_absA = self.calc_absA_rusanov_1d
+                    else: self.calc_absA = self.calc_absA_rusanovn_nd
+                elif self.maxeig_type == 'lf2':
+                    if self.dim == 1: self.calc_absA = self.calc_absA_lf_1d
+                    elif self.dim == 2: self.calc_absA = self.calc_absA_lf_2d
+                    else: self.calc_absA = self.calc_absA_lf_3d
+                elif self.maxeig_type == 'rusanov2':
+                    if self.dim == 1: self.calc_absA = self.calc_absA_rusanov_1d
+                    elif self.dim == 2: self.calc_absA = self.calc_absA_rusanov_2d
+                    else: self.calc_absA = self.calc_absA_rusanov_3d
+                else:
+                    raise Exception('maxeig type not understood.', self.maxeig_type)
+            else:
+                self.maxeig_type = 'none'
+
+            
+            # set base dissipation method
+            if self.diss_type == 'nd' or self.diss_type == 'symmetric' or self.diss_type == 'ec':
                 if self.disc_type == 'div':
-                    print('Using the central SAT with no dissipation.')
-                    #TODO: just absorb this into the base function? (no, this is slightly faster)
+                    print('... Using the central SAT with no dissipation.')
+                    # just absorb this into the base function? (no, b/c this is slightly faster)
                     if self.dim == 1:
                         self.calc = self.central_div_1d
                         self.calc_dfdq = self.central_div_1d_dfdq
@@ -280,7 +335,7 @@ class Sat(SatDer1, SatDer2):
                     elif self.dim == 3:
                         self.calc = self.central_div_3d
                 elif self.disc_type == 'had':
-                    print(f'Using the base Hadamard SAT with {solver.had_flux} flux and no dissipation.')
+                    print(f'... Using the base Had SAT with {solver.had_flux} flux and no diss.')
                     if self.dim == 1:
                         self.calc = self.base_had_1d
                         self.diss = lambda *x: 0
@@ -294,7 +349,7 @@ class Sat(SatDer1, SatDer2):
             elif self.diss_type == 'upwind':
                 print('WARNING: upwind SATs are not provably stable because of metric terms.')
                 if self.disc_type == 'div':
-                    print('Using the base upwind SAT.')
+                    print('... Using the base upwind SAT.')
                     if self.dim == 1:
                         self.calc = self.upwind_div_1d
                     elif self.dim == 2:
@@ -305,34 +360,244 @@ class Sat(SatDer1, SatDer2):
                     raise Exception("upwind dissipation not coded up for Hadamard.")
                     
             elif self.diss_type == 'lf' or self.diss_type == 'llf' or self.diss_type == 'lax_friedrichs':
+                # sets a default LF dissipation. For more options, should select cons or ent
+
+                self.maxeig_type = 'lf'
+                if self.dim == 1:
+                    self.calc_absA = self.calc_absA_lf_1d
+                    self.calc_absA_dq = self.calc_absA_dq_sca_1D
+                else:
+                    self.calc_absA = self.calc_absA_lfn_nd
+                    self.calc_absA_dq = self.calc_absA_dq_sca_nD
+
                 if self.disc_type == 'div':
-                    print('Using the default scalar SAT on conservative variables.')
-                    if self.maxeig_type == 'rusanov': self.average = 'None'
-                    print(f'average={self.average}, maxeig={self.maxeig_type}, coeff={self.coeff}, entropy_fix=False')
+                    print('... Using the base cons SAT with sca lf diss on cons vars.')
+                    print(f'... average={self.average}, maxeig={self.maxeig_type}, coeff={self.coeff}, entropy_fix={self.entropy_fix}')
                     if self.dim == 1:
-                        self.calc = self.llf_div_1d
-                        #self.calc_dfdq = self.llf_div_1d_dfdq
+                        self.calc = self.base_div_1d
+                        self.diss = self.diss_cons_1d
                     elif self.dim == 2:
-                        self.calc = self.llf_div_2d
+                        self.calc = self.base_div_2d
+                        self.diss = self.diss_cons_nd
                     elif self.dim == 3:
-                        self.calc = self.llf_div_3d
+                        self.calc = self.base_div_3d
+                        self.diss = self.diss_cons_nd
                 elif self.disc_type == 'had':
-                    print(f'Using the base Hadamard SAT with {solver.had_flux} flux and scalar dissipation on conservative variables.')
-                    if self.maxeig_type == 'rusanov': self.average = 'None'
-                    print(f'average={self.average}, maxeig={self.maxeig_type}, coeff={self.coeff}, entropy_fix=False')
-                    if self.jac_type != 'sca':
-                            print(f'WARNING: overwriting jac_type={self.jac_type} to jac_type=sca.')
-                            self.jac_type = 'sca'
+                    print(f'... Using the base Had SAT with {solver.had_flux} flux and sca lf diss on cons vars.')
+                    print(f'... average={self.average}, maxeig={self.maxeig_type}, coeff={self.coeff}, entropy_fix={self.entropy_fix}')
                     if self.dim == 1:
                         self.calc = self.base_had_1d
                         self.diss = self.diss_cons_1d
                     elif self.dim == 2:
                         self.calc = self.base_had_2d
-                        self.diss = self.diss_cons_2d
+                        self.diss = self.diss_cons_nd
                     elif self.dim == 3:
                         self.calc = self.base_had_3d
-                        self.diss = self.lf_diss_cons_3d
+                        self.diss = self.diss_cons_nd
+
+            elif self.diss_type == 'cons' or self.diss_type == 'conservative':
+
+                if self.disc_type == 'div':
+                    str_base = '... Using the base cons SAT'
+                    if self.dim == 1:
+                        self.calc = self.base_div_1d
+                        self.diss = self.diss_cons_1d
+                    elif self.dim == 2:
+                        self.calc = self.base_div_2d
+                        self.diss = self.diss_cons_nd
+                    #elif self.dim == 3:
+                    #    self.calc = self.base_div_3d
+                elif self.disc_type == 'had':
+                    str_base = f'... Using the base Had SAT with {solver.had_flux} flux'
+                    if self.dim == 1:
+                        self.calc = self.base_had_1d
+                        self.diss = self.diss_cons_1d
+                    elif self.dim == 2:
+                        self.calc = self.base_had_2d
+                        self.diss = self.diss_cons_nd
+                    elif self.dim == 3:
+                        self.calc = self.base_had_3d
+                        self.diss = self.diss_cons_nd
+
+                if self.jac_type == 'sca':
+                    print(str_base + ' and sca diss on cons vars')
+                    # self.calc_absA is already set
+                    if self.dim == 1: self.calc_absA_dq = self.calc_absA_dq_sca_1D
+                    else: self.calc_absA_dq = self.calc_absA_dq_sca_nD
+                    print(f'average={self.average}, maxeig={self.maxeig_type}, coeff={self.coeff}')
+                elif self.jac_type == 'mat':
+                    print(str_base + ' and mat diss on cons vars')
+                    if self.dim == 1: 
+                        self.calc_absA = self.calc_absA_matdiffeq_1d
+                        self.calc_absA_dq = self.calc_absA_dq_mat_1D
+                    else: 
+                        self.calc_absA = self.calc_absA_matdiffeq_nd
+                        self.calc_absA_dq = self.calc_absA_dq_mat_nD
+                    print(f'... average={self.average}, entropy_fix={self.entropy_fix}, coeff={self.coeff}')
+                else:
+                    raise Exception("SAT: jac_type must be one of 'sca' or 'mat' when diss_type == 'cons'. Given:", self.jac_type)
+                
+                if self.diffeq_name=='Quasi1dEuler' or self.diffeq_name=='Euler2d':
+                    print("SAT Reminder: you can bypass the default cons options using ")
+                    print("              diss_type == 'diablo1', 'diablo2', 'diablo3', or 'diablo4'.")
+                
+            elif self.diss_type=='ent' or self.diss_type=='entropy':
+
+                self.entropy_var = solver.diffeq.entropy_var
+                
+                if self.disc_type == 'div':
+                    str_base = '... Using the base cons SAT'
+                    if self.dim == 1:
+                        self.calc = self.base_div_1d
+                        self.diss = self.diss_ent_1d
+                    elif self.dim == 2:
+                        self.calc = self.base_div_2d
+                        self.diss = self.diss_ent_nd
+                    #elif self.dim == 3:
+                    #    self.calc = self.base_div_3d
+                elif self.disc_type == 'had':
+                    str_base = f'... Using the base Had SAT with {solver.had_flux} flux'
+                    if self.dim == 1:
+                        self.calc = self.base_had_1d
+                        self.diss = self.diss_ent_1d
+                    elif self.dim == 2:
+                        self.calc = self.base_had_2d
+                        self.diss = self.diss_ent_nd
+                    elif self.dim == 3:
+                        self.calc = self.base_had_3d
+                        self.diss = self.diss_ent_nd
+
+                if self.jac_type == 'scasca':
+                    print(str_base + ' and sca-sca diss on ent vars')
+                    # self.calc_absA is already set
+                    if self.dim == 1: self.calc_absAP_dw = self.calc_absAP_dw_scasca_1D
+                    else: self.calc_absAP_dw = self.calc_absAP_dw_scasca_nD
+                    if self.P_derigs:
+                        self.calc_P = solver.diffeq.dqdw_derigs
+                    else:
+                        self.calc_P = self.calc_P_avg
+                        self.diffeq_dqdw = solver.diffeq.dqdw
+                    print(f'... average={self.average}, maxeig={self.maxeig_type}, P_derigs={self.P_derigs}, coeff={self.coeff}')
+                elif self.jac_type == 'scamat':
+                    print(str_base + ' and sca-mat diss on ent vars')
+                    # self.calc_absA is already set
+                    if self.dim == 1: self.calc_absAP_dw = self.calc_absAP_dw_scamat_1D
+                    else: self.calc_absAP_dw = self.calc_absAP_dw_scamat_nD
+                    if self.P_derigs:
+                        self.calc_P = solver.diffeq.dqdw_derigs
+                    else:
+                        self.calc_P = self.calc_P_avg
+                        self.diffeq_dqdw = solver.diffeq.dqdw
+                    print(f'... average={self.average}, maxeig={self.maxeig_type}, P_derigs={self.P_derigs}, coeff={self.coeff}')
+                elif self.jac_type == 'matmat':
+                    print(str_base + ' and sca-mat diss on ent vars')
+                    if self.dim == 1: 
+                        self.calc_absAP_dw = self.calc_absAP_dw_matmat_1D
+                        if self.P_derigs and self.A_derigs:
+                            self.calc_absAP = lambda qL,qR: self.diffeq.dExdw_abs_derigs(qL,qR,self.entropy_fix)
+                        elif self.P_derigs:
+                            self.calc_P = solver.diffeq.dqdw_derigs
+                            self.calc_absA = self.calc_absA_matdiffeq_1d
+                            self.calc_absAP = self.calc_absAP_base_1d
+                        elif self.A_derigs:
+                            self.calc_P = self.calc_P_avg
+                            self.diffeq_dqdw = solver.diffeq.dqdw
+                            self.calc_absA = lambda qL,qR: self.diffeq.dExdq_abs_derigs(qL,qR,self.entropy_fix)
+                            self.calc_absAP = self.calc_absAP_base_1d
+                        else:
+                            try:
+                                self.dExdw_abs = solver.diffeq.dExdw_abs
+                                self.calc_absAP = self.calc_absAP_diffeq_1d
+                            except:
+                                print('SAT: dExdw_abs not found in diffeq. Using base dEndw_abs.')
+                                self.calc_absAP = self.calc_absAP_base_1d
+                                self.calc_absA = self.calc_absA_matdiffeq_1d
+                                self.calc_P = self.calc_P_avg
+                                self.diffeq_dqdw = solver.diffeq.dqdw
+                    else: 
+                        self.calc_absAP_dw = self.calc_absAP_dw_matmat_nD
+                        if self.P_derigs and self.A_derigs:
+                            self.calc_absAP = lambda qL,qR,mets: self.diffeq.dEndw_abs_derigs(qL,qR,mets,self.entropy_fix)
+                        elif self.P_derigs:
+                            self.calc_P = solver.diffeq.dqdw_derigs
+                            self.calc_absA = self.calc_absA_matdiffeq_nd
+                            self.calc_absAP = self.calc_absAP_base_nd
+                        elif self.A_derigs:
+                            self.calc_P = self.calc_P_avg
+                            self.diffeq_dqdw = solver.diffeq.dqdw
+                            self.calc_absA = lambda qL,qR,mets: self.diffeq.dExdq_abs_derigs(qL,qR,mets,self.entropy_fix)
+                            self.calc_absAP = self.calc_absAP_base_nd
+                        else:
+                            try:
+                                self.dEndw_abs = solver.diffeq.dEndw_abs
+                                self.calc_absAP = self.calc_absAP_diffeq_nd
+                            except:
+                                print('SAT: dEndw_abs not found in diffeq. Using base dEndw_abs.')
+                                self.calc_absAP = self.calc_absAP_base_nd
+                                self.calc_absA = self.calc_absA_matdiffeq_nd
+                                self.calc_P = self.calc_P_avg
+                                self.diffeq_dqdw = solver.diffeq.dqdw
+                    print(f'... average={self.average}, entropy_fix={self.entropy_fix}, A_derigs={self.P_derigs}, P_derigs={self.P_derigs}, coeff={self.coeff}')
+
+                else:
+                    raise Exception("SAT: jac_type must be one of 'scasca', 'scamat' or 'matmat' when diss_type == 'ent'. Given:", self.jac_type)
             
+            elif 'diablo' in self.diss_type:
+
+                if self.disc_type == 'div':
+                    str_base = '... Using the base cons SAT'
+                    if self.dim == 1:
+                        self.calc = self.base_div_1d
+                        self.diss = self.diss_cons_1d
+                    elif self.dim == 2:
+                        self.calc = self.base_div_2d
+                        self.diss = self.diss_cons_nd
+                    #elif self.dim == 3:
+                    #    self.calc = self.base_div_3d
+                elif self.disc_type == 'had':
+                    str_base = f'... Using the base Had SAT with {solver.had_flux} flux'
+                    if self.dim == 1:
+                        self.calc = self.base_had_1d
+                        self.diss = self.diss_cons_1d
+                    elif self.dim == 2:
+                        self.calc = self.base_had_2d
+                        self.diss = self.diss_cons_nd
+                    elif self.dim == 3:
+                        self.calc = self.base_had_3d
+                        self.diss = self.diss_cons_nd
+                
+                if self.diss_type=='diablo1':
+                    print(str_base + ' and mat diss on cons vars (diablo 1)')
+                    print(f'... average=roe, entropy_fix=hicken, coeff={self.coeff}')
+                    if self.dim == 1: 
+                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_eig_abs_dq(qL,qR,1)
+                    else: 
+                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dEndq_eig_abs_dq(qL,qR,1)
+                elif self.diss_type=='diablo2':
+                    print(str_base + ' and mat diss on cons vars (diablo 2)')
+                    print(f'... average=roe, entropy_fix=diablo, coeff={self.coeff}')
+                    if self.dim == 1: 
+                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_eig_abs_dq(qL,qR,2)
+                    else: 
+                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dEndq_eig_abs_dq(qL,qR,2)
+                elif self.diss_type=='diablo3':
+                    print(str_base + ' and sca diss on cons vars (diablo 3)')
+                    print(f'... average=roe, maxeig=lf, entropy_fix=hicken, coeff={self.coeff}')
+                    if self.dim == 1: 
+                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_eig_abs_dq(qL,qR,3)
+                    else: 
+                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dEndq_eig_abs_dq(qL,qR,3)
+                elif self.diss_type=='diablo4':
+                    print(str_base + ' and sca diss on cons vars (diablo 4)')
+                    print(f'... average=roe, maxeig=lf, entropy_fix=False, coeff={self.coeff}')
+                    if self.dim == 1: 
+                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_eig_abs_dq(qL,qR,4)
+                    else: 
+                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dEndq_eig_abs_dq(qL,qR,4)
+                else:
+                    raise Exception("SAT: diablo type not understood. Must be one of 'diablo1', 'diablo2', 'diablo3', or 'diablo4'. Given:", self.diss_type)
+        
+                
             elif self.diffeq_name=='Burgers':
                 if self.dim >= 2:
                     raise Exception('Burgers equation SATs only set up for 1D!')
@@ -370,159 +635,6 @@ class Sat(SatDer1, SatDer2):
                         else:
                             raise Exception("SAT type not understood. Try 'ec', 'es', 'ec_had', 'es_had', 'split', or 'split_diss'.")
 
-            elif self.diffeq_name=='Quasi1dEuler' or self.diffeq_name=='Euler2d':
-
-                if self.disc_type == 'had':
-                    if self.dim == 1:
-                        self.calc = self.base_had_1d
-                    elif self.dim == 2:
-                        self.calc = self.base_had_2d
-                    str_base = f'Using the base Hadamard SAT with {solver.had_flux} flux'
-                elif self.disc_type == 'div':
-                    if self.dim == 1:
-                        self.calc = self.base_div_1d
-                    elif self.dim == 2:
-                        self.calc = self.base_div_2d
-                    str_base = 'Using the base conservative SAT'
-
-                if self.dim >= 3:
-                    raise Exception('SATs only set up for 1D and 2D!')
-
-                if self.entropy_fix == True:
-                    self.entropy_fix=='hicken'
-                
-                if self.diss_type=='nd' or self.diss_type=='ec' or self.diss_type=='symmetric':
-                    print(str_base + ' and no dissipation.')
-                    self.diss = lambda *x: 0
-
-                elif self.diss_type=='cons' or self.diss_type=='conservative':
-                    if self.jac_type == 'sca':
-                        if self.average == 'roe' and self.entropy_fix=='hicken' and self.maxeig_type=='qavg':
-                            # equivalent to choice 'diablo3'
-                            print(str_base + ' and scalar dissipation on conservative variables (diablo LF3)')
-                            print(f'average={self.average}, maxeig={self.maxeig_type}, coeff={self.coeff}, entropy_fix={self.entropy_fix}')
-                            print("TODO: although I'm not convinced this is actually scalar...")
-                            self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
-                            if self.dim == 1:
-                                self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,3)
-                            else:
-                                self.diss = lambda qL,qR, idx: self.diss_dEndq_eig_abs_dq_nD(qL,qR,idx,3)
-                        elif self.average == 'roe' and self.entropy_fix==False and self.maxeig_type=='qavg':
-                            # equivalent to choice 'diablo4'
-                            print(str_base + ' and scalar dissipation on conservative variables (diablo LF4)')
-                            print(f'average={self.average}, maxeig={self.maxeig_type}, coeff={self.coeff}, entropy_fix={self.entropy_fix}')
-                            self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
-                            if self.dim == 1:
-                                self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,4)
-                            else:
-                                self.diss = lambda qL,qR, idx: self.diss_dEndq_eig_abs_dq_nD(qL,qR,idx,4)
-                        elif self.entropy_fix==False and \
-                            (self.average == 'simple' and self.maxeig_type=='qavg') or \
-                            self.maxeig_type=='lf' or self.maxeig_type=='rusanov':
-                            # use default scalar dissipation
-                            print(str_base + ' and scalar dissipation on conservative variables')
-                            if self.maxeig_type == 'rusanov': self.average = 'None'
-                            print(f'average={self.average}, maxeig={self.maxeig_type}, coeff={self.coeff}, entropy_fix=False')
-                            if self.dim == 1:
-                                self.diss = self.diss_cons_1d
-                            else:
-                                self.diss = self.diss_cons_2d
-                        else:
-                            raise Exception('The following SAT combination is not currently possible:')
-                            print(f'diss_type=cons, jac_type=sca, average={self.average}, maxeig={self.maxeig_type}, entropy_fix={self.entropy_fix}')
-
-                    elif self.jac_type == 'mat':
-                        if self.average == 'roe' and self.entropy_fix=='hicken':
-                            # equivalent to choice 'diablo1'
-                            print(str_base + ' and matrix dissipation on conservative variables (diablo LF1)')
-                            print(f'average={self.average}, coeff={self.coeff}, entropy_fix={self.entropy_fix}')
-                            self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
-                            if self.dim == 1:
-                                self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,1)
-                            else:
-                                self.diss = lambda qL,qR, idx: self.diss_dEndq_eig_abs_dq_nD(qL,qR,idx,1)
-                        elif self.average == 'roe' and self.entropy_fix=='diablo':
-                            # equivalent to choice 'diablo2'
-                            print(str_base + ' and matrix dissipation on conservative variables (diablo LF2)')
-                            print(f'average={self.average}, coeff={self.coeff}, entropy_fix={self.entropy_fix}')
-                            self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
-                            if self.dim == 1:
-                                self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,2)
-                            else:
-                                self.diss = lambda qL,qR, idx: self.diss_dEndq_eig_abs_dq_nD(qL,qR,idx,2)
-                        else:
-                            raise Exception('The following SAT combination is not currently possible:')
-                            print(f'diss_type=cons, jac_type=mat, average={self.average}, entropy_fix={self.entropy_fix}')
-                    
-                    else:
-                        raise Exception('Must have jac_type=sca or jac_type=mat on conservative variables.')
-
-                elif self.diss_type=='ent' or self.diss_type=='entropy':
-                    if self.jac_type == 'scasca':
-                        raise Exception('Scalar-scalar dissipation on entropy variables is not coded up yet.')
-                    
-                    elif self.jac_type == 'scamat':
-                        print(str_base + ' and scalar-matrix dissipation on entropy variables.')
-                        print(f'average={self.average}, maxeig={self.maxeig_type}, coeff={self.coeff}, entropy_fix={self.entropy_fix}')
-                        self.dqdw_jump = solver.diffeq.dqdw_jump
-                        self.entropy_var = solver.diffeq.entropy_var
-                        if self.dim == 1:
-                            self.diss = self.diss_ent_1d
-                        elif self.dim == 2:
-                            self.diss = self.diss_ent_2d
-
-                    elif self.jac_type == 'matmat':
-                        print(str_base + ' and matrix-matrix dissipation on entropy variables.')
-                        print(f'average={self.average}, maxeig={self.maxeig_type}, coeff={self.coeff}, entropy_fix={self.entropy_fix}')
-                        self.dqdw_jump = solver.diffeq.dqdw_jump
-                        self.entropy_var = solver.diffeq.entropy_var
-                        if self.dim == 1:
-                            self.diss = self.diss_ent_1d
-                        elif self.dim == 2:
-                            self.diss = self.diss_ent_2d
-
-                    else:
-                        raise Exception('Must have jac_type = scasca, scamat, or matmat on conservative variables.')
-
-       
-                elif self.diss_type=='diablo1':
-                    print(str_base + ' and matrix dissipation on conservative variables (diablo LF1)')
-                    print(f'average=roe, coeff={self.coeff}, entropy_fix=hicken')
-                    self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
-                    if self.dim == 1:
-                        self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,1)
-                    else:
-                        self.diss = lambda qL,qR, idx: self.diss_dEndq_eig_abs_dq_nD(qL,qR,idx,1)
-                elif self.diss_type=='diablo2':
-                    print(str_base + ' and matrix dissipation on conservative variables (diablo LF2)')
-                    print(f'average=roe, coeff={self.coeff}, entropy_fix=diablo')
-                    self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
-                    if self.dim == 1:
-                        self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,2)
-                    else:
-                        self.diss = lambda qL,qR, idx: self.diss_dEndq_eig_abs_dq_nD(qL,qR,idx,2)
-                elif self.diss_type=='diablo3':
-                    print(str_base + ' and scalar dissipation on conservative variables (diablo LF3)')
-                    print(f'average=roe, maxeig=qavg, coeff={self.coeff}, entropy_fix=hicken')
-                    print("TODO: although I'm not convinced this is actually scalar...")
-                    self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
-                    if self.dim == 1:
-                        self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,3)
-                    else:
-                        self.diss = lambda qL,qR, idx: self.diss_dEndq_eig_abs_dq_nD(qL,qR,idx,3)
-                elif self.diss_type=='diablo4':
-                    print(str_base + ' and scalar dissipation on conservative variables (diablo LF4)')
-                    print(f'average=roe, maxeig=qavg, coeff={self.coeff}, entropy_fix=False')
-                    self.dEndq_eig_abs_dq = solver.diffeq.dEndq_eig_abs_dq
-                    if self.dim == 1:
-                        self.diss = lambda qL,qR: self.diss_dEndq_eig_abs_dq_1D(qL,qR,4)
-                    else:
-                        self.diss = lambda qL,qR, idx: self.diss_dEndq_eig_abs_dq_nD(qL,qR,idx,4)
-                
-                else:
-                    raise Exception("SAT type not understood. Try 'ec', 'symmetric', 'es', 'roe', 'lf', 'lf_ent', 'lf_cons3', 'lf_cons4', 'roe_cons1', 'roe_cons2'.")
-
-            # TODO: default cons / ent type
 
             else:
                 raise Exception('Choice of SAT not understood.')
@@ -531,20 +643,6 @@ class Sat(SatDer1, SatDer2):
             # Set the method for the sat and dfdq_sat for the first derivative
             #self.calc_sat_der1 = getattr(self, self.diffeq.sat_type_der1)
             #self.calc_dfdq_sat_der1 = getattr(self, self.diffeq.dfdq_sat_type_der1)
-
-        elif self.pde_order == 2:
-            
-            # TODO
-
-            # Set the method for the sat and dfdq_sat for the various derivatives
-            self.sat_der1 = getattr(self, self.diffeq.sat_type_der1)
-            self.sat_der2 = getattr(self, self.diffeq.sat_type_der2)
-
-            self.dfdq_sat_der1 = getattr(self, self.diffeq.dfdq_sat_type_der1)
-            self.dfdq_sat_der2 = getattr(self, self.diffeq.dfdq_sat_type_der2)
-
-            self.calc_sat = self.sat_der2_master
-            self.calc_dfdq_sat = self.dfdq_sat_der2_master
 
         else:
             raise Exception('SAT methods for reqested order of PDE is not available')
@@ -588,14 +686,16 @@ class Sat(SatDer1, SatDer2):
             self.bdy_x = solver.mesh.bdy_x
             assert(self.dim == 1),'Only set up for 1D so far'
             assert(self.disc_type == 'div'),'Not set up for Hadamard form yet'
-            if self.method == 'central' or self.method == 'nondissipative' or self.method == 'symmetric':
+            if self.diss_type == 'central' or self.diss_type == 'nondissipative' or self.diss_type == 'symmetric':
                 self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.llf_div_1d_varcoeff(q, E, sigma=0, q_bdyL=q_bdyL, q_bdyR=q_bdyR,
                                                                  extrapolate_flux=solver.diffeq.extrapolate_bdy_flux)
-            elif self.method == 'lf' or self.method == 'llf' or self.method == 'lax_friedrichs':
+            elif self.diss_type == 'lf' or self.diss_type == 'llf' or self.diss_type == 'lax_friedrichs':
                 self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.llf_div_1d_varcoeff(q, E, sigma=1, q_bdyL=q_bdyL, q_bdyR=q_bdyR,
                                                                  extrapolate_flux=solver.diffeq.extrapolate_bdy_flux)
         
         
+    ''' functions to set metrics in 2D and 3D '''
+
     def set_metrics_2d_x(self, metrics, bdy_metrics):
         ''' create a list of metrics for each row '''  
         self.metrics = []
@@ -657,296 +757,227 @@ class Sat(SatDer1, SatDer2):
             self.metrics.append(np.repeat(metrics[:,6:,start:end],self.neq_node,0))
             self.bdy_metrics.append(np.repeat(bdy_metrics[:,4:,6:,start:end],self.neq_node,0))
 
+
+
+    ''' functions to calculate abs(A) and abs(A)*P '''
+
+    def calc_absA_lf_1d(self, qL, qR):
+        qavg = self.calc_avgq(qL, qR)
+        Lambda = fn.repeat_neq_gv(self.maxeig_dExdq(qavg), self.neq_node)
+        return Lambda
     
-
-
-    ''' Define the 2-point flux dissipation functions. For a conservative flux + dissipation '''
+    def calc_absA_lf_2d(self, qL, qR, metrics):
+        # accepts metrics that are not repeated by neq, return repeated by neq
+        qavg = self.calc_avgq(qL, qR)
+        maxeigsx = self.maxeig_dExdq(qavg)
+        maxeigsy = self.maxeig_dEydq(qavg)
+        Lambda = fn.repeat_neq_gv(abs( maxeigsx * metrics[:,0,:] \
+                                    + maxeigsy * metrics[:,1,:]), self.neq_node)
+        return Lambda
     
-    def diss_dEndq_eig_abs_dq_1D(self,qLf,qRf,flux_type):
-        ''' calculates dissipation calculates -0.5*abs(A)@(q-qg) using diffeq's dEndq_eig_abs_dq function 
-        accepts projected qL and qR, already padded '''
-        # remember that metric have been repeated neq times, unecessary here
-        metrics = fn.pad_1dR(self.bdy_metrics[::self.neq_node,0,:], self.bdy_metrics[::self.neq_node,1,-1])
-        A_q_jump = self.dEndq_eig_abs_dq(metrics, qRf, qLf, flux_type)
-        dissL = self.tL @ A_q_jump[:,:-1]
-        dissR = self.tR @ A_q_jump[:,1:]
-
-        diss = dissR - dissL # diablo function outputs 2 * negative of the convention used here
-        return diss
+    def calc_absA_lf_3d(self, qL, qR, metrics):
+        # accepts metrics that are not repeated by neq, return repeated by neq
+        qavg = self.calc_avgq(qL, qR)
+        maxeigsx = self.maxeig_dExdq(qavg)
+        maxeigsy = self.maxeig_dEydq(qavg)
+        maxeigsz = self.maxeig_dEzdq(qavg)
+        Lambda = fn.repeat_neq_gv(abs( maxeigsx * metrics[:,0,:] \
+                                    + maxeigsy * metrics[:,1,:] \
+                                    + maxeigsz * metrics[:,2,:]), self.neq_node)
+        return Lambda
     
-    def diss_dEndq_eig_abs_dq_nD(self,qLf,qRf,idx,flux_type):
-        ''' calculates dissipation calculates -0.5*abs(A)@(q-qg) using diffeq's dEndq_eig_abs_dq function 
-        accepts projected qL and qR, already padded '''
-        # remember that metric have been repeated neq times, unecessary here
-        metrics = fn.pad_ndR(self.bdy_metrics[idx][::self.neq_node,0,:,:], self.bdy_metrics[idx][::self.neq_node,1,:,-1])
-        A_q_jump = self.dEndq_eig_abs_dq(metrics, qRf, qLf, flux_type)
-        dissL = (self.tL * self.Hperp) @ A_q_jump[:,:-1]
-        dissR = (self.tR * self.Hperp) @ A_q_jump[:,1:]
+    def calc_absA_lfn_nd(self, qL, qR, metrics):
+        # accepts metrics that are not repeated by neq, return repeated by neq
+        qavg = self.calc_avgq(qL, qR)
+        Lambda = fn.repeat_neq_gv(self.maxeig_dEndq(qavg, metrics), self.neq_node)
+        return Lambda
+    
+    def calc_absA_rusanov_1d(self, qL, qR):
+        maxeigs = fn.repeat_neq_gv(np.maximum(self.maxeig_dExdq(qL), self.maxeig_dExdq(qR)), self.neq_node)
+        return maxeigs
+    
+    def calc_absA_rusanov_2d(self, qL, qR, metrics):
+        # accepts metrics that are not repeated by neq, return repeated by neq
+        maxeigsx = np.maximum(self.maxeig_dExdq(qL), self.maxeig_dExdq(qR))
+        maxeigsy = np.maximum(self.maxeig_dEydq(qL), self.maxeig_dEydq(qR))
+        Lambda = fn.repeat_neq_gv(abs( maxeigsx * metrics[:,0,:] \
+                                    + maxeigsy * metrics[:,1,:]), self.neq_node)
+        return Lambda
+    
+    def calc_absA_rusanov_3d(self, qL, qR, metrics):
+        # accepts metrics that are not repeated by neq, return repeated by neq
+        maxeigsx = np.maximum(self.maxeig_dExdq(qL), self.maxeig_dExdq(qR))
+        maxeigsy = np.maximum(self.maxeig_dEydq(qL), self.maxeig_dEydq(qR))
+        maxeigsz = np.maximum(self.maxeig_dEzdq(qL), self.maxeig_dEzdq(qR))
+        Lambda = fn.repeat_neq_gv(abs( maxeigsx * metrics[:,0,:] \
+                                    + maxeigsy * metrics[:,1,:] \
+                                    + maxeigsz * metrics[:,2,:]), self.neq_node)
+        return Lambda
+    
+    def calc_absA_rusanovn_nd(self, qL, qR, metrics):
+        # accepts metrics that are not repeated by neq, return repeated by neq
+        maxeig = np.maximum(self.maxeig_dEndq(qL, metrics), self.maxeig_dEndq(qR, metrics))
+        Lambda = fn.repeat_neq_gv(maxeig, self.neq_node)
+        return Lambda
+    
+    def calc_absA_matdiffeq_1d(self, qL, qR):
+        # calls the base method for the specific diff eq
+        qavg = self.calc_avgq(qL, qR)
+        absA = self.dExdq_abs(qavg, self.entropy_fix)
+        return absA
+    
+    def calc_absA_matdiffeq_nd(self, qL, qR, metrics):
+        # calls the base method for the specific diff eq
+        qavg = self.calc_avgq(qL, qR)
+        absA = self.dEndq_abs(qavg, metrics, self.entropy_fix)
+        return absA
+    
+    def calc_P_avg(self, qL, qR):
+        # calls the base method for the specific diff eq using q_avg
+        qavg = self.calc_avgq(qL, qR)
+        P = self.diffeq_dqdw(qavg)
+        return P
+    
+    def calc_absAP_diffeq_1d(self, qL, qR):
+        # calls the base method for the specific diff eq
+        qavg = self.calc_avgq(qL, qR)
+        absAP = self.dExdw_abs(qavg)
+        return absAP
+    
+    def calc_absAP_diffeq_nd(self, qL, qR, metrics):
+        # calls the base method for the specific diff eq
+        qavg = self.calc_avgq(qL, qR)
+        absAP = self.dEndw_abs(qavg, metrics)
+        return absAP   
+    
+    def calc_absAP_base_1d(self, qL, qR):
+        # calls the base methods for both absA and P
+        absA = self.calc_absA(qL, qR)
+        P = self.calc_P(qL, qR)
+        absAP = fn.gm_gm(absA, P)
+        return absAP
+    
+    def calc_absAP_base_nd(self, qL, qR, metrics):
+        # calls the base method for both absA and P
+        absA = self.calc_absA(qL, qR, metrics)
+        P = self.calc_P(qL, qR)
+        absAP = fn.gm_gm(absA, P)
+        return absAP
 
-        diss = dissR - dissL # diablo function outputs 2 * negative of the convention used here
-        return diss
+    
+    
+    ''' A collection of base functions for calc_absA_dq and calc_absAP_dw '''
 
-    def diss_cons_1d(self,qLf,qRf):
+    def calc_absA_dq_sca_1D(self,qL,qR):
+        ''' base method for self.jac_type == 'sca' in 1D '''
+        Lambda = self.calc_absA(qL,qR)
+        q_jump = qR - qL
+        absA_dq = fn.gdiag_gv(Lambda, q_jump)
+        return absA_dq
+    
+    def calc_absA_dq_sca_nD(self,qL,qR,metrics):
+        ''' base method for self.jac_type == 'sca' in 1D '''
+        Lambda = self.calc_absA(qL,qR,metrics)
+        q_jump = qR - qL
+        absA_dq = fn.gdiag_gv(Lambda, q_jump)
+        return absA_dq
+    
+    def calc_absA_dq_mat_1D(self,qL,qR):
+        ''' base method for self.jac_type == 'mat' in 1D '''
+        absA = self.calc_absA(qL,qR)
+        q_jump = qR - qL
+        absA_dq = fn.gm_gv(absA, q_jump)
+        return absA_dq
+    
+    def calc_absA_dq_mat_nD(self,qL,qR,metrics):
+        ''' base method for self.jac_type == 'mat' in nD '''
+        absA = self.calc_absA(qL,qR,metrics)
+        q_jump = qR - qL
+        absA_dq = fn.gm_gv(absA, q_jump)
+        return absA_dq
+
+    def calc_absAP_dw_scasca_1D(self,qL,qR):
+        ''' base method for self.jac_type == 'scasca' in 1D '''
+        w_jump = self.entropy_var(qR) - self.entropy_var(qL)
+        rhoP = fn.repeat_neq_gv(fn.spec_rad(self.calc_P(qL,qR)),self.neq_node)
+        Lambda = self.calc_absA(qL,qR)
+        absAP_dw = fn.gdiag_gv(Lambda * rhoP, w_jump)
+        return absAP_dw
+    
+    def calc_absAP_dw_scasca_nD(self,qL,qR,metrics):
+        ''' base method for self.jac_type == 'scasca' in 1D '''
+        w_jump = self.entropy_var(qR) - self.entropy_var(qL)
+        rhoP = fn.repeat_neq_gv(fn.spec_rad(self.calc_P(qL,qR)),self.neq_node)
+        Lambda = self.calc_absA(qL,qR,metrics)
+        absAP_dw = fn.gdiag_gv(Lambda * rhoP, w_jump)
+        return absAP_dw
+    
+    def calc_absAP_dw_scamat_1D(self,qL,qR):
+        ''' base method for self.jac_type == 'scamat' in 1D '''
+        w_jump = self.entropy_var(qR) - self.entropy_var(qL)
+        P = self.calc_P(qL,qR)
+        Lambda = self.calc_absA(qL,qR)
+        absAP_dw = fn.gdiag_gv(Lambda, fn.gm_gv(P, w_jump))
+        return absAP_dw
+    
+    def calc_absAP_dw_scamat_nD(self,qL,qR,metrics):
+        ''' base method for self.jac_type == 'scamat' in nD '''
+        w_jump = self.entropy_var(qR) - self.entropy_var(qL)
+        P = self.calc_P(qL,qR)
+        Lambda = self.calc_absA(qL,qR,metrics)
+        absAP_dw = fn.gdiag_gv(Lambda, fn.gm_gv(P, w_jump))
+        return absAP_dw
+    
+    def calc_absAP_dw_matmat_1D(self,qL,qR):
+        ''' base method for self.jac_type == 'scamat' in 1D '''
+        w_jump = self.entropy_var(qR) - self.entropy_var(qL)
+        absAP = self.calc_absAP(qL,qR)
+        absAP_dw = fn.gm_gv(absAP,w_jump)
+        return absAP_dw
+    
+    def calc_absAP_dw_matmat_nD(self,qL,qR,metrics):
+        ''' base method for self.jac_type == 'scamat' in nD '''
+        w_jump = self.entropy_var(qR) - self.entropy_var(qL)
+        absAP = self.calc_absAP(qL,qR,metrics)
+        absAP_dw = fn.gm_gv(absAP,w_jump)
+        return absAP_dw
+
+    ''' Define the 2-point flux dissipation functions. For a conservative base SAT + dissipation '''
+    
+    def diss_cons_1d(self,qL,qR):
         ''' dissipation in conservative variables '''
-        q_jump = qRf - qLf
-        
-        if self.jac_type == 'sca':
-            if self.maxeig_type == 'lf' or self.maxeig_type == 'qavg':
-                if self.average=='simple' or self.maxeig_type == 'lf':
-                    qf_avg = (qLf + qRf)/2
-                else:
-                    raise Exception('Averaging method not understood.', self.average)
-                maxeigs = self.maxeig_dExdq(qf_avg)
-            elif self.maxeig_type == 'rusanov':
-                maxeigs = np.maximum(self.maxeig_dExdq(qLf), self.maxeig_dExdq(qRf))
-            else:
-                raise Exception('maxeig type not understood.', self.maxeig_type)
-            
-            metrics = fn.pad_1dR(self.bdy_metrics[:,0,:], self.bdy_metrics[:,1,-1])
-            Lambda = np.abs(maxeigs * metrics)
-            absA_dq = fn.gdiag_gv(Lambda, q_jump)
-
-        elif self.jac_type == 'mat':
-            raise Exception('Not set up for matrix interface dissipation yet.')
-        else:
-            raise Exception('jac type not understood.', self.jac_type)
-        
+        absA_dq = self.calc_absA_dq(qL,qR)
         dissL = self.tL @ absA_dq[:,:-1]
         dissR = self.tR @ absA_dq[:,1:]
+        
+        diss = (dissL - dissR)/2
+        return diss
+    
+    def diss_cons_nd(self,qL,qR,idx):
+        ''' dissipation in conservative variables '''
+        metrics = fn.pad_ndR(self.bdy_metrics[idx][::self.neq_node,0,:,:], self.bdy_metrics[idx][::self.neq_node,1,:,-1])
+        absA_dq = self.calc_absA_dq(qL,qR,metrics)
+        dissL = (self.tL * self.Hperp) @ absA_dq[:,:-1]
+        dissR = (self.tR * self.Hperp) @ absA_dq[:,1:]
         
         diss = (dissL - dissR)/2
         return diss
     
     def diss_ent_1d(self,qL,qR):
         ''' dissipation in entropy variables '''
-        wLf = self.entropy_var(qL)
-        wRf = self.entropy_var(qR)
-        
-        w_jump = wRf - wLf
-
-        if self.jac_type == 'scamat':
-            metrics = fn.pad_1dR(self.bdy_metrics[::self.neq_node,0,:], self.bdy_metrics[::self.neq_node,1,-1])
-
-            if self.average == 'derigs':
-                # averaging from Derigs et al 2017, scalar-matrix dissipation
-                P = self.dqdw_jump(qL,qR)
-                if self.maxeig_type == 'lf':
-                    qavg = (qL + qR)/2
-                    if self.entropy_fix == False:
-                        lam = self.maxeig_dEndq(qavg,metrics)
-                    else:
-                        raise Exception('Entropy fix not set up yet.')
-                elif self.maxeig_type == 'rusanov':
-                    if self.entropy_fix == False:
-                        lam = np.maximum(self.maxeig_dEndq(qL,metrics), self.maxeig_dEndq(qR,metrics))
-                    else:
-                        #TODO: add row entropy fix or diablo or hicken
-                        raise Exception('Entropy fix not set up yet.')
-                elif self.maxeig_type == 'qavg':
-                    raise Exception('maxeig=qavg, average=derigs not set up yet.')
-                else:
-                    raise Exception('maxeig not understood.', self.maxeig_type)
-            elif self.average == 'simple':
-                qavg = (qL + qR)/2
-                P = self.dqdw(qavg)
-                if self.maxeig_type == 'lf' or self.maxeig_type == 'qavg':
-                    if self.entropy_fix == False:
-                        lam = self.maxeig_dEndq(qavg,metrics)
-                    else:
-                        raise Exception('Entropy fix not set up yet.')
-                elif self.maxeig_type == 'rusanov':
-                    if self.entropy_fix == False:
-                        lam = np.maximum(self.maxeig_dEndq(qL,metrics), self.maxeig_dEndq(qR,metrics))
-                    else:
-                        #TODO: add row entropy fix or diablo or hicken
-                        raise Exception('Entropy fix not set up yet.')
-                else:
-                    raise Exception('maxeig not understood.', self.maxeig_type)
-            else: 
-                raise Exception('average not understood.', self.average)
-
-            absAP_dw = fn.gdiag_gv(fn.repeat_neq_gv(lam,self.neq_node), fn.gm_gv(P, w_jump))
-
-
-        elif self.jac_type == 'matmat':
-            metrics = fn.pad_1dR(self.bdy_metrics[::self.neq_node,0,:], self.bdy_metrics[::self.neq_node,1,-1])
-
-            if self.average == 'simple':
-                # simple arithmetic average, matrix-matrix dissipation (LF)
-                qavg = (qL + qR)/2
-                if self.maxeig_type == 'lf' or self.maxeig_type == 'qavg':
-                    if self.entropy_fix == False:
-                        absAP = self.dEndw_abs(q_avg,metrics)
-                    else:
-                        raise Exception('Entropy fix not set up yet.')
-                else:
-                    raise Exception('maxeig not understood.', self.maxeig_type)
-            else:
-                raise Exception('average not understood.', self.average)
-
-            absAP_dw = fn.gm_gv(absAP, w_jump)
-
-        elif self.jac_type == 'scasca':
-            raise Exception('Not set up for scalar-scalar interface dissipation yet.')
-        else:
-            raise Exception('jac type not understood.', self.jac_type)
-        
+        absAP_dw = self.calc_absAP_dw(qL,qR)
         dissL = self.tL @ absAP_dw[:,:-1]
         dissR = self.tR @ absAP_dw[:,1:]
         
         diss = (dissL - dissR)/2
         return diss
-        
-    def diss_cons_2d(self,qLf,qRf,idx):
-        ''' dissipation in conservative variables '''
-        q_jump = qRf - qLf
-
-        if self.jac_type == 'sca':
-            if self.maxeig_type == 'lf' or self.maxeig_type == 'qavg':
-                if self.average=='simple' or self.maxeig_type == 'lf':
-                    qf_avg = (qLf + qRf)/2
-                else:
-                    raise Exception('Averaging method not understood.', self.average)
-                maxeigsx = self.maxeig_dExdq(q_avg)
-                maxeigsy = self.maxeig_dEydq(q_avg)
-            elif self.maxeig_type == 'rusanov':
-                maxeigsx = np.maximum(self.maxeig_dExdq(qLf), self.maxeig_dExdq(qRf))
-                maxeigsy = np.maximum(self.maxeig_dEydq(qLf), self.maxeig_dEydq(qRf))
-            else:
-                raise Exception('maxeig type not understood.', self.maxeig_type)
-            
-            metricsx = fn.pad_1dR(self.bdy_metrics[idx][:,0,0,:], self.bdy_metrics[idx][:,1,0,-1])
-            metricsy = fn.pad_1dR(self.bdy_metrics[idx][:,0,1,:], self.bdy_metrics[idx][:,1,1,-1])
-            H_Lambda = self.Hperp * np.abs(maxeigsx * metricsx + maxeigsy * metricsy)
-            absA_dq = fn.gdiag_gv(H_Lambda, q_jump)
-
-        elif self.jac_type == 'mat':
-            raise Exception('Not set up for matrix interface dissipation yet.')
-        else:
-            raise Exception('jac type not understood.', self.jac_type)
-        
-        dissL = self.tL @ absA_dq
-        dissR = self.tR @ absA_dq
-        
-        diss = (dissL - dissR)/2
-        return diss
     
-    def diss_ent_2d(self,qL,qR,idx):
+    def diss_ent_nd(self,qL,qR,idx):
         ''' dissipation in entropy variables '''
-        wLf = self.entropy_var(qL)
-        wRf = self.entropy_var(qR)
-        
-        w_jump = wRf - wLf
-
-        if self.jac_type == 'scamat':
-            # remember that metric have been repeated neq times, unecessary here
-            metrics = fn.pad_ndR(self.bdy_metrics[idx][::self.neq_node,0,:,:], self.bdy_metrics[idx][::self.neq_node,1,:,-1])
-
-            if self.average == 'derigs':
-                # averaging from Derigs et al 2017, scalar-matrix dissipation
-                P = self.dqdw_jump(qL,qR)
-
-                if self.maxeig_type == 'lf':
-                    qavg = (qL + qR)/2
-                    if self.entropy_fix == False:
-                        lam = self.maxeig_dEndq(qavg,metrics)
-                    else:
-                        raise Exception('Entropy fix not set up yet.')
-                elif self.maxeig_type == 'rusanov':
-                    if self.entropy_fix == False:
-                        lam = np.maximum(self.maxeig_dEndq(qL,metrics), self.maxeig_dEndq(qR,metrics))
-                    else:
-                        #TODO: add row entropy fix or diablo or hicken
-                        raise Exception('Entropy fix not set up yet.')
-                elif self.maxeig_type == 'qavg':
-                    raise Exception('maxeig=qavg, average=derigs not set up yet.')
-                else:
-                    raise Exception('maxeig not understood.', self.maxeig_type)
-            elif self.average == 'simple':
-                qavg = (qL + qR)/2
-                P = self.dqdw(qavg)
-                if self.maxeig_type == 'lf' or self.maxeig_type == 'qavg':
-                    if self.entropy_fix == False:
-                        lam = self.maxeig_dEndq(qavg,metrics)
-                    else:
-                        raise Exception('Entropy fix not set up yet.')
-                elif self.maxeig_type == 'rusanov':
-                    if self.entropy_fix == False:
-                        lam = np.maximum(self.maxeig_dEndq(qL,metrics), self.maxeig_dEndq(qR,metrics))
-                    else:
-                        #TODO: add row entropy fix or diablo or hicken
-                        raise Exception('Entropy fix not set up yet.')
-                else:
-                    raise Exception('maxeig not understood.', self.maxeig_type)
-            else: 
-                raise Exception('average not understood.', self.average)
-
-            absAP_dw = fn.gdiag_gv(fn.repeat_neq_gv(lam,self.neq_node), fn.gm_gv(P, w_jump))
-
-
-        elif self.jac_type == 'matmat':
-            # remember that metric have been repeated neq times, unecessary here
-            metrics = fn.pad_ndR(self.bdy_metrics[idx][::self.neq_node,0,:,:], self.bdy_metrics[idx][::self.neq_node,1,:,-1])
-
-            if self.average == 'simple':
-                # simple arithmetic average, matrix-matrix dissipation (LF)
-                qavg = (qL + qR)/2
-                if self.maxeig_type == 'lf' or self.maxeig_type == 'qavg':
-                    if self.entropy_fix == False:
-                        absAP = self.dEndw_abs(q_avg,metrics)
-                    else:
-                        raise Exception('Entropy fix not set up yet.')
-                else:
-                    raise Exception('maxeig not understood.', self.maxeig_type)
-            else:
-                raise Exception('average not understood.', self.average)
-
-            absAP_dw = fn.gm_gv(absAP, w_jump)
-
-        elif self.jac_type == 'scasca':
-            raise Exception('Not set up for scalar-scalar interface dissipation yet.')
-        else:
-            raise Exception('jac type not understood.', self.jac_type)
-    
-        dissL = self.tL @ absAP_dw[:,:-1]
-        dissR = self.tR @ absAP_dw[:,1:]
-        
-        diss = (dissL - dissR)/2
-        return diss
-    
-    def diss_cons_3d(self,qLf,qRf,idx,flux_type=1):
-        ''' dissipation in conservative variables '''
-        q_jump = qRf - qLf
-
-        if self.jac_type == 'sca':
-            if self.maxeig_type == 'lf' or self.maxeig_type == 'qavg':
-                if self.average=='simple' or self.maxeig_type == 'lf':
-                    qf_avg = (qLf + qRf)/2
-                else:
-                    raise Exception('Averaging method not understood.', self.average)
-                maxeigsx = self.maxeig_dExdq(q_avg)
-                maxeigsy = self.maxeig_dEydq(q_avg)
-                maxeigsz = self.maxeig_dEzdq(q_avg)
-            elif self.maxeig_type == 'rusanov':
-                maxeigsx = np.maximum(self.maxeig_dExdq(qLf), self.maxeig_dExdq(qRf))
-                maxeigsy = np.maximum(self.maxeig_dEydq(qLf), self.maxeig_dEydq(qRf))
-                maxeigsz = np.maximum(self.maxeig_dEzdq(qLf), self.maxeig_dEzdq(qRf))
-            else:
-                raise Exception('maxeig type not understood.', self.maxeig_type)
-            
-            metricsx = fn.pad_1dR(self.bdy_metrics[idx][:,0,0,:], self.bdy_metrics[idx][:,1,0,-1])
-            metricsy = fn.pad_1dR(self.bdy_metrics[idx][:,0,1,:], self.bdy_metrics[idx][:,1,1,-1])
-            metricsz = fn.pad_1dR(self.bdy_metrics[idx][:,0,2,:], self.bdy_metrics[idx][:,1,2,-1])
-            H_Lambda = self.Hperp * np.abs(maxeigsx * metricsx + maxeigsy * metricsy + maxeigsz * metricsz)
-            absA_dq = fn.gdiag_gv(H_Lambda, q_jump)
-
-        elif self.jac_type == 'mat':
-            raise Exception('Not set up for matrix interface dissipation yet.')
-        else:
-            raise Exception('jac type not understood.', self.jac_type)
-
-        dissL = self.tL @ absA_dq[:,:-1]
-        dissR = self.tR @ absA_dq[:,1:]
+        metrics = fn.pad_ndR(self.bdy_metrics[idx][::self.neq_node,0,:,:], self.bdy_metrics[idx][::self.neq_node,1,:,-1])
+        absAP_dw = self.calc_absAP_dw(qL,qR,metrics)
+        dissL = (self.tL * self.Hperp) @ absAP_dw[:,:-1]
+        dissR = (self.tR * self.Hperp) @ absAP_dw[:,1:]
         
         diss = (dissL - dissR)/2
         return diss

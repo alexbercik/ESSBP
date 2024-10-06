@@ -106,6 +106,11 @@ class LinearConv(PdeBase):
         maxeig = np.ones(q.shape)*self.ay
         return maxeig
     
+    def maxeig_dEndq(self, q, metrics):
+        ''' return the maximum eigenvalue - used for LF fluxes '''
+        maxeig = np.abs(metrics[:,0,:]*self.ax + metrics[:,1,:]*self.ay)
+        return maxeig
+    
     def d2Exdq2(self, q):
 
         dExdq = fn.diag(np.zeros(q.shape))

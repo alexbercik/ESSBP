@@ -492,6 +492,16 @@ def abs_eig_mat(mat):
     return mat_abs
 
 @njit
+def inv_gm(mat):
+    ''' Return the inverse of a global matrix of shape (nen,nen,nelem) '''
+    nodes,_,nelem = mat.shape
+    dtype=mat.dtype
+    mat_inv = np.zeros((nodes,nodes,nelem),dtype=dtype)
+    for elem in range(nelem):
+        mat_inv[:,:,elem] = np.linalg.inv(mat[:,:,elem])
+    return mat_inv
+
+@njit
 def spec_rad(mat,neq):
     '''
     Given a 3d block diagonal array in the shape (nen*neq,nen*neq,nelem)
@@ -1197,6 +1207,20 @@ def kron_neq_lm(A,neq_node):
             i2 = i*neq_node + n
             for j in range(nen2):
                 An[i2,j*neq_node+n::neq_node] = A[i,j]
+    return An
+
+@njit
+def unkron_neq_lm(A,neq):
+    ''' take array of shape (nen*neq_node,nen2*neq_node) and return (nen,nen2)
+        undoes the proper kronecker product for the operator acting on a vector (nen2*neq_node). '''
+    nen_neq, nen_neq2 = A.shape
+    nen, nen2 = nen_neq // neq, nen_neq2 // neq
+    An = np.zeros((nen,nen2),dtype=A.dtype) 
+    for i in range(nen):
+        i2 = i*neq
+        for j in range(nen2):
+            j2 = j*neq
+            An[i,j] = A[i2,j2]
     return An
 
 @njit

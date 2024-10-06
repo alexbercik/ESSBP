@@ -205,18 +205,25 @@ class Quasi1dEuler(PdeBase):
             print('Using the fixed g={0} diffeq functions since params match.'.format(self.g_fix))
             self.calcEx = efn.calcEx_1D
             self.dExdq = efn.dExdq_1D
-            self.dEndq_eig_abs_dq = efn.dEndq_eig_abs_dq_1D
+            self.dExdq_eig_abs_dq = efn.dExdq_eig_abs_dq_1D
             self.central_flux = efn.Central_flux_1D
             self.ismail_roe_flux = efn.Ismail_Roe_flux_1D
             self.ranocha_flux = efn.Ranocha_flux_1D
+            self.chandrashekar_flux = efn.Chandrashekar_flux_1D
             self.maxeig_dExdq = efn.maxeig_dExdq_1D
-            self.maxeig_dEndq = efn.maxeig_dEndq_1D
+            #self.maxeig_dEndq = efn.maxeig_dEndq_1D
             self.entropy = efn.entropy_1D
             self.entropy_var = efn.entropy_var_1D
             self.dqdw = efn.symmetrizer_1D
-            self.dEndw_abs = efn.dEndw_abs_1D
-            self.dqdw_jump = efn.symmetrizer_jump_1D
+            self.dExdq_abs = efn.dExdq_abs_1D
+            self.dExdw_abs = efn.dExdw_abs_1D
+            self.dExdq_abs_derigs = efn.dExdq_abs_1D_derigs
+            self.dExdw_abs_derigs = efn.dExdw_abs_1D_derigs
+            self.dqdw_derigs = efn.symmetrizer_dw_derigs_1D
             self.calc_p = efn.calc_p_1D
+            self.roe_avg = efn.Roe_avg_1D
+            self.ismail_roe_avg = efn.Ismail_Roe_avg_1D
+            self.derigs_avg = efn.Derigs_avg_1D
 
         if bc != 'periodic':
             

@@ -401,6 +401,65 @@ def gmT_gm_had_diff(AT,B):
     
     return c
 
+@njit
+def lm_gm_had_diff(A,B):
+    '''
+    Compute the hadamard product between a sparse local matrix (CSR matrix) 
+    and another sparse global matrix (list of CSR matrices), then sum rows
+
+    Parameters
+    ----------
+    A (data1, indices1, indptr1) : CSR representation of the first matrix
+    B : List of CSR matrices
+        Each element in the list is a tuple (data, indices, indptr) representing a sparse matrix in CSR format
+
+    Returns
+    -------
+    c : numpy array of shape (nen1, nelem)
+        Result of the matrix-vector multiplication
+    '''
+    nen1 = len(A[2]) - 1  # Number of rows in the sparse matrix (from indptr)
+    nelem = len(B)  # Number of elements (same as the third dimension of the original tensor)
+    
+    # Initialize result array
+    c = np.zeros((nen1, nelem), dtype=B[0][0].dtype)
+    
+    # Perform sparse hadamard product for each element
+    for e in range(nelem):
+        c[:, e] = lm_lm_had_diff(A, B[e])
+    
+    return c
+
+@njit
+def lmT_gm_had_diff(AT,B):
+    '''
+    Compute the hadamard product between a sparse local matrix (CSR matricex) 
+    and another sparse global matrix (list of CSR matrices), then sum rows
+    this computes sum_j A.T_ji B_ji = sum_j A_ij B_ji = had_diff(A,B.T)
+
+    Parameters
+    ----------
+    AT (data1, indices1, indptr1) : CSR representation of the first matrix
+    B : List of CSR matrices
+        Each element in the list is a tuple (data, indices, indptr) representing a sparse matrix in CSR format
+
+    Returns
+    -------
+    c : numpy array of shape (nen1, nelem)
+        Result of the matrix-vector multiplication
+    '''
+    nen1 = len(AT[2]) - 1  # Number of rows in the sparse matrix (from indptr)
+    nelem = len(B)  # Number of elements (same as the third dimension of the original tensor)
+    
+    # Initialize result array
+    c = np.zeros((nen1, nelem), dtype=B[0][0].dtype)
+    
+    # Perform sparse hadamard product for each element
+    for e in range(nelem):
+        c[:, e] = lmT_lm_had_diff(AT, B[e])
+    
+    return c
+
 @njit 
 def build_F_vol_sys(neq, q, flux, sparsity_unkronned, sparsity):
     ''' Builds a sparsified Flux differencing matrix (used for Hadamard form) given a 
