@@ -150,15 +150,20 @@ class Euler(PdeBase):
             self.central_fluxes = efn.Central_fluxes_2D
             self.ismail_roe_fluxes = efn.Ismail_Roe_fluxes_2D
             self.ranocha_fluxes = efn.Ranocha_fluxes_2D
+            self.chandrashekar_fluxes = efn.Chandrashekar_fluxes_2D
             self.maxeig_dExdq = efn.maxeig_dExdq_2D
             self.maxeig_dEydq = efn.maxeig_dEydq_2D
             self.maxeig_dEndq = efn.maxeig_dEndq_2D
             self.entropy = efn.entropy_2D
             self.entropy_var = efn.entropy_var_2D
             self.dqdw = efn.symmetrizer_2D
+            self.dEndq_abs = efn.dEndq_abs_2D
             self.dEndw_abs = efn.dEndw_abs_2D
-            self.dqdw_jump = efn.symmetrizer_jump_2D
+            self.dqdw_derigs = efn.symmetrizer_dw_derigs_2D
             self.calc_p = efn.calc_p_2D
+            self.roe_avg = efn.Roe_avg_2D
+            self.ismail_roe_avg = efn.Ismail_Roe_avg_2D
+            self.derigs_avg = efn.Derigs_avg_2D
 
 
         if bc != 'periodic':

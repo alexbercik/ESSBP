@@ -153,6 +153,7 @@ def dExdq_1D(q):
 
 @njit    
 def dEndq_1D(q,dxidx):
+    # NOTE: dxidx = 1 in 1D
     ''' the flux jacobian A in 1D including metric scaling. Note: can NOT handle complex values
     INPUTS: q : array of shape (nen*neq_node,nelem)
             dxidx : metrics of shape (nen,nelem) corresponding to a single xi '''
@@ -177,35 +178,78 @@ def dEndq_1D(q,dxidx):
     dEdq = fn.block_diag(r0,dxidx,r0,r21,r22,r23,r31,r32,r33)
     return dEdq
 
-@njit    # fails in nopython mode :/
-def dEndw_abs_1D(q,dxidx):
+@njit   
+def dEndw_abs_1D(q,dxidx,entropy_fix=False):
+    # NOTE: dxidx = 1 in 1D
     ''' uses the Barth scaling to compute X @ cabs(Lam) @ X.T, where X
      are the eigenvectors of dExdq that symmetrixe P=dqdw, and Lam
      are the eigenvalues of dExdq '''
     
-    Lam, X, _, XT = dEndq_eigs_1D(q,dxidx,val=True,vec=True,inv=False,trans=True)
+    Lam, X, _, XT = dEndq_eigs_1D(q,dxidx,val=True,vec=True,inv=False,trans=True,entropy_fix=entropy_fix)
+    dEndw_abs = fn.gm_gm(X, fn.gdiag_gm(cabs(Lam), XT))
+    return dEndw_abs
+
+@njit   
+def dExdw_abs_1D(q,entropy_fix=False):
+    ''' uses the Barth scaling to compute X @ cabs(Lam) @ X.T, where X
+     are the eigenvectors of dExdq that symmetrixe P=dqdw, and Lam
+     are the eigenvalues of dExdq '''
+    
+    Lam, X, _, XT = dExdq_eigs_1D(q,val=True,vec=True,inv=False,trans=True,entropy_fix=entropy_fix)
     dEndw_abs = fn.gm_gm(X, fn.gdiag_gm(cabs(Lam), XT))
     return dEndw_abs
 
 @njit
-def dEndw_abs_2D(q,dxidx):
+def dEndw_abs_2D(q,dxidx,entropy_fix=False):
     ''' uses the Barth scaling to compute X @ cabs(Lam) @ X.T, where X
      are the eigenvectors of dExdq that symmetrixe P=dqdw, and Lam
      are the eigenvalues of dExdq '''
     
-    Lam, X, _, XT = dEndq_eigs_2D(q,dxidx,val=True,vec=True,inv=False,trans=True)
+    Lam, X, _, XT = dEndq_eigs_2D(q,dxidx,val=True,vec=True,inv=False,trans=True,entropy_fix=entropy_fix)
     dEndw_abs = fn.gm_gm(X, fn.gdiag_gm(cabs(Lam), XT))
     return dEndw_abs
 
 @njit
-def dEndw_abs_3D(q,dxidx):
+def dEndw_abs_3D(q,dxidx,entropy_fix=False):
     ''' uses the Barth scaling to compute X @ cabs(Lam) @ X.T, where X
      are the eigenvectors of dExdq that symmetrixe P=dqdw, and Lam
      are the eigenvalues of dExdq '''
     
-    Lam, X, _, XT = dEndq_eigs_3D(q,dxidx,val=True,vec=True,inv=False,trans=True)
+    Lam, X, _, XT = dEndq_eigs_3D(q,dxidx,val=True,vec=True,inv=False,trans=True,entropy_fix=entropy_fix)
     dEndw_abs = fn.gm_gm(X, fn.gdiag_gm(cabs(Lam), XT))
     return dEndw_abs
+
+
+@njit   
+def dEndq_abs_1D(q,dxidx,entropy_fix=False):
+    # NOTE: dxidx = 1 in 1D
+    ''' uses the Barth scaling to compute X @ cabs(Lam) @ Xinv, where X
+     are the eigenvectors of dExdq that symmetrixe P=dqdw, and Lam
+     are the eigenvalues of dExdq '''
+    
+    Lam, X, Xinv, _ = dEndq_eigs_1D(q,dxidx,val=True,vec=True,inv=True,trans=False,entropy_fix=entropy_fix)
+    dEndq_abs = fn.gm_gm(X, fn.gdiag_gm(cabs(Lam), Xinv))
+    return dEndq_abs
+
+@njit   
+def dExdq_abs_1D(q,entropy_fix=False):
+    ''' uses the Barth scaling to compute X @ cabs(Lam) @ Xinv, where X
+     are the eigenvectors of dExdq that symmetrixe P=dqdw, and Lam
+     are the eigenvalues of dExdq '''
+    
+    Lam, X, Xinv, _ = dExdq_eigs_1D(q,val=True,vec=True,inv=True,trans=False,entropy_fix=entropy_fix)
+    dEndq_abs = fn.gm_gm(X, fn.gdiag_gm(cabs(Lam), Xinv))
+    return dEndq_abs
+
+@njit
+def dEndq_abs_2D(q,dxidx,entropy_fix=False):
+    ''' uses the Barth scaling to compute X @ cabs(Lam) @ Xinv, where X
+     are the eigenvectors of dExdq that symmetrixe P=dqdw, and Lam
+     are the eigenvalues of dExdq '''
+    
+    Lam, X, Xinv, _ = dEndq_eigs_2D(q,dxidx,val=True,vec=True,inv=True,trans=False,entropy_fix=entropy_fix)
+    dEndq_abs = fn.gm_gm(X, fn.gdiag_gm(cabs(Lam), Xinv))
+    return dEndq_abs
 
 @njit    
 def dExdq_2D(q):
@@ -446,8 +490,23 @@ def dEndq_3D(q,n):
     dEdq = fn.block_diag(r0,nx,ny,nz,r0,r21,r22,r23,r24,r25,r31,r32,r33,r34,r35,r41,r42,r43,r44,r45,r51,r52,r53,r54,r55)
     return dEdq
 
+@njit
+def calc_entropy_fix(u,a):
+    lam1 = u - a
+    lam2 = u + a
+    eps = 0.02 * (cabs(u) + a)
+    idcs = np.where(np.abs(np.real(u - a)) < eps)
+    for i in range(len(idcs[0])):
+        idx = (idcs[0][i], idcs[1][i])
+        lam1[idx] = 0.5 * (lam1[idx]**2 / eps[idx] + eps[idx])
+    idcs = np.where(np.abs(np.real(u + a)) < eps)
+    for i in range(len(idcs[0])):
+        idx = (idcs[0][i], idcs[1][i])
+        lam2[idx] = 0.5 * (lam2[idx]**2 / eps[idx] + eps[idx])
+    return(lam1,lam2)
+
 @njit    
-def dExdq_eigs_1D(q,val=True,vec=True,inv=True,trans=False):
+def dExdq_eigs_1D(q,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
     ''' take a q of shape (nen*3,nelem) and performs an eigendecomposition,
     returns the eigenvectors, eigenvalues, inverse or transpose. Use the scaling
     from Merriam 1989 / Barth 1999  to coincide with entropy variable identity.
@@ -458,11 +517,11 @@ def dExdq_eigs_1D(q,val=True,vec=True,inv=True,trans=False):
     # Eigenvalues are the same for quasi1D Euler, but eigenvectors scaled by S to match P
     #g = 1.4 # hard coded throughout
     #g1 = g-1
-    rho = q[::3,:]
-    u = q[1::3,:]/rho
+    rho = q[::3]
+    u = q[1::3]/rho
     k = (u*u)/2
     #e = q[2::3,:]
-    p = g1*(q[2::3,:]-rho*k) # pressure
+    p = g1*(q[2::3]-rho*k) # pressure
     #norm2 = nx*nx + ny*ny
     #a2_g1 = g*(q[2::3,:]/rho-k) # = (g*p)/(rho*g1)
     #a = np.sqrt(a2_g1*g1) # sound speed = np.sqrt(g*p/rho)
@@ -470,9 +529,13 @@ def dExdq_eigs_1D(q,val=True,vec=True,inv=True,trans=False):
     
     if val:
         Lam = np.zeros_like(q)
-        Lam[::3,:] = u - a
-        Lam[1::3,:] = u 
-        Lam[2::3,:] = u + a
+        lam1 = u - a
+        lam2 = u + a
+        if entropy_fix:
+            lam1,lam2 = calc_entropy_fix(u,a)
+        Lam[::3] = lam1
+        Lam[1::3] = u 
+        Lam[2::3] = lam2
     else:
         Lam = None
     if vec:
@@ -513,7 +576,8 @@ def dExdq_eigs_1D(q,val=True,vec=True,inv=True,trans=False):
     return Lam, Y, Yinv, YT
 
 @njit    
-def dEndq_eigs_1D(q,n,val=True,vec=True,inv=True,trans=False):
+def dEndq_eigs_1D(q,n,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
+    # NOTE: dxidx = 1 in 1D
     ''' take a q of shape (nen*3,nelem) and performs an eigendecomposition,
     returns the eigenvectors, eigenvalues, inverse or transpose. Use the scaling
     from Merriam 1989 / Barth 1999  to coincide with entropy variable identity.
@@ -538,9 +602,13 @@ def dEndq_eigs_1D(q,n,val=True,vec=True,inv=True,trans=False):
     Lam = np.zeros_like(q)
     if val:
         Lam = np.zeros_like(q)
-        Lam[::3,:] = un - norm*a
-        Lam[1::3,:] = un
-        Lam[2::3,:] = un + norm*a
+        lam1 = un - norm*a
+        lam2 = un + norm*a
+        if entropy_fix:
+            lam1,lam2 = calc_entropy_fix(un,norm*a)
+        Lam[::3] = lam1
+        Lam[1::3] = un
+        Lam[2::3] = lam2
     if vec:
         r11 = np.sqrt(rho/(2*g))
         t1 = np.sqrt(p/2)
@@ -745,7 +813,7 @@ def dEydq_eigs_2D(q,val=True,vec=True,inv=True,trans=False):
     return Lam, Y, Yinv, YT  
 
 @njit    
-def dEndq_eigs_2D(q,n,val=True,vec=True,inv=True,trans=False):
+def dEndq_eigs_2D(q,n,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
     ''' take a q of shape (nen*4,nelem) and performs an eigendecomposition,
     returns the eigenvectors, eigenvalues, inverse or transpose. Use the scaling
     from Merriam 1989 / Barth 1999  to coincide with entropy variable identity.
@@ -773,10 +841,14 @@ def dEndq_eigs_2D(q,n,val=True,vec=True,inv=True,trans=False):
     
     Lam = np.zeros_like(q)
     if val:
+        lam1 = uvn - norm*a
+        lam2 = uvn + norm*a
+        if entropy_fix:
+            lam1,lam2 = calc_entropy_fix(uvn,norm*a)
         Lam[::4,:] = uvn
         Lam[1::4,:] = uvn
-        Lam[2::4,:] = uvn + norm*a
-        Lam[3::4,:] = uvn - norm*a
+        Lam[2::4,:] = lam2
+        Lam[3::4,:] = lam1
     if vec:
         t3 = 1/np.sqrt(nx**2 + 2*ny**2)
         t4 = np.sign(nx - ny)
@@ -889,8 +961,21 @@ def logmean_vec(p,pg):
     p_ln = (p+pg)/F
     return p_ln
 
+@njit
+def logmean_sca(p,pg):
+    xi = p/pg
+    zeta = (1-xi)/(1+xi)
+    zeta2 = zeta**2
+    if np.real(zeta2) < 0.01:
+        F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
+    else:
+        F = - np.log(xi)/zeta
+    p_ln = (p+pg)/F
+    return p_ln
+
+
 @njit    
-def symmetrizer_jump_1D(q,qg):
+def symmetrizer_dw_derigs_1D(q,qg):
     ''' take a q and qg of shape (nen*3,nelem) and builds the symmetrizing matrix P.
     P is the symmetric positive definite matrix that symmetrizes the flux
     jacobian A=dEndq upon multiplication from the right. This is equal to the
@@ -957,7 +1042,7 @@ def symmetrizer_2D(q):
     return P
 
 @njit    
-def symmetrizer_jump_2D(q,qg):
+def symmetrizer_dw_derigs_2D(q,qg):
     ''' take a q and qg of shape (nen*4,nelem) and builds the symmetrizing matrix P.
     P is the symmetric positive definite matrix that symmetrizes the flux
     jacobian A=dEndq upon multiplication from the right. This is equal to the
@@ -1037,7 +1122,7 @@ def symmetrizer_3D(q):
     return P
 
 @njit    
-def symmetrizer_jump_3D(q,qg):
+def symmetrizer_dw_derigs_3D(q,qg):
     ''' take a q and qg of shape (nen*5,nelem) and builds the symmetrizing matrix P.
     P is the symmetric positive definite matrix that symmetrizes the flux
     jacobian A=dEndq upon multiplication from the right. This is equal to the
@@ -1341,7 +1426,7 @@ def dEzdq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
     return Lam, Y, Yinv, YT 
 
 @njit    
-def dEndq_eigs_3D(q,n,val=True,vec=True,inv=True,trans=False):
+def dEndq_eigs_3D(q,n,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
     ''' take a q of shape (nen*3,nelem) and performs an eigendecomposition,
     returns the eigenvectors, eigenvalues, inverse or transpose. Use the scaling
     from Merriam 1989 / Barth 1999  to coincide with entropy variable identity.
@@ -1365,11 +1450,15 @@ def dEndq_eigs_3D(q,n,val=True,vec=True,inv=True,trans=False):
     if val:
         Lam = np.zeros_like(q)
         a = np.sqrt(g*p/rho) # sound speed
+        lam1 = uvwn - a
+        lam2 = uvwn + a
+        if entropy_fix:
+            lam1,lam2 = calc_entropy_fix(uvwn,a)
         Lam[::5,:] = uvwn
         Lam[1::5,:] = uvwn
         Lam[2::5,:] = uvwn
-        Lam[3::5,:] = uvwn + a
-        Lam[4::5,:] = uvwn - a
+        Lam[3::5,:] = lam2
+        Lam[4::5,:] = lam1
     else:
         Lam = None
     if vec:
@@ -1457,6 +1546,7 @@ def maxeig_dExdq_1D(q):
 
 @njit
 def maxeig_dEndq_1D(q,dxidx):
+    # NOTE: dxidx = 1 in 1D
     ''' the flux jacobian A in 1D including metric scaling. Note: can NOT handle complex values
     INPUTS: q : array of shape (nen*neq_node,nelem)
             dxidx : metrics of shape (nen,nelem) corresponding to a single xi '''
@@ -1699,25 +1789,9 @@ def Ismail_Roe_flux_1D(qL,qR):
     betaL = np.sqrt(rhoL*pL) # z3 in paper
     betaR = np.sqrt(rhoR*pR)
 
-    # logarithmic mean of alpha, or z1
-    xi = alphaL/alphaR
-    zeta = (1-xi)/(1+xi)
-    zeta2 = zeta**2
-    if np.real(zeta2) < 0.01:
-        F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
-    else:
-        F = - np.log(xi)/zeta
-    alpha_ln = (alphaL+alphaR)/F
-
-    # logarithmic mean of beta, or z3
-    xi = betaL/betaR
-    zeta = (1-xi)/(1+xi)
-    zeta2 = zeta**2
-    if np.real(zeta2) < 0.01:
-        F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
-    else:
-        F = - np.log(xi)/zeta
-    beta_ln = (betaL+betaR)/F
+    # logarithmic means
+    alpha_ln = logmean_sca(alphaL,alphaR)
+    beta_ln = logmean_sca(betaL,betaR)
 
     # arithmetic means of alpha and beta
     alpha_avg = 0.5*(alphaL+alphaR) # z1 in paper
@@ -1760,25 +1834,9 @@ def Ismail_Roe_fluxes_2D(qL,qR):
     betaL = np.sqrt(rhoL*pL)
     betaR = np.sqrt(rhoR*pR)
 
-    # logarithmic mean of alpha, or z1
-    xi = alphaL/alphaR
-    zeta = (1-xi)/(1+xi)
-    zeta2 = zeta**2
-    if np.real(zeta2) < 0.01:
-        F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
-    else:
-        F = - np.log(xi)/zeta
-    alpha_ln = (alphaL+alphaR)/F
-
-    # logarithmic mean of beta, or z3
-    xi = betaL/betaR
-    zeta = (1-xi)/(1+xi)
-    zeta2 = zeta**2
-    if np.real(zeta2) < 0.01:
-        F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
-    else:
-        F = - np.log(xi)/zeta
-    beta_ln = (betaL+betaR)/F
+    # logarithmic means
+    alpha_ln = logmean_sca(alphaL,alphaR)
+    beta_ln = logmean_sca(betaL,betaR)
 
     # arithmetic means of alpha and beta
     alpha_avg = 0.5*(alphaL+alphaR) # z1 in paper
@@ -1898,25 +1956,9 @@ def Ranocha_flux_1D(qL,qR):
     uR = q_1R / q_0R
     pR = (g-1)*(q_2R - 0.5*uR*q_1R)  
 
-    # logarithmic mean of density
-    xi = q_0L/q_0R
-    zeta = (1-xi)/(1+xi)
-    zeta2 = zeta**2
-    if np.real(zeta2) < 0.01:
-        F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
-    else:
-        F = - np.log(xi)/zeta
-    rho_ln = (q_0L+q_0R)/F
-
-    # logarithmic mean of density / pressure
-    xi = q_0L*pR/(q_0R*pL)
-    zeta = (1-xi)/(1+xi)
-    zeta2 = zeta**2
-    if np.real(zeta2) < 0.01:
-        F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
-    else:
-        F = - np.log(xi)/zeta
-    rhop_ln = (q_0L/pL+q_0R/pR)/F
+    # logarithmic means
+    rho_ln = logmean_sca(q_0L,q_0R)
+    rhop_ln = logmean_sca(q_0L/pL,q_0R/pR)
 
     # arithmetic means
     u_avg = 0.5*(uL+uR)
@@ -1959,25 +2001,9 @@ def Ranocha_fluxes_2D(qL,qR):
     vR = q_2R / q_0R
     pR = (g-1)*(q_3R - 0.5*(uR*q_1R + vR*q_2R))  
 
-    # logarithmic mean of density
-    xi = q_0L/q_0R
-    zeta = (1-xi)/(1+xi)
-    zeta2 = zeta**2
-    if np.real(zeta2) < 0.01:
-        F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
-    else:
-        F = - np.log(xi)/zeta
-    rho_ln = (q_0L+q_0R)/F
-
-    # logarithmic mean of density / pressure
-    xi = q_0L*pR/(q_0R*pL)
-    zeta = (1-xi)/(1+xi)
-    zeta2 = zeta**2
-    if np.real(zeta2) < 0.01:
-        F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
-    else:
-        F = - np.log(xi)/zeta
-    rhop_ln = (q_0L/pL+q_0R/pR)/F
+    # logarithmic means
+    rho_ln = logmean_sca(q_0L,q_0R)
+    rhop_ln = logmean_sca(q_0L/pL,q_0R/pR)
 
     # arithmetic means
     u_avg = 0.5*(uL+uR)
@@ -2005,6 +2031,87 @@ def Ranocha_fluxes_2D(qL,qR):
     Ey[2] = Ey[0]*v_avg + p_avg
     Ey[3] = fac*v_avg + 0.5*(pL*vR + pR*vL)
     return Ex, Ey
+
+@njit 
+def Chandrashekar_flux_1D(qL,qR):
+    '''
+    Return the Chandrashekar KEP + EC flux given two states qL and qR where each is
+    of shape (1,), and returns a numerical flux of shape (4,)
+    '''
+    # decompose q
+    rhoL = qL[0]
+    uL = qL[1] / rhoL
+    pL = g1*(qL[2] - 0.5*qL[1]*uL)  
+    betaL = 0.5*rhoL/pL
+    rhoR = qR[0]
+    uR = qR[1] / rhoR
+    pR = g1*(qR[2] - 0.5*qR[1]*uR)  
+    betaR = 0.5*rhoR/pR
+
+    # compute important quantities
+    betaavg = 0.5*(betaL + betaR)
+    betaln = logmean_sca(betaL,betaR)
+    rhoavg = 0.5*(rhoL + rhoR)
+    rholn = logmean_sca(rhoL,rhoR)
+    pavg = 0.5*rhoavg/betaavg
+    pln = 0.5*rholn/betaln
+    uavg = 0.5*(uL + uR)
+    u2avg = 0.5*(uL*uL + uR*uR)
+    u2bar = 2*uavg*uavg - u2avg
+
+    #assemble_xvec
+    E = np.zeros(3,dtype=qL.dtype)
+    E[0] = rholn*uavg
+    E[1] = E[0]*uavg + pavg
+    E[2] = pln*uavg/g1 + pavg*uavg + 0.5*rholn*uavg*u2bar
+    return E
+
+@njit 
+def Chandrashekar_fluxes_2D(qL,qR):
+    '''
+    Return the Chandrashekar KEP + EC flux given two states qL and qR where each is
+    of shape (1,), and returns a numerical flux of shape (4,)
+    '''
+    # decompose q
+    rhoL = qL[0]
+    uL = qL[1] / rhoL
+    vL = qL[2] / rhoL
+    pL = (g-1)*(qL[3] - 0.5*(uL*qL[1] + vL*qL[2])) 
+    betaL = 0.5*rhoL/pL
+    rhoR = qR[0]
+    uR = qR[1] / rhoR
+    vR = qL[2] / rhoR
+    pR = (g-1)*(qR[3] - 0.5*(uR*qR[1] + vR*qR[2])) 
+    betaR = 0.5*rhoR/pR
+
+    # compute important quantities
+    betaavg = 0.5*(betaL + betaR)
+    betaln = logmean_sca(betaL,betaR)
+    rhoavg = 0.5*(rhoL + rhoR)
+    rholn = logmean_sca(rhoL,rhoR)
+    pavg = 0.5*rhoavg/betaavg
+    pln = 0.5*rholn/betaln
+    uavg = 0.5*(uL + uR)
+    vavg = 0.5*(vL + vR)
+    u2avg = 0.5*(uL*uL + uR*uR)
+    v2avg = 0.5*(vL*vL + vR*vR)
+    u2bar = 2*(uavg*uavg + vavg*vavg) - u2avg - v2avg
+
+    #assemble_xvec
+    Ex = np.zeros(4,dtype=qL.dtype)
+    Ex[0] = rholn*uavg
+    Ex[1] = Ex[0]*uavg + pavg
+    Ex[2] = Ex[0]*vavg
+    Ex[3] = pln*uavg/g1 + pavg*uavg + 0.5*rholn*uavg*u2bar
+    
+    # assemble_yvec
+    Ey = np.zeros(4,dtype=qL.dtype)
+    Ey[0] = rholn*vavg
+    Ey[1] = Ey[0]*uavg
+    Ey[2] = Ey[0]*vavg + pavg
+    Ey[3] = pln*vavg/g1 + pavg*vavg + 0.5*rholn*vavg*u2bar
+    return Ex, Ey
+
 
 @njit
 def StegerWarming_diss_1D(q, n):
@@ -2062,14 +2169,16 @@ def StegerWarming_diss_2D(q, n):
     return f
 
 @njit
-def dEndq_eig_abs_dq_1D(dxidx, q, qg, flux_type):
+def dExdq_eig_abs_dq_1D(q, qg, flux_type):
     '''
-    calculates -0.5*cabs(A)@(q-qg) according to the implentation in diablo. Used in SATs.
+    calculates cabs(A)@(q-qg) according to the implentation in diablo. Used in SATs.
     INPUTS:
     dxidx = the metric terms in the desired direction (indpendent of J), shape(nen,nelem)
     q = the flow state of the "local" node, shape (nen*3,nelem)
     qg = the flow state of the "ghost" node, shape (nen*3,nelem)
     '''
+
+    # NOTE: diablo function outputs 2 * negative of the convention used here, i.e. -0.5*abs(A)@(q-qg)
 
     gamma = g #1.4 # hard coded throughout
     gami = g1 #0.4
@@ -2083,8 +2192,6 @@ def dEndq_eig_abs_dq_1D(dxidx, q, qg, flux_type):
     phi = 0.5*(uL*uL)
     eL = q[2::3,:]
     HL = gamma*eL*fac - gami*phi
-
-    dA = cabs(dxidx)
 
     rhoR = qg[::3,:] 
     fac = 1.0/rhoR
@@ -2101,21 +2208,20 @@ def dEndq_eig_abs_dq_1D(dxidx, q, qg, flux_type):
     H = (sqL*HL + sqR*HR)*fac
     phi = 0.5*(u*u)
     a = np.sqrt(gami*(H - phi))
-    Un = u*dxidx
 
-    lambda1 = cabs(Un + dA*a)
-    lambda2 = cabs(Un - dA*a)
-    lambda3 = cabs(Un)
-    rhoA = lambda3 + dA*a
+    lambda1 = cabs(u + a)
+    lambda2 = cabs(u - a)
+    lambda3 = cabs(u)
+    rhoA = lambda3 + a
 
     # The structure here follows exactly Swanson & Turkel 1992 to construct |A|*dq
     # BUT this should be multiplied by -tau/2 at the end. Since E_i do not use lambda_i,
     # this is equivalent to multiplying lambda_i by -tau/2, hence we do this below.
     if (flux_type == 1):
         # Roe average flux with Hicken's fix
-        lambda1 = -0.5*(np.maximum(lambda1,sat_Vn *rhoA))
-        lambda2 = -0.5*(np.maximum(lambda2,sat_Vn *rhoA))
-        lambda3 = -0.5*(np.maximum(lambda3,sat_Vl *rhoA))
+        lambda1 = np.maximum(lambda1,sat_Vn *rhoA)
+        lambda2 = np.maximum(lambda2,sat_Vn *rhoA)
+        lambda3 = np.maximum(lambda3,sat_Vl *rhoA)
     elif (flux_type == 2):
         # Roe average flux with entropy fix
         lmax = np.maximum(np.maximum(lambda1,lambda2),lambda3)
@@ -2130,20 +2236,18 @@ def dEndq_eig_abs_dq_1D(dxidx, q, qg, flux_type):
                     lambda2[i,j] = (lambda2[i,j]**2 + dij*dij)/(2.*dij)
                 if (lambda3[i,j] < dij): 
                     lambda3[i,j] = (lambda3[i,j]**2 + dij*dij)/(2.*dij)
-        lambda1 = (-0.5*tau)*lambda1
-        lambda2 = (-0.5*tau)*lambda2
-        lambda3 = (-0.5*tau)*lambda3
+        lambda1 = tau*lambda1
+        lambda2 = tau*lambda2
+        lambda3 = tau*lambda3
     elif (flux_type == 3):
         # local Lax-Friedrichs flux
         lmax = np.maximum(np.maximum(lambda1,lambda2),lambda3)
-        lambda1 = -0.5*(tau*np.maximum(lmax,sat_Vn *rhoA))
-        lambda2 = -0.5*(tau*np.maximum(lmax,sat_Vn *rhoA))
-        lambda3 = -0.5*(tau*np.maximum(lmax,sat_Vl *rhoA))
+        lambda1 = tau*np.maximum(lmax,sat_Vn *rhoA)
+        lambda2 = tau*np.maximum(lmax,sat_Vn *rhoA)
+        lambda3 = tau*np.maximum(lmax,sat_Vl *rhoA)
     elif (flux_type == 4):
         # Alex Bercik's local Lax-Friedrichs flux (more simple & dissipative)
-        lambda1 = cabs(u) + a #max possible eigenvalue
-        rhoA = cabs(lambda1*dxidx)
-        fi = - 0.5*tau*fn.repeat_neq_gv(rhoA,3)*(q - qg)
+        fi = tau*fn.repeat_neq_gv(rhoA,3)*(q - qg)
         return fi
     else:
         return np.zeros_like(q)
@@ -2167,15 +2271,14 @@ def dEndq_eig_abs_dq_1D(dxidx, q, qg, flux_type):
 
     # get E2*dq
     E2dq = np.zeros_like(q)
-    fac2 = -Un*dq1 + dxidx*dq2
-    E2dq[1::3,:] = fac2*dxidx
-    E2dq[2::3,:] = fac2*Un
+    fac2 = -u*dq1 + dq2
+    E2dq[1::3,:] = fac2
+    E2dq[2::3,:] = fac2*u
 
     # add to fi
     tmp1 = fn.repeat_neq_gv(0.5*(lambda1 + lambda2) - lambda3,3)
     tmp2 = fn.repeat_neq_gv(gami/(a*a),3)
-    tmp3 = fn.repeat_neq_gv(1.0/(dA*dA),3)
-    fi = fi + tmp1*(tmp2*E1dq + tmp3*E2dq)
+    fi = fi + tmp1*(tmp2*E1dq + E2dq)
 
     # get E3*dq
     E1dq[::3,:] = fac2
@@ -2184,24 +2287,26 @@ def dEndq_eig_abs_dq_1D(dxidx, q, qg, flux_type):
 
     # get E4*dq
     E2dq[::3,:] = 0.0
-    E2dq[1::3,:] = fac*dxidx
-    E2dq[2::3,:] = fac*Un
+    E2dq[1::3,:] = fac
+    E2dq[2::3,:] = fac*u
 
     # add to fi
-    tmp1 = fn.repeat_neq_gv(0.5*(lambda1 - lambda2)/(dA*a),3)
+    tmp1 = fn.repeat_neq_gv(0.5*(lambda1 - lambda2)/a,3)
     fi = fi + tmp1*(E1dq + gami*E2dq)
     return fi
 
 @njit
 def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
     '''
-    calculates -0.5*cabs(An)@(q-qg) according to the implentation in diablo. Used in SATs.
+    calculates cabs(An)@(q-qg) according to the implentation in diablo. Used in SATs.
     INPUTS:
     dxidx = the metric terms in the desired direction (indpendent of J), shape(nen,2,nelem)
             these are the dxi_x, dxi_dy, where xi is a fixed computational direction
     q = the flow state of the "local" node, shape (nen*4,nelem)
     qg = the flow state of the "ghost" node, shape (nen*4,nelem)
     '''
+
+    # NOTE: diablo function outputs 2 * negative of the convention used here, i.e. -0.5*abs(A)@(q-qg)
 
     gamma = g #1.4 # hard coded throughout
     gami = g1 #0.4
@@ -2250,9 +2355,9 @@ def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
     # this is equivalent to multiplying lambda_i by -tau/2, hence we do this below.
     if (flux_type == 1):
         # Roe average flux with Hicken's fix
-        lambda1 = -0.5*(np.maximum(lambda1,sat_Vn *rhoA))
-        lambda2 = -0.5*(np.maximum(lambda2,sat_Vn *rhoA))
-        lambda3 = -0.5*(np.maximum(lambda3,sat_Vl *rhoA))
+        lambda1 = np.maximum(lambda1,sat_Vn *rhoA)
+        lambda2 = np.maximum(lambda2,sat_Vn *rhoA)
+        lambda3 = np.maximum(lambda3,sat_Vl *rhoA)
     elif (flux_type == 2):
         # Roe average flux with entropy fix
         lmax = np.maximum(np.maximum(lambda1,lambda2),lambda3)
@@ -2267,22 +2372,22 @@ def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
                     lambda2[i,j] = (lambda2[i,j]**2 + dij*dij)/(2.*dij)
                 if (np.real(lambda3[i,j]) < dij): 
                     lambda3[i,j] = (lambda3[i,j]**2 + dij*dij)/(2.*dij)
-        lambda1 = (-0.5*tau)*lambda1
-        lambda2 = (-0.5*tau)*lambda2
-        lambda3 = (-0.5*tau)*lambda3
+        lambda1 = tau*lambda1
+        lambda2 = tau*lambda2
+        lambda3 = tau*lambda3
     elif (flux_type == 3):
         # local Lax-Friedrichs flux
         lmax = np.maximum(np.maximum(lambda1,lambda2),lambda3)
-        lambda1 = -0.5*(tau*np.maximum(lmax,sat_Vn *rhoA))
-        lambda2 = -0.5*(tau*np.maximum(lmax,sat_Vn *rhoA))
-        lambda3 = -0.5*(tau*np.maximum(lmax,sat_Vl *rhoA))
+        lambda1 = tau*np.maximum(lmax,sat_Vn *rhoA)
+        lambda2 = tau*np.maximum(lmax,sat_Vn *rhoA)
+        lambda3 = tau*np.maximum(lmax,sat_Vl *rhoA)
     elif (flux_type == 4):
         # Alex Bercik's local Lax-Friedrichs flux (more simple & dissipative)
         lambda1 = cabs(u) + a #max eigenvalue in x
         lambda2 = cabs(v) + a #max eigenvalue in y
         rhoA = cabs(lambda1*nx + lambda2*ny)
         # Note: definition of rhoA is very slightly different to above (L1 norm isntead of L2 on n_i)
-        fi = - 0.5*tau*fn.repeat_neq_gv(rhoA,4)*(q - qg)
+        fi = tau*fn.repeat_neq_gv(rhoA,4)*(q - qg)
         return fi
     elif (flux_type == 5):
         # Roe average flux with entropy fix like from Zingg textbook
@@ -2350,13 +2455,15 @@ def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
 @njit
 def dEndq_eig_abs_dq_3D(dxidx, q, qg, flux_type):
     '''
-    calculates -0.5*cabs(An)@(q-qg) according to the implentation in diablo. Used in SATs.
+    calculates cabs(An)@(q-qg) according to the implentation in diablo. Used in SATs.
     INPUTS:
     dxidx = the metric terms in the desired direction (indpendent of J), shape(nen,3,nelem)
             these are the dxi_x, dxi_dy, dxi_dz, where xi is a fixed computational direction
     q = the flow state of the "local" node, shape (nen*5,nelem)
     qg = the flow state of the "ghost" node, shape (nen*5,nelem)
     '''
+
+    # NOTE: diablo function outputs 2 * negative of the convention used here, i.e. -0.5*abs(A)@(q-qg)
 
     gamma = g #1.4 # hard coded throughout
     gami = g1 #0.4
@@ -2409,9 +2516,9 @@ def dEndq_eig_abs_dq_3D(dxidx, q, qg, flux_type):
     # this is equivalent to multiplying lambda_i by -tau/2, hence we do this below.
     if (flux_type == 1):
         # Roe average flux with Hicken's fix
-        lambda1 = -0.5*(np.maximum(lambda1,sat_Vn *rhoA))
-        lambda2 = -0.5*(np.maximum(lambda2,sat_Vn *rhoA))
-        lambda3 = -0.5*(np.maximum(lambda3,sat_Vl *rhoA))
+        lambda1 = np.maximum(lambda1,sat_Vn *rhoA)
+        lambda2 = np.maximum(lambda2,sat_Vn *rhoA)
+        lambda3 = np.maximum(lambda3,sat_Vl *rhoA)
     elif (flux_type == 2):
         # Roe average flux with entropy fix
         lmax = np.maximum(np.maximum(lambda1,lambda2),lambda3)
@@ -2426,15 +2533,15 @@ def dEndq_eig_abs_dq_3D(dxidx, q, qg, flux_type):
                     lambda2[i,j] = (lambda2[i,j]**2 + dij*dij)/(2.*dij)
                 if (lambda3[i,j] < dij): 
                     lambda3[i,j] = (lambda3[i,j]**2 + dij*dij)/(2.*dij)
-        lambda1 = (-0.5*tau)*lambda1
-        lambda2 = (-0.5*tau)*lambda2
-        lambda3 = (-0.5*tau)*lambda3
+        lambda1 = tau*lambda1
+        lambda2 = tau*lambda2
+        lambda3 = tau*lambda3
     elif (flux_type == 3):
         # local Lax-Friedrichs flux
         lmax = np.maximum(np.maximum(lambda1,lambda2),lambda3)
-        lambda1 = -0.5*(tau*np.maximum(lmax,sat_Vn *rhoA))
-        lambda2 = -0.5*(tau*np.maximum(lmax,sat_Vn *rhoA))
-        lambda3 = -0.5*(tau*np.maximum(lmax,sat_Vl *rhoA))
+        lambda1 = tau*np.maximum(lmax,sat_Vn *rhoA)
+        lambda2 = tau*np.maximum(lmax,sat_Vn *rhoA)
+        lambda3 = tau*np.maximum(lmax,sat_Vl *rhoA)
     elif (flux_type == 4):
         # Alex Bercik's local Lax-Friedrichs flux (more simple & dissipative)
         lambda1 = cabs(u) + a #max eigenvalue in x
@@ -2443,7 +2550,7 @@ def dEndq_eig_abs_dq_3D(dxidx, q, qg, flux_type):
         rhoA = cabs(lambda1*nx + lambda2*ny + lambda3*nz)
         # Note: definition of rhoA is very slightly different to above (L1 norm isntead of L2 on n_i)
         #if (skew_sym):
-        fi = - 0.5*tau*fn.repeat_neq_gv(rhoA,5)*(q - qg)
+        fi = tau*fn.repeat_neq_gv(rhoA,5)*(q - qg)
         #else:
         #    fi(:) = sgn*d0_5*(eulerFlux(dxidx,q) + eulerFlux(dxidx,qg)) &
         #        - d0_5*tau*rhoA*(q(:) - qg(:))
@@ -2544,6 +2651,303 @@ def calc_a_2D(q):
     a = np.sqrt(g*calc_p_2D(q)/rho)
     return a
 
+@njit
+def Roe_avg_1D(qL,qR):
+    ''' calculates the roe average, according to zingg textbook'''
+    rhoL = qL[::3]
+    fac = 1.0/rhoL
+    uL = qL[1::3]*fac
+    phi = 0.5*(uL*uL)
+    eL = qL[2::3]
+    HL = g*eL*fac - g1*phi
+
+    rhoR = qR[::3] 
+    fac = 1.0/rhoR
+    uR = qR[1::3]*fac
+    phi = 0.5*(uR*uR)
+    eR = qR[2::3]
+    HR = g*eR*fac - g1*phi
+
+    # Roe average
+    sqL = np.sqrt(rhoL)
+    sqR = np.sqrt(rhoR)
+    fac = 1.0/(sqL + sqR)
+    u = (sqL*uL + sqR*uR)*fac
+    H = (sqL*HL + sqR*HR)*fac
+    phi = 0.5*(u*u)
+
+    rho = sqL*sqR
+    rhou = rho*u
+    e = rho*(g1*phi + H)/g
+    q = np.zeros_like(qL)
+    q[::3] = rho
+    q[1::3] = rhou
+    q[2::3] = e
+
+    return q
+
+@njit
+def Roe_avg_2D(qL,qR):
+    ''' calculates the roe average, according to zingg textbook'''
+    rhoL = qL[::4]
+    fac = 1.0/rhoL
+    uL = qL[1::4]*fac
+    vL = qL[2::4]*fac
+    phi = 0.5*(uL*uL+vL*vL)
+    eL = qL[3::4]
+    HL = g*eL*fac - g1*phi
+
+    rhoR = qR[::4] 
+    fac = 1.0/rhoR
+    uR = qR[1::4]*fac
+    vR = qR[2::4]*fac
+    phi = 0.5*(uR*uR+vR*vR)
+    eR = qR[3::4]
+    HR = g*eR*fac - g1*phi
+
+    # Roe average
+    sqL = np.sqrt(rhoL)
+    sqR = np.sqrt(rhoR)
+    fac = 1.0/(sqL + sqR)
+    u = (sqL*uL + sqR*uR)*fac
+    v = (sqL*vL + sqR*vR)*fac
+    H = (sqL*HL + sqR*HR)*fac
+    phi = 0.5*(u*u+v*v)
+
+    rho = sqL*sqR
+    rhou = rho*u
+    rhov = rho*v
+    e = rho*(g1*phi + H)/g
+    q = np.zeros_like(qL)
+    q[::4] = rho
+    q[1::4] = rhou
+    q[2::4] = rhov
+    q[3::4] = e
+
+    return q
+
+@njit
+def Ismail_Roe_avg_1D(qL,qR):
+    # Note: this follows ismail's thesis. But in eqation 6.55, there seems to be a typo.
+    # I am assuming the p2 there should just be a p1=p.
+    rhoL = qL[0::3]
+    rhoR = qR[0::3]
+    uL = qL[1::3]/rhoL
+    uR = qR[1::3]/rhoR
+    pL = (g-1)*(qL[2::3] - (rhoL * uL*uL)/2)
+    pR = (g-1)*(qR[2::3] - (rhoR * uR*uR)/2)
+
+    alphaL = np.sqrt(rhoL/pL) # z1 in paper
+    alphaR = np.sqrt(rhoR/pR)
+    betaL = np.sqrt(rhoL*pL) # z3 in paper
+    betaR = np.sqrt(rhoR*pR)
+
+    # logarithmic mean of alpha, or z1
+    #alpha_ln = logmean_vec(alphaL,alphaR)
+    # logarithmic mean of beta, or z3
+    beta_ln = logmean_vec(betaL,betaR)
+
+    # arithmetic means of alpha and beta
+    alpha_avg = 0.5*(alphaL+alphaR) # z1 in paper
+    beta_avg = 0.5*(betaL+betaR) # z3 in paper
+
+    # determine final quantities using averaged values
+    rho_avg = alpha_avg * beta_ln
+    #a_avg2 = (0.5/rho_avg)*((g+1)*beta_ln/alpha_ln + (g-1)*beta_avg/alpha_avg)
+    u_avg = 0.5 * (uL*alphaL + uR*alphaR) / alpha_avg
+    p_avg = beta_avg / alpha_avg
+    #H_avg = a_avg2/(g - 1) + 0.5*u_avg**2
+    rhou_avg = rho_avg*u_avg
+    e_avg = p_avg/(g-1) + 0.5*rho_avg*u_avg**2
+
+    q = np.zeros_like(qL)
+    q[::3] = rho_avg
+    q[1::3] = rhou_avg
+    q[2::3] = e_avg
+
+    return q
+
+@njit 
+def Ismail_Roe_avg_2D(qL,qR):
+    # Note: this follows ismail's thesis. But in eqation 6.55, there seems to be a typo.
+    # I am assuming the p2 there should just be a p1=p.
+    
+    rhoL = qL[0::4]
+    rhoR = qR[0::4]
+    uL = qL[1::4]/rhoL
+    uR = qR[1::4]/rhoR
+    vL = qL[2::4]/rhoL
+    vR = qR[2::4]/rhoR
+    pL = (g-1)*(qL[3::4] - (rhoL * (uL*uL + vL*vL))/2)
+    pR = (g-1)*(qR[3::4] - (rhoR * (uR*uR + vR*vR))/2)
+
+    alphaL = np.sqrt(rhoL/pL)
+    alphaR = np.sqrt(rhoR/pR)
+    betaL = np.sqrt(rhoL*pL)
+    betaR = np.sqrt(rhoR*pR)
+
+    # logarithmic mean of alpha, or z1
+    #alpha_ln = logmean_vec(alphaL,alphaR)
+    # logarithmic mean of beta, or z3
+    beta_ln = logmean_vec(betaL,betaR)
+
+    # arithmetic means of alpha and beta
+    alpha_avg = 0.5*(alphaL+alphaR) # z1 in paper
+    beta_avg = 0.5*(betaL+betaR) # z3 in paper
+
+    # determine final quantities using averaged values
+    rho_avg = alpha_avg * beta_ln
+    #a_avg2 = (0.5/rho_avg)*((g+1)*beta_ln/alpha_ln + (g-1)*beta_avg/alpha_avg)
+    u_avg = 0.5 * (uL*alphaL + uR*alphaR) / alpha_avg
+    v_avg = 0.5 * (vL*alphaL + vR*alphaR) / alpha_avg
+    p_avg = beta_avg / alpha_avg
+    #H_avg = a_avg2/(g - 1) + 0.5*(u_avg*u_avg + v_avg*v_avg)
+    rhou_avg = rho_avg*u_avg
+    rhov_avg = rho_avg*v_avg
+    e_avg = p_avg/(g-1) + 0.5*rho_avg*(u_avg**2 + v_avg**2)
+
+    q = np.zeros_like(qL)
+    q[::4] = rho_avg
+    q[1::4] = rhou_avg
+    q[2::4] = rhov_avg
+    q[3::4] = e_avg
+
+    return q
+
+@njit  
+def Derigs_avg_1D(qL,qR):
+    ''' I'm kindof guessing on this one based on the symmetrizer function'''
+    rhoL = qL[0::3]
+    rhoR = qR[0::3]
+    uL = qL[1::3]/rhoL
+    uR = qR[1::3]/rhoR
+    pL = (g-1)*(qL[2::3] - (rhoL * uL*uL)/2)
+    pR = (g-1)*(qR[2::3] - (rhoR * uR*uR)/2)
+
+    # logarithmic mean of rho
+    rho_ln = logmean_vec(rhoL,rhoR)
+
+    # logarithmic mean of p
+    p_ln = logmean_vec(pL,pR)
+
+    # arithmetic means of u
+    u_avg = 0.5*(uL+uR)
+
+    e_bar = p_ln/g1 + rho_ln*u_avg*u_avg - 0.25*rho_ln*(uL*uL+uR*uR)
+
+    q = np.zeros_like(qL)
+    q[::3] = rho_ln
+    q[1::3] = rho_ln * u_avg
+    q[2::3] = e_bar
+    return q
+
+@njit  
+def Derigs_avg_2D(qL,qR):
+    ''' I'm kindof guessing on this one based on the symmetrizer function'''
+    rhoL = qL[0::4]
+    rhoR = qR[0::4]
+    uL = qL[1::4]/rhoL
+    uR = qR[1::4]/rhoR
+    vL = qL[2::4]/rhoL
+    vR = qR[2::4]/rhoR
+    pL = (g-1)*(qL[3::4] - (rhoL * (uL*uL + vL*vL))/2)
+    pR = (g-1)*(qR[3::4] - (rhoR * (uR*uR + vR*vR))/2)
+
+    # logarithmic mean of rho
+    rho_ln = logmean_vec(rhoL,rhoR)
+
+    # logarithmic mean of p
+    p_ln = logmean_vec(pL,pR)
+
+    # arithmetic means of u, v, w, p
+    u_avg = 0.5*(uL+uR)
+    v_avg = 0.5*(vL+vR)
+
+    e_bar = p_ln/g1 + rho_ln*(u_avg*u_avg + v_avg*v_avg) - 0.25*rho_ln*(uL*uL+uR*uR + vL*vL+vR*vR)
+
+    q = np.zeros_like(qL)
+    q[::4] = rho_ln
+    q[1::4] = rho_ln * u_avg
+    q[2::4] = rho_ln * v_avg
+    q[3::4] = e_bar
+    return q
+
+@njit 
+def Derigs_dExdq_eigs_1D(qL,qR,entropy_fix=False):
+    ''' take a q of shape (nen*3,nelem) and performs an eigendecomposition,
+    returns the eigenvectors, eigenvalues, inverse or transpose. 
+    From: `A uniquely defined entropy stable matrix dissipation operator for high
+    Mach number ideal MHD and compressible Euler simulations', Winters et al 2017 '''
+    # decompose q
+    rhoL = qL[0::3]
+    uL = qL[1::3] / rhoL
+    pL = g1*(qL[2::3] - 0.5*qL[1::3]*uL)  
+    betaL = 0.5*rhoL/pL
+    rhoR = qR[0::3]
+    uR = qR[1::3] / rhoR
+    pR = g1*(qR[2::3] - 0.5*qR[1::3]*uR)  
+    betaR = 0.5*rhoR/pR
+
+    # compute important quantities
+    betaavg = 0.5*(betaL + betaR)
+    betaln = logmean_vec(betaL,betaR)
+    rhoavg = 0.5*(rhoL + rhoR)
+    rholn = logmean_vec(rhoL,rhoR)
+    pavg = 0.5*rhoavg/betaavg
+    pln = 0.5*rholn/betaln
+    uavg = 0.5*(uL + uR)
+    u2avg = 0.5*(uL*uL + uR*uR)
+    u2bar_2 = uavg*uavg - 0.5*u2avg
+    abar = np.sqrt(g*pavg/rholn)
+    hbar = 0.5*g/(betaln*g1) + u2bar_2
+
+    Lam = np.zeros_like(qL)
+    lam1 = uavg - abar
+    lam2 = uavg + abar
+    if entropy_fix:
+        lam1,lam2 = calc_entropy_fix(uavg,abar)
+    Lam[::3] = lam1
+    Lam[1::3] = uavg
+    Lam[2::3] = lam2
+
+
+    r11 = np.ones_like(rhoL)
+    r21 = uavg - abar
+    r23 = uavg + abar
+    r31 = hbar - uavg*abar
+    r33 = hbar + uavg*abar
+    Y = fn.block_diag(r11,r11,r11,r21,uavg,r23,r31,u2bar_2,r33)
+    YT = fn.block_diag(r11,r21,r31,r11,uavg,u2bar_2,r11,r23,r33)
+
+    Tfix = np.zeros_like(qL)
+    Tfix[::3,:] = 0.5*rholn/g
+    Tfix[1::3,:] = rholn*g1/g
+    Tfix[2::3,:] = 0.5*rholn/g
+    
+    return Lam, Y, YT, Tfix
+
+@njit   
+def dExdw_abs_1D_derigs(qL,qR,entropy_fix=False):
+    ''' uses the Barth scaling to compute X @ cabs(Lam) @ X.T, where X
+     are the eigenvectors of dExdq that symmetrixe P=dqdw, and Lam
+     are the eigenvalues of dExdq '''
+    
+    Lam, Y, YT, Tfix = Derigs_dExdq_eigs_1D(qL,qR,entropy_fix)
+    dEndw_abs = fn.gm_gm(Y, fn.gdiag_gm(cabs(Lam)*Tfix, YT))
+    return dEndw_abs
+
+@njit   
+def dExdq_abs_1D_derigs(qL,qR,entropy_fix=False):
+    ''' uses the Barth scaling to compute X @ cabs(Lam) @ Xinv, where X
+     are the eigenvectors of dExdq that symmetrixe P=dqdw, and Lam
+     are the eigenvalues of dExdq 
+     NOTE: this is very inefficient '''
+    
+    Lam, Y, _, _ = Derigs_dExdq_eigs_1D(qL,qR,entropy_fix)
+    dEndq_abs = fn.gm_gm(Y, fn.gdiag_gm(cabs(Lam), fn.inv_gm(Y)))
+    return dEndq_abs
+
+
 
 if __name__ == "__main__":
 
@@ -2559,11 +2963,13 @@ if __name__ == "__main__":
     
     Lam1D, Y1D, Yinv1D, YT1D = dEndq_eigs_1D(q1D,n1D,val=True,vec=True,inv=True,trans=True)
     Lamx1D, Yx1D, Yinvx1D, YTx1D = dExdq_eigs_1D(q1D,val=True,vec=True,inv=True,trans=True)
+    Lam1Dd, Y1Dd, YT1Dd, Tfix = Derigs_dExdq_eigs_1D(q1D,q1D)
     An1D = dEndq_1D(q1D,n1D)
     Ax1D = dExdq_1D(q1D)
     maxeig = maxeig_dEndq_1D(q1D,n1D)
     P1D = symmetrizer_1D(q1D)
-    P31D = symmetrizer_jump_1D(q1D,q1D)
+    P31D = symmetrizer_dw_derigs_1D(q1D,q1D)
+    P1Dd = fn.gm_gm(Y1Dd, fn.gdiag_gm(Tfix,YT1Dd))
     AP1D = fn.gm_gm(An1D,P1D)
     from scipy.linalg import block_diag
     xblocks = []
@@ -2577,12 +2983,14 @@ if __name__ == "__main__":
     F_IsmailRoe = Ismail_Roe_flux_1D(q,q)
     F_Central = Central_flux_1D(q,q)
     F_Ranocha = Ranocha_flux_1D(q,q)
+    F_Chandrashekar = Chandrashekar_flux_1D(q,q)
     
     print('---- Testing 1D functions (all should be zero) ----')
     print('An = nx*Ax: ', np.max(cabs(An1D[:,:,0]-An21D)))
     print('maxeig(An): ', np.max(cabs(maxeig - fn.spec_rad(An1D,3))))
     print('n eigenvectors: ', np.max(cabs(Y1D*Lam1D - fn.gm_gm(An1D, Y1D))))
     print('x eigenvectors: ', np.max(cabs(Yx1D*Lamx1D - fn.gm_gm(Ax1D, Yx1D))))
+    print('Derigs x eigenvectors: ', np.max(cabs(Y1Dd*Lam1Dd - fn.gm_gm(Ax1D, Y1Dd))))
     print('n eigenvector inverse: ', np.max(cabs(np.linalg.inv(Y1D[:,:,0])-Yinv1D[:,:,0])))
     print('x eigenvector inverse: ', np.max(cabs(np.linalg.inv(Yx1D[:,:,0])-Yinvx1D[:,:,0])))
     print('n eigenvector transpose: ', np.max(cabs(Y1D[:,:,0].T - YT1D[:,:,0])))
@@ -2592,10 +3000,15 @@ if __name__ == "__main__":
     print('A @ P symmetrizer: ', np.max(cabs(AP1D[:,:,0] - AP1D[:,:,0].T)))
     print('P = Y@Y.T symmetrizer: ', np.max(cabs(P1D - fn.gm_gm(Y1D,YT1D))))
     print('P = Pjump(q,q): ', np.max(cabs(P1D-P31D))) 
+    print('P = Pjump(q,q): ', np.max(cabs(P1D-P1Dd))) 
     print('----')
     print('Consistency of Ismail Roe flux: ', np.max(cabs(F-F_IsmailRoe)))
     print('Consistency of Central flux: ', np.max(cabs(F-F_Central)))
     print('Consistency of Ranocha flux: ', np.max(cabs(F-F_Ranocha)))
+    print('Consistency of Chandashekar flux: ', np.max(cabs(F-F_Chandrashekar)))
+    print('Consistency of Roe avg: ', np.max(cabs(q1D-Roe_avg_1D(q1D,q1D))))
+    print('Consistency of Ismail-Roe avg: ', np.max(cabs(q1D-Ismail_Roe_avg_1D(q1D,q1D))))
+    print('Consistency of Derigs avg: ', np.max(cabs(q1D-Derigs_avg_1D(q1D,q1D))))
     print('')
     
     q2D = np.random.rand(nen*4,nelem) + 10
@@ -2620,7 +3033,7 @@ if __name__ == "__main__":
     Ay2D = dEydq_2D(q2D)
     P2D = symmetrizer_2D(q2D)
     P22D = fn.gm_gm(Y2D,YT2D)
-    P32D = symmetrizer_jump_2D(q2D,q2D)
+    P32D = symmetrizer_dw_derigs_2D(q2D,q2D)
     AP2D = fn.gm_gm(An2D,P2D)
     from scipy.linalg import block_diag
     xblocks = []
@@ -2638,7 +3051,7 @@ if __name__ == "__main__":
     Fx_IsmailRoe, Fy_IsmailRoe = Ismail_Roe_fluxes_2D(q,q)
     Fx_Central, Fy_Central = Central_fluxes_2D(q,q)
     Fx_Ranocha, Fy_Ranocha = Ranocha_fluxes_2D(q,q)
-    
+    Fx_Chandra, Fy_Chandra = Chandrashekar_fluxes_2D(q,q)
     
     print('---- Testing 2D functions (all should be zero) ----')
     print('An = nx*Ax + ny*Ay: ', np.max(cabs(An2D[:,:,0]-An22D)))
@@ -2672,6 +3085,10 @@ if __name__ == "__main__":
     print('Consistency of Ismail Roe flux: ', np.max(cabs(np.array([Fx-Fx_IsmailRoe,Fy-Fy_IsmailRoe]))))
     print('Consistency of Central flux: ', np.max(cabs(np.array([Fx-Fx_Central,Fy-Fy_Central]))))
     print('Consistency of Ranocha flux: ', np.max(cabs(np.array([Fx-Fx_Ranocha,Fy-Fy_Ranocha]))))
+    print('Consistency of Chandrashekar flux: ', np.max(cabs(np.array([Fx-Fx_Chandra,Fy-Fy_Chandra]))))
+    print('Consistency of Roe avg: ', np.max(cabs(q2D-Roe_avg_2D(q2D,q2D))))
+    print('Consistency of Ismail-Roe avg: ', np.max(cabs(q2D-Ismail_Roe_avg_2D(q2D,q2D))))
+    print('Consistency of Derigs avg: ', np.max(cabs(q2D-Derigs_avg_2D(q2D,q2D))))
     print('')
     
 

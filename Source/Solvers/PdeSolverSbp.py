@@ -155,8 +155,8 @@ class PdeSolverSbp(PdeSolver):
         # save sparsity information
         if (self.dim == 1) and (self.disc_type == 'had') and (self.neq_node > 1):
             self.vol_sparsity_unkronned = sp.set_gm_sparsity([self.Dx_phys_unkronned,
-                                                    fn.unkron_neq_gm(self.sat.vol_mat,self.neq_node)])
-            self.vol_sparsity = sp.set_gm_sparsity([self.Dx_phys, self.sat.vol_mat])
+                                          np.repeat(fn.unkron_neq_lm(self.sat.Esurf,self.neq_node)[:,:,np.newaxis],self.nelem,axis=2) ]) 
+            self.vol_sparsity = sp.set_gm_sparsity([self.Dx_phys, np.repeat(self.sat.Esurf[:,:,np.newaxis],self.nelem,axis=2)])
             self.Dx_phys_sp = sp.gm_to_sp(self.Dx_phys)
         elif self.dim == 2:
             if self.disc_type == 'had':

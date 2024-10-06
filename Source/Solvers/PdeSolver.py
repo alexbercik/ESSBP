@@ -197,8 +197,12 @@ class PdeSolver:
             '''
             
         else: raise Exception('Discretization type not understood. Try div or had.')
-        if surf_diss == None:
+        if surf_diss == None or surf_diss == 'ND' or surf_diss == 'nd' or surf_diss == 'central':
             self.surf_diss = {'diss_type':'ND'}
+        elif surf_diss == 'lf':
+            self.surf_diss = {'diss_type':'lf'}
+        elif surf_diss == 'upwind':
+            self.surf_diss = {'diss_type':'upwind'}
         else:
             self.surf_diss = surf_diss
             assert(isinstance(self.surf_diss, dict)),"surf_diss must be a dictionary"
