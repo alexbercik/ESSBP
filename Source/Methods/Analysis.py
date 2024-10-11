@@ -430,7 +430,7 @@ def symbolic(A):
 def run_convergence(solver, schedule_in=None, error_type='SBP',
              scale_dt=True, return_conv=False, savefile=None, labels=None,
              title=None, ylabel=None, xlabel=None, grid=False, convunc=True, 
-             ylim=None, ignore_fail=False):
+             ylim=None, ignore_fail=False, plot=True):
     '''
     Purpose
     ----------
@@ -471,6 +471,8 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
 
     if scale_dt:
         base_dt = solver.dt
+        if base_dt is None:
+            raise Exception('input solver must have a set dt value, not None')
         if solver.dim == 1:
             xmin, xmax, nn = solver.xmin, solver.xmax, solver.nn
         else:
@@ -550,11 +552,7 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
             variables_base[atti+2] = (attributes[atti],cases[casei][atti]) # assign attributes
             legend_strings[casei] += '{0}={1}, '.format(attributes[atti],cases[casei][atti])
         legend_strings[casei] = legend_strings[casei].strip().strip(',') # formatting
-        # if we change p, estimate that nen will also change by the same amount
-        if 'p' in attributes:
-            diff_p = cases[casei][attributes.index('p')] - solver.p
-        else:
-            diff_p = 0
+        
         try:
             for runi in range(n_runs):
                 variables = variables_base.copy() # for each run (refinement)
@@ -568,19 +566,8 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
                     raise Exception('Something went wrong')
                 variables[1] = ('nen',runs_nen[run_neni])
                 if scale_dt:
-                    if runs_nen[run_neni] == 0: neni = solver.nen
-                    else: neni = runs_nen[run_neni]
-                    if solver.dim == 1:
-                        xmin, xmax, nelem = solver.xmin, solver.xmax, runs_nelem[runi]
-                    else:
-                        # only estimate new dt based on scaling of x coordinate
-                        xmin, xmax = solver.xmin[0], solver.xmax[0]
-                        if isinstance(runs_nelem[runi], tuple):
-                            nelem = runs_nelem[runi][0]
-                        else: nelem = runs_nelem[runi]
-                    new_dx = (xmax - xmin) / (nelem*(neni+diff_p))
-                    new_dt = base_dt * new_dx / base_dx
-                    variables[-1] = ('dt',new_dt)
+                    variables[-1] = ('dt',None)
+                    
                 # add a few default things to save time
                 # TODO : add flag to also calculate conservation objectives
                 variables.append(('print_sol_norm', False))
@@ -592,6 +579,15 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
                 if labels is not None:
                     print('label:', labels[casei])
                 solver.reset(variables=variables)
+                if scale_dt:
+                    if solver.dim == 1:
+                        xmin, xmax, nn = solver.xmin, solver.xmax, solver.nn
+                    else:
+                        # only estimate new dt based on scaling of x coordinate
+                        xmin, xmax, nn = solver.xmin[0], solver.xmax[0], solver.nn[0]
+                    new_dx = (xmax - xmin) / nn
+                    new_dt = base_dt * new_dx / base_dx
+                    solver.set_timestep(new_dt)
                 solver.solve()
                 errors[casei,runi] = solver.calc_error(method=error_type)
                 if solver.dim == 1:
@@ -653,10 +649,11 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
 
     ''' Plot Results '''
     # use diffeq.plot_obj?
-    if title == None:
-        title = r"Convergence of " + error_type + " Error"
-    plot_conv(dofs, errors, legend_strings, solver.dim, title, savefile,
-                  ylabel=ylabel,xlabel=xlabel,grid=grid,convunc=convunc,ylim=ylim)
+    if plot:
+        if title == None:
+            title = r"Convergence of " + error_type + " Error"
+        plot_conv(dofs, errors, legend_strings, solver.dim, title, savefile,
+                    ylabel=ylabel,xlabel=xlabel,grid=grid,convunc=convunc,ylim=ylim)
     
     if return_conv:
         return dofs, errors, legend_strings
