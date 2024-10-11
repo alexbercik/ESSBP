@@ -140,7 +140,6 @@ class PdeSolver:
 
         # Time marching
         self.tm_method = tm_method.lower()
-        self.dt = dt
         self.t_final = t_final
 
         # Initial solution
@@ -223,8 +222,11 @@ class PdeSolver:
 
         assert isinstance(p, int), 'p must be an integer'
         self.p = p
-        assert isinstance(nen, int), 'nen must be an integer'
-        self.nen = nen
+        if nen == None:
+            self.nen = 0
+        else:
+            assert isinstance(nen, int), 'nen must be an integer'
+            self.nen = nen
         
         if self.dim == 1:
             assert isinstance(nelem, int), 'nelem must be an integer'
@@ -310,40 +312,6 @@ class PdeSolver:
 
         ''' Check all inputs '''
 
-        # Time marching data
-        if self.t_final == None:
-            print('No t_final given. Checking diffeq for a default t_final.')
-            self.t_final = self.diffeq.t_final
-        
-        if isinstance(self.t_final, int) or isinstance(self.t_final, float):
-            if hasattr(diffeq, 't_final'):
-                if (self.t_final != self.diffeq.t_final) and (self.diffeq.t_final is not None):
-                    print('WARNING: The diffeq default is t_final =',self.diffeq.t_final,', but you selected t_final =',t_final)
-            self.n_ts = int(np.round(self.t_final / self.dt))
-            if abs(self.n_ts - (self.t_final / self.dt)) > 1e-10:
-                dt_old = np.copy(self.dt)
-                self.dt = self.t_final/self.n_ts
-                print('WARNING: To ensure final time is exact, changing dt from {0} to {1}'.format(dt_old,self.dt))
-        elif self.t_final == 'steady':
-            self.n_ts = 100000
-            print('Indicated steady problem. Will use a convergence criteria to stop time march, or max {0} steps unless otherwise corrected.'.format(self.n_ts))
-            self.check_resid_conv = True
-        else:
-            raise Exception('ERROR: t_final not understood,', self.t_final) 
-        
-        if self.diffeq.nondimensionalize:
-            if self.diffeq.t_scale != 1.0:
-                print(f'WARNING: since nondimensionalizing, changing time from t_final and dt')
-                print(f'         from t_final={self.t_final} and dt={self.dt} to t_final={self.t_final * self.diffeq.t_scale} and dt={self.dt * self.diffeq.t_scale}.')
-                self.t_final = self.t_final * self.diffeq.t_scale
-                self.dt = self.dt * self.diffeq.t_scale
-        
-        if self.diffeq.steady and not self.check_resid_conv:
-            print('WARNING: Doing a steady solve with no residual checking. Consider setting check_resid_conv=True.')
-        
-        if not self.diffeq.steady and self.check_resid_conv:
-            print('WARNING: set a convergence criteria for an unsteady solve. Manually fixing to check_resid_conv=False.')
-
         # Domain
         if bc == None:
             print('No boundary conditions provided. Checking diffeq for a default.')
@@ -377,37 +345,16 @@ class PdeSolver:
         if self.settings['stop_after_metrics']:
             return
         
-        ''' Sanity Checks '''
-        
-        # time step stability
-        q = self.diffeq.set_q0()
-        if self.dim==1:
-            LFconst = np.max(self.diffeq.maxeig_dExdq(q))
-            dt = 0.1*(self.xmax-self.xmin)/self.nn/LFconst
-            if self.dt > dt:
-                print('WARNING: time step dt may not be small enough to remain stable.')
-                print('Assuming CFL = 0.1 and max wave speed = {0:.2g}, try dt < {1:.2g}'.format(LFconst, dt))
-        elif self.dim==2:
-            LFconstx = np.max(self.diffeq.maxeig_dExdq(q))
-            LFconsty = np.max(self.diffeq.maxeig_dEydq(q))
-            const = np.sqrt(LFconstx**2 + LFconsty**2)
-            dx = min((self.xmax[0]-self.xmin[0])/self.nn[0],(self.xmax[1]-self.xmin[1])/self.nn[1])
-            dt = 0.1*dx/const
-            if self.dt > dt:
-                print('WARNING: time step dt may not be small enough to remain stable.')
-                print('Assuming CFL = 0.1 and max wave speed = ({0:.2g}, {1:.2g}), try dt < {2:.2g}'.format(LFconstx, LFconsty, dt))
-        elif self.dim==3:
-            LFconstx = np.max(self.diffeq.maxeig_dExdq(q))
-            LFconsty = np.max(self.diffeq.maxeig_dEydq(q))
-            LFconstz = np.max(self.diffeq.maxeig_dEzdq(q))
-            const = np.sqrt(LFconstx**2 + LFconsty**2 + LFconstz**2)
-            dx = min((self.xmax[0]-self.xmin[0])/self.nn[0],(self.xmax[1]-self.xmin[1])/self.nn[1])
-            dt = 0.1*dx/const
-            if self.dt > dt:
-                print('WARNING: time step dt may not be small enough to remain stable.')
-                print('Assuming CFL = 0.1 and max wave speed = ({0:.2g}, {1:.2g}, {2:.2g}), try dt < {3:.2g}'.format(LFconstx, LFconsty, LFconstz, dt))
+        # Time marching data
+        if self.t_final == None:
+            print('No t_final given. Checking diffeq for a default t_final.')
+            self.t_final = self.diffeq.t_final
+        if (isinstance(self.t_final, int) or isinstance(self.t_final, float)) and hasattr(self.diffeq, 't_final'):
+            if (self.t_final != self.diffeq.t_final) and (self.diffeq.t_final is not None):
+                print('WARNING: The diffeq default is t_final =',self.diffeq.t_final,', but you selected t_final =',t_final)
+        self.set_timestep(dt)
                 
-        # Free Stream Preservation
+        # Free Stream Preservation sanity check
         if self.bc == 'periodic':
             test = self.free_stream(print_result=False)
             if test>1e-12:
@@ -424,6 +371,9 @@ class PdeSolver:
             q0 = q0_in
         else:
             q0 = self.diffeq.set_q0()
+
+        if self.dt_to_be_set:
+            raise Exception('Time step not set yet. Use set_timestep(dt) before running solve().')
         
         tm_class = TimeMarching(self.diffeq, self.tm_method, self.keep_all_ts,
                         skip_ts = self.skip_ts,
@@ -592,6 +542,91 @@ class PdeSolver:
                       bc=self.bc, xmin=self.xmin, xmax=self.xmax,
                       cons_obj_name=self.cons_obj_name,
                       bool_plot_sol=self.bool_plot_sol, print_sol_norm=self.print_sol_norm)
+        
+    def set_timestep(self, dt):
+        """
+        Purpose
+        ----------
+        Sets the appropriate time step, and runs all the necessary checks.
+        Allows one to easily reset the time step for a new solver instance.
+
+        Parameters
+        ----------
+        dt : float
+            The new time step to be used.
+        """
+
+        if dt == None:
+            print('WARNING: No time step given. Continuing with initialization, ignoring time marching.')
+            print('         Use set_timestep(dt) to set a time step before running solve().')
+            self.dt = None
+            self.n_ts = None
+            self.dt_to_be_set = True
+            return
+        
+        else:
+            self.dt = float(dt)
+            self.dt_to_be_set = False
+
+        # set the number of time steps
+        if isinstance(self.t_final, int) or isinstance(self.t_final, float):
+            self.n_ts = int(np.round(self.t_final / self.dt))
+            if abs(self.n_ts - (self.t_final / self.dt)) > 1e-10:
+                dt_old = np.copy(self.dt)
+                self.dt = self.t_final/self.n_ts
+                print('WARNING: To ensure final time is exact, changing dt from {0} to {1}'.format(dt_old,self.dt))
+        elif self.t_final == 'steady':
+            self.n_ts = 100000
+            print('Indicated steady problem. Will use a convergence criteria to stop time march, or max {0} steps unless otherwise corrected.'.format(self.n_ts))
+            self.check_resid_conv = True
+        else:
+            raise Exception('ERROR: t_final not understood,', self.t_final) 
+        
+        if self.diffeq.nondimensionalize:
+            if (self.diffeq.t_scale != 1.0) and (self.t_final != 'steady'):
+                print(f'WARNING: since nondimensionalizing, changing time from t_final and dt')
+                print(f'         from t_final={self.t_final} and dt={self.dt} to t_final={self.t_final * self.diffeq.t_scale} and dt={self.dt * self.diffeq.t_scale}.')
+                self.t_final = self.t_final * self.diffeq.t_scale
+                self.dt = self.dt * self.diffeq.t_scale
+
+        if self.diffeq.steady and not self.check_resid_conv:
+            print('WARNING: Doing a steady solve with no residual checking. Consider setting check_resid_conv=True.')
+        
+        if not self.diffeq.steady and self.check_resid_conv:
+            print('WARNING: set a convergence criteria for an unsteady solve. Manually fixing to check_resid_conv=False.')
+            self.check_resid_conv = False
+
+        # time step stability sanity check
+        q = self.diffeq.set_q0()
+        cfl = 0.5
+        if self.dim==1:
+            LFconst = np.max(self.diffeq.maxeig_dExdq(q))
+            dt = 0.1*(self.xmax-self.xmin)/self.nn/LFconst
+            if self.dt > dt:
+                print('WARNING: time step dt={0:.2g} may not be small enough to remain stable.'.format(self.dt))
+                print('Assuming CFL = {3:g} and max wave speed = {0:.2g}, try dt < {1:.2g}'.format(LFconst, dt, cfl))
+        elif self.dim==2:
+            LFconstx = np.max(self.diffeq.maxeig_dExdq(q))
+            LFconsty = np.max(self.diffeq.maxeig_dEydq(q))
+            const = np.sqrt(LFconstx**2 + LFconsty**2)
+            dx = min((self.xmax[0]-self.xmin[0])/self.nn[0],(self.xmax[1]-self.xmin[1])/self.nn[1])
+            dt = 0.1*dx/const
+            if self.dt > dt:
+                print('WARNING: time step dt={0:.2g} may not be small enough to remain stable.'.format(self.dt))
+                print('Assuming CFL = {3:g} and max wave speed = ({0:.2g}, {1:.2g}), try dt < {2:.2g}'.format(LFconstx, LFconsty, dt, cfl))
+        elif self.dim==3:
+            LFconstx = np.max(self.diffeq.maxeig_dExdq(q))
+            LFconsty = np.max(self.diffeq.maxeig_dEydq(q))
+            LFconstz = np.max(self.diffeq.maxeig_dEzdq(q))
+            const = np.sqrt(LFconstx**2 + LFconsty**2 + LFconstz**2)
+            dx = min((self.xmax[0]-self.xmin[0])/self.nn[0],(self.xmax[1]-self.xmin[1])/self.nn[1])
+            dt = 0.1*dx/const
+            if self.dt > dt:
+                print('WARNING: time step dt={0:.2g} may not be small enough to remain stable.'.format(self.dt))
+                print('Assuming CFL = {3:g} and max wave speed = ({0:.2g}, {1:.2g}, {2:.2g}), try dt < {3:.2g}'.format(LFconstx, LFconsty, LFconstz, dt, cfl))
+
+
+        
         
     def get_LHS(self, q=None, t=0., exact_dfdq=True, step=1.0e-4, istep=1.0e-15, finite_diff=False):
         '''
