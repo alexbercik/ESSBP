@@ -6,6 +6,9 @@ Created on Tue Dec  8 00:31:11 2020
 @author: bercik
 """
 
+import sympy as sp
+import numpy as np
+
 def profiler(command, filename="profile.stats", n_stats=50, verbose=False,
              sortby='cumulative'):
     """Profiler for a python program
@@ -40,8 +43,6 @@ def profiler(command, filename="profile.stats", n_stats=50, verbose=False,
         stats = pstats.Stats(filename).strip_dirs().sort_stats(sortby)
     return stats.print_stats(n_stats or {})
 
-import sympy as sp
-import numpy as np
 class TaylorSeries1D:
     """Class for symbolic Taylor series."""
     def __init__(self, f, num_terms=4):
@@ -87,19 +88,18 @@ def Check_Taylor_Series_1D(Mat,x,num_terms=4,notebook=True):
                 rounded_expr = rounded_expr.subs(number, nearest_decimal)
         return rounded_expr
 
-
     for i in range(len(x)):
         dx = 0
         for j in range(len(x)):
             if j==i:
-                dx += Mat[i,j]*u
+                dx += Mat[i,j]*u * (h_avg/h)
             else:
-                hx = (x[j]-x[i])*h/h_avg
+                hx = (x[j]-x[i]) * (h/h_avg)
                 taylor = u_Taylor(hx)
-                dx += Mat[i,j]*taylor
+                dx += Mat[i,j]*taylor * (h_avg/h) 
     
-        threshold = 1e-12
         dx = sp.simplify(dx)
+        #threshold = 1e-12
         #small_numbers = set([e for e in dx.atoms(sp.Number) if abs(e) < threshold])
         #numbers_near_one = set([e for e in dx.atoms(sp.Number) if abs(e - 1) < threshold])
         #d = {s: 0 for s in small_numbers}

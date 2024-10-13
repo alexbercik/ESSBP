@@ -161,6 +161,110 @@ def lm_lv(csr, vec):
     return result
 
 @njit
+def lm_lm(csr1, csr2):
+    '''
+    Perform sparse matrix-matrix multiplication in CSR format.
+
+    Parameters
+    ----------
+    csr1 : tuple (data1, indices1, indptr1)
+        CSR representation of the first matrix (non-zero values, column indices, row pointers)
+    csr2 : tuple (data2, indices2, indptr2)
+        CSR representation of the second matrix (non-zero values, column indices, row pointers)
+
+    Returns
+    -------
+    result_csr : tuple (data, indices, indptr)
+        CSR representation of the result of the matrix-matrix multiplication.
+    '''
+
+    data1, indices1, indptr1 = csr1
+    data2, indices2, indptr2 = csr2
+
+    nrows = len(indptr1) - 1
+    ncols = max(indices2) + 1  # This assumes that csr2 is well-formed.
+    indptr_result = np.zeros(nrows + 1, dtype=np.int32)
+
+    data_result = []
+    indices_result = []
+
+    row_accumulator = np.zeros(ncols, dtype=np.float64)
+    marker = -np.ones(ncols, dtype=np.int32)  # Marker array to track columns in row_accumulator
+    
+    for i in range(nrows):
+        row_start = indptr_result[i]
+        current_length = 0
+        
+        # Iterate over non-zero elements of row i in csr1
+        for jj in range(indptr1[i], indptr1[i+1]):
+            col1 = indices1[jj]
+            val1 = data1[jj]
+
+            # Multiply with corresponding row in csr2
+            for kk in range(indptr2[col1], indptr2[col1+1]):
+                col2 = indices2[kk]
+                val2 = data2[kk]
+
+                # Accumulate the result in row_accumulator
+                if marker[col2] != i:
+                    row_accumulator[col2] = 0
+                    marker[col2] = i
+                row_accumulator[col2] += val1 * val2
+
+        # Now collect all non-zero entries from row_accumulator for this row
+        for j in range(ncols):
+            if marker[j] == i and row_accumulator[j] != 0:
+                indices_result.append(j)
+                data_result.append(row_accumulator[j])
+                current_length += 1
+        
+        # Update row pointer
+        indptr_result[i+1] = row_start + current_length
+
+    data_result = np.array(data_result, dtype=np.float64)
+    indices_result = np.array(indices_result, dtype=np.int32)
+
+    return data_result, indices_result, indptr_result
+
+@njit
+def lm_dgm(csr, mat):
+    '''
+    Perform sparse matrix-matrix multiplication in CSR format.
+
+    Parameters
+    ----------
+    data : 1D array
+        Non-zero values of the CSR matrix
+    indices : 1D array
+        Column indices corresponding to values in `data`
+    indptr : 1D array
+        Row pointers to start of rows in `data`
+    mat : 3D array
+        Dense global matrix to multiply with the CSR matrix (number of rows should match CSR matrix columns)
+
+    Returns
+    -------
+    result : 3D array - dense global matrix
+        The result of the matrix-matrix multiplication
+    '''
+
+    # Get the CSR data for the current element
+    data, indices, indptr = csr
+
+    nen1 = len(indptr) - 1
+    _, nen2, nelem = mat.shape
+    result = np.zeros((nen1, nen2, nelem), dtype=mat.dtype)
+    
+    for e in range(nelem):
+        for i in range(nen1):
+            for jj in range(indptr[i], indptr[i+1]):
+                col_idx = indices[jj]
+                for k in range(nen2):
+                    result[i, k, e] += data[jj] * mat[col_idx, k, e]
+    
+    return result
+
+@njit
 def gm_gv(csr_list, b):
     '''
     Perform global matrix-vector multiplication using a list of CSR matrices.
@@ -206,18 +310,18 @@ def lm_gv(csr, b):
     c : numpy array of shape (nen1, nelem)
         Result of the matrix-vector multiplication
     '''
-    nen1 = len(csr[2]) - 1  # Number of rows in the sparse matrix (from indptr)
-    nen2, nelem = np.shape(b)  # Number of elements (same as the third dimension of the original tensor)
-
-    if nen1 != nen2:
-        raise ValueError('Dimensions do not match')
     
     # Initialize result array
+    data, indices, indptr = csr
+    nen1 = len(indptr) - 1  # Number of rows in the sparse matrix 
+    _, nelem = np.shape(b)  # Number of elements (same as the third dimension of the original tensor)
     c = np.zeros((nen1, nelem), dtype=b.dtype)
     
     # Perform sparse matrix-vector multiplication for each element
     for e in range(nelem):
-        c[:, e] = lm_lv(csr, b[:, e])
+        for i in range(nen1):
+            for jj in range(indptr[i], indptr[i+1]):
+                c[i, e] += data[jj] * b[indices[jj], e]
     
     return c
 
@@ -459,6 +563,84 @@ def lmT_gm_had_diff(AT,B):
         c[:, e] = lmT_lm_had_diff(AT, B[e])
     
     return c
+
+@njit 
+def build_F_vol_sca(q, flux, sparsity):
+    ''' Builds a sparsified Flux differencing matrix (used for Hadamard form) given a 
+    solution vector q, the number of equations per node, a 2-point flux function, and 
+    a sparsity pattern. Only computes the entries specified by indices and indptr.
+    Takes advantage of symmetry since q1 = q2 = q '''
+    nen, nelem = q.shape 
+    F_vol = List()
+    for e in range(nelem):
+        # Initialize lists to store CSR data
+        indices = sparsity[e][0]
+        indptr = sparsity[e][1]
+        new_data = np.zeros((len(indices)), dtype=q.dtype)       
+        colptrs = np.zeros(nen, dtype=np.int32)
+        
+        for i in range(nen): # loop over rows, NOT kroned with neq
+
+            col_start = indptr[i]
+            col_end = indptr[i + 1]
+
+            for j in range(i,nen): # loop over columns, NOT kroned with neq
+
+                col_start_T = indptr[j]
+                col_end_T = indptr[j + 1]
+
+                add_entry = (j in indices[col_start:col_end])
+                add_entry_T = (i in indices[col_start_T:col_end_T]) and (i != j)
+
+                if add_entry or add_entry_T:
+
+                    fij = flux(q[i, e], q[j, e])
+                        
+                    if add_entry:
+                        new_col_ptr = col_start + colptrs[i]
+                        new_data[new_col_ptr] = fij
+
+                    if add_entry_T:
+                        new_col_ptr = col_start_T + colptrs[j]
+                        new_data[new_col_ptr] = fij
+
+                    if add_entry: colptrs[i] += 1
+                    if add_entry_T: colptrs[j] += 1
+
+
+        F_vol.append((new_data, indices, indptr))
+    return F_vol
+
+@njit 
+def build_F_sca(q1, q2, flux, sparsity):
+    ''' Builds a sparsified Flux differencing matrix (used for Hadamard form) given a 
+    solution vector q, the number of equations per node, a 2-point flux function, and 
+    a sparsity pattern. Only computes the entries specified by indices and indptr.'''
+    nen, nelem = q1.shape 
+    F = List()
+    for e in range(nelem):
+        # Initialize lists to store CSR data
+        indices = sparsity[e][0]
+        indptr = sparsity[e][1]
+        new_data = np.zeros((len(indices)), dtype=q1.dtype)       
+        
+        for i in range(nen): # loop over rows, NOT kroned with neq
+            colptr = 0
+            col_start = indptr[i]
+            col_end = indptr[i + 1]
+
+            for j in range(nen): # loop over columns, NOT kroned with neq
+                if (j in indices[col_start:col_end]):
+
+                    fij = flux(q1[i, e], q2[j, e])
+                        
+                    new_col_ptr = col_start + colptr
+                    new_data[new_col_ptr] = fij
+
+                    colptr += 1
+
+        F.append((new_data, indices, indptr))
+    return F
 
 @njit 
 def build_F_vol_sys(neq, q, flux, sparsity_unkronned, sparsity):
@@ -730,16 +912,36 @@ if __name__ == '__main__':
     gm2[4, 1, 0] = 0.
     gm2[7, 8, 1] = 0.
     gm2_sp = gm_to_sp(gm2)
+    lv = np.random.rand(11)
     gv = np.random.rand(11, 3)
     lm = np.random.rand(10, 11)
     lm_sp = lm_to_sp(lm)
-    lm2 = np.random.rand(10, 11)
+    lm2 = np.random.rand(11, 10)
     lm2_sp = lm_to_sp(lm2)
     gm_list = [gm, gm]
+
+    c = lm_lv(lm_sp, lv)
+    c2 = fn.lm_lv(lm, lv)
+    print('test lm_lv:', np.max(abs(c-c2)))
+
+    c = sp_to_lm(lm_lm(lm_sp, lm2_sp))
+    c2 = fn.lm_lm(lm, lm2)
+    print('test lm_lm:', np.max(abs(c-c2)))
+
+    c = lm_gv(lm_sp, gv)
+    c2 = fn.lm_gv(lm, gv)
+    print('test lm_gv:', np.max(abs(c-c2)))
 
     c = gm_gv(gm_sp, gv)
     c2 = fn.gm_gv(gm, gv)
     print('test gm_gv:', np.max(abs(c-c2)))
+
+    c = lm_dgm(lm2_sp, gm)
+    c2 = fn.lm_gm(lm2, gm)
+    print('test lm_dgm:', np.max(abs(c-c2)))
+
+    lm2 = np.random.rand(10, 11)
+    lm2_sp = lm_to_sp(lm2)
 
     c = lm_lm_had_diff(lm_sp, lm2_sp)
     c2 = np.sum(np.multiply(lm, lm2),axis=1)
@@ -757,6 +959,36 @@ if __name__ == '__main__':
     print('test set_sparsity:', diff)
 
     print('test sp_to_gm:', np.max(abs(sp_to_gm(gm_sp)) - gm))
+
+    
+    @njit
+    def flux(q1,q2):
+        return 0.5*(q1 + q2)
+    
+    nelem = 2
+    nen = 3
+    q = np.random.rand(nen, nelem)
+    q2 = np.random.rand(nen, nelem)
+    gm = np.random.rand(nen, nen, nelem)
+    # add some sparsity
+    gm[1, 0, 0] = 0.
+    gm[1, 2, 0] = 0.
+    gm[2, 2, 1] = 0.
+    gm[0, 2, 1] = 0.
+    sparsity = set_gm_sparsity([gm])
+    gm_sp = gm_to_sp(gm)
+
+    F = build_F_vol_sca(q, flux, sparsity)
+    c = gm_gm_had_diff(gm_sp, F)
+    F2 = fn.build_F_vol_sca(q, flux)
+    c2 = fn.gm_gm_had_diff(gm, F2)
+    print('test build_F_vol_sca:', np.max(abs(c-c2)))
+
+    F = build_F_sca(q, q2, flux, sparsity)
+    c = gm_gm_had_diff(gm_sp, F)
+    F2 = fn.build_F_sca(q, q2, flux)
+    c2 = fn.gm_gm_had_diff(gm, F2)
+    print('test build_F_sca:', np.max(abs(c-c2)))
 
     neq = 2
     nelem = 2
@@ -783,10 +1015,6 @@ if __name__ == '__main__':
     gm2_kron_sp = gm_to_sp(gm2_kron)
     sparsity_unkronned2 = set_gm_sparsity([gm2])
     sparsity_kron2 = set_gm_sparsity([gm2_kron])
-
-    @njit
-    def flux(q1,q2):
-        return 0.5*(q1 + q2)
     
     F = build_F_vol_sys(neq, q, flux, sparsity_unkronned, sparsity_kron)
     c = gm_gm_had_diff(gm_kron_sp, F)

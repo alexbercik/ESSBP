@@ -29,7 +29,7 @@ def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
                 B[0] = 0.
                 B[-1] = 0.
 
-        if s==2:
+        elif s==2:
             if nen < 3:
                 raise ValueError(f"Invalid number of nodes. nen = {nen}")
 
@@ -188,7 +188,7 @@ def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
                 B[-3] = 0.
 
         else:
-            raise Exception('Invalid choice of s. Only coded up s=2,3,4,5.')
+            raise Exception('Invalid choice of s. Only coded up s=1,2,3,4,5.')
         
     elif sbp_type.lower() == 'lgl':
                 # Initialize the matrix as a dense NumPy array

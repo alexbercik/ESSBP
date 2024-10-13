@@ -49,8 +49,11 @@ class Sat(SatDer1, SatDer2):
         self.met_form = met_form
         assert met_form=='skew_sym','SATs not currently set up for divergence form metrics'
         self.bc = solver.bc
-        self.sparsity = None
-        self.sparsity_unkronned = None
+        self.sparse = solver.sat_sparse
+        self.sparsity, self.sparsity_unkronned = None, None
+        self.xsparsity, self.xsparsity_unkronned = None, None
+        self.ysparsity, self.ysparsity_unkronned = None, None
+        self.zsparsity, self.zsparsity_unkronned = None, None
 
         if self.diss_type not in ['nd','symmetric','upwind','lf','llf','lax_friedrichs','ec']:
             if 'jac_type' in solver.surf_diss.keys():
@@ -112,13 +115,36 @@ class Sat(SatDer1, SatDer2):
             self.maxeig_type = 'lf'
             self.jac_type = 'sca'
             self.entropy_fix = False
+
+        if self.sparse:
+            self.lm_lv = sp.lm_lv
+            self.lm_gv = sp.lm_gv
+            self.lm_lm = sp.lm_lm
+            self.gm_gv = sp.gm_gv
+            self.lm_gm_had_diff = sp.lm_gm_had_diff
+            self.lmT_gm_had_diff = sp.lmT_gm_had_diff
+            self.gm_gm_had_diff = sp.gm_gm_had_diff
+            self.gmT_gm_had_diff = sp.gmT_gm_had_diff
+            #self.lm_dgm = sp.lm_dgm
+        else:
+            self.lm_lv = fn.lm_lv
+            self.lm_gv = fn.lm_gv
+            self.lm_lm = fn.lm_lm
+            self.gm_gv = fn.gm_gv
+            self.lm_gm_had_diff = fn.lm_gm_had_diff
+            self.lm_gmT_had_diff = staticmethod(lambda lm,gm: fn.lm_gm_had_diff(lm,np.transpose(gm,(1,0,2))))
+            self.gm_gm_had_diff = fn.gm_gm_had_diff
+            self.gm_gmT_had_diff = staticmethod(lambda lm,gm: fn.gm_gm_had_diff(lm,np.transpose(gm,(1,0,2))))
+            #self.lm_dgm = fn.lm_gm
         
         if self.dim == 1:
             self.tL = solver.tL
             self.tR = solver.tR
+            self.tLT = self.tL.T
+            self.tRT = self.tR.T
             self.calcEx = solver.diffeq.calcEx
             self.dExdq = solver.diffeq.dExdq
-            self.d2Exdq2 = solver.diffeq.d2Exdq2
+            #self.d2Exdq2 = solver.diffeq.d2Exdq2
             self.dExdq_eig_abs = solver.diffeq.dExdq_eig_abs
             self.maxeig_dExdq = solver.diffeq.maxeig_dExdq
             # self.metrics = fn.repeat_neq_gv(solver.mesh.metrics[:,0,:],self.neq_node)
@@ -127,15 +153,53 @@ class Sat(SatDer1, SatDer2):
             # NOTE: metrics and bdy_metrics = 1 for 1D
             self.calc_had_flux = solver.calc_had_flux
 
-            if self.neq_node == 1:
-                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sca(q1, q2, flux))
-                #self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sca(q1, q2, flux))
-            else:
-                self.build_F = staticmethod(lambda q1, q2, flux: sp.build_F_sys(self.neq_node, q1, q2, flux, 
-                                                                                self.sparsity_unkronned, self.sparsity))
-                #self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sys(q1, q2, flux))
+            if self.disc_type == 'had':
+                if self.neq_node == 1:
+                    if self.sparse:
+                        self.build_F = staticmethod(lambda q1, q2: sp.build_F_sca(q1, q2, self.calc_had_flux))
+                    else:
+                        self.build_F = staticmethod(lambda q1, q2: fn.build_F_sca(q1, q2, self.calc_had_flux))
+                else:
+                    if self.sparse:
+                        self.build_F = staticmethod(lambda q1, q2: sp.build_F_sys(self.neq_node, q1, q2, self.calc_had_flux, 
+                                                                                    self.sparsity_unkronned, self.sparsity))
+                    else:
+                        self.build_F = staticmethod(lambda q1, q2: fn.build_F_sys(self.neq_node, q1, q2, self.calc_had_flux, 
+                                                                                    self.sparsity_unkronned, self.sparsity))
+                    
+            ''' save useful matrices so as not to calculate on each loop '''
+
+            self.Esurf = self.tR @ self.tRT - self.tL @ self.tLT
+            #self.vol_mat = fn.lm_gdiag(self.Esurf,self.metrics) # metrics are = 1 for 1D
+            self.ta = self.tL @ self.tRT
+            self.tb = self.tR @ self.tLT
+            #self.taphys = fn.lm_gm(self.tL, fn.gdiag_lm(self.bdy_metrics[:,0,:],self.tRT))
+            #self.tbphys = fn.lm_gm(self.tR, fn.gdiag_lm(self.bdy_metrics[:,1,:],self.tLT))
+
+            if self.sparse:
+                self.Esurf = sp.lm_to_sp(self.Esurf)
+                self.tL = sp.lm_to_sp(self.tL)
+                self.tR = sp.lm_to_sp(self.tR)
+                self.tLT = sp.lm_to_sp(self.tLT)
+                self.tRT = sp.lm_to_sp(self.tRT)
+                self.ta = sp.lm_to_sp(self.ta)
+                self.tb = sp.lm_to_sp(self.tb)
+
+                if self.disc_type == 'had':
+                    taT = np.ascontiguousarray(self.ta.T)
+                    self.taT = sp.lm_to_sp(taT)
+
+                    if self.neq_node > 1:
+                        taphysT_pad = np.repeat(taT[:,:,np.newaxis], self.nelem + 1, axis=2)
+                        taphysT_pad[:,:,-1] = self.tb.T
+                        tbphys_pad = np.repeat(self.tb[:,:,np.newaxis], self.nelem + 1, axis=2)
+                        tbphys_pad[:,:,0] = self.ta
+                        self.sparsity = sp.set_gm_sparsity([taphysT_pad,tbphys_pad])
+                        self.sparsity_unkronned = sp.set_gm_sparsity([fn.unkron_neq_gm(taphysT_pad,self.neq_node),
+                                                                    fn.unkron_neq_gm(tbphys_pad,self.neq_node)])
             
         elif self.dim == 2:
+
             tL = solver.tL[::self.neq_node,::self.neq_node]
             tR = solver.tR[::self.neq_node,::self.neq_node]
             self.Hperp = solver.H_perp # should be flat
@@ -158,16 +222,65 @@ class Sat(SatDer1, SatDer2):
             self.maxeig_dEydq = solver.diffeq.maxeig_dEydq
             self.maxeig_dEndq = solver.diffeq.maxeig_dEndq
 
-            if self.neq_node == 1:
-                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sca_2d(q1, q2, flux))
-                #self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sca_2d(q1, q2, flux))
-            else:
-                self.build_F = staticmethod(lambda q1, q2, flux: sp.build_F_sys_2d(self.neq_node, q1, q2, flux, 
-                                                                                self.xsparsity_unkronned, self.xsparsity,
-                                                                                self.ysparsity_unkronned, self.ysparsity))
-                #self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sys_2d(q1, q2, flux))
+            if self.disc_type == 'had':
+                if self.neq_node == 1:
+                    if self.sparse:
+                        self.build_F = staticmethod(lambda q1, q2: sp.build_F_sca_2d(q1, q2, self.calc_had_flux))
+                    else:
+                        self.build_F = staticmethod(lambda q1, q2: fn.build_F_sca_2d(q1, q2, self.calc_had_flux))
+                else:
+                    if self.sparse:
+                        self.build_F = staticmethod(lambda q1, q2: sp.build_F_sys_2d(self.neq_node, q1, q2, self.calc_had_flux, 
+                                                                                    self.xsparsity_unkronned, self.xsparsity,
+                                                                                    self.ysparsity_unkronned, self.ysparsity))
+                    else:
+                        self.build_F = staticmethod(lambda q1, q2: fn.build_F_sys_2d(self.neq_node, q1, q2, self.calc_had_flux, 
+                                                                                    self.xsparsity_unkronned, self.xsparsity,
+                                                                                    self.ysparsity_unkronned, self.ysparsity))
+
+            ''' save useful matrices so as not to calculate on each loop '''
+
+            self.Esurf = self.tR @ np.diag(self.Hperp) @ self.tRT - self.tL @ np.diag(self.Hperp) @ self.tLT
+            # for volume terms, matrices to contract with x_phys and y_phys flux matrices
+            self.vol_x_mat = [fn.lm_gdiag(self.Esurf,metrics[:,0,:]) for metrics in self.metrics]
+            self.vol_y_mat = [fn.lm_gdiag(self.Esurf,metrics[:,1,:]) for metrics in self.metrics]
+            # for surface terms, matrices to contract with x_phys and y_phys flux matrices on a and b facets
+            self.taphysx = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,0,0,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
+            self.taphysy = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,0,1,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
+            self.tbphysx = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,1,0,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
+            self.tbphysy = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,1,1,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
+            self.tLHperp = self.tL * self.Hperp
+            self.tRHperp = self.tR * self.Hperp
+
+            if self.sparse:
+                self.tLHperp = sp.lm_to_sp(self.tLHperp)
+                self.tLHperp = sp.lm_to_sp(self.tLHperp)
+                self.vol_x_mat = [sp.gm_to_sp(gm_mat) for gm_mat in self.vol_x_mat]   
+                self.vol_y_mat = [sp.gm_to_sp(gm_mat) for gm_mat in self.vol_y_mat]
+                self.tbphysx = [sp.gm_to_sp(gm_mat) for gm_mat in self.tbphysx]
+                self.tbphysy = [sp.gm_to_sp(gm_mat) for gm_mat in self.tbphysy] 
+                if (self.disc_type == 'had'):
+                    taphysxT = [np.ascontiguousarray(np.transpose(gm_mat,(1,0,2))) for gm_mat in self.taphysx]
+                    taphysyT = [np.ascontiguousarray(np.transpose(gm_mat,(1,0,2))) for gm_mat in self.taphysy]
+                    self.taphysxT = [sp.gm_to_sp(gm_mat) for gm_mat in taphysxT]
+                    self.taphysyT = [sp.gm_to_sp(gm_mat) for gm_mat in taphysyT]
+                    taphysxT_pad = [fn.pad_gm_1dR(taphysxT[i],self.tbphysx[i][:,:,-1]) for i in range(len(taphysxT))]
+                    taphysyT_pad = [fn.pad_gm_1dR(taphysyT[i],self.tbphysy[i][:,:,-1]) for i in range(len(taphysxT))]
+                    tbphysx_pad = [fn.pad_gm_1dL(self.tbphysx[i],taphysxT[i][:,:,0]) for i in range(len(taphysxT))]
+                    tbphysy_pad = [fn.pad_gm_1dL(self.tbphysy[i],taphysyT[i][:,:,0]) for i in range(len(taphysyT))]
+                    self.xsparsity = sp.set_gm_sparsity([*taphysxT_pad,*tbphysx_pad])
+                    self.xsparsity_unkronned = sp.set_gm_sparsity([*[fn.unkron_neq_gm(mat,self.neq_node) for mat in taphysxT_pad],
+                                                                *[fn.unkron_neq_gm(mat,self.neq_node) for mat in tbphysx_pad]]) 
+                    self.ysparsity = sp.set_gm_sparsity([*taphysyT_pad,*tbphysy_pad])
+                    self.ysparsity_unkronned = sp.set_gm_sparsity([*[fn.unkron_neq_gm(mat,self.neq_node) for mat in taphysyT_pad],
+                                                                *[fn.unkron_neq_gm(mat,self.neq_node) for mat in tbphysy_pad]]) 
+                else:
+                    self.taphysx = [sp.gm_to_sp(gm_mat) for gm_mat in self.taphysx]
+                    self.taphysy = [sp.gm_to_sp(gm_mat) for gm_mat in self.taphysy] 
         
         elif self.dim == 3:
+
+            assert not self.sparse, '3D SATs assume dense matrices.'
             eye = np.eye(self.nen*self.neq_node)
             self.Hperp = solver.H_perp
             if self.direction == 'x': 
@@ -197,77 +310,25 @@ class Sat(SatDer1, SatDer2):
             self.maxeig_dEzdq = solver.diffeq.maxeig_dEzdq
             self.maxeig_dEndq = solver.diffeq.maxeig_dEndq
 
-            if self.neq_node == 1:
-                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sca(q1, q2, flux))
-                #self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sca(q1, q2, flux))
-            else:
-                self.build_F = staticmethod(lambda q1, q2, flux: fn.build_F_sys(self.neq_node, q1, q2, flux))
-                #self.build_F_vol = staticmethod(lambda q1, q2, flux: fn.build_F_vol_sys(q1, q2, flux))
-            
-            
-        ''' save useful matrices so as not to calculate on each loop '''
+            if self.disc_type == 'had':
+                if self.neq_node == 1:
+                    if self.sparse:
+                        self.build_F = staticmethod(lambda q1, q2: sp.build_F_sca_3d(q1, q2, self.calc_had_flux))
+                    else:
+                        self.build_F = staticmethod(lambda q1, q2: fn.build_F_sca_3d(q1, q2, self.calc_had_flux))
+                else:
+                    if self.sparse:
+                        self.build_F = staticmethod(lambda q1, q2: sp.build_F_sys_3d(self.neq_node, q1, q2, self.calc_had_flux, 
+                                                                                    self.xsparsity_unkronned, self.xsparsity,
+                                                                                    self.ysparsity_unkronned, self.ysparsity,
+                                                                                    self.zsparsity_unkronned, self.zsparsity))
+                    else:
+                        self.build_F = staticmethod(lambda q1, q2: fn.build_F_sys_3d(self.neq_node, q1, q2, self.calc_had_flux, 
+                                                                                    self.xsparsity_unkronned, self.xsparsity,
+                                                                                    self.ysparsity_unkronned, self.ysparsity,
+                                                                                    self.zsparsity_unkronned, self.zsparsity))
+            #TODO: pick out the necessary sparse matrices
 
-        self.tLT = self.tL.T
-        self.tRT = self.tR.T
-        if self.dim == 1:
-            self.Esurf = self.tR @ self.tRT - self.tL @ self.tLT
-            #self.vol_mat = fn.lm_gdiag(self.Esurf,self.metrics) # metrics are = 1 fpr 1D
-            self.ta = self.tL @ self.tRT
-            self.tb = self.tR @ self.tLT
-            #self.taphys = fn.lm_gm(self.tL, fn.gdiag_lm(self.bdy_metrics[:,0,:],self.tRT))
-            #self.tbphys = fn.lm_gm(self.tR, fn.gdiag_lm(self.bdy_metrics[:,1,:],self.tLT))
-
-            if (self.disc_type == 'had') and (self.neq_node > 1):
-                self.Esurf_sp = sp.lm_to_sp(self.Esurf)
-                taT = np.ascontiguousarray(self.ta.T)
-                self.taT_sp = sp.lm_to_sp(taT)
-                self.tb_sp = sp.lm_to_sp(self.tb)
-
-                taphysT_pad = np.repeat(taT[:,:,np.newaxis], self.nelem + 1, axis=2)
-                taphysT_pad[:,:,-1] = self.tb.T
-                tbphys_pad = np.repeat(self.tb[:,:,np.newaxis], self.nelem + 1, axis=2)
-                tbphys_pad[:,:,0] = self.ta
-                self.sparsity = sp.set_gm_sparsity([taphysT_pad,tbphys_pad])
-                self.sparsity_unkronned = sp.set_gm_sparsity([fn.unkron_neq_gm(taphysT_pad,self.neq_node),
-                                                            fn.unkron_neq_gm(tbphys_pad,self.neq_node)])
-    
-        elif self.dim == 2:
-            self.Esurf = self.tR @ np.diag(self.Hperp) @ self.tRT - self.tL @ np.diag(self.Hperp) @ self.tLT
-            # for volume terms, matrices to contract with x_phys and y_phys flux matrices
-            self.vol_x_mat = [fn.lm_gdiag(self.Esurf,metrics[:,0,:]) for metrics in self.metrics]
-            self.vol_y_mat = [fn.lm_gdiag(self.Esurf,metrics[:,1,:]) for metrics in self.metrics]
-            # for surface terms, matrices to contract with x_phys and y_phys flux matrices on a and b facets
-            self.taphysx = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,0,0,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
-            self.taphysy = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,0,1,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
-            self.tbphysx = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,1,0,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
-            self.tbphysy = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,1,1,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
-
-            self.vol_x_mat_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.vol_x_mat]   
-            self.vol_y_mat_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.vol_y_mat]
-            if (self.disc_type == 'had'):
-                taphysxT = [np.ascontiguousarray(np.transpose(gm_mat,(1,0,2))) for gm_mat in self.taphysx]
-                taphysyT = [np.ascontiguousarray(np.transpose(gm_mat,(1,0,2))) for gm_mat in self.taphysy]
-                self.taphysxT_sp = [sp.gm_to_sp(gm_mat) for gm_mat in taphysxT]
-                self.taphysyT_sp = [sp.gm_to_sp(gm_mat) for gm_mat in taphysyT]
-            else:
-                self.taphysx_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.taphysx]
-                self.taphysy_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.taphysy]
-            self.tbphysx_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.tbphysx]
-            self.tbphysy_sp = [sp.gm_to_sp(gm_mat) for gm_mat in self.tbphysy]  
-
-            if (self.disc_type == 'had'):
-                taphysxT_pad = [fn.pad_gm_1dR(taphysxT[i],self.tbphysx[i][:,:,-1]) for i in range(len(taphysxT))]
-                taphysyT_pad = [fn.pad_gm_1dR(taphysyT[i],self.tbphysy[i][:,:,-1]) for i in range(len(taphysxT))]
-                tbphysx_pad = [fn.pad_gm_1dL(self.tbphysx[i],taphysxT[i][:,:,0]) for i in range(len(taphysxT))]
-                tbphysy_pad = [fn.pad_gm_1dL(self.tbphysy[i],taphysyT[i][:,:,0]) for i in range(len(taphysyT))]
-                self.xsparsity = sp.set_gm_sparsity([*taphysxT_pad,*tbphysx_pad])
-                self.xsparsity_unkronned = sp.set_gm_sparsity([*[fn.unkron_neq_gm(mat,self.neq_node) for mat in taphysxT_pad],
-                                                            *[fn.unkron_neq_gm(mat,self.neq_node) for mat in tbphysx_pad]]) 
-                self.ysparsity = sp.set_gm_sparsity([*taphysyT_pad,*tbphysy_pad])
-                self.ysparsity_unkronned = sp.set_gm_sparsity([*[fn.unkron_neq_gm(mat,self.neq_node) for mat in taphysyT_pad],
-                                                            *[fn.unkron_neq_gm(mat,self.neq_node) for mat in tbphysy_pad]])          
-        
-        elif self.dim == 3:
             self.Esurf = self.tR @ np.diag(self.Hperp) @ self.tRT - self.tL @ np.diag(self.Hperp) @ self.tLT
             # for volume terms, matrices to contract with x_phys, y_phys, and z_phys flux matrices
             self.vol_x_mat = [fn.lm_gdiag(self.Esurf,metrics[:,0,:]) for metrics in self.metrics]
@@ -280,6 +341,8 @@ class Sat(SatDer1, SatDer2):
             self.tbphysx = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp * bdy_metrics[:,1,0,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
             self.tbphysy = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp * bdy_metrics[:,1,1,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
             self.tbphysz = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp * bdy_metrics[:,1,2,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
+            self.tLHperp = self.tL * self.Hperp
+            self.tRHperp = self.tR * self.Hperp
             
 
 
@@ -947,8 +1010,8 @@ class Sat(SatDer1, SatDer2):
     def diss_cons_1d(self,qL,qR):
         ''' dissipation in conservative variables '''
         absA_dq = self.calc_absA_dq(qL,qR)
-        dissL = self.tL @ absA_dq[:,:-1]
-        dissR = self.tR @ absA_dq[:,1:]
+        dissL = self.lm_gv(self.tL, absA_dq[:,:-1])
+        dissR = self.lm_gv(self.tR, absA_dq[:,1:])
         
         diss = (dissL - dissR)/2
         return diss
@@ -957,8 +1020,8 @@ class Sat(SatDer1, SatDer2):
         ''' dissipation in conservative variables '''
         metrics = fn.pad_ndR(self.bdy_metrics[idx][::self.neq_node,0,:,:], self.bdy_metrics[idx][::self.neq_node,1,:,-1])
         absA_dq = self.calc_absA_dq(qL,qR,metrics)
-        dissL = (self.tL * self.Hperp) @ absA_dq[:,:-1]
-        dissR = (self.tR * self.Hperp) @ absA_dq[:,1:]
+        dissL = self.lm_gv(self.tLHperp, absA_dq[:,:-1])
+        dissR = self.lm_gv(self.tLHperp, absA_dq[:,1:])
         
         diss = (dissL - dissR)/2
         return diss
@@ -966,8 +1029,8 @@ class Sat(SatDer1, SatDer2):
     def diss_ent_1d(self,qL,qR):
         ''' dissipation in entropy variables '''
         absAP_dw = self.calc_absAP_dw(qL,qR)
-        dissL = self.tL @ absAP_dw[:,:-1]
-        dissR = self.tR @ absAP_dw[:,1:]
+        dissL = self.lm_gv(self.tL, absAP_dw[:,:-1])
+        dissR = self.lm_gv(self.tR, absAP_dw[:,1:])
         
         diss = (dissL - dissR)/2
         return diss
@@ -976,8 +1039,8 @@ class Sat(SatDer1, SatDer2):
         ''' dissipation in entropy variables '''
         metrics = fn.pad_ndR(self.bdy_metrics[idx][::self.neq_node,0,:,:], self.bdy_metrics[idx][::self.neq_node,1,:,-1])
         absAP_dw = self.calc_absAP_dw(qL,qR,metrics)
-        dissL = (self.tL * self.Hperp) @ absAP_dw[:,:-1]
-        dissR = (self.tR * self.Hperp) @ absAP_dw[:,1:]
+        dissL = self.lm_gv(self.tLHperp, absAP_dw[:,:-1])
+        dissR = self.lm_gv(self.tLHperp, absAP_dw[:,1:])
         
         diss = (dissL - dissR)/2
         return diss

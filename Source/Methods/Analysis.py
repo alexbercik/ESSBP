@@ -9,7 +9,9 @@ import subprocess # see https://www.youtube.com/watch?v=2Fp1N6dof0Y for tutorial
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import rc
+import matplotlib.ticker as tik
 rc('text', usetex=True)
+plt.rcParams['text.latex.preamble'] = r'\usepackage{amsmath} \usepackage{bm}'
 from sympy import nsimplify
 from os import path
 import itertools
@@ -725,7 +727,7 @@ def calc_conv_rate(dof_vec, err_vec, dim, n_points=None,
 def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
               extra_marker=None, skipfit=None, skip=None, ylabel=None, xlabel=None,
               ylim=(None,None),xlim=(None,None),grid=False,legendloc=None,convunc=True,
-              figsize=(6,4)):
+              figsize=(6,4), extra_xticks=False, scalar_xlabel=False, serif=False):
     '''
     Parameters
     ----------
@@ -752,6 +754,9 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
     -------
     None
     '''
+
+    if serif:
+        plt.rcParams['font.family'] = 'serif'
     
     assert dof_vec.shape==err_vec.shape,"The two inputted arrays are not the same shape!"
     if dof_vec.ndim>1:
@@ -777,7 +782,7 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
     if extra_marker != None:
         assert np.shape(extra_marker)==(n_cases,n_runs),"ERROR: extra_marker shape should match dof_vec and err_vec"
 
-    plt.figure(figsize=figsize)
+    fig = plt.figure(figsize=figsize)
     if title != None:
         plt.title(title,fontsize=18)
     if ylabel == None:
@@ -816,24 +821,24 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
                 unc = np.round(np.sqrt(p_cov[0,0]),abs(acc))
                 acc = int(np.floor(np.log10(unc)))
                 if acc >=0:
-                    slope = r": {0} $\pm$ {1}".format(int(p_opt[0]),int(unc))
+                    slope = r": ${0} \pm {1}$".format(int(p_opt[0]),int(unc))
                 elif acc==-1:
-                    slope = r": {0:9.1f} $\pm$ {1:6.1f}".format(p_opt[0],unc)
+                    slope = r": ${0:9.1f} \pm {1:6.1f}$".format(p_opt[0],unc)
                 elif acc==-2:
-                    slope = r": {0:9.2f} $\pm$ {1:6.2f}".format(p_opt[0],unc)
+                    slope = r": ${0:9.2f} \pm {1:6.2f}$".format(p_opt[0],unc)
                 elif acc==-3:
-                    slope = r": {0:9.3f} $\pm$ {1:6.3f}".format(p_opt[0],unc)
+                    slope = r": ${0:9.3f} \pm {1:6.3f}$".format(p_opt[0],unc)
                 else:
-                    slope = r": {0:9.4f} $\pm$ {1:6.1g}".format(p_opt[0],unc)
+                    slope = r": ${0:9.4f} \pm {1:6.1g}$".format(p_opt[0],unc)
             else:
-                slope = r": {0:9.2f}".format(p_opt[0])
+                slope = r": ${0:9.2f}$".format(p_opt[0])
             plt.loglog(dof_mod,err_mod,marks[i%len(marks)],markersize=8, color=colors[i%len(colors)],
                        label=string+slope)
             plt.loglog(np.linspace(dof_mod[skipfit[i]],dof_mod[-1]), # plot
                        np.exp(fit_func(np.log(np.linspace(dof_mod[skipfit[i]],dof_mod[-1])), *p_opt)), 
                        linewidth=1, linestyle = '--', color=colors[i%len(colors)])
         elif len(dof_mod) == 2:
-            slope = r": {0:9.3}".format(-(np.log(err_mod[1])-np.log(err_mod[0]))/(np.log(dof_mod[1])-np.log(dof_mod[0])))
+            slope = r": ${0:9.3}$".format(-(np.log(err_mod[1])-np.log(err_mod[0]))/(np.log(dof_mod[1])-np.log(dof_mod[0])))
             plt.loglog(dof_mod,err_mod,marks[i%len(marks)],markersize=8, color=colors[i%len(colors)],
                        label=string+slope)
             plt.loglog(dof_mod, err_mod, linewidth=1, linestyle = '--', color=colors[i%len(colors)])
@@ -848,10 +853,46 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
         plt.grid(which='major',axis='y',linestyle='--',color='gray',linewidth='1')
     plt.ylim(ylim)
     plt.xlim(xlim)
-    #plt.legend(loc='lower left', fontsize=12)
     #plt.subplots_adjust(left=0.2, right=0.8, top=0.8, bottom=0.2)
-    #plt.gca().xaxis.set_major_formatter(tik.ScalarFormatter())
-    #plt.gca().xaxis.set_minor_formatter(tik.ScalarFormatter())
+    ax = plt.gca()  # Get current axis
+    # Conditionally set scalar labels for major ticks if scalar_xlabel is True
+    if scalar_xlabel:
+        ax.xaxis.set_major_formatter(tik.ScalarFormatter())  # Major ticks in scalar format
+
+    # Conditionally add extra minor ticks with labels if extra_xticks is True
+    if extra_xticks:
+        tick_labels = ax.get_xticklabels()  # Get major tick labels
+        label_ypos = ax.get_ylim()[0]
+        xmin, xmax = ax.get_xlim()
+
+        for label in tick_labels:
+            if label.get_text():  # Only consider visible labels
+                bbox = label.get_window_extent(renderer=fig.canvas.get_renderer())
+                # Convert bbox to data coordinates to get y-position of the label
+                inverse = ax.transData.inverted()
+                label_position = inverse.transform((bbox.x0, bbox.y0))[1]
+                if label_position < label_ypos:
+                    label_ypos = label_position
+
+        # Add manual labels for 5×10^n
+        if scalar_xlabel:
+            extra_labels = {5 : r'$5$',
+                            50 : r'$50$',
+                            500 : r'$500$',
+                            5000 : r'$5000$'}
+        else:
+            extra_labels = {5 : r'$5\times10^0$',
+                            20 : r'$2\times10^1$',
+                            50 : r'$5\times10^1$',
+                            200 : r'$2\times10^2$',
+                            500 : r'$5\times10^2$',
+                            5000 : r'$5\times10^3$',
+                            50000 : r'$5\times10^4$', 
+                            500000 : r'$5\times10^5$' }
+        for label in extra_labels:
+            if label < xmax and label > xmin:
+                 ax.text(label, label_ypos, extra_labels[label], va='bottom', ha='center')
+
     plt.tight_layout()
     if savefile is not None:
         plt.savefig(savefile,dpi=600)
