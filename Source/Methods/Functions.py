@@ -132,7 +132,7 @@ def gm_lv(A,b):
 def lm_gm(A,B):
     '''
     NOTE: NOT equivalent to A @ B 
-    That returns the elemntwise transpose of the desired result.
+    That returns the elementwise transpose of the desired result.
     Equivalent to np.einsum('ij,jlk->ilk',A,B) where A is a 2-tensor of shape
     (nen1,nen2) and B is a 3-tensor of shape (nen2,nen3,nelem). This can be 
     thought of as a local matrix @ global matrix.
@@ -157,6 +157,57 @@ def lm_gm(A,B):
                 for e in range(nelem):
                     c[i,l,e] += A[i,j]*B[j,l,e]
     return c
+
+@njit
+def lm_gv(A,b):
+    '''
+    equivalent to A @ b
+
+    Parameters
+    ----------
+    A : numpy array of shape (nen1,nen2)
+    b : numpy array of shape (nen2,nelem)
+
+    Returns
+    -------
+    c : numpy array of shape (nen1,nelem)
+    '''
+    c = A @ b
+    return c
+
+@njit
+def lm_lv(A,b):
+    '''
+    equivalent to A @ b
+
+    Parameters
+    ----------
+    A : numpy array of shape (nen1,nen2)
+    b : numpy array of shape (nen2)
+
+    Returns
+    -------
+    c : numpy array of shape (nen1)
+    '''
+    c = A @ b
+    return c
+
+@njit
+def lm_lm(A,B):
+    '''
+    equivalent to A @ B
+
+    Parameters
+    ----------
+    A : numpy array of shape (nen1,nen2)
+    b : numpy array of shape (nen2,nen2)
+
+    Returns
+    -------
+    C : numpy array of shape (nen1,nelem)
+    '''
+    C = A @ B
+    return C
 
 @njit
 def gs_lm(A,B):
@@ -1424,25 +1475,6 @@ def lm_lv(A,b):
     '''
     return A@b
 
-@njit
-def lm_lm(A,B):
-    '''
-    Equivalent to np.einsum('ij,jk->ik',A,B) where A is a 2-tensor of shape
-    (nen,nen) and b is a 2-tensor of shape (nen,nen). This can be 
-    thought of as a local matrix @ local matrix.
-
-    Parameters
-    ----------
-    A : numpy array of shape (nen,nen)
-    B : numpy array of shape (nen,nen)
-    
-    note: this does not work for general shapes (i,j) and (j,k)
-
-    Returns
-    -------
-    c : numpy array of shape (nen,nen)
-    '''
-    return A@B
 
 def dot(A,B):
     '''

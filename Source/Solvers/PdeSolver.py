@@ -601,29 +601,29 @@ class PdeSolver:
         cfl = 0.5
         if self.dim==1:
             LFconst = np.max(self.diffeq.maxeig_dExdq(q))
-            dt = 0.1*(self.xmax-self.xmin)/self.nn/LFconst
+            dt = cfl*(self.xmax-self.xmin)/self.nn/LFconst
             if self.dt > dt:
                 print('WARNING: time step dt={0:.2g} may not be small enough to remain stable.'.format(self.dt))
-                print('Assuming CFL = {3:g} and max wave speed = {0:.2g}, try dt < {1:.2g}'.format(LFconst, dt, cfl))
+                print('Assuming CFL = {2:g} and max wave speed = {0:.2g}, try dt < {1:.2g}'.format(LFconst, dt, cfl))
         elif self.dim==2:
             LFconstx = np.max(self.diffeq.maxeig_dExdq(q))
             LFconsty = np.max(self.diffeq.maxeig_dEydq(q))
             const = np.sqrt(LFconstx**2 + LFconsty**2)
             dx = min((self.xmax[0]-self.xmin[0])/self.nn[0],(self.xmax[1]-self.xmin[1])/self.nn[1])
-            dt = 0.1*dx/const
+            dt = cfl*dx/const
             if self.dt > dt:
                 print('WARNING: time step dt={0:.2g} may not be small enough to remain stable.'.format(self.dt))
-                print('Assuming CFL = {3:g} and max wave speed = ({0:.2g}, {1:.2g}), try dt < {2:.2g}'.format(LFconstx, LFconsty, dt, cfl))
+                print('Assuming CFL = {2:g} and max wave speed = ({0:.2g}, {1:.2g}), try dt < {2:.2g}'.format(LFconstx, LFconsty, dt, cfl))
         elif self.dim==3:
             LFconstx = np.max(self.diffeq.maxeig_dExdq(q))
             LFconsty = np.max(self.diffeq.maxeig_dEydq(q))
             LFconstz = np.max(self.diffeq.maxeig_dEzdq(q))
             const = np.sqrt(LFconstx**2 + LFconsty**2 + LFconstz**2)
             dx = min((self.xmax[0]-self.xmin[0])/self.nn[0],(self.xmax[1]-self.xmin[1])/self.nn[1])
-            dt = 0.1*dx/const
+            dt = cfl*dx/const
             if self.dt > dt:
                 print('WARNING: time step dt={0:.2g} may not be small enough to remain stable.'.format(self.dt))
-                print('Assuming CFL = {3:g} and max wave speed = ({0:.2g}, {1:.2g}, {2:.2g}), try dt < {3:.2g}'.format(LFconstx, LFconsty, LFconstz, dt, cfl))
+                print('Assuming CFL = {2:g} and max wave speed = ({0:.2g}, {1:.2g}, {2:.2g}), try dt < {3:.2g}'.format(LFconstx, LFconsty, LFconstz, dt, cfl))
 
 
         

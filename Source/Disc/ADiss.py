@@ -83,7 +83,8 @@ class ADiss():
                     self.s = self.solver.p
 
             if 'coeff' in self.solver.vol_diss.keys():
-                assert isinstance(self.solver.vol_diss['coeff'], float), 'Artificial Dissipation: coeff must be a float, {0}'.format(self.solver.vol_diss['coeff'])
+                assert isinstance(self.solver.vol_diss['coeff'], float) or \
+                       isinstance(self.solver.vol_diss['coeff'], int), 'Artificial Dissipation: coeff must be a float, {0}'.format(self.solver.vol_diss['coeff'])
                 self.coeff = self.solver.vol_diss['coeff']
             else:
                 self.coeff = 0.1
@@ -879,7 +880,8 @@ class ADiss():
     
     
     def get_LHS(self, q=None, step=1.0e-4):
-        ''' could form explicitly... but for simplicity just do finite difference. '''
+        ''' could form explicitly... but for simplicity just do finite difference. 
+        Note: this does not include the coefficient '''
         if q is None:
             q = self.solver.diffeq.set_q0()
         nen = self.nen*self.neq_node  

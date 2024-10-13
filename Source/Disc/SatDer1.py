@@ -19,32 +19,32 @@ class SatDer1:
         '''
         A non-dissipative central flux in 1D, that calls an external dissipation function.
         '''
-        q_a = self.tLT @ q
-        q_b = self.tRT @ q
+        q_a = self.lm_gv(self.tLT, q)
+        q_b = self.lm_gv(self.tRT, q)
         if q_bdyL is None: # periodic
             EL = fn.shift_right(E)
             ER = fn.shift_left(E)
-            intR = self.tb @ ER
-            intL = self.ta @ EL
+            intR = self.lm_gv(self.tb, ER)
+            intL = self.lm_gv(self.ta, EL)
             qf_L = fn.pad_1dL(q_b, q_b[:,-1])
             qf_R = fn.pad_1dR(q_a, q_a[:,0])
         else:
             EL = fn.shift_right(E)
             ER = fn.shift_left(E)
-            intR = self.tb @ ER
-            intL = self.ta @ EL
+            intR = self.lm_gv(self.tb, ER)
+            intL = self.lm_gv(self.ta, EL)
             # manually fix boundaries of EL, ER to ensure proper boundary coupling
             if E_bdyL is None:
                 E_bdyL = self.calcEx(q_bdyL)
                 E_bdyR = self.calcEx(q_bdyR)
-            intR[:,-1] = self.tR @ E_bdyR
-            intL[:,0] = self.tL @ E_bdyL
+            intR[:,-1] = self.lm_lv(self.tR, E_bdyR)
+            intL[:,0] = self.lm_lv(self.tL, E_bdyL)
             qf_L = fn.pad_1dL(q_b, q_bdyL)
             qf_R = fn.pad_1dR(q_a, q_bdyR)
 
         diss = self.coeff*self.diss(qf_L,qf_R)
 
-        sat = 0.5*( self.Esurf @ E - intR + intL ) - diss
+        sat = 0.5*( self.lm_gv(self.Esurf, E) - intR + intL ) - diss
         return sat
     
     def central_div_1d(self, q, E, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None):
@@ -54,19 +54,19 @@ class SatDer1:
         if q_bdyL is None: # periodic
             EL = fn.shift_right(E)
             ER = fn.shift_left(E)
-            intR = self.tb @ ER
-            intL = self.ta @ EL
+            intR = self.lm_gv(self.tb, ER)
+            intL = self.lm_gv(self.ta, EL)
         else:
             EL = fn.shift_right(E)
             ER = fn.shift_left(E)
-            intR = self.tb @ ER
-            intL = self.ta @ EL
+            intR = self.lm_gv(self.tb, ER)
+            intL = self.lm_gv(self.ta, EL)
             # manually fix boundaries of EL, ER to ensure proper boundary coupling
             if E_bdyL is None:
                 E_bdyL = self.calcEx(q_bdyL)
                 E_bdyR = self.calcEx(q_bdyR)
-            intR[:,-1] = self.tR @ E_bdyR
-            intL[:,0] = self.tL @ E_bdyL
+            intR[:,-1] = self.lm_lv(self.tR, E_bdyR)
+            intL[:,0] = self.lm_lv(self.tL, E_bdyL)
         
 # =============================================================================
 #         # This is equivalent to below, but tested to be slightly slower
@@ -81,10 +81,387 @@ class SatDer1:
 # =============================================================================
         
         # This is equivalent to above, but tested to be slightly faster
-        sat = 0.5*( self.Esurf @ E - intR + intL )
+        sat = 0.5*( self.lm_gv(self.Esurf, E) - intR + intL )
         
         return sat
     
+    def central_div_2d(self, q, Ex, Ey, idx, q_bdyL=None, q_bdyR=None):
+        '''
+        A non-dissipative central flux in 2D.
+        '''
+        
+        if q_bdyL is None: # periodic
+            ExL = fn.shift_right(Ex)
+            ExR = fn.shift_left(Ex)
+            EyL = fn.shift_right(Ey)
+            EyR = fn.shift_left(Ey)
+        else:
+            raise Exception('TODO: adding boundary condition.')
+        
+# =============================================================================
+#         # Option 1: equivalent to below, but tested to be slowest of 3
+#         Ephys = self.metrics[idx][:,0,:] * Ex + self.metrics[idx][:,1,:] * Ey
+#         EphysL = self.tLT @ Ephys
+#         EphysR = self.tRT @ Ephys
+#         EnumL = 0.5*(self.bdy_metrics[idx][:,0,0,:] * (self.tRT @ ExL) \
+#                    + self.bdy_metrics[idx][:,0,1,:] * (self.tRT @ EyL) + EphysL)
+#         EnumR = 0.5*(self.bdy_metrics[idx][:,1,0,:] * (self.tLT @ ExR) \
+#                    + self.bdy_metrics[idx][:,1,1,:] * (self.tLT @ EyR) + EphysR)
+#         
+#         sat = self.tR @ (self.Hperp * (EphysR - EnumR)) - self.tL @ (self.Hperp * (EphysL - EnumL))
+# =============================================================================
+        
+        # Option 2: equivalent to above and below, but tested to be fastest of 3
+        sat = 0.5*( self.gm_gv(self.vol_x_mat[idx], Ex) + self.gm_gv(self.vol_y_mat[idx], Ey) 
+                  - self.gm_gv(self.tbphysx[idx], ExR) - self.gm_gv(self.tbphysy[idx], EyR)
+                  + self.gm_gv(self.taphysx[idx], ExL) + self.gm_gv(self.taphysy[idx], EyL))
+        
+# =============================================================================
+#         # Option 3: equivalent to above, but tested to be slower than 2
+#         Ephys = self.metrics[idx][:,0,:] * Ex + self.metrics[idx][:,1,:] * Ey
+#         ExphysL = self.bdy_metrics[idx][:,0,0,:] * (self.tRT @ ExL)
+#         ExphysR = self.bdy_metrics[idx][:,1,0,:] * (self.tLT @ ExR)
+#         EyphysL = self.bdy_metrics[idx][:,0,1,:] * (self.tRT @ EyL)
+#         EyphysR = self.bdy_metrics[idx][:,1,1,:] * (self.tLT @ EyR)
+#         sat = 0.5*(self.Esurf @ Ephys - (self.tR @ (self.Hperp * (ExphysR + EyphysR)) - self.tL @ (self.Hperp * (ExphysL + EyphysL))))
+# =============================================================================
+        
+        return sat
+    
+    def base_div_2d(self, q, Ex, Ey, idx, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None):
+        '''
+        A non-dissipative central flux in 2D, that calls an external dissipation function..
+        '''
+        
+        q_a = fn.lm_gv(self.tLT, q)
+        q_b = fn.lm_gv(self.tRT, q)
+        if q_bdyL is None: # periodic
+            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
+            qf_R = fn.pad_1dR(q_a, q_a[:,0])
+            ExL = fn.shift_right(Ex)
+            ExR = fn.shift_left(Ex)
+            EyL = fn.shift_right(Ey)
+            EyR = fn.shift_left(Ey)
+        else:
+            raise Exception('TODO: adding boundary condition.')
+        
+        diss = self.coeff*self.diss(qf_L,qf_R,idx)
+        
+        sat = 0.5*( self.gm_gv(self.vol_x_mat[idx], Ex) + self.gm_gv(self.vol_y_mat[idx], Ey) 
+                  - self.gm_gv(self.tbphysx[idx], ExR) - self.gm_gv(self.tbphysy[idx], EyR)
+                  + self.gm_gv(self.taphysx[idx], ExL) + self.gm_gv(self.taphysy[idx], EyL)) - diss
+        """
+        # Debugging: ok
+        sat2 = 0.5*( fn.gm_gv(self.vol_x_mat[idx], Ex) + fn.gm_gv(self.vol_y_mat[idx], Ey) 
+                  - fn.gm_gv(self.tbphysx[idx], ExR) - fn.gm_gv(self.tbphysy[idx], EyR)
+                  + fn.gm_gv(self.taphysx[idx], ExL) + fn.gm_gv(self.taphysy[idx], EyL)) - diss
+        print('sat:', np.max(np.abs(sat-sat2)))
+        """
+        
+        return sat
+    
+    
+    def central_div_3d(self, q, Ex, Ey, Ez, idx, q_bdyL=None, q_bdyR=None):
+        '''
+        A non-dissipative central flux in 3D. 
+        '''
+        
+        if q_bdyL is None: # periodic
+            ExL = fn.shift_right(Ex)
+            ExR = fn.shift_left(Ex)
+            EyL = fn.shift_right(Ey)
+            EyR = fn.shift_left(Ey)
+            EzL = fn.shift_right(Ez)
+            EzR = fn.shift_left(Ez)
+        else:
+            raise Exception('TODO: adding boundary condition.')
+
+        sat = 0.5*( self.gm_gv(self.vol_x_mat[idx], Ex) + self.gm_gv(self.vol_y_mat[idx], Ey) + self.gm_gv(self.vol_z_mat[idx], Ez) 
+                  - self.gm_gv(self.tbphysx[idx], ExR) - self.gm_gv(self.tbphysy[idx], EyR) - self.gm_gv(self.tbphysz[idx], EzR)
+                  + self.gm_gv(self.taphysx[idx], ExL) + self.gm_gv(self.taphysy[idx], EyL) + self.gm_gv(self.taphysz[idx], EzL))
+        
+        return sat
+    
+
+    ##########################################################################
+    ''' UPWIND FLUXES ''' # note: the same as llf for scalar case without mesh warping
+    # in general, these are NOT stable because of the treatment of metric terms
+    ##########################################################################
+    
+    def upwind_div_1d(self, q, E, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None):
+        '''
+        An upwind dissipative flux in 1D. self.coeff=0 turns off dissipation.
+        '''
+        q_a = self.lm_gv(self.tLT, q)
+        q_b = self.lm_gv(self.tRT, q)
+        # Here we work in terms of facets, starting from the left-most facet.
+        # This is NOT the same as elements. i.e. qR is to the right of the
+        # facet and qL is to the left of the facet, opposite of element-wise.
+        if q_bdyL is None:
+            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
+            qf_R = fn.pad_1dR(q_a, q_a[:,0])
+        else:
+            qf_L = fn.pad_1dL(q_b, q_bdyL)
+            qf_R = fn.pad_1dR(q_a, q_bdyR)
+        qf_jump = -(qf_R - qf_L)
+        
+        qf_avg = self.calc_avgq(qf_L, qf_R)
+        A = self.dExdq(qf_avg)            
+        A_abs = self.dExdq_eig_abs(qf_avg)
+        
+        # Upwinding flux
+        A_upwind = (A + self.coeff*A_abs)/2
+        A_downwind = (A - self.coeff*A_abs)/2
+        
+        sat = self.lm_gv(self.tR, fn.gm_gv(A_downwind, qf_jump)[:,1:]) \
+            + self.lm_gv(self.tL, fn.gm_gv(A_upwind, qf_jump)[:,:-1])
+        return sat
+
+    
+    def upwind_div_2d(self, q, Ex, Ey, idx, q_bdyL=None, q_bdyR=None):
+        '''
+        An upwind dissipative flux in 2D. self.coeff=0 turns off dissipation.
+        '''
+        q_a = self.lm_gv(self.tLT, q)
+        q_b = self.lm_gv(self.tRT, q)
+        # Here we work in terms of facets, starting from the left-most facet.
+        # This is NOT the same as elements. i.e. qR is to the right of the
+        # facet and qL is to the left of the facet, opposite of element-wise.
+        if q_bdyL is None:
+            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
+            qf_R = fn.pad_1dR(q_a, q_a[:,0])
+        else:
+            qf_L = fn.pad_1dL(q_b, q_bdyL)
+            qf_R = fn.pad_1dR(q_a, q_bdyR)
+            raise Exception('TODO: adding boundary condition.')
+        qf_jump = -(qf_R - qf_L)
+        bdy_metricsx = fn.pad_1dR(self.bdy_metrics[idx][:,0,0,:], self.bdy_metrics[idx][:,1,0,-1])
+        bdy_metricsy = fn.pad_1dR(self.bdy_metrics[idx][:,0,1,:], self.bdy_metrics[idx][:,1,1,-1])
+        
+        qf_avg = self.calc_avgq(qf_L, qf_R)
+        Ax = self.dExdq(qf_avg)            
+        Ax_abs = self.dExdq_eig_abs(qf_avg)
+        Ay = self.dExdq(qf_avg)            
+        Ay_abs = self.dEydq_eig_abs(qf_avg)
+        
+        # Upwinding flux
+        A_upwind = (Ax + self.coeff*Ax_abs)/2 * bdy_metricsx + (Ay + self.coeff*Ay_abs)/2 * bdy_metricsy
+        A_downwind = (Ax - self.coeff*Ax_abs)/2 * bdy_metricsx + (Ay - self.coeff*Ay_abs)/2 * bdy_metricsy
+        
+        sat = self.lm_gv(self.tR, (self.Hperp * fn.gm_gv(A_downwind, qf_jump)[:,1:])) \
+            + self.lm_gv(self.tL, (self.Hperp * fn.gm_gv(A_upwind, qf_jump)[:,:-1]))
+        return sat
+    
+    def upwind_div_3d(self, q, Ex, Ey, Ez, idx, q_bdyL=None, q_bdyR=None):
+        '''
+        An upwind dissipative flux in 3D. self.coeff=0 turns off dissipation.
+        '''
+        q_a = self.lm_gv(self.tLT, q)
+        q_b = self.lm_gv(self.tRT, q)
+        # Here we work in terms of facets, starting from the left-most facet.
+        # This is NOT the same as elements. i.e. qR is to the right of the
+        # facet and qL is to the left of the facet, opposite of element-wise.
+        if q_bdyL is None:
+            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
+            qf_R = fn.pad_1dR(q_a, q_a[:,0])
+        else:
+            qf_L = fn.pad_1dL(q_b, q_bdyL)
+            qf_R = fn.pad_1dR(q_a, q_bdyR)
+            raise Exception('TODO: adding boundary condition.')
+        qf_jump = -(qf_R - qf_L)
+        bdy_metricsx = fn.pad_1dR(self.bdy_metrics[idx][:,0,0,:], self.bdy_metrics[idx][:,1,0,-1])
+        bdy_metricsy = fn.pad_1dR(self.bdy_metrics[idx][:,0,1,:], self.bdy_metrics[idx][:,1,1,-1])
+        bdy_metricsz = fn.pad_1dR(self.bdy_metrics[idx][:,0,2,:], self.bdy_metrics[idx][:,1,2,-1])
+        
+        qf_avg = self.calc_avgq(qf_L, qf_R)
+        Ax = self.dExdq(qf_avg)            
+        Ax_abs = self.dExdq_eig_abs(qf_avg)
+        Ay = self.dEydq(qf_avg)            
+        Ay_abs = self.dEydq_eig_abs(qf_avg)
+        Az = self.dEzdq(qf_avg)            
+        Az_abs = self.dEzdq_eig_abs(qf_avg)
+        
+        # Upwinding flux
+        A_upwind = (Ax + self.coeff*Ax_abs)/2 * bdy_metricsx \
+                 + (Ay + self.coeff*Ay_abs)/2 * bdy_metricsy \
+                 + (Az + self.coeff*Az_abs)/2 * bdy_metricsz
+        A_downwind = (Ax - self.coeff*Ax_abs)/2 * bdy_metricsx \
+                   + (Ay - self.coeff*Ay_abs)/2 * bdy_metricsy \
+                   + (Az - self.coeff*Az_abs)/2 * bdy_metricsz
+        
+        sat = self.lm_gv(self.tR, (self.Hperp * fn.gm_gv(A_downwind, qf_jump)[:,1:])) \
+            + self.lm_gv(self.tL, (self.Hperp * fn.gm_gv(A_upwind, qf_jump)[:,:-1]))
+        return sat
+
+
+    ##########################################################################
+    ''' Hadamard Fluxes ''' 
+    ##########################################################################
+    
+    def base_had_1d(self, q, Fvol, q_bdyL=None, q_bdyR=None):
+        '''
+        The base conservative flux in Hadamard Form. Then add dissipative term.
+        '''
+        # Here we work in terms of facets, starting from the left-most facet.
+        # This is NOT the same as elements. i.e. qR is to the right of the
+        # facet and qL is to the left of the facet, opposite of element-wise.
+        if q_bdyL is None:
+            qL = fn.pad_1dL(q, q[:,-1])
+        else:
+            # TODO: I don't think this will be provably stable, but works for dissipation at least
+            qbdy = np.repeat(q_bdyL, self.nen)
+            qL = fn.pad_1dL(q, qbdy) 
+        if q_bdyR is None:
+            qR = fn.pad_1dR(q, q[:,0])
+        else:
+            # TODO: I don't think this will be provably stable, but works for dissipation at least
+            qbdy = np.repeat(q_bdyR, self.nen)
+            qR = fn.pad_1dL(q, qbdy) 
+        
+        vol = self.lm_gm_had_diff(self.Esurf, Fvol)
+        
+        Fsurf = self.build_F(qL, qR)
+        if self.sparse:
+            surfa = self.lm_gm_had_diff(self.taT,Fsurf[:-1])
+            surfb = self.lm_gm_had_diff(self.tb,Fsurf[1:])
+        else:
+            surfa = self.lm_gm_had_diff(self.taT,Fsurf[:,:,:-1])
+            surfb = self.lm_gm_had_diff(self.tb,Fsurf[:,:,1:])
+        
+        diss = self.coeff*self.diss(self.lm_gv(self.tRT,qL), self.lm_gv(self.tLT,qR))
+        
+        sat = vol + surfa - surfb - diss 
+        return sat
+    
+    def base_had_2d(self, q, Fxvol, Fyvol, idx, q_bdyL=None, q_bdyR=None):
+        '''
+        The base conservative flux in Hadamard Form. Then add dissipative term.
+        '''
+
+        vol = self.gm_gm_had_diff(self.vol_x_mat[idx], Fxvol) \
+            + self.gm_gm_had_diff(self.vol_y_mat[idx], Fyvol)
+
+        # Here we work in terms of facets, starting from the left-most facet.
+        # This is NOT the same as elements. i.e. qR is to the right of the
+        # facet and qL is to the left of the facet, opposite of element-wise.
+        if q_bdyL is None:
+            qL = fn.pad_1dL(q, q[:,-1])
+        else:
+            qL = fn.pad_1dL(q, q_bdyL) # TODO: this definitely does not work (needs entire q, not extrapolation)
+            raise Exception('TODO: adding boundary condition.')
+        if q_bdyR is None:
+            qR = fn.pad_1dR(q, q[:,0])
+        else:
+            qR = fn.pad_1dL(q, q_bdyR)  # TODO: this definitely does not work (needs entire q, not extrapolation)
+            raise Exception('TODO: adding boundary condition.')
+        
+        Fsurfx, Fsurfy = self.build_F(qL, qR)
+        if self.sparse:         
+            surfa = self.gmT_gm_had_diff(self.taphysxT[idx],Fsurfx[:-1]) + \
+                    self.gmT_gm_had_diff(self.taphysyT[idx],Fsurfy[:-1])
+            surfb = self.gm_gm_had_diff(self.tbphysx[idx],Fsurfx[1:]) + \
+                    self.gm_gm_had_diff(self.tbphysy[idx],Fsurfy[1:])
+        else:         
+            surfa = self.gm_gmT_had_diff(self.taphysx[idx],Fsurfx[:,:,:-1]) + \
+                    self.gm_gmT_had_diff(self.taphysy[idx],Fsurfy[:,:,:-1])
+            surfb = self.gm_gm_had_diff(self.tbphysx[idx],Fsurfx[:,:,1:]) + \
+                    self.gm_gm_had_diff(self.tbphysy[idx],Fsurfy[:,:,1:])
+        
+        diss = self.coeff*self.diss(self.lm_gv(self.tRT,qL), self.lm_gv(self.tLT,qR), idx)
+        
+        sat = vol + surfa - surfb - diss
+        return sat
+    
+    def base_had_3d(self, q, Fxvol, Fyvol, Fzvol, idx, q_bdyL=None, q_bdyR=None):
+        '''
+        The base conservative flux in Hadamard Form. Then add dissipative term.
+        '''
+        
+        vol = self.gm_gm_had_diff(self.vol_x_mat[idx], Fxvol) + \
+              self.gm_gm_had_diff(self.vol_y_mat[idx], Fyvol) + \
+              self.gm_gm_had_diff(self.vol_z_mat[idx], Fzvol)
+        
+        # Here we work in terms of facets, starting from the left-most facet.
+        # This is NOT the same as elements. i.e. qR is to the right of the
+        # facet and qL is to the left of the facet, opposite of element-wise.
+        if q_bdyL is None:
+            qL = fn.pad_1dL(q, q[:,-1])
+        else:
+            qL = fn.pad_1dL(q, q_bdyL) # TODO: this definitely does not work
+            raise Exception('TODO: adding boundary condition.')
+        if q_bdyR is None:
+            qR = fn.pad_1dR(q, q[:,0])
+        else:
+            qR = fn.pad_1dL(q, q_bdyR)  # TODO: this definitely does not work
+            raise Exception('TODO: adding boundary condition.')
+        
+        Fsurfx, Fsurfy, Fsurfz = self.build_F(qL, qR)
+        
+        if self.sparse:         
+            surfa = self.gmT_gm_had_diff(self.taphysxT[idx],Fsurfx[:-1]) + \
+                    self.gmT_gm_had_diff(self.taphysyT[idx],Fsurfy[:-1])+ \
+                    self.gmT_gm_had_diff(self.taphyszT[idx],Fsurfz[:-1])
+            surfb = self.gm_gm_had_diff(self.tbphysx[idx],Fsurfx[1:]) + \
+                    self.gm_gm_had_diff(self.tbphysy[idx],Fsurfy[1:])+ \
+                    self.gm_gm_had_diff(self.tbphysz[idx],Fsurfz[1:])
+        else:         
+            surfa = self.gm_gmT_had_diff(self.taphysx[idx],Fsurfx[:,:,:-1]) + \
+                    self.gm_gmT_had_diff(self.taphysy[idx],Fsurfy[:,:,:-1])+ \
+                    self.gm_gmT_had_diff(self.taphysz[idx],Fsurfz[:,:,:-1])
+            surfb = self.gm_gm_had_diff(self.tbphysx[idx],Fsurfx[:,:,1:]) + \
+                    self.gm_gm_had_diff(self.tbphysy[idx],Fsurfy[:,:,1:]) + \
+                    self.gm_gm_had_diff(self.tbphysz[idx],Fsurfz[:,:,1:])
+        
+        diss = self.coeff*self.diss(self.lm_gv(self.tRT,qL), self.lm_gv(self.tLT,qR), idx)
+        
+        sat = vol + surfa - surfb - diss 
+        return sat
+    
+    def base_generalized_had_2d(self, q, Fxvol, Fyvol, idx, q_bdyL=None, q_bdyR=None):
+        '''
+        The base conservative flux in a generalized Hadamard Form. Then add dissipative term.
+        '''
+        
+        vol = self.had_alpha * (fn.gm_gm_had_diff(self.vol_x_mat[idx], Fxvol) + fn.gm_gm_had_diff(self.vol_y_mat[idx], Fyvol))
+        vol2 = (1 - self.had_alpha) * self.had_beta * (fn.gm_gm_had_diff(self.vol_x_mat2[idx], Fxvol) + fn.gm_gm_had_diff(self.vol_y_mat2[idx], Fyvol))
+        vol3 = (1 - self.had_alpha) * (1 - self.had_beta) * (fn.gm_gm_had_diff(self.vol_x_mat3[idx], Fxvol) + fn.gm_gm_had_diff(self.vol_y_mat3[idx], Fyvol))
+        
+        # TODO: Modify build_F and hadamard functions to only consider non-zero entries
+        
+        # Here we work in terms of facets, starting from the left-most facet.
+        # This is NOT the same as elements. i.e. qR is to the right of the
+        # facet and qL is to the left of the facet, opposite of element-wise.
+        if q_bdyL is None:
+            qL = fn.pad_1dL(q, q[:,-1])
+        else:
+            qL = fn.pad_1dL(q, q_bdyL) # TODO: this definitely does not work
+            raise Exception('TODO: adding boundary condition.')
+        if q_bdyR is None:
+            qR = fn.pad_1dR(q, q[:,0])
+        else:
+            qR = fn.pad_1dL(q, q_bdyR)  # TODO: this definitely does not work
+            raise Exception('TODO: adding boundary condition.')
+        
+        Fsurfx, Fsurfy = self.build_F(qL, qR)
+        
+        surfa = self.had_gamma * (fn.gm_gm_had_diff(self.taphysx[idx],np.transpose(Fsurfx[:,:,:-1],(1,0,2))) + \
+                                  fn.gm_gm_had_diff(self.taphysy[idx],np.transpose(Fsurfy[:,:,:-1],(1,0,2))) )
+        surfb = self.had_gamma * (fn.gm_gm_had_diff(self.tbphysx[idx],Fsurfx[:,:,1:]) + \
+                                  fn.gm_gm_had_diff(self.tbphysy[idx],Fsurfy[:,:,1:]) )
+        surfa2 = (1-self.had_gamma) * (fn.gm_gm_had_diff(self.taphysx2[idx],np.transpose(Fsurfx[:,:,:-1],(1,0,2))) + \
+                                  fn.gm_gm_had_diff(self.taphysy2[idx],np.transpose(Fsurfy[:,:,:-1],(1,0,2))) )
+        surfb2 = (1-self.had_gamma) * (fn.gm_gm_had_diff(self.tbphysx2[idx],Fsurfx[:,:,1:]) + \
+                                  fn.gm_gm_had_diff(self.tbphysy2[idx],Fsurfy[:,:,1:]) )
+        
+        diss = self.coeff*self.diss(qL,qR,idx)
+        
+        sat = vol + vol2 + vol3 + surfa - surfb + surfa2 - surfb2 - diss
+        return sat
+    
+    ##########################################################################
+    ''' LINEARIZATIONS ''' 
+    ##########################################################################
+
     def central_div_1d_dfdq(self, q, A, q_bdyL=None, q_bdyR=None):
         '''
         A non-dissipative central flux in 1D
@@ -120,409 +497,6 @@ class SatDer1:
                     - fn.sparse_block_diag_R_1D(intR) \
                     + fn.sparse_block_diag_L_1D(intL)  )
         return dfdq
-    
-    def central_div_2d(self, q, Ex, Ey, idx, q_bdyL=None, q_bdyR=None):
-        '''
-        A non-dissipative central flux in 2D.
-        '''
-        
-        if q_bdyL is None: # periodic
-            ExL = fn.shift_right(Ex)
-            ExR = fn.shift_left(Ex)
-            EyL = fn.shift_right(Ey)
-            EyR = fn.shift_left(Ey)
-        else:
-            raise Exception('TODO: adding boundary condition.')
-        
-# =============================================================================
-#         # Option 1: equivalent to below, but tested to be slowest of 3
-#         Ephys = self.metrics[idx][:,0,:] * Ex + self.metrics[idx][:,1,:] * Ey
-#         EphysL = self.tLT @ Ephys
-#         EphysR = self.tRT @ Ephys
-#         EnumL = 0.5*(self.bdy_metrics[idx][:,0,0,:] * (self.tRT @ ExL) \
-#                    + self.bdy_metrics[idx][:,0,1,:] * (self.tRT @ EyL) + EphysL)
-#         EnumR = 0.5*(self.bdy_metrics[idx][:,1,0,:] * (self.tLT @ ExR) \
-#                    + self.bdy_metrics[idx][:,1,1,:] * (self.tLT @ EyR) + EphysR)
-#         
-#         sat = self.tR @ (self.Hperp * (EphysR - EnumR)) - self.tL @ (self.Hperp * (EphysL - EnumL))
-# =============================================================================
-        
-        # Option 2: equivalent to above and below, but tested to be fastest of 3
-        sat = 0.5*( fn.gm_gv(self.vol_x_mat[idx], Ex) + fn.gm_gv(self.vol_y_mat[idx], Ey) 
-                  - fn.gm_gv(self.tbphysx[idx], ExR) - fn.gm_gv(self.tbphysy[idx], EyR)
-                  + fn.gm_gv(self.taphysx[idx], ExL) + fn.gm_gv(self.taphysy[idx], EyL))
-        
-# =============================================================================
-#         # Option 3: equivalent to above, but tested to be slower than 2
-#         Ephys = self.metrics[idx][:,0,:] * Ex + self.metrics[idx][:,1,:] * Ey
-#         ExphysL = self.bdy_metrics[idx][:,0,0,:] * (self.tRT @ ExL)
-#         ExphysR = self.bdy_metrics[idx][:,1,0,:] * (self.tLT @ ExR)
-#         EyphysL = self.bdy_metrics[idx][:,0,1,:] * (self.tRT @ EyL)
-#         EyphysR = self.bdy_metrics[idx][:,1,1,:] * (self.tLT @ EyR)
-#         sat = 0.5*(self.Esurf @ Ephys - (self.tR @ (self.Hperp * (ExphysR + EyphysR)) - self.tL @ (self.Hperp * (ExphysL + EyphysL))))
-# =============================================================================
-        
-        return sat
-    
-    def base_div_2d(self, q, Ex, Ey, idx, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None):
-        '''
-        A non-dissipative central flux in 2D, that calls an external dissipation function..
-        '''
-        
-        q_a = self.tLT @ q
-        q_b = self.tRT @ q
-        if q_bdyL is None: # periodic
-            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
-            qf_R = fn.pad_1dR(q_a, q_a[:,0])
-            ExL = fn.shift_right(Ex)
-            ExR = fn.shift_left(Ex)
-            EyL = fn.shift_right(Ey)
-            EyR = fn.shift_left(Ey)
-        else:
-            raise Exception('TODO: adding boundary condition.')
-        
-        diss = self.coeff*self.diss(qf_L,qf_R,idx)
-        
-        sat = 0.5*( sp.gm_gv(self.vol_x_mat_sp[idx], Ex) + sp.gm_gv(self.vol_y_mat_sp[idx], Ey) 
-                  - sp.gm_gv(self.tbphysx_sp[idx], ExR) - sp.gm_gv(self.tbphysy_sp[idx], EyR)
-                  + sp.gm_gv(self.taphysx_sp[idx], ExL) + sp.gm_gv(self.taphysy_sp[idx], EyL)) - diss
-        """
-        # Debugging: ok
-        sat2 = 0.5*( fn.gm_gv(self.vol_x_mat[idx], Ex) + fn.gm_gv(self.vol_y_mat[idx], Ey) 
-                  - fn.gm_gv(self.tbphysx[idx], ExR) - fn.gm_gv(self.tbphysy[idx], EyR)
-                  + fn.gm_gv(self.taphysx[idx], ExL) + fn.gm_gv(self.taphysy[idx], EyL)) - diss
-        print('sat:', np.max(np.abs(sat-sat2)))
-        """
-        
-        return sat
-    
-    
-    def central_div_3d(self, q, Ex, Ey, Ez, idx, q_bdyL=None, q_bdyR=None):
-        '''
-        A non-dissipative central flux in 3D. 
-        TODO: copy faster form from above
-        '''
-        
-        if q_bdyL is None: # periodic
-            ExL = fn.shift_right(Ex)
-            ExR = fn.shift_left(Ex)
-            EyL = fn.shift_right(Ey)
-            EyR = fn.shift_left(Ey)
-            EzL = fn.shift_right(Ez)
-            EzR = fn.shift_left(Ez)
-        else:
-            raise Exception('TODO: adding boundary condition.')
-        
-        Ephys = self.metrics[idx][:,0,:] * Ex + self.metrics[idx][:,1,:] * Ey + self.metrics[idx][:,2,:] * Ez
-        EphysL = self.tLT @ Ephys
-        EphysR = self.tRT @ Ephys
-        
-        EnumL = 0.5*(self.bdy_metrics[idx][:,0,0,:] * (self.tRT @ ExL) \
-                   + self.bdy_metrics[idx][:,0,1,:] * (self.tRT @ EyL) \
-                   + self.bdy_metrics[idx][:,0,2,:] * (self.tRT @ EzL) + EphysL)
-        EnumR = 0.5*(self.bdy_metrics[idx][:,1,0,:] * (self.tLT @ ExR) \
-                   + self.bdy_metrics[idx][:,1,1,:] * (self.tLT @ EyR) \
-                   + self.bdy_metrics[idx][:,1,2,:] * (self.tLT @ EzR) + EphysR)
-        
-        sat = self.tR @ (self.Hperp * (EphysR - EnumR)) - self.tL @ (self.Hperp * (EphysL - EnumL))
-        return sat
-    
-
-    ##########################################################################
-    ''' UPWIND FLUXES ''' # note: the same as llf for scalar case without mesh warping
-    # in general, these are NOT stable because of the treatment of metric terms
-    ##########################################################################
-    
-    def upwind_div_1d(self, q, E, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None):
-        '''
-        An upwind dissipative flux in 1D. self.coeff=0 turns off dissipation.
-        '''
-        q_a = self.tLT @ q
-        q_b = self.tRT @ q
-        # Here we work in terms of facets, starting from the left-most facet.
-        # This is NOT the same as elements. i.e. qR is to the right of the
-        # facet and qL is to the left of the facet, opposite of element-wise.
-        if q_bdyL is None:
-            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
-            qf_R = fn.pad_1dR(q_a, q_a[:,0])
-        else:
-            qf_L = fn.pad_1dL(q_b, q_bdyL)
-            qf_R = fn.pad_1dR(q_a, q_bdyR)
-        qf_jump = -(qf_R - qf_L)
-        
-        qf_avg = self.calc_avgq(qf_L, qf_R)
-        A = self.dExdq(qf_avg)            
-        A_abs = self.dExdq_eig_abs(qf_avg)
-        
-        # Upwinding flux
-        A_upwind = (A + self.coeff*A_abs)/2
-        A_downwind = (A - self.coeff*A_abs)/2
-        
-        sat = self.tR @ fn.gm_gv(A_downwind, qf_jump)[:,1:] \
-            + self.tL @ fn.gm_gv(A_upwind, qf_jump)[:,:-1]
-        return sat
-
-    
-    def upwind_div_2d(self, q, Ex, Ey, idx, q_bdyL=None, q_bdyR=None):
-        '''
-        An upwind dissipative flux in 2D. self.coeff=0 turns off dissipation.
-        '''
-        q_a = self.tLT @ q
-        q_b = self.tRT @ q
-        # Here we work in terms of facets, starting from the left-most facet.
-        # This is NOT the same as elements. i.e. qR is to the right of the
-        # facet and qL is to the left of the facet, opposite of element-wise.
-        if q_bdyL is None:
-            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
-            qf_R = fn.pad_1dR(q_a, q_a[:,0])
-        else:
-            qf_L = fn.pad_1dL(q_b, q_bdyL)
-            qf_R = fn.pad_1dR(q_a, q_bdyR)
-            raise Exception('TODO: adding boundary condition.')
-        qf_jump = -(qf_R - qf_L)
-        bdy_metricsx = fn.pad_1dR(self.bdy_metrics[idx][:,0,0,:], self.bdy_metrics[idx][:,1,0,-1])
-        bdy_metricsy = fn.pad_1dR(self.bdy_metrics[idx][:,0,1,:], self.bdy_metrics[idx][:,1,1,-1])
-        
-        qf_avg = self.calc_avgq(qf_L, qf_R)
-        Ax = self.dExdq(qf_avg)            
-        Ax_abs = self.dExdq_eig_abs(qf_avg)
-        Ay = self.dExdq(qf_avg)            
-        Ay_abs = self.dEydq_eig_abs(qf_avg)
-        
-        # Upwinding flux
-        A_upwind = (Ax + self.coeff*Ax_abs)/2 * bdy_metricsx + (Ay + self.coeff*Ay_abs)/2 * bdy_metricsy
-        A_downwind = (Ax - self.coeff*Ax_abs)/2 * bdy_metricsx + (Ay - self.coeff*Ay_abs)/2 * bdy_metricsy
-        
-        sat = self.tR @ (self.Hperp * fn.gm_gv(A_downwind, qf_jump)[:,1:]) \
-            + self.tL @ (self.Hperp * fn.gm_gv(A_upwind, qf_jump)[:,:-1])
-        return sat
-    
-    def upwind_div_3d(self, q, Ex, Ey, Ez, idx, q_bdyL=None, q_bdyR=None):
-        '''
-        An upwind dissipative flux in 3D. self.coeff=0 turns off dissipation.
-        '''
-        q_a = self.tLT @ q
-        q_b = self.tRT @ q
-        # Here we work in terms of facets, starting from the left-most facet.
-        # This is NOT the same as elements. i.e. qR is to the right of the
-        # facet and qL is to the left of the facet, opposite of element-wise.
-        if q_bdyL is None:
-            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
-            qf_R = fn.pad_1dR(q_a, q_a[:,0])
-        else:
-            qf_L = fn.pad_1dL(q_b, q_bdyL)
-            qf_R = fn.pad_1dR(q_a, q_bdyR)
-            raise Exception('TODO: adding boundary condition.')
-        qf_jump = -(qf_R - qf_L)
-        bdy_metricsx = fn.pad_1dR(self.bdy_metrics[idx][:,0,0,:], self.bdy_metrics[idx][:,1,0,-1])
-        bdy_metricsy = fn.pad_1dR(self.bdy_metrics[idx][:,0,1,:], self.bdy_metrics[idx][:,1,1,-1])
-        bdy_metricsz = fn.pad_1dR(self.bdy_metrics[idx][:,0,2,:], self.bdy_metrics[idx][:,1,2,-1])
-        
-        qf_avg = self.calc_avgq(qf_L, qf_R)
-        Ax = self.dExdq(qf_avg)            
-        Ax_abs = self.dExdq_eig_abs(qf_avg)
-        Ay = self.dEydq(qf_avg)            
-        Ay_abs = self.dEydq_eig_abs(qf_avg)
-        Az = self.dEzdq(qf_avg)            
-        Az_abs = self.dEzdq_eig_abs(qf_avg)
-        
-        # Upwinding flux
-        A_upwind = (Ax + self.coeff*Ax_abs)/2 * bdy_metricsx \
-                 + (Ay + self.coeff*Ay_abs)/2 * bdy_metricsy \
-                 + (Az + self.coeff*Az_abs)/2 * bdy_metricsz
-        A_downwind = (Ax - self.coeff*Ax_abs)/2 * bdy_metricsx \
-                   + (Ay - self.coeff*Ay_abs)/2 * bdy_metricsy \
-                   + (Az - self.coeff*Az_abs)/2 * bdy_metricsz
-        
-        sat = self.tR @ (self.Hperp * fn.gm_gv(A_downwind, qf_jump)[:,1:]) \
-            + self.tL @ (self.Hperp * fn.gm_gv(A_upwind, qf_jump)[:,:-1])
-        return sat
-
-
-    ##########################################################################
-    ''' Hadamard Fluxes ''' 
-    ##########################################################################
-    
-    def base_had_1d(self, q, Fvol, q_bdyL=None, q_bdyR=None):
-        '''
-        The base conservative flux in Hadamard Form. Then add dissipative term.
-        '''
-        # Here we work in terms of facets, starting from the left-most facet.
-        # This is NOT the same as elements. i.e. qR is to the right of the
-        # facet and qL is to the left of the facet, opposite of element-wise.
-        if q_bdyL is None:
-            qL = fn.pad_1dL(q, q[:,-1])
-        else:
-            # TODO: I don't think this will be provably stable, but works for dissipation at least
-            qbdy = np.repeat(q_bdyL, self.nen)
-            qL = fn.pad_1dL(q, qbdy) 
-        if q_bdyR is None:
-            qR = fn.pad_1dR(q, q[:,0])
-        else:
-            # TODO: I don't think this will be provably stable, but works for dissipation at least
-            qbdy = np.repeat(q_bdyR, self.nen)
-            qR = fn.pad_1dL(q, qbdy) 
-        
-        Fsurf = self.build_F(qL, qR, self.calc_had_flux)
-        if self.neq_node == 1:
-            vol = fn.lm_gm_had_diff(self.Esurf, Fvol)
-            surfa = fn.lm_gm_had_diff(self.taT,np.transpose(Fsurf[:,:,:-1],(1,0,2)))
-            surfb = fn.lm_gm_had_diff(self.tb,Fsurf[:,:,1:])
-        else:
-            vol = sp.lm_gm_had_diff(self.Esurf_sp, Fvol)
-            surfa = sp.lmT_gm_had_diff(self.taT_sp,Fsurf[:-1])
-            surfb = sp.lm_gm_had_diff(self.tb_sp,Fsurf[1:])
-
-            # debugging: OK
-            #Fvol2 = fn.build_F_vol_sys(self.neq_node, q, self.calc_had_flux)
-            #Fsurf2 = fn.build_F_sys(self.neq_node, qL, qR, self.calc_had_flux)
-            #vol2 = fn.gm_gm_had_diff(self.vol_mat, Fvol2)
-            #surfa2 = fn.gm_gm_had_diff(self.taphys,np.transpose(Fsurf2[:,:,:-1],(1,0,2)))
-            #surfb2 = fn.gm_gm_had_diff(self.tbphys,Fsurf2[:,:,1:])
-            #print('vol:', np.max(np.abs(vol - vol2)))
-            #print('surfa:', np.max(np.abs(surfa - surfa2)))
-            #print('surfb:', np.max(np.abs(surfb - surfb2)))
-
-        
-        diss = self.coeff*self.diss(self.tRT @ qL, self.tLT @ qR)
-        
-        sat = vol + surfa - surfb - diss 
-        return sat
-    
-    def base_had_2d(self, q, Fxvol, Fyvol, idx, q_bdyL=None, q_bdyR=None):
-        '''
-        The base conservative flux in Hadamard Form. Then add dissipative term.
-        '''
-        # Here we work in terms of facets, starting from the left-most facet.
-        # This is NOT the same as elements. i.e. qR is to the right of the
-        # facet and qL is to the left of the facet, opposite of element-wise.
-        if q_bdyL is None:
-            qL = fn.pad_1dL(q, q[:,-1])
-        else:
-            qL = fn.pad_1dL(q, q_bdyL) # TODO: this definitely does not work (needs entire q, not extrapolation)
-            raise Exception('TODO: adding boundary condition.')
-        if q_bdyR is None:
-            qR = fn.pad_1dR(q, q[:,0])
-        else:
-            qR = fn.pad_1dL(q, q_bdyR)  # TODO: this definitely does not work (needs entire q, not extrapolation)
-            raise Exception('TODO: adding boundary condition.')
-        
-        Fsurfx, Fsurfy = self.build_F(qL, qR, self.calc_had_flux)
-        if self.neq_node == 1:
-            vol = fn.gm_gm_had_diff(self.vol_x_mat[idx], Fxvol) + fn.gm_gm_had_diff(self.vol_y_mat[idx], Fyvol)            
-            surfa = fn.gm_gm_had_diff(self.taphysx[idx],np.transpose(Fsurfx[:,:,:-1],(1,0,2))) + \
-                    fn.gm_gm_had_diff(self.taphysy[idx],np.transpose(Fsurfy[:,:,:-1],(1,0,2)))
-            surfb = fn.gm_gm_had_diff(self.tbphysx[idx],Fsurfx[:,:,1:]) + \
-                    fn.gm_gm_had_diff(self.tbphysy[idx],Fsurfy[:,:,1:])
-        else:
-            vol = sp.gm_gm_had_diff(self.vol_x_mat_sp[idx], Fxvol) + sp.gm_gm_had_diff(self.vol_y_mat_sp[idx], Fyvol)            
-            surfa = sp.gmT_gm_had_diff(self.taphysxT_sp[idx],Fsurfx[:-1]) + \
-                    sp.gmT_gm_had_diff(self.taphysyT_sp[idx],Fsurfy[:-1])
-            surfb = sp.gm_gm_had_diff(self.tbphysx_sp[idx],Fsurfx[1:]) + \
-                    sp.gm_gm_had_diff(self.tbphysy_sp[idx],Fsurfy[1:])
-            
-            # debugging: OK
-            """
-            Fxvol2, Fyvol2 = fn.build_F_vol_sys_2d(self.neq_node, q, self.calc_had_flux)
-            Fsurfx2, Fsurfy2 = fn.build_F_sys_2d(self.neq_node, qL, qR, self.calc_had_flux)
-            vol2 = fn.gm_gm_had_diff(self.vol_x_mat[idx], Fxvol2) + fn.gm_gm_had_diff(self.vol_y_mat[idx], Fyvol2)
-            surfa2 = fn.gm_gm_had_diff(self.taphysx[idx],np.transpose(Fsurfx2[:,:,:-1],(1,0,2))) + \
-                    fn.gm_gm_had_diff(self.taphysy[idx],np.transpose(Fsurfy2[:,:,:-1],(1,0,2)))
-            surfb2 = fn.gm_gm_had_diff(self.tbphysx[idx],Fsurfx2[:,:,1:]) + \
-                    fn.gm_gm_had_diff(self.tbphysy[idx],Fsurfy2[:,:,1:])
-            print('vol:', np.max(np.abs(vol - vol2)))
-            print('surfa:', np.max(np.abs(surfa - surfa2)))
-            print('surfb:', np.max(np.abs(surfb - surfb2)))
-            """
-        
-        diss = self.coeff*self.diss(self.tRT @ qL, self.tLT @ qR, idx)
-        
-        sat = vol + surfa - surfb - diss
-        return sat
-    
-    def base_had_3d(self, q, Fxvol, Fyvol, Fzvol, idx, q_bdyL=None, q_bdyR=None):
-        '''
-        The base conservative flux in Hadamard Form. Then add dissipative term.
-        '''
-        
-        vol = fn.gm_gm_had_diff(self.vol_x_mat[idx], Fxvol) + \
-              fn.gm_gm_had_diff(self.vol_y_mat[idx], Fyvol) + \
-              fn.gm_gm_had_diff(self.vol_z_mat[idx], Fzvol)
-        
-        # TODO: Modify build_F and hadamard functions to only consider non-zero entries
-        
-        # Here we work in terms of facets, starting from the left-most facet.
-        # This is NOT the same as elements. i.e. qR is to the right of the
-        # facet and qL is to the left of the facet, opposite of element-wise.
-        if q_bdyL is None:
-            qL = fn.pad_1dL(q, q[:,-1])
-        else:
-            qL = fn.pad_1dL(q, q_bdyL) # TODO: this definitely does not work
-            raise Exception('TODO: adding boundary condition.')
-        if q_bdyR is None:
-            qR = fn.pad_1dR(q, q[:,0])
-        else:
-            qR = fn.pad_1dL(q, q_bdyR)  # TODO: this definitely does not work
-            raise Exception('TODO: adding boundary condition.')
-        
-        Fsurfx, Fsurfy, Fsurfz = self.build_F(qL, qR, self.calc_had_flux)
-        
-        surfa = fn.gm_gm_had_diff(self.taphysx[idx],np.transpose(Fsurfx[:,:,:-1],(1,0,2))) + \
-                fn.gm_gm_had_diff(self.taphysy[idx],np.transpose(Fsurfy[:,:,:-1],(1,0,2))) + \
-                fn.gm_gm_had_diff(self.taphysz[idx],np.transpose(Fsurfz[:,:,:-1],(1,0,2)))
-        surfb = fn.gm_gm_had_diff(self.tbphysx[idx],Fsurfx[:,:,1:]) + \
-                fn.gm_gm_had_diff(self.tbphysy[idx],Fsurfy[:,:,1:]) + \
-                fn.gm_gm_had_diff(self.tbphysz[idx],Fsurfz[:,:,1:])
-        
-        diss = self.coeff*self.diss(self.tRT @ qL, self.tLT @ qR, idx)
-        
-        sat = vol + surfa - surfb - diss 
-        return sat
-    
-    def base_generalized_had_2d(self, q, Fxvol, Fyvol, idx, q_bdyL=None, q_bdyR=None):
-        '''
-        The base conservative flux in a generalized Hadamard Form. Then add dissipative term.
-        '''
-        
-        vol = self.had_alpha * (fn.gm_gm_had_diff(self.vol_x_mat[idx], Fxvol) + fn.gm_gm_had_diff(self.vol_y_mat[idx], Fyvol))
-        vol2 = (1 - self.had_alpha) * self.had_beta * (fn.gm_gm_had_diff(self.vol_x_mat2[idx], Fxvol) + fn.gm_gm_had_diff(self.vol_y_mat2[idx], Fyvol))
-        vol3 = (1 - self.had_alpha) * (1 - self.had_beta) * (fn.gm_gm_had_diff(self.vol_x_mat3[idx], Fxvol) + fn.gm_gm_had_diff(self.vol_y_mat3[idx], Fyvol))
-        
-        # TODO: Modify build_F and hadamard functions to only consider non-zero entries
-        
-        # Here we work in terms of facets, starting from the left-most facet.
-        # This is NOT the same as elements. i.e. qR is to the right of the
-        # facet and qL is to the left of the facet, opposite of element-wise.
-        if q_bdyL is None:
-            qL = fn.pad_1dL(q, q[:,-1])
-        else:
-            qL = fn.pad_1dL(q, q_bdyL) # TODO: this definitely does not work
-            raise Exception('TODO: adding boundary condition.')
-        if q_bdyR is None:
-            qR = fn.pad_1dR(q, q[:,0])
-        else:
-            qR = fn.pad_1dL(q, q_bdyR)  # TODO: this definitely does not work
-            raise Exception('TODO: adding boundary condition.')
-        
-        Fsurfx, Fsurfy = self.build_F(qL, qR, self.calc_had_flux)
-        
-        surfa = self.had_gamma * (fn.gm_gm_had_diff(self.taphysx[idx],np.transpose(Fsurfx[:,:,:-1],(1,0,2))) + \
-                                  fn.gm_gm_had_diff(self.taphysy[idx],np.transpose(Fsurfy[:,:,:-1],(1,0,2))) )
-        surfb = self.had_gamma * (fn.gm_gm_had_diff(self.tbphysx[idx],Fsurfx[:,:,1:]) + \
-                                  fn.gm_gm_had_diff(self.tbphysy[idx],Fsurfy[:,:,1:]) )
-        surfa2 = (1-self.had_gamma) * (fn.gm_gm_had_diff(self.taphysx2[idx],np.transpose(Fsurfx[:,:,:-1],(1,0,2))) + \
-                                  fn.gm_gm_had_diff(self.taphysy2[idx],np.transpose(Fsurfy[:,:,:-1],(1,0,2))) )
-        surfb2 = (1-self.had_gamma) * (fn.gm_gm_had_diff(self.tbphysx2[idx],Fsurfx[:,:,1:]) + \
-                                  fn.gm_gm_had_diff(self.tbphysy2[idx],Fsurfy[:,:,1:]) )
-        
-        diss = self.coeff*self.diss(qL,qR,idx)
-        
-        sat = vol + vol2 + vol3 + surfa - surfb + surfa2 - surfb2 - diss
-        return sat
-    
-    ##########################################################################
-    ''' LINEARIZATIONS ''' 
-    ##########################################################################
     
     def dfdq_complexstep(self, q_L, q_R, xy, eps_imag=1e-30):
         '''
