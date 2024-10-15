@@ -879,7 +879,7 @@ class ADiss():
     
     
     
-    def get_LHS(self, q=None, step=1.0e-4):
+    def calc_LHS(self, q=None, step=1.0e-4):
         ''' could form explicitly... but for simplicity just do finite difference. 
         Note: this does not include the coefficient '''
         if q is None:

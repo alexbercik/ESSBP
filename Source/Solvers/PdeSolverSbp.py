@@ -232,12 +232,16 @@ class PdeSolverSbp(PdeSolver):
             
             elif self.dim ==3:
                 raise Exception('Not coded up yet')
+            
+        # originally was just using this for if diffeq.use_diffeq_dExdx, 
+        # but it is also useful for diffeq.calc_breaking_times
+        self.diffeq.set_sbp_op_1d(self.Dx, self.gm_gv)
 
     def dqdt_1d_div(self, q, t):
         ''' the main dqdt function for divergence form in 1D '''
         E = self.diffeq.calcEx(q)
         if self.use_diffeq_dExdx:
-            dExdx = self.diffeq.dExdx(q)
+            dExdx = self.diffeq.dExdx(q,E)
         else:
             dExdx = self.gm_gv(self.Dx, E)
         

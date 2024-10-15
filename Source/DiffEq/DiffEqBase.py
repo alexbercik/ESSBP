@@ -412,12 +412,14 @@ class PdeBase:
 
     ''' Terms for the first derivative: E '''
     
+    # Note: since this is class dependent, it will throw errors with numba
     def central_flux(self,qL,qR):
         ''' a simple central 2-point flux, the default for the Hadamard form
         NOTE: Ideally this should NOT be used. Will be very slow. '''
         fx = fn.arith_mean(self.calcEx(qL),self.calcEx(qR))
         return fx
-        
+
+    # Note: since this is class dependent, it will throw errors with numba    
     def central_fluxes(self,qL,qR):
         ''' a simple central 2-point flux, the default for the Hadamard form
         NOTE: Ideally this should NOT be used. Will be very slow. '''
@@ -500,12 +502,9 @@ class PdeBase:
     ''' functions setting up operators '''
     # TODO: Do I need these? At least for split forms, yes
     
-    def set_sbp_op(self, H, H_inv, Dx, Dy=None, Dz=None):
+    def set_sbp_op_1d(self, Dx, gm_gv):
         self.Dx = Dx
-        self.Dy = Dy
-        self.Dz = Dz
-        self.H_inv = H_inv
-        self.H = H
+        self.gm_gv = gm_gv
     
     def set_dg_strong_op(self, dd_phys):
         #TODO

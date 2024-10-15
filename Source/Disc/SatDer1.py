@@ -322,10 +322,10 @@ class SatDer1:
         
         Fsurf = self.build_F(qL, qR)
         if self.sparse:
-            surfa = self.lm_gm_had_diff(self.taT,Fsurf[:-1])
+            surfa = self.lmT_gm_had_diff(self.taT,Fsurf[:-1])
             surfb = self.lm_gm_had_diff(self.tb,Fsurf[1:])
         else:
-            surfa = self.lm_gm_had_diff(self.taT,Fsurf[:,:,:-1])
+            surfa = self.lm_gmT_had_diff(self.ta,Fsurf[:,:,:-1])
             surfb = self.lm_gm_had_diff(self.tb,Fsurf[:,:,1:])
         
         diss = self.coeff*self.diss(self.lm_gv(self.tRT,qL), self.lm_gv(self.tLT,qR))
@@ -595,9 +595,10 @@ class SatDer1:
         self.coeff=0 is conservative, self.coeff=1 is disspative
         '''        
         
-        sat = self.alpha * self.Esurf @ E + (1 - self.alpha) * 0.5 * q * (self.Esurf @ q)
-        q_a = self.tLT @ q
-        q_b = self.tRT @ q
+        sat = self.alpha * self.lm_gv(self.Esurf, E) \
+            + (1 - self.alpha) * 0.5 * q * self.lm_gv(self.Esurf, q)
+        q_a = self.lm_gv(self.tLT, q)
+        q_b = self.lm_gv(self.tRT, q)
         if q_bdyL is None:
             qf_L = fn.pad_1dL(q_b, q_b[:,-1])
             qf_R = fn.pad_1dR(q_a, q_a[:,0])
@@ -609,23 +610,24 @@ class SatDer1:
             sigma[0] = 1
             sigma[-1] = 1
         qf_jump = qf_R - qf_L
-        qf_avg = (qf_L + qf_R)/2
+        qf_avg = self.calc_avgq(qf_L, qf_R)
 
         if extrapolate_flux:
-            E_a = self.tLT @ E
-            E_b = self.tRT @ E
+            E_a = self.lm_gv(self.tLT, E)
+            E_b = self.lm_gv(self.tRT, E)
             if q_bdyL is None:
                 Ef_L = fn.pad_1dL(E_b, E_b[:,-1])
                 Ef_R = fn.pad_1dR(E_a, E_a[:,0])
             else:
                 Ef_L = fn.pad_1dL(E_b, 0.5 * q_bdyL**2)
                 Ef_R = fn.pad_1dR(E_a, 0.5 * q_bdyR**2)
-            f_avg = (Ef_L + Ef_R) / 2
+            f_avg = self.calc_avgq(Ef_L, Ef_R)
         else:  
             f_avg = (qf_avg)**2 / 2
         numflux = f_avg - sigma * abs(qf_avg) * qf_jump / 2
         
-        sat = sat - self.tR @ numflux[:,1:] + self.tL @ numflux[:,:-1]
+        sat = sat - self.lm_gv(self.tR, numflux[:,1:]) \
+                  + self.lm_gv(self.tL, numflux[:,:-1])
         return sat
             
     def div_1d_burgers_es(self, q, E, q_bdyL=None, q_bdyR=None):
@@ -634,34 +636,36 @@ class SatDer1:
         (uses extrapolation of the solution from the coupled elements)
         self.coeff=0 is conservative, self.coeff=1 is disspative
         '''
-        q_a = self.tLT @ q
-        q_b = self.tRT @ q
+        q_a = self.lm_gv(self.tLT, q)
+        q_b = self.lm_gv(self.tRT, q)
         if q_bdyL is None: # periodic
             q_L = fn.shift_right(q_b)
             q_R = fn.shift_left(q_a)
+            sigma = self.coeff
         else:
-            q_L = fn.pad_1dL(q_b, q_bdyL)
-            q_R = fn.pad_1dR(q_a, q_bdyR)
+            q_L = fn.pad_1dL(q_b, q_bdyL)[:,:-1]
+            q_R = fn.pad_1dR(q_a, q_bdyR)[:,1:]
             # make sure boundaries have upwind SATs
             sigma = self.coeff * np.ones((1,self.nelem+1))
             sigma[0] = 1
             sigma[-1] = 1
 
-        sat = (1./6.) * ( self.tR @ (4. * self.tRT @ E - q_b*q_R - q_R*q_R)
-                        - self.tL @ (4. * self.tLT @ E - q_a*q_L - q_L*q_L) )
+        sat = (1./6.) * ( self.lm_gv(self.tR, (4. * self.lm_gv(self.tRT, E) - q_b*q_R - q_R*q_R))
+                        - self.lm_gv(self.tL, (4. * self.lm_gv(self.tLT, E) - q_a*q_L - q_L*q_L)) )
         
         if self.coeff != 0.:
-            Rusanov = False # controls whether we try the ED rusanov flux (Gasser Local-Linear Stability 2022 eq 25)
-                            # or use a standard Lax-Friedrichs
             q_Rjump = q_b - q_R
             q_Ljump = q_a - q_L
-            if Rusanov:
-                q_Rlambda = np.maximum(np.abs(q_b), np.abs(q_R)) / 2.
-                q_Llambda = np.maximum(np.abs(q_a), np.abs(q_L)) / 2.
-            else:
+            if self.maxeig_type == 'rusanov':
+                q_Rlambda = np.maximum(np.abs(q_b), np.abs(q_R))
+                q_Llambda = np.maximum(np.abs(q_a), np.abs(q_L))
+            elif self.maxeig_type == 'lf':
                 q_Rlambda = np.abs(q_b + q_R) / 2.
                 q_Llambda = np.abs(q_a + q_L) / 2.
-            sat -= sigma*(self.tR @ (q_Rlambda * q_Rjump) + self.tL @ (q_Llambda * q_Ljump))
+            else:
+                raise Exception(f"maxeig_type {self.maxeig_type} not recognized. Try 'rusanov' or 'lf'.")
+            
+            sat -= 0.5*sigma*(self.lm_gv(self.tR, (q_Rlambda * q_Rjump)) + self.lm_gv(self.tL, (q_Llambda * q_Ljump)))
         
         return sat
     
@@ -673,10 +677,10 @@ class SatDer1:
         one recovers from the hadamard formulation
         (uses extrapolation of the flux from the coupled elements)
         '''
-        q_a = self.tLT @ q
-        q_b = self.tRT @ q
-        q2_a = self.tLT @ q**2
-        q2_b = self.tRT @ q**2
+        q_a = self.lm_gv(self.tLT, q)
+        q_b = self.lm_gv(self.tRT, q)
+        q2_a = self.lm_gv(self.tLT, q**2)
+        q2_b = self.lm_gv(self.tRT, q**2)
         if q_bdyL is None: # periodic
             q_L = fn.shift_right(q_b)
             q_R = fn.shift_left(q_a)
@@ -686,8 +690,8 @@ class SatDer1:
             raise Exception('TODO: adding boundary condition.')
 
         # this is the correct form you recover from the hadamard form (sec 9.3.2 in SBP book)
-        sat = (1./6.) * ( q * (self.tR @ ( q_b - q_R )) + self.tR @ ( q2_b - q2_R )
-                        - q * (self.tL @ ( q_a - q_L )) - self.tL @ ( q2_a - q2_L ) )
+        sat = (1./6.) * ( q * self.lm_gv(self.tR, q_b - q_R) + self.lm_gv(self.tR, q2_b - q2_R)
+                        - q * self.lm_gv(self.tL, q_a - q_L) - self.lm_gv(self.tL, q2_a - q2_L) )
         
         # below is the volume term [ E \circ F(u,u) ] 1 you get from the Hadamard form fluxes
         #vol = (1./6.) * ( q**2 * self.tR[:] + q * (self.tR @ q_b) + self.tR @ q2_b  
@@ -703,17 +707,18 @@ class SatDer1:
         #                 - q**2 * self.tL[:] - q * (self.tL @ q_a) - self.tL @ q2_a + self.tL @ (q_a*q_a + q_a*q_L + q_L*q_L) )
         
         if self.coeff != 0.:
-            Rusanov = False # controls whether we try the ED rusanov flux (Gasser Local-Linear Stability 2022 eq 25)
-                            # or use a standard Lax-Friedrichs
             q_Rjump = q_b - q_R
             q_Ljump = q_a - q_L
-            if Rusanov:
-                q_Rlambda = np.maximum(np.abs(q_b), np.abs(q_R)) / 2.
-                q_Llambda = np.maximum(np.abs(q_a), np.abs(q_L)) / 2.
-            else:
+            if self.maxeig_type == 'rusanov':
+                q_Rlambda = np.maximum(np.abs(q_b), np.abs(q_R))
+                q_Llambda = np.maximum(np.abs(q_a), np.abs(q_L))
+            elif self.maxeig_type == 'lf':
                 q_Rlambda = np.abs(q_b + q_R) / 2.
                 q_Llambda = np.abs(q_a + q_L) / 2.
-            sat -= self.coeff*(self.tR @ (q_Rlambda * q_Rjump) + self.tL @ (q_Llambda * q_Ljump))
+            else:
+                raise Exception(f"maxeig_type {self.maxeig_type} not recognized. Try 'rusanov' or 'lf'.")
+            
+            sat -= 0.5*self.coeff*(self.lm_gv(self.tR, (q_Rlambda * q_Rjump)) + self.lm_gv(self.tL, (q_Llambda * q_Ljump)))
         
         return sat
 

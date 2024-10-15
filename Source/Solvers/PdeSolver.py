@@ -25,6 +25,7 @@ class PdeSolver:
     cons_obj = None     # Conservation Objective(s)
     keep_all_ts = True  # whether to keep all time steps on solve
     skip_ts = 0
+    use_diffeq_dExdx = False
 
     def __init__(self, diffeq, settings,                            # Diffeq
                  tm_method, dt, t_final,                    # Time marching
@@ -628,7 +629,7 @@ class PdeSolver:
 
         
         
-    def get_LHS(self, q=None, t=0., exact_dfdq=True, step=1.0e-4, istep=1.0e-15, finite_diff=False):
+    def calc_LHS(self, q=None, t=0., exact_dfdq=True, step=1.0e-4, istep=1.0e-15, finite_diff=False):
         '''
         Either get the exact LHS operator on q if the problem is linear, or the
         linearization (LHS) of it at a particular state q. Either done exactly with
@@ -674,9 +675,9 @@ class PdeSolver:
             nen,nelem = q.shape   
             nn = nelem*nen   
             assert(self.qshape==q.shape),"ERROR: sizes don't match"
+            A = np.zeros((nn,nn)) 
             if not finite_diff:
-                try:
-                    A = np.zeros((nn,nn),dtype=np.complex128)    
+                try:  
                     for i in range(nen):
                         if nn>=400:
                             printProgressBar(i, nen-1, prefix = 'Complex Step Progress:')
@@ -689,8 +690,7 @@ class PdeSolver:
                 except:  
                     print('WARNING: complex step returned errors. Using finite difference.') 
                     finite_diff = True
-            if finite_diff:
-                A = np.zeros((nn,nn))            
+            if finite_diff:        
                 for i in range(nen):
                     if nn>=400:
                         printProgressBar(i, nen-1, prefix = 'Complex Step Progress:')
@@ -704,7 +704,7 @@ class PdeSolver:
         return A
 
     
-    def check_eigs(self, q=None, plot_eigs=True, returnA=False, returneigs=False, exact_dfdq=True,
+    def check_eigs(self, q=None, plot_eigs=True, returnA=False, returneigs=False, exact_dfdq=False,
                    finite_diff=False, step=5.0e-6, istep=1e-15, tol=1.0e-10, savefile=None, 
                    ymin=None, ymax=None, xmin=None, xmax=None, time=None, display_time=False, title=None, 
                    save_format='png', dpi=600, colour_by_k=False, overwrite=False, **kargs):
@@ -742,7 +742,8 @@ class PdeSolver:
             Approximate RHS spatial operator
 
         '''
-        A = self.get_LHS(q=q, exact_dfdq=exact_dfdq, step=step, istep=istep, finite_diff=finite_diff)
+        print('Checking Eigenvalues of System LHS Operator')
+        A = self.calc_LHS(q=q, exact_dfdq=exact_dfdq, step=step, istep=istep, finite_diff=finite_diff)
         nen1, nen2 = A.shape
         if nen1 >= 5000:
             import datetime
@@ -750,7 +751,7 @@ class PdeSolver:
             start_time = datetime.datetime.now()
             end_time = start_time + datetime.timedelta(seconds=time_est)
             print('HEADS UP: Large matrix size. This may take a while.')
-            print(f"Estimating will take {int(time_est)} seconds, i.e. finish around {end_time.strftime('%H:%M:%S')}" )
+            print(f"Estimating eigenvalue solve will take {int(time_est)} seconds, i.e. finish around {end_time.strftime('%H:%M:%S')}" )
         if (colour_by_k) and self.dim==1 and self.neq_node==1 and plot_eigs:
             eigs, eigvecs = np.linalg.eig(A)
         else:
@@ -827,6 +828,7 @@ class PdeSolver:
             else:
                 avg_k=None
 
+            plt.figure()
             X = [x.real for x in eigs]
             Y = [x.imag for x in eigs]
             if avg_k is None:
@@ -976,7 +978,7 @@ class PdeSolver:
         
         # This part adds a pertubation based on the largest real eigenmode
         if eigmode:
-            A = self.get_LHS(q=q0)
+            A = self.calc_LHS(q=q0)
             eigvals, eigvecs = np.linalg.eig(A)
             idx = np.argmax(eigvals.real)
             eigmode = eigvecs[:,idx]

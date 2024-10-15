@@ -41,13 +41,13 @@ class LinearConv(PdeBase):
         if self.ax == self.ax_fix:
             print('Using the fixed ax={} diffeq functions since params match.'.format(self.ax_fix))
             self.maxeig_dExdq = lambda q : np.ones(q.shape)
-            self.dExdq = lambda q : fn.diag(np.ones(q.shape))
+            self.dExdq = lambda q : fn.gdiag_to_gm(np.ones(q.shape))
             self.dExdq_eig_abs = self.dExdq
         
         if self.ay == self.ay_fix:
             print('Using the fixed ay={} diffeq functions since params match.'.format(self.ax_fix))
             self.maxeig_dEydq = lambda q : np.ones(q.shape)
-            self.dEydq = lambda q : fn.diag(np.ones(q.shape))
+            self.dEydq = lambda q : fn.gdiag_to_gm(np.ones(q.shape))
             self.dEydq_eig_abs = self.dEydq
 
         if self.ax == self.ax_fix and self.ay == self.ay_fix:
@@ -78,22 +78,22 @@ class LinearConv(PdeBase):
     def dExdq(self, q):
         
         #dExdq = np.array(self.a,ndmin=(q.ndim+1)) DO NOT USE!
-        dExdq = fn.diag(np.ones(q.shape)*self.ax)
+        dExdq = fn.gdiag_to_gm(np.ones(q.shape)*self.ax)
         return dExdq
     
     def dEydq(self, q):
 
-        dFdq = fn.diag(np.ones(q.shape)*self.ay)
+        dFdq = fn.gdiag_to_gm(np.ones(q.shape)*self.ay)
         return dFdq
 
     def dExdq_eig_abs(self, q):
 
-        dExdq_eig_abs = fn.diag(np.ones(q.shape)*abs(self.ax))
+        dExdq_eig_abs = fn.gdiag_to_gm(np.ones(q.shape)*abs(self.ax))
         return dExdq_eig_abs
     
     def dEydq_eig_abs(self, q):
 
-        dEydq_eig_abs = fn.diag(np.ones(q.shape)*abs(self.ay))
+        dEydq_eig_abs = fn.gdiag_to_gm(np.ones(q.shape)*abs(self.ay))
         return dEydq_eig_abs
     
     def maxeig_dExdq(self, q):
@@ -113,12 +113,12 @@ class LinearConv(PdeBase):
     
     def d2Exdq2(self, q):
 
-        dExdq = fn.diag(np.zeros(q.shape))
+        dExdq = fn.gdiag_to_gm(np.zeros(q.shape))
         return dExdq
     
     def d2Eydq2(self, q):
 
-        dEydq = fn.diag(np.zeros(q.shape))
+        dEydq = fn.gdiag_to_gm(np.zeros(q.shape))
         return dEydq
 
     @njit
