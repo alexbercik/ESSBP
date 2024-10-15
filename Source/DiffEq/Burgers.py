@@ -11,7 +11,7 @@ import numpy as np
 from Source.DiffEq.DiffEqBase import PdeBase
 import Source.Methods.Functions as fn
 from numba import njit
-from scipy.optimize import bisect
+from scipy.optimize import root_scalar
 
 class Burgers(PdeBase):
     '''
@@ -45,14 +45,23 @@ class Burgers(PdeBase):
             reshape=True
             x = x.flatten('F')
 
-        u0 = self.set_q0(xy=x)
-        a,b = np.min(u0), np.max(u0) # u(x,t) must be some u0(x), so bounded by min & max
-        a,b = a-(b-a)/100 , b+(b-a)/100 # expand the boundaries slightly just in case
+        #u0 = self.set_q0(xy=x)
+        #a,b = np.min(u0), np.max(u0) # u(x,t) must be some u0(x), so bounded by min & max
+        #a,b = a-(b-a)/20 , b+(b-a)/20 # expand the boundaries slightly just in case
         u = np.empty_like(x) # initiate u
         for i in range(len(x)):
-            f = lambda z : self.set_q0(xy=z) # f(x) = u0(x+u0*t0) = u0(x)
-            eq = lambda z : f(x[i]-z*time) - z  # find roots u of 0 = f(x-ut) - u
-            u[i] = bisect(eq,a-0.1,b+0.1,xtol=1e-12,maxiter=1000)
+            # the below is more efficient, but I couldn't figure out periodic boundaries
+            #f = lambda z : self.set_q0(xy=z) # f(x) = u0(x+u0*t0) = u0(x)
+            #eq = lambda z : f(x[i]-z*time) - z  # find roots u of 0 = f(x-ut) - u
+            #u[i] = bisect(eq,a,b,xtol=1e-12,maxiter=1000)
+
+            u0 = lambda x0 : self.set_q0(xy=x0)
+            eq = lambda x0 : np.mod((x[i] - self.xmin) - u0(x0)*time, self.dom_len) + self.xmin - x0
+            #eq = lambda x0 : x[i] - u0(x0)*time - x0
+            res = root_scalar(eq,bracket=[self.xmin-0.01,self.xmax+0.01],method='secant',
+                             x0=x[i]-u0(x[i])*time,xtol=1e-12,maxiter=1000)
+            x0 = res.root
+            u[i] = u0(x0)
         
         if reshape:
             u = np.reshape(u,(self.nen,self.nelem),'F')
