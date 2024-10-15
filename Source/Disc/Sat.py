@@ -348,7 +348,14 @@ class Sat(SatDer1, SatDer2):
 
         ''' Set the methods that will be used to calculate the SATs '''
 
-        if solver.pde_order == 1: 
+        if solver.pde_order == 1:
+
+            if self.neq_node == 1:
+                self.calc_spec_rad = lambda gm: np.abs(fn.gm_to_gdiag(gm))
+                self.repeat_neq_gv = lambda q: q
+            else:
+                self.calc_spec_rad = lambda gm: fn.spec_rad(gm, self.neq_node)
+                self.repeat_neq_gv = lambda q: fn.repeat_neq_gv(q, self.neq_node)
 
             # set averaging method
             if self.average=='simple' or self.average=='arithmetic':
@@ -386,7 +393,7 @@ class Sat(SatDer1, SatDer2):
 
             
             # set base dissipation method
-            if self.diss_type == 'nd' or self.diss_type == 'symmetric' or self.diss_type == 'ec':
+            if self.diss_type == 'nd' or self.diss_type == 'symmetric' or (self.diss_type == 'ec' and self.disc_type == 'had'):
                 if self.disc_type == 'div':
                     print('... Using the central SAT with no dissipation.')
                     # just absorb this into the base function? (no, b/c this is slightly faster)
@@ -665,38 +672,32 @@ class Sat(SatDer1, SatDer2):
                 if self.dim >= 2:
                     raise Exception('Burgers equation SATs only set up for 1D!')
                 else:
-                    #TODO: This needs to be cleaned up now that I have changed the base functions
-                    if self.disc_type == 'had':
-                        assert (self.diss_type=='ec'),"Only entropy-conservative SATs set up for Hadamard formulation. Try surf_type='ec'."
-                        print(f'Using the base Hadamard SAT with {solver.had_flux} flux and no dissipation.')
-                        self.calc = self.base_had_1d
-                        self.diss = lambda *x: 0
-                    elif self.disc_type == 'div':
-                        print('WARNING: This is not set up yet for curvilinear transformations.')
-                        if self.diss_type=='split':
-                            print('Using a split form SAT mimicking the variable coefficient advection formulation.')
-                            print('WARNING: The split form follows the Variable Coefficient formulation and is not entropy-stable.')
-                            self.alpha = solver.diffeq.split_alpha
-                            self.calc = lambda q,E: self.div_1d_burgers_split(q, E, q_bdyL=None, q_bdyR=None, sigma=0., extrapolate_flux=True)
-                        elif self.diss_type=='split_diss':
-                            print('Using a split form SAT mimicking the variable coefficient advection formulation.')
-                            print('WARNING: The split form follows the Variable Coefficient formulation and is not entropy-stable.')
-                            self.alpha = solver.diffeq.split_alpha
-                            self.calc = lambda q,E: self.div_1d_burgers_split(q, E, q_bdyL=None, q_bdyR=None, sigma=1., extrapolate_flux=True)
-                        elif self.diss_type=='ec':
-                            print('Using an entropy-conservative SAT found in the SBP book (not the one recovered from the Hadamard form).')
-                            self.calc = lambda q,E: self.div_1d_burgers_es(q, E, q_bdyL=None, q_bdyR=None, sigma=0.)
-                        elif self.diss_type=='es' or self.diss_type=='diss':
-                            print('Using an entropy-dissipative SAT found in the SBP book (not the one recovered from the Hadamard form).')
-                            self.calc = lambda q,E: self.div_1d_burgers_es(q, E, q_bdyL=None, q_bdyR=None, sigma=1.)
-                        elif self.diss_type=='ec_had':
-                            print('Using the entropy-conservative SAT recovered from the Hadamard form.')
-                            self.calc = lambda q,E: self.div_1d_burgers_had(q, E, q_bdyL=None, q_bdyR=None, sigma=0.)
-                        elif self.diss_type=='es_had':
-                            print('Using the entropy-dissipative SAT recovered from the Hadamard form.')
-                            self.calc = lambda q,E: self.div_1d_burgers_had(q, E, q_bdyL=None, q_bdyR=None, sigma=1.)
-                        else:
-                            raise Exception("SAT type not understood. Try 'ec', 'es', 'ec_had', 'es_had', 'split', or 'split_diss'.")
+                    if self.diss_type=='split':
+                        self.alpha = solver.diffeq.split_alpha
+                        print('... Using a split form SAT mimicking the variable coefficient advection formulation.')
+                        print(f'... average={self.average}, maxeig=lf, coeff={self.coeff}, alpha={self.alpha}')
+                        print('WARNING: The split form follows the Variable Coefficient formulation and is not entropy-stable.')
+                        self.calc = lambda q,E: self.div_1d_burgers_split(q, E, q_bdyL=None, q_bdyR=None, extrapolate_flux=True)
+                    elif self.diss_type=='ec':
+                        print('... Using an entropy-conservative SAT found in the SBP book.')
+                        print("    (not the one recovered from the Hadamard form. For this use diss_type='ec_had').")
+                        self.coeff = 0.
+                        self.calc = lambda q,E: self.div_1d_burgers_es(q, E, q_bdyL=None, q_bdyR=None)
+                    elif self.diss_type=='es' or self.diss_type=='ent':
+                        print('... Using an entropy-dissipative SAT found in the SBP book.')
+                        print("    (not the one recovered from the Hadamard form. For this use diss_type='es_had').")
+                        print(f'... average=simple, maxeig={self.maxeig_type}, coeff={self.coeff}')
+                        self.calc = lambda q,E: self.div_1d_burgers_es(q, E, q_bdyL=None, q_bdyR=None)
+                    elif self.diss_type=='ec_had':
+                        print('... Using the entropy-conservative SAT recovered from the Hadamard form.')
+                        self.coeff = 0.
+                        self.calc = lambda q,E: self.div_1d_burgers_had(q, E, q_bdyL=None, q_bdyR=None)
+                    elif self.diss_type=='es_had':
+                        print('... Using the entropy-dissipative SAT recovered from the Hadamard form.')
+                        print(f'... average=simple, maxeig={self.maxeig_type}, coeff={self.coeff}')
+                        self.calc = lambda q,E: self.div_1d_burgers_had(q, E, q_bdyL=None, q_bdyR=None)
+                    else:
+                        raise Exception("SAT type not understood. Try 'ec', 'es', 'ec_had', 'es_had', 'split', or 'split_diss'.")
 
 
             else:
@@ -826,7 +827,7 @@ class Sat(SatDer1, SatDer2):
 
     def calc_absA_lf_1d(self, qL, qR):
         qavg = self.calc_avgq(qL, qR)
-        Lambda = fn.repeat_neq_gv(self.maxeig_dExdq(qavg), self.neq_node)
+        Lambda = self.repeat_neq_gv(self.maxeig_dExdq(qavg))
         return Lambda
     
     def calc_absA_lf_2d(self, qL, qR, metrics):
@@ -834,8 +835,8 @@ class Sat(SatDer1, SatDer2):
         qavg = self.calc_avgq(qL, qR)
         maxeigsx = self.maxeig_dExdq(qavg)
         maxeigsy = self.maxeig_dEydq(qavg)
-        Lambda = fn.repeat_neq_gv(abs( maxeigsx * metrics[:,0,:] \
-                                    + maxeigsy * metrics[:,1,:]), self.neq_node)
+        Lambda = self.repeat_neq_gv(abs( maxeigsx * metrics[:,0,:] \
+                                       + maxeigsy * metrics[:,1,:]) )
         return Lambda
     
     def calc_absA_lf_3d(self, qL, qR, metrics):
@@ -844,27 +845,27 @@ class Sat(SatDer1, SatDer2):
         maxeigsx = self.maxeig_dExdq(qavg)
         maxeigsy = self.maxeig_dEydq(qavg)
         maxeigsz = self.maxeig_dEzdq(qavg)
-        Lambda = fn.repeat_neq_gv(abs( maxeigsx * metrics[:,0,:] \
-                                    + maxeigsy * metrics[:,1,:] \
-                                    + maxeigsz * metrics[:,2,:]), self.neq_node)
+        Lambda = self.repeat_neq_gv(abs( maxeigsx * metrics[:,0,:] \
+                                       + maxeigsy * metrics[:,1,:] \
+                                       + maxeigsz * metrics[:,2,:]) )
         return Lambda
     
     def calc_absA_lfn_nd(self, qL, qR, metrics):
         # accepts metrics that are not repeated by neq, return repeated by neq
         qavg = self.calc_avgq(qL, qR)
-        Lambda = fn.repeat_neq_gv(self.maxeig_dEndq(qavg, metrics), self.neq_node)
+        Lambda = self.repeat_neq_gv(self.maxeig_dEndq(qavg, metrics))
         return Lambda
     
     def calc_absA_rusanov_1d(self, qL, qR):
-        maxeigs = fn.repeat_neq_gv(np.maximum(self.maxeig_dExdq(qL), self.maxeig_dExdq(qR)), self.neq_node)
+        maxeigs = self.repeat_neq_gv(np.maximum(self.maxeig_dExdq(qL), self.maxeig_dExdq(qR)))
         return maxeigs
     
     def calc_absA_rusanov_2d(self, qL, qR, metrics):
         # accepts metrics that are not repeated by neq, return repeated by neq
         maxeigsx = np.maximum(self.maxeig_dExdq(qL), self.maxeig_dExdq(qR))
         maxeigsy = np.maximum(self.maxeig_dEydq(qL), self.maxeig_dEydq(qR))
-        Lambda = fn.repeat_neq_gv(abs( maxeigsx * metrics[:,0,:] \
-                                    + maxeigsy * metrics[:,1,:]), self.neq_node)
+        Lambda = self.repeat_neq_gv(abs( maxeigsx * metrics[:,0,:] \
+                                       + maxeigsy * metrics[:,1,:]) )
         return Lambda
     
     def calc_absA_rusanov_3d(self, qL, qR, metrics):
@@ -872,15 +873,15 @@ class Sat(SatDer1, SatDer2):
         maxeigsx = np.maximum(self.maxeig_dExdq(qL), self.maxeig_dExdq(qR))
         maxeigsy = np.maximum(self.maxeig_dEydq(qL), self.maxeig_dEydq(qR))
         maxeigsz = np.maximum(self.maxeig_dEzdq(qL), self.maxeig_dEzdq(qR))
-        Lambda = fn.repeat_neq_gv(abs( maxeigsx * metrics[:,0,:] \
-                                    + maxeigsy * metrics[:,1,:] \
-                                    + maxeigsz * metrics[:,2,:]), self.neq_node)
+        Lambda = self.repeat_neq_gv(abs( maxeigsx * metrics[:,0,:] \
+                                       + maxeigsy * metrics[:,1,:] \
+                                       + maxeigsz * metrics[:,2,:]) )
         return Lambda
     
     def calc_absA_rusanovn_nd(self, qL, qR, metrics):
         # accepts metrics that are not repeated by neq, return repeated by neq
         maxeig = np.maximum(self.maxeig_dEndq(qL, metrics), self.maxeig_dEndq(qR, metrics))
-        Lambda = fn.repeat_neq_gv(maxeig, self.neq_node)
+        Lambda = self.repeat_neq_gv(maxeig)
         return Lambda
     
     def calc_absA_matdiffeq_1d(self, qL, qR):
@@ -935,14 +936,14 @@ class Sat(SatDer1, SatDer2):
         ''' base method for self.jac_type == 'sca' in 1D '''
         Lambda = self.calc_absA(qL,qR)
         q_jump = qR - qL
-        absA_dq = fn.gdiag_gv(Lambda, q_jump)
+        absA_dq = Lambda * q_jump # assumes Lambda is gdiag
         return absA_dq
     
     def calc_absA_dq_sca_nD(self,qL,qR,metrics):
         ''' base method for self.jac_type == 'sca' in 1D '''
         Lambda = self.calc_absA(qL,qR,metrics)
         q_jump = qR - qL
-        absA_dq = fn.gdiag_gv(Lambda, q_jump)
+        absA_dq = Lambda * q_jump # assumes Lambda is gdiag
         return absA_dq
     
     def calc_absA_dq_mat_1D(self,qL,qR):
@@ -962,17 +963,17 @@ class Sat(SatDer1, SatDer2):
     def calc_absAP_dw_scasca_1D(self,qL,qR):
         ''' base method for self.jac_type == 'scasca' in 1D '''
         w_jump = self.entropy_var(qR) - self.entropy_var(qL)
-        rhoP = fn.repeat_neq_gv(fn.spec_rad(self.calc_P(qL,qR)),self.neq_node)
+        rhoP = self.repeat_neq_gv(self.calc_spec_rad(self.calc_P(qL,qR)))
         Lambda = self.calc_absA(qL,qR)
-        absAP_dw = fn.gdiag_gv(Lambda * rhoP, w_jump)
+        absAP_dw = Lambda * rhoP * w_jump # assumes Lambda and rhoP are gdiag
         return absAP_dw
     
     def calc_absAP_dw_scasca_nD(self,qL,qR,metrics):
         ''' base method for self.jac_type == 'scasca' in 1D '''
         w_jump = self.entropy_var(qR) - self.entropy_var(qL)
-        rhoP = fn.repeat_neq_gv(fn.spec_rad(self.calc_P(qL,qR)),self.neq_node)
+        rhoP = self.repeat_neq_gv(self.calc_spec_rad(self.calc_P(qL,qR)))
         Lambda = self.calc_absA(qL,qR,metrics)
-        absAP_dw = fn.gdiag_gv(Lambda * rhoP, w_jump)
+        absAP_dw = Lambda * rhoP * w_jump # assumes Lambda and rhoP are gdiag
         return absAP_dw
     
     def calc_absAP_dw_scamat_1D(self,qL,qR):
@@ -980,7 +981,7 @@ class Sat(SatDer1, SatDer2):
         w_jump = self.entropy_var(qR) - self.entropy_var(qL)
         P = self.calc_P(qL,qR)
         Lambda = self.calc_absA(qL,qR)
-        absAP_dw = fn.gdiag_gv(Lambda, fn.gm_gv(P, w_jump))
+        absAP_dw = Lambda * fn.gm_gv(P, w_jump) # assumes Lambda is gdiag
         return absAP_dw
     
     def calc_absAP_dw_scamat_nD(self,qL,qR,metrics):
@@ -988,7 +989,7 @@ class Sat(SatDer1, SatDer2):
         w_jump = self.entropy_var(qR) - self.entropy_var(qL)
         P = self.calc_P(qL,qR)
         Lambda = self.calc_absA(qL,qR,metrics)
-        absAP_dw = fn.gdiag_gv(Lambda, fn.gm_gv(P, w_jump))
+        absAP_dw = Lambda * fn.gm_gv(P, w_jump) # assumes Lambda is gdiag
         return absAP_dw
     
     def calc_absAP_dw_matmat_1D(self,qL,qR):

@@ -50,7 +50,7 @@ for run, label in zip(runs, labels):
                   had_flux=had_flux,disc_type=disc_type,
                   nelem=nelem, nen=nen, disc_nodes=run['op'],
                   bc='periodic', xmin=xmin, xmax=xmax)
-    #A = solver.get_LHS()
+    #A = solver.calc_LHS()
     #As.append(A)
     solver.check_eigs(title=label)
 

@@ -158,7 +158,7 @@ def lm_gm(A,B):
                     c[i,l,e] += A[i,j]*B[j,l,e]
     return c
 
-@njit
+#@njit
 def lm_gv(A,b):
     '''
     equivalent to A @ b
@@ -175,7 +175,7 @@ def lm_gv(A,b):
     c = A @ b
     return c
 
-@njit
+#@njit
 def lm_lv(A,b):
     '''
     equivalent to A @ b
@@ -192,7 +192,7 @@ def lm_lv(A,b):
     c = A @ b
     return c
 
-@njit
+#@njit
 def lm_lm(A,B):
     '''
     equivalent to A @ B
@@ -451,7 +451,7 @@ def gm_gv_colmultiply(A,q):
     return c
 
 @njit
-def diag(q):
+def gdiag_to_gm(q):
     '''
     Takes a 2-dim numpy array q of shape (nen,nelem) and returns a 3-dim
     array of shape (nen,nen,nelem) with the (nen) entries of q along the 
@@ -469,6 +469,29 @@ def diag(q):
     c=np.zeros((i,i,k),dtype=q.dtype)
     for e in range(k):
         c[:,:,e] = np.diag(q[:,e])
+    return c
+
+@njit
+def gm_to_gdiag(A):
+    '''
+    Takes a 3-dim numpy array A of shape (nen,nen,nelem) and returns a
+    2-dim array of shape (nen,nelem) of the (nen) diagonal entries of A. 
+    Can be thought of as the equivalent of np.diag(A) for a 3-dim array
+
+    Parameters
+    ----------
+    A : numpy array of shape (nen,nen,nelem)
+
+    Returns
+    -------
+    c : numpy array of shape (nen,nelem)
+    '''
+    i,j,k = np.shape(A)
+    if i!=j:
+        raise Exception('input array is not diagonal') 
+    c=np.zeros((i,k),dtype=A.dtype)
+    for e in range(k):
+        c[:,e] = np.diag(A[:,:,e])
     return c
 
 
@@ -574,8 +597,8 @@ def spec_rad(mat,neq):
     for e in range(nelem):
         for i in range(nen):
             A = mat[i*neq:(i+1)*neq,i*neq:(i+1)*neq,e].astype(np.complex128)
-            eigs = np.linalg.eigvals(A).real # forcing to be real
-            rho[i,e] = np.max(np.abs(eigs))
+            eigs = np.abs(np.linalg.eigvals(A))
+            rho[i,e] = np.max(eigs)
     return rho
 
 @njit

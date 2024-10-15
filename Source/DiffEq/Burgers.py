@@ -63,24 +63,24 @@ class Burgers(PdeBase):
         E = 0.5*q**2
         return E
 
-    def dExdx(self, q):
+    def dExdx(self, q, E):
 
         if self.use_split_form:
-            dExdx = (self.split_alpha/2.)*fn.gm_gv(self.Dx, q**2) + (1.-self.split_alpha)*fn.gdiag_gv(q,fn.gm_gv(self.Dx, q))
+            dExdx = (self.split_alpha/2.) * self.gm_gv(self.Dx, q**2) \
+                  + (1.-self.split_alpha) * q * self.gm_gv(self.Dx, q)
         else:
-            E = self.calcEx(q)
-            dExdx = fn.gm_gv(self.Dx, E)
+            dExdx = self.gm_gv(self.Dx, E)
 
         return dExdx
 
     def dExdq(self, q):
 
-        dExdq = fn.diag(q)
+        dExdq = fn.gdiag_to_gm(q)
         return dExdq
     
     def d2Exdq2(self, q):
         
-        d2Exdq2 = fn.diag(np.ones(q.shape))
+        d2Exdq2 = fn.gdiag_to_gm(np.ones(q.shape))
         return d2Exdq2
 
     def dfdq(self, q):
@@ -88,9 +88,9 @@ class Burgers(PdeBase):
 
         if self.use_split_form:
             # these both do the same, but the second is a bit faster
-            #dfdq = -(1/3)*(2*fn.lm_gm(self.der1,fn.diag(q)) + fn.diag(self.der1@q) + fn.gm_lm(fn.diag(q),self.der1))
-            #dfdq = -(1/3)*(2*np.multiply(self.der1[:,:,None],q) + fn.diag(self.der1 @ q) + fn.gm_lm(fn.diag(q),self.der1))
-            dfdq = -self.split_alpha*fn.gm_gv_colmultiply(self.Dx,q) - (1-self.split_alpha)*(fn.diag(fn.gm_gv(self.Dx, q)) + fn.gdiag_gm(q,self.Dx))
+            #dfdq = -(1/3)*(2*fn.lm_gm(self.der1,fn.gdiag_to_gm(q)) + fn.gdiag_to_gm(self.der1@q) + fn.gm_lm(fn.gdiag_to_gm(q),self.der1))
+            #dfdq = -(1/3)*(2*np.multiply(self.der1[:,:,None],q) + fn.gdiag_to_gm(self.der1 @ q) + fn.gm_lm(fn.gdiag_to_gm(q),self.der1))
+            dfdq = -self.split_alpha*fn.gm_gv_colmultiply(self.Dx,q) - (1-self.split_alpha)*(fn.gdiag_to_gm(fn.gm_gv(self.Dx, q)) + fn.gdiag_gm(q,self.Dx))
         else:
             # this does the same as the base function, just a bit faster
             dfdq = - fn.gm_gv_colmultiply(self.Dx,q)
@@ -104,7 +104,7 @@ class Burgers(PdeBase):
 
     def dExdq_eig_abs(self, q):
 
-        dExdq_eig_abs = fn.diag(abs(q))
+        dExdq_eig_abs = fn.gdiag_to_gm(abs(q))
         return dExdq_eig_abs
     
     def maxeig_dExdq(self, q):
@@ -119,9 +119,7 @@ class Burgers(PdeBase):
         return q
     
     def dqdw(self,q):
-        # normally I would use the below, but instead make it a shape g_diag
-        #return fn.diag(np.ones(q.shape))
-        return np.ones(q.shape)
+        return fn.gdiag_to_gm(np.ones(q.shape))
     
     def entropy(self,q):
         e = q**2/2
@@ -139,14 +137,21 @@ class Burgers(PdeBase):
         ''' compute the global A-conservation SBP of global solution vector q, equal to entropy/energy '''
         return np.sum(q * self.H * q)
     
+    def calc_breaking_time(self):
+        ''' estimate the time at which the solution breaks '''
+        q0 = self.set_q0()
+        dqdx = self.gm_gv(self.Dx, q0)
+        Tb = -1/np.min(dqdx)
+        print(f'The breaking time is approximately T = {Tb:.3g}')
+    
     @njit
-    def ec_Ex(qL,qR):
+    def ec_flux(qL,qR):
         ''' entropy conservative 2-point flux for the Hadamard form '''
         fx = (qL**2 + qL*qR + qR**2)/6
         return fx
     
     @njit   
-    def central_Ex(qL,qR):
+    def central_flux(qL,qR):
         ''' a central 2-point flux for hadamard form.
         This allows us to jit the hadamard flux functions. '''
         f = fn.arith_mean(qL**2/2,qR**2/2)

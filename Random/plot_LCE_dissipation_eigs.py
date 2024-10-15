@@ -49,7 +49,7 @@ for run, label in zip(runs, labels):
                   p=run['p'],surf_diss=run['sat'], vol_diss=run['diss'],
                   nelem=nelem, nen=nen, disc_nodes=run['op'],
                   bc=bc)
-    A = solver.get_LHS()
+    A = solver.calc_LHS()
     As.append(A)
 
 plot_eigs(As,labels=labels,savefile=savefile,line_width=2,equal_axes=True,title_size=14,legend_size=12)
