@@ -472,17 +472,17 @@ class PdeBase:
             eig_val = np.linalg.eigvals(dEzdq_mod)
             return np.max(np.abs(eig_val),axis=1)  
 
-    def dExdq_eig_abs(self,q):
+    def dExdq_abs(self,q):
         # This is a base method and should not be used, as it in general will be slow
         dExdq = self.dExdq(q)
         return fn.abs_eig_mat(dExdq)
     
-    def dEydq_eig_abs(self,q):
+    def dEydq_abs(self,q):
         # This is a base method and should not be used, as it in general will be slow
         dEydq = self.dEydq(q)
         return fn.abs_eig_mat(dEydq) 
     
-    def dEzdq_eig_abs(self,q):
+    def dEzdq_abs(self,q):
         # This is a base method and should not be used, as it in general will be slow
         dEzdq = self.dEzdq(q)
         return fn.abs_eig_mat(dEzdq) 

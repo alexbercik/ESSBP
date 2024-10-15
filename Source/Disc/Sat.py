@@ -145,7 +145,7 @@ class Sat(SatDer1, SatDer2):
             self.calcEx = solver.diffeq.calcEx
             self.dExdq = solver.diffeq.dExdq
             #self.d2Exdq2 = solver.diffeq.d2Exdq2
-            self.dExdq_eig_abs = solver.diffeq.dExdq_eig_abs
+            self.dExdq_abs = solver.diffeq.dExdq_abs
             self.maxeig_dExdq = solver.diffeq.maxeig_dExdq
             # self.metrics = fn.repeat_neq_gv(solver.mesh.metrics[:,0,:],self.neq_node)
             #self.bdy_metrics = np.repeat(np.reshape(solver.mesh.bdy_metrics, (1,2,self.nelem)),self.neq_node,0)
@@ -216,8 +216,9 @@ class Sat(SatDer1, SatDer2):
             self.dEydq = solver.diffeq.dEydq
             #self.d2Exdq2 = solver.diffeq.d2Exdq2
             #self.d2Eydq2 = solver.diffeq.d2Eydq2
-            self.dExdq_eig_abs = solver.diffeq.dExdq_eig_abs
-            self.dEydq_eig_abs = solver.diffeq.dEydq_eig_abs
+            self.dExdq_abs = solver.diffeq.dExdq_abs
+            self.dEydq_abs = solver.diffeq.dEydq_abs
+            self.dEndq_abs = solver.diffeq.dEndq_abs
             self.maxeig_dExdq = solver.diffeq.maxeig_dExdq
             self.maxeig_dEydq = solver.diffeq.maxeig_dEydq
             self.maxeig_dEndq = solver.diffeq.maxeig_dEndq
@@ -302,9 +303,10 @@ class Sat(SatDer1, SatDer2):
             self.d2Exdq2 = solver.diffeq.d2Exdq2
             self.d2Eydq2 = solver.diffeq.d2Eydq2
             self.d2Ezdq2 = solver.diffeq.d2Ezdq2
-            self.dExdq_eig_abs = solver.diffeq.dExdq_eig_abs
-            self.dEydq_eig_abs = solver.diffeq.dEydq_eig_abs
-            self.dEzdq_eig_abs = solver.diffeq.dEzdq_eig_abs
+            self.dExdq_abs = solver.diffeq.dExdq_abs
+            self.dEydq_abs = solver.diffeq.dEydq_abs
+            self.dEzdq_abs = solver.diffeq.dEzdq_abs
+            self.dEndq_abs = solver.diffeq.dEndq_abs
             self.maxeig_dExdq = solver.diffeq.maxeig_dExdq
             self.maxeig_dEydq = solver.diffeq.maxeig_dEydq
             self.maxeig_dEzdq = solver.diffeq.maxeig_dEzdq
@@ -640,30 +642,30 @@ class Sat(SatDer1, SatDer2):
                     print(str_base + ' and mat diss on cons vars (diablo 1)')
                     print(f'... average=roe, entropy_fix=hicken, coeff={self.coeff}')
                     if self.dim == 1: 
-                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_eig_abs_dq(qL,qR,1)
+                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_abs_dq(qL,qR,1)
                     else: 
-                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dEndq_eig_abs_dq(qL,qR,1)
+                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dEndq_abs_dq(qL,qR,1)
                 elif self.diss_type=='diablo2':
                     print(str_base + ' and mat diss on cons vars (diablo 2)')
                     print(f'... average=roe, entropy_fix=diablo, coeff={self.coeff}')
                     if self.dim == 1: 
-                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_eig_abs_dq(qL,qR,2)
+                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_abs_dq(qL,qR,2)
                     else: 
-                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dEndq_eig_abs_dq(qL,qR,2)
+                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dEndq_abs_dq(qL,qR,2)
                 elif self.diss_type=='diablo3':
                     print(str_base + ' and sca diss on cons vars (diablo 3)')
                     print(f'... average=roe, maxeig=lf, entropy_fix=hicken, coeff={self.coeff}')
                     if self.dim == 1: 
-                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_eig_abs_dq(qL,qR,3)
+                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_abs_dq(qL,qR,3)
                     else: 
-                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dEndq_eig_abs_dq(qL,qR,3)
+                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dEndq_abs_dq(qL,qR,3)
                 elif self.diss_type=='diablo4':
                     print(str_base + ' and sca diss on cons vars (diablo 4)')
                     print(f'... average=roe, maxeig=lf, entropy_fix=False, coeff={self.coeff}')
                     if self.dim == 1: 
-                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_eig_abs_dq(qL,qR,4)
+                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_abs_dq(qL,qR,4)
                     else: 
-                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dEndq_eig_abs_dq(qL,qR,4)
+                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dEndq_abs_dq(qL,qR,4)
                 else:
                     raise Exception("SAT: diablo type not understood. Must be one of 'diablo1', 'diablo2', 'diablo3', or 'diablo4'. Given:", self.diss_type)
         

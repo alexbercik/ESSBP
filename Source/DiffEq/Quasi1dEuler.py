@@ -205,7 +205,7 @@ class Quasi1dEuler(PdeBase):
             print('Using the fixed g={0} diffeq functions since params match.'.format(self.g_fix))
             self.calcEx = efn.calcEx_1D
             self.dExdq = efn.dExdq_1D
-            self.dExdq_eig_abs_dq = efn.dExdq_eig_abs_dq_1D
+            self.dExdq_abs_dq = efn.dExdq_abs_dq_1D
             self.central_flux = efn.Central_flux_1D
             self.ismail_roe_flux = efn.Ismail_Roe_flux_1D
             self.ranocha_flux = efn.Ranocha_flux_1D

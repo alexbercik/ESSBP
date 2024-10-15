@@ -102,10 +102,10 @@ class Burgers(PdeBase):
         q = fn.check_q_shape(self.set_q0())
         return np.max(np.abs(q))
 
-    def dExdq_eig_abs(self, q):
+    def dExdq_abs(self, q, entropy_fix):
 
-        dExdq_eig_abs = fn.gdiag_to_gm(abs(q))
-        return dExdq_eig_abs
+        dExdq_abs = fn.gdiag_to_gm(abs(q))
+        return dExdq_abs
     
     def maxeig_dExdq(self, q):
         ''' return the absolute maximum eigenvalue - used for LF fluxes '''

@@ -130,7 +130,7 @@ class LinearConv(PdeBase):
         d2Exdq2 = np.zeros(q.shape)
         return d2Exdq2
     
-    def dExdq_eig_abs(self, q):
+    def dExdq_abs(self, q, entropy_fix):
 
         return abs(self.a)
     
