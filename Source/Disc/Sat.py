@@ -50,6 +50,7 @@ class Sat(SatDer1, SatDer2):
         assert met_form=='skew_sym','SATs not currently set up for divergence form metrics'
         self.bc = solver.bc
         self.sparse = solver.sat_sparse
+        self.solver_sparse = solver.sparse
         self.sparsity, self.sparsity_unkronned = None, None
         self.xsparsity, self.xsparsity_unkronned = None, None
         self.ysparsity, self.ysparsity_unkronned = None, None
@@ -125,6 +126,12 @@ class Sat(SatDer1, SatDer2):
             self.lmT_gm_had_diff = sp.lmT_gm_had_diff
             self.gm_gm_had_diff = sp.gm_gm_had_diff
             self.gmT_gm_had_diff = sp.gmT_gm_had_diff
+            if self.solver_sparse:
+                self.lm_Fvol_had_diff = self.lm_gm_had_diff
+                self.gm_Fvol_had_diff = self.gm_gm_had_diff
+            else:  
+                self.lm_Fvol_had_diff = sp.lm_dgm_had_diff
+                self.gm_Fvol_had_diff = sp.gm_dgm_had_diff
             #self.lm_dgm = sp.lm_dgm
         else:
             self.lm_lv = fn.lm_lv
@@ -134,7 +141,9 @@ class Sat(SatDer1, SatDer2):
             self.lm_gm_had_diff = fn.lm_gm_had_diff
             self.lm_gmT_had_diff = staticmethod(lambda lm,gm: fn.lm_gm_had_diff(lm,np.transpose(gm,(1,0,2))))
             self.gm_gm_had_diff = fn.gm_gm_had_diff
-            self.gm_gmT_had_diff = staticmethod(lambda lm,gm: fn.gm_gm_had_diff(lm,np.transpose(gm,(1,0,2))))
+            self.gm_gmT_had_diff = staticmethod(lambda gm,gm2: fn.gm_gm_had_diff(gm,np.transpose(gm2,(1,0,2))))
+            self.lm_Fvol_had_diff = self.lm_gm_had_diff
+            self.gm_Fvol_had_diff = self.gm_gm_had_diff
             #self.lm_dgm = fn.lm_gm
         
         if self.dim == 1:
@@ -156,7 +165,7 @@ class Sat(SatDer1, SatDer2):
             if self.disc_type == 'had':
                 if self.neq_node == 1:
                     if self.sparse:
-                        self.build_F = staticmethod(lambda q1, q2: sp.build_F_sca(q1, q2, self.calc_had_flux))
+                        self.build_F = staticmethod(lambda q1, q2: sp.build_F_sca(q1, q2, self.calc_had_flux, self.sparsity))
                     else:
                         self.build_F = staticmethod(lambda q1, q2: fn.build_F_sca(q1, q2, self.calc_had_flux))
                 else:
@@ -164,8 +173,7 @@ class Sat(SatDer1, SatDer2):
                         self.build_F = staticmethod(lambda q1, q2: sp.build_F_sys(self.neq_node, q1, q2, self.calc_had_flux, 
                                                                                     self.sparsity_unkronned, self.sparsity))
                     else:
-                        self.build_F = staticmethod(lambda q1, q2: fn.build_F_sys(self.neq_node, q1, q2, self.calc_had_flux, 
-                                                                                    self.sparsity_unkronned, self.sparsity))
+                        self.build_F = staticmethod(lambda q1, q2: fn.build_F_sys(self.neq_node, q1, q2, self.calc_had_flux))
                     
             ''' save useful matrices so as not to calculate on each loop '''
 
@@ -182,19 +190,20 @@ class Sat(SatDer1, SatDer2):
                 self.tR = sp.lm_to_sp(self.tR)
                 self.tLT = sp.lm_to_sp(self.tLT)
                 self.tRT = sp.lm_to_sp(self.tRT)
+                if self.disc_type == 'had':
+                    # save this before we overwrite as sparse
+                    taT = np.ascontiguousarray(self.ta.T)
+                    taphysT_pad = np.repeat(taT[:,:,np.newaxis], self.nelem + 1, axis=2)
+                    taphysT_pad[:,:,-1] = self.tb.T
+                    tbphys_pad = np.repeat(self.tb[:,:,np.newaxis], self.nelem + 1, axis=2)
+                    tbphys_pad[:,:,0] = self.ta
+                
                 self.ta = sp.lm_to_sp(self.ta)
                 self.tb = sp.lm_to_sp(self.tb)
-
                 if self.disc_type == 'had':
-                    taT = np.ascontiguousarray(self.ta.T)
                     self.taT = sp.lm_to_sp(taT)
-
+                    self.sparsity = sp.set_gm_sparsity([taphysT_pad,tbphys_pad])
                     if self.neq_node > 1:
-                        taphysT_pad = np.repeat(taT[:,:,np.newaxis], self.nelem + 1, axis=2)
-                        taphysT_pad[:,:,-1] = self.tb.T
-                        tbphys_pad = np.repeat(self.tb[:,:,np.newaxis], self.nelem + 1, axis=2)
-                        tbphys_pad[:,:,0] = self.ta
-                        self.sparsity = sp.set_gm_sparsity([taphysT_pad,tbphys_pad])
                         self.sparsity_unkronned = sp.set_gm_sparsity([fn.unkron_neq_gm(taphysT_pad,self.neq_node),
                                                                     fn.unkron_neq_gm(tbphys_pad,self.neq_node)])
             
@@ -258,23 +267,25 @@ class Sat(SatDer1, SatDer2):
                 self.tLHperp = sp.lm_to_sp(self.tLHperp)
                 self.vol_x_mat = [sp.gm_to_sp(gm_mat) for gm_mat in self.vol_x_mat]   
                 self.vol_y_mat = [sp.gm_to_sp(gm_mat) for gm_mat in self.vol_y_mat]
-                self.tbphysx = [sp.gm_to_sp(gm_mat) for gm_mat in self.tbphysx]
-                self.tbphysy = [sp.gm_to_sp(gm_mat) for gm_mat in self.tbphysy] 
                 if (self.disc_type == 'had'):
                     taphysxT = [np.ascontiguousarray(np.transpose(gm_mat,(1,0,2))) for gm_mat in self.taphysx]
                     taphysyT = [np.ascontiguousarray(np.transpose(gm_mat,(1,0,2))) for gm_mat in self.taphysy]
-                    self.taphysxT = [sp.gm_to_sp(gm_mat) for gm_mat in taphysxT]
-                    self.taphysyT = [sp.gm_to_sp(gm_mat) for gm_mat in taphysyT]
                     taphysxT_pad = [fn.pad_gm_1dR(taphysxT[i],self.tbphysx[i][:,:,-1]) for i in range(len(taphysxT))]
                     taphysyT_pad = [fn.pad_gm_1dR(taphysyT[i],self.tbphysy[i][:,:,-1]) for i in range(len(taphysxT))]
                     tbphysx_pad = [fn.pad_gm_1dL(self.tbphysx[i],taphysxT[i][:,:,0]) for i in range(len(taphysxT))]
                     tbphysy_pad = [fn.pad_gm_1dL(self.tbphysy[i],taphysyT[i][:,:,0]) for i in range(len(taphysyT))]
+                self.tbphysx = [sp.gm_to_sp(gm_mat) for gm_mat in self.tbphysx]
+                self.tbphysy = [sp.gm_to_sp(gm_mat) for gm_mat in self.tbphysy] 
+                if (self.disc_type == 'had'):
+                    self.taphysxT = [sp.gm_to_sp(gm_mat) for gm_mat in taphysxT]
+                    self.taphysyT = [sp.gm_to_sp(gm_mat) for gm_mat in taphysyT]
                     self.xsparsity = sp.set_gm_sparsity([*taphysxT_pad,*tbphysx_pad])
-                    self.xsparsity_unkronned = sp.set_gm_sparsity([*[fn.unkron_neq_gm(mat,self.neq_node) for mat in taphysxT_pad],
-                                                                *[fn.unkron_neq_gm(mat,self.neq_node) for mat in tbphysx_pad]]) 
                     self.ysparsity = sp.set_gm_sparsity([*taphysyT_pad,*tbphysy_pad])
-                    self.ysparsity_unkronned = sp.set_gm_sparsity([*[fn.unkron_neq_gm(mat,self.neq_node) for mat in taphysyT_pad],
-                                                                *[fn.unkron_neq_gm(mat,self.neq_node) for mat in tbphysy_pad]]) 
+                    if self.neq_node > 1:
+                        self.xsparsity_unkronned = sp.set_gm_sparsity([*[fn.unkron_neq_gm(mat,self.neq_node) for mat in taphysxT_pad],
+                                                                    *[fn.unkron_neq_gm(mat,self.neq_node) for mat in tbphysx_pad]]) 
+                        self.ysparsity_unkronned = sp.set_gm_sparsity([*[fn.unkron_neq_gm(mat,self.neq_node) for mat in taphysyT_pad],
+                                                                    *[fn.unkron_neq_gm(mat,self.neq_node) for mat in tbphysy_pad]]) 
                 else:
                     self.taphysx = [sp.gm_to_sp(gm_mat) for gm_mat in self.taphysx]
                     self.taphysy = [sp.gm_to_sp(gm_mat) for gm_mat in self.taphysy] 
@@ -581,7 +592,7 @@ class Sat(SatDer1, SatDer2):
                                 self.dExdw_abs = solver.diffeq.dExdw_abs
                                 self.calc_absAP = self.calc_absAP_diffeq_1d
                             except:
-                                print('SAT: dExdw_abs not found in diffeq. Using base dEndw_abs.')
+                                print('SAT: dExdw_abs not found in diffeq. Using base dExdw_abs.')
                                 self.calc_absAP = self.calc_absAP_base_1d
                                 self.calc_absA = self.calc_absA_matdiffeq_1d
                                 self.calc_P = self.calc_P_avg

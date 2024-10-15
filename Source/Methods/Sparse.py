@@ -449,6 +449,67 @@ def lmT_lm_had_diff(AT,B):
     return c
 
 @njit
+def lm_dlm_had_diff(A,B):
+    '''
+    Compute the Hadamard product between a CSR matrices and a dense
+    local matrix, then sum rows
+
+    Parameters
+    ----------
+    A (data1, indices1, indptr1) : CSR representation of the first matrix
+    B : (nen1, nen2) numpy array
+
+    Returns
+    -------
+    c : numpy array of shape (nen1,nelem)
+    '''
+    # Get the CSR data for the current element
+    data, indices, indptr = A
+    nen1 = len(indptr) - 1
+
+    c = np.zeros(nen1, dtype=B.dtype)
+    
+    for row in range(nen1):
+        data_srt = indptr[row]
+        data_end = indptr[row+1]
+        for col_ptr in range(data_srt, data_end):
+            col = indices[col_ptr]
+            c[row] += data[col_ptr] * B[row, col]
+    
+    return c
+
+@njit
+def lmT_dlm_had_diff(AT,B):
+    '''
+    Compute the Hadamard product between a CSR matrices and a dense
+    local matrix, then sum rows
+    this computes sum_j A.T_ji B_ji = sum_j A_ij B_ji = had_diff(A,B.T)
+
+    Parameters
+    ----------
+    AT (data1, indices1, indptr1) : CSR representation of the first matrix
+    B : (nen1, nen2) numpy array
+
+    Returns
+    -------
+    c : numpy array of shape (nen2,nelem)
+    '''
+    # Get the CSR data for the current element
+    data, indices, indptr = AT
+    nen1 = len(indptr) - 1
+
+    c = np.zeros(nen1, dtype=data.dtype)
+    
+    for row in range(nen1):
+        data_srt = indptr[row]
+        data_end = indptr[row+1]
+        for col_ptr in range(data_srt, data_end):
+            col = indices[col_ptr]
+            c[col] += data[col_ptr] * B[row, col]
+    
+    return c
+
+@njit
 def gm_gm_had_diff(A,B):
     '''
     Compute the hadamard product between a sparse global matrix (list of CSR matrices) 
@@ -502,6 +563,65 @@ def gmT_gm_had_diff(AT,B):
     # Perform sparse hadamard product for each element
     for e in range(nelem):
         c[:, e] = lmT_lm_had_diff(AT[e], B[e])
+    
+    return c
+
+@njit
+def gm_dgm_had_diff(A,B):
+    '''
+    Compute the hadamard product between a sparse global matrix (list of CSR matrices) 
+    and a dense global matrix, then sum rows
+
+    Parameters
+    ----------
+    A : List of CSR matrices
+        Each element in the list is a tuple (data, indices, indptr) representing a sparse matrix in CSR format
+    B : numpy array of shape (nen1, nen2, nelem)
+
+    Returns
+    -------
+    c : numpy array of shape (nen1, nelem)
+        Result of the matrix-vector multiplication
+    '''
+    nen1 = len(A[0][2]) - 1  # Number of rows in the sparse matrix (from indptr)
+    nelem = len(A)  # Number of elements (same as the third dimension of the original tensor)
+    
+    # Initialize result array
+    c = np.zeros((nen1, nelem), dtype=B.dtype)
+    
+    # Perform sparse hadamard product for each element
+    for e in range(nelem):
+        c[:, e] = lm_lm_had_diff(A[e], B[:,:,e])
+    
+    return c
+
+@njit
+def gmT_dgm_had_diff(AT,B):
+    '''
+    Compute the hadamard product between a sparse global matrix (list of CSR matrices) 
+    and a dense global matrix, then sum rows
+    this computes sum_j A.T_ji B_ji = sum_j A_ij B_ji = had_diff(A,B.T)
+
+    Parameters
+    ----------
+    AT : List of CSR matrices
+        Each element in the list is a tuple (data, indices, indptr) representing a sparse matrix in CSR format
+    B : numpy array of shape (nen1, nen2, nelem)
+
+    Returns
+    -------
+    c : numpy array of shape (nen1, nelem)
+        Result of the matrix-vector multiplication
+    '''
+    nen1 = len(AT[0][2]) - 1  # Number of rows in the sparse matrix (from indptr)
+    nelem = len(AT)  # Number of elements (same as the third dimension of the original tensor)
+    
+    # Initialize result array
+    c = np.zeros((nen1, nelem), dtype=B.dtype)
+    
+    # Perform sparse hadamard product for each element
+    for e in range(nelem):
+        c[:, e] = lmT_dlm_had_diff(AT[e], B[:,:,e])
     
     return c
 
@@ -561,6 +681,67 @@ def lmT_gm_had_diff(AT,B):
     # Perform sparse hadamard product for each element
     for e in range(nelem):
         c[:, e] = lmT_lm_had_diff(AT, B[e])
+    
+    return c
+
+@njit
+def lm_dgm_had_diff(A,B):
+    '''
+    Compute the hadamard product between a sparse local matrix (CSR matrix) 
+    and a dense global matrix, then sum rows
+
+    Parameters
+    ----------
+    A (data1, indices1, indptr1) : CSR representation of the first matrix
+    B : numpy array of shape (nen1, nen2, nelem)
+
+    Returns
+    -------
+    c : numpy array of shape (nen1, nelem)
+        Result of the matrix-vector multiplication
+    '''
+    nen1 = len(A[2]) - 1  # Number of rows in the sparse matrix (from indptr)
+    nen1b, _, nelem = np.shape(B)
+    if nen1 != nen1b:
+        raise ValueError('Dimensions do not match', nen1, nen1b)
+    
+    # Initialize result array
+    c = np.zeros((nen1, nelem), dtype=B.dtype)
+    
+    # Perform sparse hadamard product for each element
+    for e in range(nelem):
+        c[:, e] = lm_dlm_had_diff(A, B[e])
+    
+    return c
+
+@njit
+def lmT_dgm_had_diff(AT,B):
+    '''
+    Compute the hadamard product between a sparse local matrix (CSR matricex) 
+    and a dense global matrix, then sum rows
+    this computes sum_j A.T_ji B_ji = sum_j A_ij B_ji = had_diff(A,B.T)
+
+    Parameters
+    ----------
+    AT (data1, indices1, indptr1) : CSR representation of the first matrix
+    B : B : numpy array of shape (nen2, nen3, nelem)
+
+    Returns
+    -------
+    c : numpy array of shape (nen1, nelem)
+        Result of the matrix-vector multiplication
+    '''
+    nen1 = len(AT[2]) - 1  # Number of rows in the sparse matrix (from indptr)
+    nen1b, _, nelem = np.shape(B)
+    if nen1 != nen1b:
+        raise ValueError('Dimensions do not match', nen1, nen1b)
+    
+    # Initialize result array
+    c = np.zeros((nen1, nelem), dtype=B.dtype)
+    
+    # Perform sparse hadamard product for each element
+    for e in range(nelem):
+        c[:, e] = lmT_dlm_had_diff(AT, B[:,:,e])
     
     return c
 
@@ -959,6 +1140,50 @@ if __name__ == '__main__':
     print('test set_sparsity:', diff)
 
     print('test sp_to_gm:', np.max(abs(sp_to_gm(gm_sp)) - gm))
+
+    gm = np.random.rand(10, 10, 3)
+    # add some sparsity
+    gm[1, 1, 0] = 0.
+    gm[1, 5, 0] = 0.
+    gm[4, 2, 2] = 0.
+    gmT = np.transpose(gm,(1,0,2))
+    gm_sp = gm_to_sp(gm)
+    gmT_sp = gm_to_sp(gmT)
+    gm2 = np.random.rand(10, 10, 3)
+    gm2[5, 6, 0] = 0.
+    gm2[4, 1, 0] = 0.
+    gm2[7, 8, 1] = 0.
+    gm2_sp = gm_to_sp(gm2)
+    lm = np.random.rand(10, 10)
+    lmT = lm.T
+    lm_sp = lm_to_sp(lm)
+    lmT_sp = lm_to_sp(lmT)
+    lm2 = np.random.rand(10, 10)
+    lm2_sp = lm_to_sp(lm2)
+
+    c = lmT_lm_had_diff(lmT_sp, lm2_sp)
+    c2 = np.sum(np.multiply(lm, lm2.T),axis=1)
+    print('test lmT_lm_had_diff:', np.max(abs(c-c2)))
+
+    c = lmT_gm_had_diff(lmT_sp, gm_sp)
+    c2 = fn.lm_gm_had_diff(lm,np.transpose(gm,(1,0,2)))
+    print('test lmT_gm_had_diff:', np.max(abs(c-c2)))
+
+    c = gmT_gm_had_diff(gmT_sp, gm2_sp)
+    c2 = fn.gm_gm_had_diff(gm,np.transpose(gm2,(1,0,2)))
+    print('test gmT_gm_had_diff:', np.max(abs(c-c2)))
+
+    c = lmT_dlm_had_diff(lmT_sp, lm2)
+    c2 = np.sum(np.multiply(lm, lm2.T),axis=1)
+    print('test lmT_dlm_had_diff:', np.max(abs(c-c2)))
+
+    c = lmT_dgm_had_diff(lmT_sp, gm)
+    c2 = fn.lm_gm_had_diff(lm,np.transpose(gm,(1,0,2)))
+    print('test lmT_dgm_had_diff:', np.max(abs(c-c2)))
+
+    c = gmT_dgm_had_diff(gmT_sp, gm2)
+    c2 = fn.gm_gm_had_diff(gm,np.transpose(gm2,(1,0,2)))
+    print('test gmT_dgm_had_diff:', np.max(abs(c-c2)))
 
     
     @njit

@@ -193,6 +193,8 @@ class PdeBase:
             elif self.dim == 3:
                 xy = self.xyz_elem
         else:
+            if q0_type in ('gassnersinwave','gassnersinwave_coarse'):
+                raise Exception('This q0_type does not work with xy provided.')
             qshape = np.shape(xy)
 
         if q0_type == 'gausswave':
@@ -263,12 +265,16 @@ class PdeBase:
         elif q0_type == 'gassnersinwave_cont': # continuous
             assert self.dim == 1,'Chosen q0 shape only works for dim = 1.'
             q0 = np.sin(np.pi * xy - 0.7) + 2 # note in the paper it is incorrectly written (np.pi * (xy - 0.7))
+        elif q0_type == 'gassnersinwave_cont_4pi': # continuous
+            assert self.dim == 1,'Chosen q0 shape only works for dim = 1.'
+            q0 = np.sin(4 * np.pi * xy - 0.7) + 2 # note in the paper it is incorrectly written (np.pi * (xy - 0.7))
         elif q0_type in ('gassnersinwave','gassnersinwave_coarse'): # discontinuous  
             assert self.dim == 1,'Chosen q0 shape only works for dim = 1.'
             from Source.Disc.Quadratures.LG import LG_set # use this instead of quadpy
             if q0_type == 'gassnersinwave_coarse':
                 #xy_LG = qp.c1.gauss_legendre(2).points # coarse LG nodes
-                xy_LG = LG_set(2)[0]
+                LGp = 1
+                xy_LG = LG_set(LGp+1)[0]
             else:
                 #xy_LG = qp.c1.gauss_legendre(self.nen).points # full degree LG nodes
                 xy_LG = LG_set(self.nen)[0]

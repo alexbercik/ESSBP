@@ -996,8 +996,11 @@ class PdeSolver:
     def plot_sol(self, q=None, **kwargs):
         ''' simply calls the plotting function from diffeq for final sol '''
         if q is None:
-            if self.q_sol.ndim == 2: q = self.q_sol
-            elif self.q_sol.ndim == 3: q = self.q_sol[:,:,-1]
+            if self.q_sol is None:
+                q = self.diffeq.set_q0()
+            else:
+                if self.q_sol.ndim == 2: q = self.q_sol
+                elif self.q_sol.ndim == 3: q = self.q_sol[:,:,-1]
         if 'time' not in kwargs: kwargs['time']=self.t_final
         if 'plot_exa' not in kwargs: kwargs['plot_exa']=True
         self.diffeq.plot_sol(q, **kwargs)
