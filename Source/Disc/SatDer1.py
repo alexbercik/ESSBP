@@ -318,7 +318,7 @@ class SatDer1:
             qbdy = np.repeat(q_bdyR, self.nen)
             qR = fn.pad_1dL(q, qbdy) 
         
-        vol = self.lm_gm_had_diff(self.Esurf, Fvol)
+        vol = self.lm_Fvol_had_diff(self.Esurf, Fvol)
         
         Fsurf = self.build_F(qL, qR)
         if self.sparse:
@@ -338,8 +338,8 @@ class SatDer1:
         The base conservative flux in Hadamard Form. Then add dissipative term.
         '''
 
-        vol = self.gm_gm_had_diff(self.vol_x_mat[idx], Fxvol) \
-            + self.gm_gm_had_diff(self.vol_y_mat[idx], Fyvol)
+        vol = self.gm_Fvol_had_diff(self.vol_x_mat[idx], Fxvol) \
+            + self.gm_Fvol_had_diff(self.vol_y_mat[idx], Fyvol)
 
         # Here we work in terms of facets, starting from the left-most facet.
         # This is NOT the same as elements. i.e. qR is to the right of the
@@ -377,9 +377,9 @@ class SatDer1:
         The base conservative flux in Hadamard Form. Then add dissipative term.
         '''
         
-        vol = self.gm_gm_had_diff(self.vol_x_mat[idx], Fxvol) + \
-              self.gm_gm_had_diff(self.vol_y_mat[idx], Fyvol) + \
-              self.gm_gm_had_diff(self.vol_z_mat[idx], Fzvol)
+        vol = self.gm_Fvol_had_diff(self.vol_x_mat[idx], Fxvol) + \
+              self.gm_Fvol_had_diff(self.vol_y_mat[idx], Fyvol) + \
+              self.gm_Fvol_had_diff(self.vol_z_mat[idx], Fzvol)
         
         # Here we work in terms of facets, starting from the left-most facet.
         # This is NOT the same as elements. i.e. qR is to the right of the
@@ -656,6 +656,7 @@ class SatDer1:
         if self.coeff != 0.:
             q_Rjump = q_b - q_R
             q_Ljump = q_a - q_L
+            #NOTE: dividing by 2 below
             if self.maxeig_type == 'rusanov':
                 q_Rlambda = np.maximum(np.abs(q_b), np.abs(q_R))
                 q_Llambda = np.maximum(np.abs(q_a), np.abs(q_L))
@@ -709,7 +710,8 @@ class SatDer1:
         if self.coeff != 0.:
             q_Rjump = q_b - q_R
             q_Ljump = q_a - q_L
-            if self.maxeig_type == 'rusanov':
+            #NOTE: dividing by 2 below
+            if self.maxeig_type == 'rusanov': # as in eq 24 of local linear stability paper
                 q_Rlambda = np.maximum(np.abs(q_b), np.abs(q_R))
                 q_Llambda = np.maximum(np.abs(q_a), np.abs(q_L))
             elif self.maxeig_type == 'lf':
