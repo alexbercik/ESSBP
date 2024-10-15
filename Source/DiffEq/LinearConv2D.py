@@ -42,13 +42,13 @@ class LinearConv(PdeBase):
             print('Using the fixed ax={} diffeq functions since params match.'.format(self.ax_fix))
             self.maxeig_dExdq = lambda q : np.ones(q.shape)
             self.dExdq = lambda q : fn.gdiag_to_gm(np.ones(q.shape))
-            self.dExdq_eig_abs = self.dExdq
+            self.dExdq_abs = self.dExdq
         
         if self.ay == self.ay_fix:
             print('Using the fixed ay={} diffeq functions since params match.'.format(self.ax_fix))
             self.maxeig_dEydq = lambda q : np.ones(q.shape)
             self.dEydq = lambda q : fn.gdiag_to_gm(np.ones(q.shape))
-            self.dEydq_eig_abs = self.dEydq
+            self.dEydq_abs = self.dEydq
 
         if self.ax == self.ax_fix and self.ay == self.ay_fix:
             self.central_fluxes = self.central_fix_fluxes
@@ -86,15 +86,15 @@ class LinearConv(PdeBase):
         dFdq = fn.gdiag_to_gm(np.ones(q.shape)*self.ay)
         return dFdq
 
-    def dExdq_eig_abs(self, q):
+    def dExdq_abs(self, q, entropy_fix):
 
-        dExdq_eig_abs = fn.gdiag_to_gm(np.ones(q.shape)*abs(self.ax))
-        return dExdq_eig_abs
+        dExdq_abs = fn.gdiag_to_gm(np.ones(q.shape)*abs(self.ax))
+        return dExdq_abs
     
-    def dEydq_eig_abs(self, q):
+    def dEydq_abs(self, q, entropy_fix):
 
-        dEydq_eig_abs = fn.gdiag_to_gm(np.ones(q.shape)*abs(self.ay))
-        return dEydq_eig_abs
+        dEydq_abs = fn.gdiag_to_gm(np.ones(q.shape)*abs(self.ay))
+        return dEydq_abs
     
     def maxeig_dExdq(self, q):
         ''' return the maximum eigenvalue - used for LF fluxes '''

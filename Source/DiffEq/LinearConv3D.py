@@ -44,21 +44,21 @@ class LinearConv(PdeBase):
             print('Using the fixed ax={} diffeq functions since params match.'.format(self.ax_fix))
             self.maxeig_dExdq = lambda q : np.ones(q.shape)
             self.dExdq = lambda q : fn.gdiag_to_gm(np.ones(q.shape))
-            self.dExdq_eig_abs = self.dExdq
+            self.dExdq_abs = self.dExdq
             self.central_Ex = self.central_fix_Ex
         
         if self.ay == self.ay_fix:
             print('Using the fixed ay={} diffeq functions since params match.'.format(self.ax_fix))
             self.maxeig_dEydq = lambda q : np.ones(q.shape)
             self.dEydq = lambda q : fn.gdiag_to_gm(np.ones(q.shape))
-            self.dEydq_eig_abs = self.dEydq
+            self.dEydq_abs = self.dEydq
             self.central_Ey = self.central_fix_Ey
 
         if self.az == self.az_fix:
             print('Using the fixed ay={} diffeq functions since params match.'.format(self.ax_fix))
             self.maxeig_dEzdq = lambda q : np.ones(q.shape)
             self.dEzdq = lambda q : fn.gdiag_to_gm(np.ones(q.shape))
-            self.dEzdq_eig_abs = self.dEzdq
+            self.dEzdq_abs = self.dEzdq
             self.central_Ez = self.central_fix_Ez
 
     def exact_sol(self, time=0, xyx=None):
@@ -105,20 +105,20 @@ class LinearConv(PdeBase):
         dGdq = fn.gdiag_to_gm(np.ones(q.shape)*self.az)
         return dGdq
 
-    def dExdq_eig_abs(self, q):
+    def dExdq_abs(self, q, entropy_fix):
 
-        dExdq_eig_abs = fn.gdiag_to_gm(np.ones(q.shape)*abs(self.ax))
-        return dExdq_eig_abs
+        dExdq_abs = fn.gdiag_to_gm(np.ones(q.shape)*abs(self.ax))
+        return dExdq_abs
     
-    def dEydq_eig_abs(self, q):
+    def dEydq_abs(self, q, entropy_fix):
 
-        dEydq_eig_abs = fn.gdiag_to_gm(np.ones(q.shape)*abs(self.ay))
-        return dEydq_eig_abs
+        dEydq_abs = fn.gdiag_to_gm(np.ones(q.shape)*abs(self.ay))
+        return dEydq_abs
     
-    def dEzdq_eig_abs(self, q):
+    def dEzdq_abs(self, q, entropy_fix):
 
-        dEzdq_eig_abs = fn.gdiag_to_gm(np.ones(q.shape)*abs(self.az))
-        return dEzdq_eig_abs
+        dEzdq_abs = fn.gdiag_to_gm(np.ones(q.shape)*abs(self.az))
+        return dEzdq_abs
     
     def maxeig_dExdq(self, q):
         ''' return the maximum eigenvalue - used for LF fluxes '''

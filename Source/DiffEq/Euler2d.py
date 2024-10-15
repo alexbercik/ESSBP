@@ -146,7 +146,7 @@ class Euler(PdeBase):
             self.dExdq = efn.dExdq_2D
             self.dEydq = efn.dEydq_2D
             self.dEndq = efn.dEndq_2D
-            self.dEndq_eig_abs_dq = efn.dEndq_eig_abs_dq_2D
+            self.dEndq_abs_dq = efn.dEndq_abs_dq_2D
             self.central_fluxes = efn.Central_fluxes_2D
             self.ismail_roe_fluxes = efn.Ismail_Roe_fluxes_2D
             self.ranocha_fluxes = efn.Ranocha_fluxes_2D

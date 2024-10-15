@@ -207,7 +207,7 @@ class SatDer1:
         
         qf_avg = self.calc_avgq(qf_L, qf_R)
         A = self.dExdq(qf_avg)            
-        A_abs = self.dExdq_eig_abs(qf_avg)
+        A_abs = self.dExdq_abs(qf_avg)
         
         # Upwinding flux
         A_upwind = (A + self.coeff*A_abs)/2
@@ -240,9 +240,9 @@ class SatDer1:
         
         qf_avg = self.calc_avgq(qf_L, qf_R)
         Ax = self.dExdq(qf_avg)            
-        Ax_abs = self.dExdq_eig_abs(qf_avg)
+        Ax_abs = self.dExdq_abs(qf_avg)
         Ay = self.dExdq(qf_avg)            
-        Ay_abs = self.dEydq_eig_abs(qf_avg)
+        Ay_abs = self.dEydq_abs(qf_avg)
         
         # Upwinding flux
         A_upwind = (Ax + self.coeff*Ax_abs)/2 * bdy_metricsx + (Ay + self.coeff*Ay_abs)/2 * bdy_metricsy
@@ -275,11 +275,11 @@ class SatDer1:
         
         qf_avg = self.calc_avgq(qf_L, qf_R)
         Ax = self.dExdq(qf_avg)            
-        Ax_abs = self.dExdq_eig_abs(qf_avg)
+        Ax_abs = self.dExdq_abs(qf_avg)
         Ay = self.dEydq(qf_avg)            
-        Ay_abs = self.dEydq_eig_abs(qf_avg)
+        Ay_abs = self.dEydq_abs(qf_avg)
         Az = self.dEzdq(qf_avg)            
-        Az_abs = self.dEzdq_eig_abs(qf_avg)
+        Az_abs = self.dEzdq_abs(qf_avg)
         
         # Upwinding flux
         A_upwind = (Ax + self.coeff*Ax_abs)/2 * bdy_metricsx \
@@ -774,7 +774,7 @@ class SatDer1:
         # second derivative of the flux wrt q
         dAdq = self.d2Exdq2(qfacet)
 
-        #A_abs = self.diffeq.dExdq_eig_abs(A) # actually just absolute value (scalar in 3d format)
+        #A_abs = self.diffeq.dExdq_abs(A) # actually just absolute value (scalar in 3d format)
         A_abs = abs(A)
         sign_A = np.sign(A)
         

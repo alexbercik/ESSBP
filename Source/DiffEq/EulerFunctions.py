@@ -2169,7 +2169,7 @@ def StegerWarming_diss_2D(q, n):
     return f
 
 @njit
-def dExdq_eig_abs_dq_1D(q, qg, flux_type):
+def dExdq_abs_dq_1D(q, qg, flux_type):
     '''
     calculates cabs(A)@(q-qg) according to the implentation in diablo. Used in SATs.
     INPUTS:
@@ -2296,7 +2296,7 @@ def dExdq_eig_abs_dq_1D(q, qg, flux_type):
     return fi
 
 @njit
-def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
+def dEndq_abs_dq_2D(dxidx, q, qg, flux_type):
     '''
     calculates cabs(An)@(q-qg) according to the implentation in diablo. Used in SATs.
     INPUTS:
@@ -2453,7 +2453,7 @@ def dEndq_eig_abs_dq_2D(dxidx, q, qg, flux_type):
     return fi
 
 @njit
-def dEndq_eig_abs_dq_3D(dxidx, q, qg, flux_type):
+def dEndq_abs_dq_3D(dxidx, q, qg, flux_type):
     '''
     calculates cabs(An)@(q-qg) according to the implentation in diablo. Used in SATs.
     INPUTS:
