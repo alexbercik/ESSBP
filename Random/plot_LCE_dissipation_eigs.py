@@ -19,7 +19,6 @@ para = 1.0
 tm_method = 'rk4' # doesn't actually matter here
 dt = 0.001 # doesn't actually matter here
 tf = 1. # doesn't actually matter here
-bc = 'periodic'
 nelem = 4 # number of elements
 nen = 24 # number of nodes per element
 q0_type = 'GaussWave_sbpbook' # doesn't actually matter here
@@ -48,7 +47,7 @@ for run, label in zip(runs, labels):
     solver = PdeSolverSbp(diffeq, settings,tm_method, dt, tf,
                   p=run['p'],surf_diss=run['sat'], vol_diss=run['diss'],
                   nelem=nelem, nen=nen, disc_nodes=run['op'],
-                  bc=bc)
+                  bc='periodic')
     A = solver.calc_LHS()
     As.append(A)
 
