@@ -104,8 +104,8 @@ def animate(solver, file_name='animation', make_video=True, make_gif=False,
     ax.plot([0,0],[np.min(solver.diffeq.var2plot(np.min(solver.q_sol,axis=2),var2plot_name)),np.max(solver.diffeq.var2plot(np.max(solver.q_sol,axis=2),var2plot_name))])
     ymin,ymax= ax.get_ylim()
     plt.close()
-    if 'solmin' not in plotargs: plotargs['solmin']=ymin
-    if 'solmax' not in plotargs: plotargs['solmax']=ymax
+    if 'ymin' not in plotargs: plotargs['ymin']=ymin
+    if 'ymax' not in plotargs: plotargs['ymax']=ymax
     
     # Make directory in which files will be saved
     if path.exists(file_name):
@@ -246,12 +246,14 @@ def eigvec_history(solver, A=None, tfinal=None, save_file=None, window_size=1,
         tfinal = solver.t_final
     else:
         assert(tfinal <= solver.t_final),"tfinal must not exceed simulation time"
-    time = np.arange(0,tfinal,step=solver.dt)
+    time = np.arange(0,tfinal,step=solver.dt*(solver.skip_ts+1))
+    if (time[-1] != tfinal) and (tfinal == solver.t_final):
+        time = np.append(time,tfinal)
     steps = len(time)
 
     assert(solver.q_sol.ndim == 3),'solver.q_sol of wrong dimension'
     assert(A.shape==(solver.nn,solver.nn)),'The solution array {0} does not match operator shape {1}'.format(solver.nn,A.shape)
-    sols = solver.q_sol[:,:,:steps].reshape((solver.nn,steps),order='F')
+    sols = solver.q_sol[:,:,:steps+1].reshape((solver.nn,steps),order='F')
     
     if use_percent: plot_difference=True
     if plot_theory: individual_plots=True
@@ -319,6 +321,9 @@ def eigvec_history(solver, A=None, tfinal=None, save_file=None, window_size=1,
     plt.title(r'Eigenvector Decomposition of Solution',fontsize=16)
     if save_file is not None:
         plt.savefig(save_file+'_all.eps', format='eps')
+    else:
+        plt.show()
+    plt.close()
     
     # Plot overall moving averages of all eigenvectors
     if window_size >1:
@@ -339,6 +344,9 @@ def eigvec_history(solver, A=None, tfinal=None, save_file=None, window_size=1,
         plt.title(r'Moving Averages of Eigenvector Decomposition',fontsize=16)
         if save_file is not None:
             plt.savefig(save_file+'_all_avg.eps', format='eps')
+        else:
+            plt.show()
+        plt.close()
             
     # Plot fits
     if fit_data:
@@ -362,6 +370,9 @@ def eigvec_history(solver, A=None, tfinal=None, save_file=None, window_size=1,
         plt.title(r'Coefficient Fit Eigenvector Decomposition',fontsize=16)
         if save_file is not None:
             plt.savefig(save_file+'_all_fits.eps', format='eps')
+        else:
+            plt.show()
+        plt.close()
     
     # same plots as above but now for each individual eigenvector
     if individual_plots:
@@ -399,10 +410,15 @@ def eigvec_history(solver, A=None, tfinal=None, save_file=None, window_size=1,
                 plt.xlabel(r'Average Time (window size {0:.2f}s)'.format(solver.dt*window_size),fontsize=14)
                 if save_file is not None:
                     plt.savefig(save_file+'_eig{0}_avg.eps'.format(i), format='eps')
+                else:
+                    plt.show()
             else: 
                 plt.xlabel(r'Time',fontsize=14)
                 if save_file is not None:
                     plt.savefig(save_file+'_eig{0}.eps'.format(i), format='eps')
+                else:
+                    plt.show()
+            plt.close()
 
 
 def symbolic(A):
@@ -727,7 +743,8 @@ def calc_conv_rate(dof_vec, err_vec, dim, n_points=None,
 def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
               extra_marker=None, skipfit=None, skip=None, ylabel=None, xlabel=None,
               ylim=(None,None),xlim=(None,None),grid=False,legendloc=None,convunc=True,
-              figsize=(6,4), extra_xticks=False, scalar_xlabel=False, serif=False):
+              figsize=(6,4), extra_xticks=False, scalar_xlabel=False, serif=False,
+              colors=None, markers=None, linestyles=None):
     '''
     Parameters
     ----------
@@ -798,8 +815,18 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
     def fit_func(x, a, b): 
         return -a*x + b
     
-    colors=['blue','red','green','magenta','orange','purple','brown']
-    marks=['o','^','s','D','>','<','8']
+    if colors == None:
+        colors=['blue','red','green','magenta','orange','purple','brown']
+    else: 
+        assert(isinstance(colors, list)), "colors must be a list"
+    if markers == None:
+        markers=['o','^','s','D','>','<','8']
+    else: 
+        assert(isinstance(markers, list)), "markers must be a list"
+    if linestyles == None:
+        linestyles = ['--']
+    else:
+        assert(isinstance(linestyles, list)), "linestyles must be a list"
     
     for i in range(n_cases):
         dof_mod = np.copy(dof_vec[i][skip[i]:])
@@ -832,16 +859,16 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
                     slope = r": ${0:9.4f} \pm {1:6.1g}$".format(p_opt[0],unc)
             else:
                 slope = r": ${0:9.2f}$".format(p_opt[0])
-            plt.loglog(dof_mod,err_mod,marks[i%len(marks)],markersize=8, color=colors[i%len(colors)],
-                       label=string+slope)
+            plt.loglog(dof_mod,err_mod,markers[i%len(markers)],markersize=8, color=colors[i%len(colors)],
+                       markerfacecolor = 'none', markeredgewidth=2, label=string+slope)
             plt.loglog(np.linspace(dof_mod[skipfit[i]],dof_mod[-1]), # plot
                        np.exp(fit_func(np.log(np.linspace(dof_mod[skipfit[i]],dof_mod[-1])), *p_opt)), 
-                       linewidth=1, linestyle = '--', color=colors[i%len(colors)])
+                       linewidth=1, linestyle = linestyles[i%len(linestyles)], color=colors[i%len(colors)])
         elif len(dof_mod) == 2:
             slope = r": ${0:9.3}$".format(-(np.log(err_mod[1])-np.log(err_mod[0]))/(np.log(dof_mod[1])-np.log(dof_mod[0])))
-            plt.loglog(dof_mod,err_mod,marks[i%len(marks)],markersize=8, color=colors[i%len(colors)],
-                       label=string+slope)
-            plt.loglog(dof_mod, err_mod, linewidth=1, linestyle = '--', color=colors[i%len(colors)])
+            plt.loglog(dof_mod,err_mod,markers[i%len(markers)],markersize=8, color=colors[i%len(colors)],
+                       markerfacecolor = 'none', markeredgewidth=2, label=string+slope)
+            plt.loglog(dof_mod, err_mod, linewidth=1, linestyle = linestyles[i%len(linestyles)], color=colors[i%len(colors)])
         if extra_marker != None:
             for j in range(n_runs):
                 if extra_marker[i][j] == True:

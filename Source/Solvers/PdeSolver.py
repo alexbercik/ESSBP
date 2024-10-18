@@ -3,7 +3,7 @@
 """
 Created on Thu Oct  1 12:01:45 2020
 
-@author: andremarchildon
+@author: bercik
 """
 
 import numpy as np
@@ -415,6 +415,9 @@ class PdeSolver:
         if any('der' in name.lower() for name in self.cons_obj_name):
             dqdt = self.dqdt(q, t) #TODO: Wildly inneficient. Can i get this from tm class?
 
+        if any('max_eig'==name.lower() or 'spec_rad'==name.lower() for name in self.cons_obj_name):
+            eigs = self.check_eigs(q, plot_eigs=False, returneigs=True, print_nothing=True)
+
         for i in range(self.n_cons_obj):
             cons_obj_name_i = self.cons_obj_name[i].lower()
 
@@ -437,6 +440,12 @@ class PdeSolver:
             elif cons_obj_name_i == 'a_conservation':
                 assert (self.diffeq.diffeq_name == 'VariableCoefficientLinearConvection' or self.diffeq.diffeq_name == 'Burgers'), 'A_Conservation only defined for Variable Coefficient Problems'
                 cons_obj[i] = self.diffeq.a_conservation(q,dqdt)
+            elif cons_obj_name_i == 'max_eig':
+                cons_obj[i] = np.max(eigs.real)
+            elif cons_obj_name_i == 'spec_rad':
+                cons_obj[i] = np.max(np.abs(eigs))
+            elif cons_obj_name_i == 'time':
+                cons_obj[i] = t
             else:
                 raise Exception('Unknown conservation objective function')
 
@@ -629,7 +638,8 @@ class PdeSolver:
 
         
         
-    def calc_LHS(self, q=None, t=0., exact_dfdq=True, step=1.0e-4, istep=1.0e-15, finite_diff=False):
+    def calc_LHS(self, q=None, t=0., exact_dfdq=True, step=1.0e-4, istep=1.0e-15, 
+                 finite_diff=False, print_nothing=False):
         '''
         Either get the exact LHS operator on q if the problem is linear, or the
         linearization (LHS) of it at a particular state q. Either done exactly with
@@ -667,9 +677,9 @@ class PdeSolver:
             except:
                 exact_dfdq = False
                 if finite_diff:
-                    print('WARNING: self.dfdq(q) returned errors. Using finite difference.')
+                    if not print_nothing: ('WARNING: self.dfdq(q) returned errors. Using finite difference.')
                 else:
-                    print('WARNING: self.dfdq(q) returned errors. Using complex step.')
+                    if not print_nothing: print('WARNING: self.dfdq(q) returned errors. Using complex step.')
         if not exact_dfdq:
             from Source.Methods.Analysis import printProgressBar
             nen,nelem = q.shape   
@@ -679,8 +689,9 @@ class PdeSolver:
             if not finite_diff:
                 try:  
                     for i in range(nen):
-                        if nn>=400:
-                            printProgressBar(i, nen-1, prefix = 'Complex Step Progress:')
+                        if not print_nothing: 
+                            if nn>=400:
+                                printProgressBar(i, nen-1, prefix = 'Complex Step Progress:')
                         for j in range(nelem):
                             ei = np.zeros((nen,nelem),dtype=np.complex128)
                             ei[i,j] = istep*1j
@@ -688,12 +699,13 @@ class PdeSolver:
                             idx = np.where(np.imag(ei.flatten('F'))>istep/10)[0][0]
                             A[:,idx] = np.imag(qi)/istep
                 except:  
-                    print('WARNING: complex step returned errors. Using finite difference.') 
+                    if not print_nothing: print('WARNING: complex step returned errors. Using finite difference.') 
                     finite_diff = True
             if finite_diff:        
                 for i in range(nen):
-                    if nn>=400:
-                        printProgressBar(i, nen-1, prefix = 'Complex Step Progress:')
+                    if not print_nothing: 
+                        if nn>=400:
+                            printProgressBar(i, nen-1, prefix = 'Complex Step Progress:')
                     for j in range(nelem):
                         ei = np.zeros((nen,nelem))
                         ei[i,j] = 1.*step
@@ -704,10 +716,12 @@ class PdeSolver:
         return A
 
     
-    def check_eigs(self, q=None, plot_eigs=True, returnA=False, returneigs=False, exact_dfdq=False,
-                   finite_diff=False, step=5.0e-6, istep=1e-15, tol=1.0e-10, savefile=None, 
-                   ymin=None, ymax=None, xmin=None, xmax=None, time=None, display_time=False, title=None, 
-                   save_format='png', dpi=600, colour_by_k=False, overwrite=False, **kargs):
+    def check_eigs(self, q=None, plot_eigs=True, returnA=False, returneigs=False, plot_maxvec=False, 
+                   exact_dfdq=False, finite_diff=False, step=5.0e-6, istep=1e-15, tol=1.0e-10, 
+                   savefile=None, print_nothing=False, colour_by_k=False,
+                   ymin=None, ymax=None, xmin=None, xmax=None, 
+                   time=None, display_time=False, display_maxreal=False,
+                   title=None, save_format='png', dpi=600, overwrite=False, **kargs):
         '''
         Call on self.diffeq.dqdt to check the stability of the spatial operator
         at a particular state q using central finite differences (approximate!).
@@ -742,36 +756,39 @@ class PdeSolver:
             Approximate RHS spatial operator
 
         '''
-        print('Checking Eigenvalues of System LHS Operator')
-        A = self.calc_LHS(q=q, exact_dfdq=exact_dfdq, step=step, istep=istep, finite_diff=finite_diff)
+        if not print_nothing: print('Checking Eigenvalues of System LHS Operator')
+        A = self.calc_LHS(q=q, exact_dfdq=exact_dfdq, step=step, istep=istep, 
+                          finite_diff=finite_diff, print_nothing=print_nothing)
         nen1, nen2 = A.shape
-        if nen1 >= 5000:
-            import datetime
-            time_est = 1.02e-7*nen1**2.24
-            start_time = datetime.datetime.now()
-            end_time = start_time + datetime.timedelta(seconds=time_est)
-            print('HEADS UP: Large matrix size. This may take a while.')
-            print(f"Estimating eigenvalue solve will take {int(time_est)} seconds, i.e. finish around {end_time.strftime('%H:%M:%S')}" )
-        if (colour_by_k) and self.dim==1 and self.neq_node==1 and plot_eigs:
+        if not print_nothing: 
+            if nen1 >= 5000:
+                import datetime
+                time_est = 1.02e-7*nen1**2.24
+                start_time = datetime.datetime.now()
+                end_time = start_time + datetime.timedelta(seconds=time_est)
+                print('HEADS UP: Large matrix size. This may take a while.')
+                print(f"Estimating eigenvalue solve will take {int(time_est)} seconds, i.e. finish around {end_time.strftime('%H:%M:%S')}" )
+        if ((colour_by_k) and self.dim==1 and self.neq_node==1 and plot_eigs) or plot_maxvec:
             eigs, eigvecs = np.linalg.eig(A)
         else:
             eigs = np.linalg.eigvals(A)
-        print('Max real component =',max(eigs.real))
-        if max(eigs.real) < tol:
-            print('Max eigenvalue within tolerance. STABLE.')
-        else:
-            print('Max eigenvalue exceeds tolerance. UNSTABLE.')
+        if not print_nothing: 
+            print('Max real component =',np.max(eigs.real))
+            if max(eigs.real) < tol:
+                print('Max eigenvalue within tolerance. STABLE.')
+            else:
+                print('Max eigenvalue exceeds tolerance. UNSTABLE.')
 
-        spec_rad = np.max(np.abs(eigs))
-        dt_max = 2.5/spec_rad
-        print(u"Assuming RK4, to remain stable (\u03bbh \u2264 2.5), should use dt \u2264", round(dt_max, -int(np.floor(np.log10(abs(dt_max/10))))))
+            spec_rad = np.max(np.abs(eigs))
+            dt_max = 2.5/spec_rad
+            print(u"Assuming RK4, to remain stable (\u03bbh \u2264 2.5), should use dt \u2264", round(dt_max, -int(np.floor(np.log10(abs(dt_max/10))))))
             
         if plot_eigs:
             if colour_by_k:
                 second_moment = True # use the first moment (like COM) or second moment (like variance from 0)
                 from scipy.stats import moment
                 if self.dim >1 or self.neq_node>1: 
-                    print('WARNING: colour by wavenumber not set up for dim >1 or neq>0. Ignoring.')
+                    if not print_nothing: print('WARNING: colour by wavenumber not set up for dim >1 or neq>0. Ignoring.')
                     avg_k=None
                 else:
                     def remove_duplicates_and_average(x, y):
@@ -823,7 +840,6 @@ class PdeSolver:
                             else:
                                 avg_k[i] = np.average(ks,weights=power_spec)
                                 # np.sum(power_spec*ks)/np.sum(power_spec) # equivalent to above
-                    print(avg_k)
 
             else:
                 avg_k=None
@@ -849,7 +865,11 @@ class PdeSolver:
                 ax = plt.gca()
                 # define matplotlib.patch.Patch properties
                 #props = dict(boxstyle='round', facecolor='white')
-                ax.text(0.05, 0.95, r'$t=$ '+str(round(time,2))+' s', transform=ax.transAxes, 
+                ax.text(0.03, 0.95, f'$t={round(time,2)}$', transform=ax.transAxes, 
+                        fontsize=14, verticalalignment='top') 
+            if display_maxreal:
+                ax = plt.gca()
+                ax.text(0.03, 0.88, f'$\\max \\Re(\\lambda) = {np.max(eigs.real):.2g}$', transform=ax.transAxes, 
                         fontsize=14, verticalalignment='top') 
               
             plt.tight_layout()        
@@ -861,6 +881,37 @@ class PdeSolver:
                 else: 
                     plt.savefig(filename, format=save_format, dpi=dpi)
             plt.show()
+
+        if plot_maxvec:
+            #TODO: assumes 1D, also not well suited to neq_node>1
+            num_vecs = 5
+            # Find the indices of the {num_vecs} largest eigenvalues
+            largest_indices = np.argsort(eigs)[-num_vecs:][::-1]
+            for i, idx in enumerate(largest_indices):
+                # Extract the corresponding eigenvectors
+                eigenvalue = eigs[idx]
+                eigenvector = eigvecs[:, idx]
+                
+                # Calculate real part, imaginary part, and power spectrum
+                real_part = np.real(eigenvector)
+                imaginary_part = np.imag(eigenvector)
+                amplitude = np.abs(eigenvector)
+                
+                # Create the plot
+                plt.figure()
+                plt.plot(self.mesh.x, real_part, label='Real Component')
+                plt.plot(self.mesh.x, imaginary_part, label='Imaginary Component')
+                plt.plot(self.mesh.x, amplitude, label='Amplitude', linestyle='--')
+                
+                # Add title, legend, and labels
+                plt.title(f'Eigenvalue: {eigenvalue.real:.2f} + {eigenvalue.imag:.2f}i')
+                plt.xlabel(r'$x$')
+                plt.ylabel('Value')
+                plt.legend()
+                
+                # Show the plot for each eigenvalue
+                plt.show()
+
         
         if returnA and returneigs:
             return A, eigs
@@ -883,7 +934,10 @@ class PdeSolver:
             norm = self.cons_obj[i,0]
             plt.figure(figsize=(6,4))
             plt.xlabel(r'Time $t$',fontsize=16)
-            time = np.linspace(0,self.t_final,len(self.cons_obj[i]))
+            if 'time' in [name.lower() for name in self.cons_obj_name]:
+                time = self.cons_obj[np.where('test' == np.array([name.lower() for name in self.cons_obj_name]))[0][0]]
+            else:
+                time = np.linspace(0,self.t_final,len(self.cons_obj[i]))
 
             if cons_obj_name_i == 'energy':
                 plt.title(r'Change in Energy',fontsize=18)
@@ -909,6 +963,19 @@ class PdeSolver:
                 plt.title(r'Change in A-norm Energy',fontsize=18)
                 plt.ylabel(r'$\vert \vert u(x,t)^2 \vert \vert_{AH}$ - $\vert \vert u_0(x)^2 \vert \vert_{AH}$',fontsize=16)
                 plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]-norm) 
+
+            elif cons_obj_name_i == 'max_eig':
+                plt.title(r'Maximum Real Eigenvalue of LHS',fontsize=18)
+                plt.ylabel(r'$\max \ \Re(\lambda)$',fontsize=16)
+                plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]) 
+
+            elif cons_obj_name_i == 'spec_rad':
+                plt.title(r'Spectral Radius of LHS',fontsize=18)
+                plt.ylabel(r'$\rho = \max \ \vert \lambda \vert$',fontsize=16)
+                plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]) 
+
+            elif cons_obj_name_i == 'time':
+                continue
                 
             else:
                 print('WARNING: No default plotting set up for '+cons_obj_name_i)

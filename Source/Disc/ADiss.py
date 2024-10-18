@@ -138,7 +138,7 @@ class ADiss():
             self.dzetadx = self.solver.mesh.metrics[:,6:,:]
 
         if self.type.lower() == 'w':
-            if self.jac_type.lower() == 'scalar':
+            if self.jac_type.lower() == 'scalar' or self.jac_type.lower() == 'sca':
                 self.dissipation = lambda q: self.dissipation_W_scalar(q,self.coeff)
             else:
                 print("WARNING: Only scalar dissipation set up for type='W' dissipation. Defaulting to jac_type = 'scalar'.")
@@ -149,14 +149,15 @@ class ADiss():
             self.entropy_var = self.solver.diffeq.entropy_var
             self.dqdw = self.solver.diffeq.dqdw
             if self.neq_node == 1:
-                assert((self.jac_type.lower() == 'scalar') or (self.jac_type.lower() == 'scalar')),'scalar equations must have scalar dissipation'
+                assert((self.jac_type.lower() == 'scalar') or (self.jac_type.lower() == 'sca') or
+                       (self.jac_type.lower() == 'scalarscalar') or (self.jac_type.lower() == 'scasca')),'scalar equations must have scalar dissipation'
                 self.dissipation = lambda q: self.dissipation_entW_scalar(q,self.coeff)
             else:
-                if self.jac_type.lower() == 'scalarscalar':
+                if self.jac_type.lower() == 'scalarscalar' or self.jac_type.lower() == 'scasca':
                     self.dissipation = lambda q: self.dissipation_entW_scalarscalar(q,self.coeff)
-                elif self.jac_type.lower() == 'scalarmatrix':
+                elif self.jac_type.lower() == 'scalarmatrix' or self.jac_type.lower() == 'scamat':
                     self.dissipation = lambda q: self.dissipation_entW_scalarmatrix(q,self.coeff)
-                elif self.jac_type.lower() == 'matrixmatrix':
+                elif self.jac_type.lower() == 'matrixmatrix' or self.jac_type.lower() == 'matmat':
                     self.dissipation = lambda q: self.dissipation_entW_matrixmatrix(q,self.coeff)
                     self.dEndw_abs = self.solver.diffeq.dEndw_abs
                 else:
@@ -166,7 +167,7 @@ class ADiss():
 
 
         elif self.type.lower() == 'b':
-            if self.jac_type.lower() == 'scalar':
+            if self.jac_type.lower() == 'scalar' or self.jac_type.lower() == 'sca':
                 self.dissipation = lambda q: self.dissipation_B_scalar(q,self.coeff)
             else:
                 print("WARNING: Only scalar dissipation set up for type='B' dissipation. Defaulting to jac_type = 'scalar'.")
@@ -177,14 +178,15 @@ class ADiss():
             self.entropy_var = self.solver.diffeq.entropy_var
             self.dqdw = self.solver.diffeq.dqdw
             if self.neq_node == 1:
-                assert((self.jac_type.lower() == 'scalar') or (self.jac_type.lower() == 'scalar')),'scalar equations must have scalar dissipation'
+                assert((self.jac_type.lower() == 'scalar') or (self.jac_type.lower() == 'sca') or
+                       (self.jac_type.lower() == 'scalarscalar') or (self.jac_type.lower() == 'scasca')),'scalar equations must have scalar dissipation'
                 self.dissipation = lambda q: self.dissipation_entB_scalar(q,self.coeff)
             else:
-                if self.jac_type.lower() == 'scalarscalar':
+                if self.jac_type.lower() == 'scalarscalar' or self.jac_type.lower() == 'scasca':
                     self.dissipation = lambda q: self.dissipation_entB_scalarscalar(q,self.coeff)
-                elif self.jac_type.lower() == 'scalarmatrix':
+                elif self.jac_type.lower() == 'scalarmatrix' or self.jac_type.lower() == 'scamat':
                     self.dissipation = lambda q: self.dissipation_entB_scalarmatrix(q,self.coeff)
-                elif self.jac_type.lower() == 'matrixmatrix':
+                elif self.jac_type.lower() == 'matrixmatrix' or self.jac_type.lower() == 'matmat':
                     self.dissipation = lambda q: self.dissipation_entB_matrixmatrix(q,self.coeff)
                     self.dEndw_abs = self.solver.diffeq.dEndw_abs
                 else:
@@ -193,7 +195,7 @@ class ADiss():
                     self.dissipation = lambda q: self.dissipation_entB_scalarscalar(q,self.coeff)
         
         elif self.type.lower() == 'dcp':
-            if self.jac_type.lower() == 'scalar':
+            if self.jac_type.lower() == 'scalar' or self.jac_type.lower() == 'sca':
                 self.dissipation = lambda q: self.dissipation_dcp_scalar(q,self.coeff)
             else:
                 print("WARNING: Only scalar dissipation set up for type='DCP' dissipation. Defaulting to jac_type = 'scalar'.")
@@ -205,14 +207,15 @@ class ADiss():
             self.entropy_var = self.solver.diffeq.entropy_var
             self.dqdw = self.solver.diffeq.dqdw
             if self.neq_node == 1:
-                assert((self.jac_type.lower() == 'scalar') or (self.jac_type.lower() == 'scalar')),'scalar equations must have scalar dissipation'
+                assert((self.jac_type.lower() == 'scalar') or (self.jac_type.lower() == 'sca') or
+                       (self.jac_type.lower() == 'scalarscalar') or (self.jac_type.lower() == 'scasca')),'scalar equations must have scalar dissipation'
                 self.dissipation = lambda q: self.dissipation_entdcp_scalar(q,self.coeff)
             else:
-                if self.jac_type.lower() == 'scalarscalar':
+                if self.jac_type.lower() == 'scalarscalar' or self.jac_type.lower() == 'scasca':
                     self.dissipation = lambda q: self.dissipation_entdcp_scalarscalar(q,self.coeff)
-                elif self.jac_type.lower() == 'scalarmatrix':
+                elif self.jac_type.lower() == 'scalarmatrix' or self.jac_type.lower() == 'scamat':
                     self.dissipation = lambda q: self.dissipation_entdcp_scalarmatrix(q,self.coeff)
-                elif self.jac_type.lower() == 'matrixmatrix':
+                elif self.jac_type.lower() == 'matrixmatrix' or self.jac_type.lower() == 'matmat':
                     self.dissipation = lambda q: self.dissipation_entdcp_matrixmatrix(q,self.coeff)
                     self.dEndw_abs = self.solver.diffeq.dEndw_abs
                 else:
