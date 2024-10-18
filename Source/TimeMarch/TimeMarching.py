@@ -3,7 +3,7 @@
 """
 Created on Mon Dec 16 14:56:20 2019
 
-@author: andremarchildon
+@author: bercik
 """
 
 import numpy as np
@@ -151,6 +151,19 @@ class TimeMarching(TimeMarchingRk):
             Size of the time step.
         '''
 
+        if np.any(np.isnan(q)):
+            print('\n ERROR: there are undefined values for q at t =',t_idx * dt,'t_idx =', t_idx)
+            self.quitsim = True
+            self.failsim = True
+            return
+
+        if self.enforce_positivity:
+            if self.diffeq.check_positivity(q):
+                print('\n ERROR: there are negative values for q at t =',t_idx * dt,'t_idx =', t_idx)
+                self.quitsim = True
+                self.failsim = True
+                return
+
         if self.keep_all_ts or self.bool_calc_cons_obj:
             mod_t_idx = t_idx/(self.skip_ts+1)
             if mod_t_idx.is_integer():
@@ -190,17 +203,6 @@ class TimeMarching(TimeMarchingRk):
                 if self.print_residual:
                     suf += ' Resid = {0:.1E}'.format(resid)
                 printProgressBar(t_idx, n_ts, prefix = 'Progress:', suffix = suf)
-        
-        if np.any(np.isnan(q)):
-            print('\n ERROR: there are undefined values for q at t =',t_idx * dt,'t_idx =', t_idx)
-            self.quitsim = True
-            self.failsim = True
-
-        if self.enforce_positivity:
-            if self.diffeq.check_positivity(q):
-                print('\n ERROR: there are negative values for q at t =',t_idx * dt,'t_idx =', t_idx)
-                self.quitsim = True
-                self.failsim = True
 
         if self.check_resid_conv:
             if (resid < 1E-10): 

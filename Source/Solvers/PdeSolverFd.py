@@ -3,7 +3,7 @@
 """
 Created on Thu Oct  1 11:33:50 2020
 
-@author: andremarchildon
+@author: bercik
 """
 
 from Source.Disc.MakeMesh import MakeMesh

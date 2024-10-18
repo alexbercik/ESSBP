@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Mon Jun 22 10:42:05 2020
-@author: andremarchildon
+@author: bercik
 """
 
 # Check if this is being run on SciNet
@@ -296,7 +296,7 @@ class PdeBase:
 
     # TODO: Make a separate function for interactive plots? is this even possible using free packages?
     def plot_sol(self, q, time=0., plot_exa=True, savefile=None,
-                 show_fig=True, solmin=None, solmax=None, display_time=False, 
+                 show_fig=True, ymin=None, ymax=None, display_time=False, 
                  title=None, plot_mesh=False, save_format='png', dpi=600,
                  plot_only_exa=False, var2plot_name=None, legendloc=None, legend=True):
         '''
@@ -323,7 +323,7 @@ class PdeBase:
                 
             ax.plot(self.x, num_sol, **self.plt_style_sol[0], label='Numerical')
         
-            ax.set_ylim(solmin,solmax)
+            ax.set_ylim(ymin,ymax)
             plt.xlabel(r'$x$',fontsize=self.plt_label_font_size)
             if var2plot_name is None:
                 plt.ylabel(r'$u$',fontsize=self.plt_label_font_size,rotation=0,labelpad=15)
@@ -340,7 +340,7 @@ class PdeBase:
             num_sol = fn.reshape_to_meshgrid_2D(self.var2plot(q,var2plot_name),self.nen,self.nelem[0],self.nelem[1])
             
             CS = ax.contourf(x,y,num_sol,levels=self.plt_contour_settings['levels'],
-                                 vmin=solmin, vmax=solmax,
+                                 vmin=ymin, vmax=ymax,
                                  cmap=self.plt_contour_settings['cmap'])
             
             cbar = fig.colorbar(CS)
@@ -381,7 +381,7 @@ class PdeBase:
             # define matplotlib.patch.Patch properties
             # TODO: Add a check to see whether to set alpha or not
             props = dict(boxstyle='round', facecolor='white', alpha=0.5)
-            ax.text(0.05, 0.95, r'$t=$ '+str(round(time,2))+' s', transform=ax.transAxes, 
+            ax.text(0.05, 0.95, f'$t={round(time,2)}$', transform=ax.transAxes, 
                     fontsize=self.plt_label_font_size, verticalalignment='top', bbox=props)
         
         if plt.title is not None:
@@ -411,7 +411,7 @@ class PdeBase:
                 title = 'Exact Solution'
             exa_sol = self.exact_sol(time)
             self.plot_sol(exa_sol, time=time, plot_exa=True, savefile=savefile,
-                 show_fig=show_fig, solmin=solmin, solmax=solmax, display_time=display_time, 
+                 show_fig=show_fig, solmin=ymin, solmax=ymax, display_time=display_time, 
                  title=title, plot_mesh=plot_mesh, save_format=save_format, dpi=dpi,
                  plot_only_exa=True)
             

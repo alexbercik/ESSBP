@@ -3,7 +3,7 @@
 """
 Created on Wed Jun 17 12:41:26 2020
 
-@author: andremarchildon
+@author: bercik
 """
 
 import numpy as np
@@ -146,12 +146,12 @@ class Burgers(PdeBase):
         ''' compute the global A-conservation SBP of global solution vector q, equal to entropy/energy '''
         return np.sum(q * self.H * q)
     
-    def calc_breaking_time(self):
+    def calc_breaking_time(self,sig_fig=3):
         ''' estimate the time at which the solution breaks '''
         q0 = self.set_q0()
         dqdx = self.gm_gv(self.Dx, q0)
         Tb = -1/np.min(dqdx)
-        print(f'The breaking time is approximately T = {Tb:.3g}')
+        print(f'The breaking time is approximately T = {Tb:.{sig_fig}g}')
     
     @njit
     def ec_flux(qL,qR):

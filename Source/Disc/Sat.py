@@ -83,11 +83,14 @@ class Sat(SatDer1, SatDer2):
                 self.entropy_fix = True
 
             if 'average' in solver.surf_diss.keys():
-                assert isinstance(solver.surf_diss['average'], str), 'SAT: average must be a str, {0}'.format(solver.surf_diss['average'])
-                self.average = solver.surf_diss['average'].lower()
+                assert isinstance(solver.surf_diss['average'], str) or (solver.surf_diss['average'] is None), 'SAT: average must be a str, not {0}'.format(solver.surf_diss['average'])
+                if solver.surf_diss['average'] is None:
+                    self.average = 'none'
+                else:
+                    self.average = solver.surf_diss['average'].lower()
             else:
                 self.average = 'simple' # roe, simple, derigs
-            options = ['simple','arithmetic','roe','derigs','ismailroe']
+            options = ['simple','arithmetic','roe','derigs','ismailroe','none']
             assert self.average in options, "SAT: average must be one of" + str(options)
 
             if 'maxeig' in solver.surf_diss.keys():
@@ -379,6 +382,8 @@ class Sat(SatDer1, SatDer2):
                 self.calc_avgq = solver.diffeq.ismail_roe_avg
             elif self.average=='derigs':
                 self.calc_avgq = solver.diffeq.derigs_avg
+            elif self.average=='none':
+                self.calc_avgq = None
             else:
                 print(f"WARNING: desired average method '{self.average}' not recognized. Defaulting to 'simple'." )
                 self.calc_avgq = fn.arith_mean 
@@ -455,7 +460,7 @@ class Sat(SatDer1, SatDer2):
 
                 if self.disc_type == 'div':
                     print('... Using the base cons SAT with sca lf diss on cons vars.')
-                    print(f'... average={self.average}, maxeig={self.maxeig_type}, coeff={self.coeff}, entropy_fix={self.entropy_fix}')
+                    print(f'... average={self.average}, maxeig=lf, coeff={self.coeff}, entropy_fix={self.entropy_fix}')
                     if self.dim == 1:
                         self.calc = self.base_div_1d
                         self.diss = self.diss_cons_1d
@@ -467,7 +472,7 @@ class Sat(SatDer1, SatDer2):
                         self.diss = self.diss_cons_nd
                 elif self.disc_type == 'had':
                     print(f'... Using the base Had SAT with {solver.had_flux} flux and sca lf diss on cons vars.')
-                    print(f'... average={self.average}, maxeig={self.maxeig_type}, coeff={self.coeff}, entropy_fix={self.entropy_fix}')
+                    print(f'... average={self.average}, maxeig=lf, coeff={self.coeff}, entropy_fix={self.entropy_fix}')
                     if self.dim == 1:
                         self.calc = self.base_had_1d
                         self.diss = self.diss_cons_1d
@@ -697,6 +702,7 @@ class Sat(SatDer1, SatDer2):
                         self.coeff = 0.
                         self.calc = lambda q,E: self.div_1d_burgers_es(q, E, q_bdyL=None, q_bdyR=None)
                     elif self.diss_type=='es' or self.diss_type=='ent':
+                        assert(self.jac_type=='sca' or self.jac_type=='scasca'), 'Burgers es SATs require sca / scasca jac_type.'
                         print('... Using an entropy-dissipative SAT found in the SBP book.')
                         print("    (not the one recovered from the Hadamard form. For this use diss_type='es_had').")
                         print(f'... average=simple, maxeig={self.maxeig_type}, coeff={self.coeff}')
@@ -706,6 +712,7 @@ class Sat(SatDer1, SatDer2):
                         self.coeff = 0.
                         self.calc = lambda q,E: self.div_1d_burgers_had(q, E, q_bdyL=None, q_bdyR=None)
                     elif self.diss_type=='es_had':
+                        assert(self.jac_type=='sca' or self.jac_type=='scasca'), 'Burgers es_had SATs require sca / scasca jac_type.'
                         print('... Using the entropy-dissipative SAT recovered from the Hadamard form.')
                         print(f'... average=simple, maxeig={self.maxeig_type}, coeff={self.coeff}')
                         self.calc = lambda q,E: self.div_1d_burgers_had(q, E, q_bdyL=None, q_bdyR=None)
