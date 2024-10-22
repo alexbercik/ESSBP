@@ -130,8 +130,8 @@ class Sat(SatDer1, SatDer2):
             self.gm_gm_had_diff = sp.gm_gm_had_diff
             self.gmT_gm_had_diff = sp.gmT_gm_had_diff
             if self.solver_sparse:
-                self.lm_Fvol_had_diff = self.lm_gm_had_diff
-                self.gm_Fvol_had_diff = self.gm_gm_had_diff
+                self.lm_Fvol_had_diff = sp.lm_gm_had_diff
+                self.gm_Fvol_had_diff = sp.gm_gm_had_diff
             else:  
                 self.lm_Fvol_had_diff = sp.lm_dgm_had_diff
                 self.gm_Fvol_had_diff = sp.gm_dgm_had_diff
@@ -145,8 +145,8 @@ class Sat(SatDer1, SatDer2):
             self.lm_gmT_had_diff = staticmethod(lambda lm,gm: fn.lm_gm_had_diff(lm,np.transpose(gm,(1,0,2))))
             self.gm_gm_had_diff = fn.gm_gm_had_diff
             self.gm_gmT_had_diff = staticmethod(lambda gm,gm2: fn.gm_gm_had_diff(gm,np.transpose(gm2,(1,0,2))))
-            self.lm_Fvol_had_diff = self.lm_gm_had_diff
-            self.gm_Fvol_had_diff = self.gm_gm_had_diff
+            self.lm_Fvol_had_diff = fn.lm_gm_had_diff
+            self.gm_Fvol_had_diff = fn.gm_gm_had_diff
             #self.lm_dgm = fn.lm_gm
         
         if self.dim == 1:
@@ -205,9 +205,9 @@ class Sat(SatDer1, SatDer2):
                 self.tb = sp.lm_to_sp(self.tb)
                 if self.disc_type == 'had':
                     self.taT = sp.lm_to_sp(taT)
-                    self.sparsity = sp.set_gm_sparsity([taphysT_pad,tbphys_pad])
+                    self.sparsity = sp.set_gm_union_sparsity([taphysT_pad,tbphys_pad])
                     if self.neq_node > 1:
-                        self.sparsity_unkronned = sp.set_gm_sparsity([fn.unkron_neq_gm(taphysT_pad,self.neq_node),
+                        self.sparsity_unkronned = sp.set_gm_union_sparsity([fn.unkron_neq_gm(taphysT_pad,self.neq_node),
                                                                     fn.unkron_neq_gm(tbphys_pad,self.neq_node)])
             
         elif self.dim == 2:
@@ -282,12 +282,12 @@ class Sat(SatDer1, SatDer2):
                 if (self.disc_type == 'had'):
                     self.taphysxT = [sp.gm_to_sp(gm_mat) for gm_mat in taphysxT]
                     self.taphysyT = [sp.gm_to_sp(gm_mat) for gm_mat in taphysyT]
-                    self.xsparsity = sp.set_gm_sparsity([*taphysxT_pad,*tbphysx_pad])
-                    self.ysparsity = sp.set_gm_sparsity([*taphysyT_pad,*tbphysy_pad])
+                    self.xsparsity = sp.set_gm_union_sparsity([*taphysxT_pad,*tbphysx_pad])
+                    self.ysparsity = sp.set_gm_union_sparsity([*taphysyT_pad,*tbphysy_pad])
                     if self.neq_node > 1:
-                        self.xsparsity_unkronned = sp.set_gm_sparsity([*[fn.unkron_neq_gm(mat,self.neq_node) for mat in taphysxT_pad],
+                        self.xsparsity_unkronned = sp.set_gm_union_sparsity([*[fn.unkron_neq_gm(mat,self.neq_node) for mat in taphysxT_pad],
                                                                     *[fn.unkron_neq_gm(mat,self.neq_node) for mat in tbphysx_pad]]) 
-                        self.ysparsity_unkronned = sp.set_gm_sparsity([*[fn.unkron_neq_gm(mat,self.neq_node) for mat in taphysyT_pad],
+                        self.ysparsity_unkronned = sp.set_gm_union_sparsity([*[fn.unkron_neq_gm(mat,self.neq_node) for mat in taphysyT_pad],
                                                                     *[fn.unkron_neq_gm(mat,self.neq_node) for mat in tbphysy_pad]]) 
                 else:
                     self.taphysx = [sp.gm_to_sp(gm_mat) for gm_mat in self.taphysx]
@@ -938,14 +938,14 @@ class Sat(SatDer1, SatDer2):
         # calls the base methods for both absA and P
         absA = self.calc_absA(qL, qR)
         P = self.calc_P(qL, qR)
-        absAP = fn.gm_gm(absA, P)
+        absAP = fn.gbdiag_gbdiag(absA, P)
         return absAP
     
     def calc_absAP_base_nd(self, qL, qR, metrics):
         # calls the base method for both absA and P
         absA = self.calc_absA(qL, qR, metrics)
         P = self.calc_P(qL, qR)
-        absAP = fn.gm_gm(absA, P)
+        absAP = fn.gbdiag_gbdiag(absA, P)
         return absAP
 
     
@@ -970,14 +970,14 @@ class Sat(SatDer1, SatDer2):
         ''' base method for self.jac_type == 'mat' in 1D '''
         absA = self.calc_absA(qL,qR)
         q_jump = qR - qL
-        absA_dq = fn.gm_gv(absA, q_jump)
+        absA_dq = fn.gbdiag_gv(absA, q_jump)
         return absA_dq
     
     def calc_absA_dq_mat_nD(self,qL,qR,metrics):
         ''' base method for self.jac_type == 'mat' in nD '''
         absA = self.calc_absA(qL,qR,metrics)
         q_jump = qR - qL
-        absA_dq = fn.gm_gv(absA, q_jump)
+        absA_dq = fn.gbdiag_gv(absA, q_jump)
         return absA_dq
 
     def calc_absAP_dw_scasca_1D(self,qL,qR):
@@ -1001,7 +1001,7 @@ class Sat(SatDer1, SatDer2):
         w_jump = self.entropy_var(qR) - self.entropy_var(qL)
         P = self.calc_P(qL,qR)
         Lambda = self.calc_absA(qL,qR)
-        absAP_dw = Lambda * fn.gm_gv(P, w_jump) # assumes Lambda is gdiag
+        absAP_dw = Lambda * fn.gbdiag_gv(P, w_jump) # assumes Lambda is gdiag
         return absAP_dw
     
     def calc_absAP_dw_scamat_nD(self,qL,qR,metrics):
@@ -1009,21 +1009,21 @@ class Sat(SatDer1, SatDer2):
         w_jump = self.entropy_var(qR) - self.entropy_var(qL)
         P = self.calc_P(qL,qR)
         Lambda = self.calc_absA(qL,qR,metrics)
-        absAP_dw = Lambda * fn.gm_gv(P, w_jump) # assumes Lambda is gdiag
+        absAP_dw = Lambda * fn.gbdiag_gv(P, w_jump) # assumes Lambda is gdiag
         return absAP_dw
     
     def calc_absAP_dw_matmat_1D(self,qL,qR):
         ''' base method for self.jac_type == 'scamat' in 1D '''
         w_jump = self.entropy_var(qR) - self.entropy_var(qL)
         absAP = self.calc_absAP(qL,qR)
-        absAP_dw = fn.gm_gv(absAP,w_jump)
+        absAP_dw = fn.gbdiag_gv(absAP,w_jump)
         return absAP_dw
     
     def calc_absAP_dw_matmat_nD(self,qL,qR,metrics):
         ''' base method for self.jac_type == 'scamat' in nD '''
         w_jump = self.entropy_var(qR) - self.entropy_var(qL)
         absAP = self.calc_absAP(qL,qR,metrics)
-        absAP_dw = fn.gm_gv(absAP,w_jump)
+        absAP_dw = fn.gbdiag_gv(absAP,w_jump)
         return absAP_dw
 
     ''' Define the 2-point flux dissipation functions. For a conservative base SAT + dissipation '''

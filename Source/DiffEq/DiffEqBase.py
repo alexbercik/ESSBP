@@ -436,47 +436,30 @@ class PdeBase:
             return fx, fy, fz
         else:
             return fx, fy
-
-    def maxeig_dExdq(self,q):
-        ''' Calculate the constant for the Lax-Friedrichs flux, useful to set 
-        the CFL number but should not be used for computations in the code
-        since this is slow. Equal to max(abs(eigval(dExdq))). See Hesthaven pg. 33. 
-        If q is given, use that. If not, use the initial condition.'''
-        print('WARNING: Using default maxeig_dExdq. Should not be used for main code.')
-        if self.neq_node == 1: # scalar
-            # input q is shape (n,n,nelem), output is shape (nelem)
-            return np.max(np.abs(self.dExdq(q)),axis=(0,1))
-        else: # system
-            dExdq_mod = np.transpose(self.dExdq(q),axes=(2,0,1))
-            eig_val = np.linalg.eigvals(dExdq_mod)
-            return np.max(np.abs(eig_val),axis=1)
         
     def maxeig_dExdq(self,q):
         print('WARNING: Using default maxeig_dExdq. Should not be used for main code.')
         if self.neq_node == 1: # scalar, so diagonal dExdq matrix
-            return np.max(np.abs(self.dExdq(q)),axis=(0,1))
+            return np.abs(self.dExdq(q)[:,0,0,:])
         else: # system
-            dExdq_mod = np.transpose(self.dExdq(q),axes=(2,0,1))
-            eig_val = np.linalg.eigvals(dExdq_mod)
-            return np.max(np.abs(eig_val),axis=1)
+            eig_val = fn.spec_rad(self.dExdq(q),self.neq_node)
+            return eig_val
         
     def maxeig_dEydq(self,q):
         print('WARNING: Using default maxeig_dEydq. Should not be used for main code.')
-        if self.neq_node == 1: # scalar, so diagonal dEydq matrix
-            return np.max(np.abs(self.dEydq(q)),axis=(0,1))
+        if self.neq_node == 1: # scalar, so diagonal dExdq matrix
+            return np.abs(self.dEydq(q)[:,0,0,:])
         else: # system
-            dEydq_mod = np.transpose(self.dEydq(q),axes=(2,0,1))
-            eig_val = np.linalg.eigvals(dEydq_mod)
-            return np.max(np.abs(eig_val),axis=1)
+            eig_val = fn.spec_rad(self.dEydq(q),self.neq_node)
+            return eig_val
         
     def maxeig_dEzdq(self,q):
         print('WARNING: Using default maxeig_dEzdq. Should not be used for main code.')
-        if self.neq_node == 1: # scalar, so diagonal dEzdq matrix
-            return np.max(np.abs(self.dEzdq(q)),axis=(0,1))
+        if self.neq_node == 1: # scalar, so diagonal dExdq matrix
+            return np.abs(self.dEzdq(q)[:,0,0,:])
         else: # system
-            dEzdq_mod = np.transpose(self.dEzdq(q),axes=(2,0,1))
-            eig_val = np.linalg.eigvals(dEzdq_mod)
-            return np.max(np.abs(eig_val),axis=1)  
+            eig_val = fn.spec_rad(self.dEzdq(q),self.neq_node)
+            return eig_val 
 
     def dExdq_abs(self,q):
         # This is a base method and should not be used, as it in general will be slow

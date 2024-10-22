@@ -148,7 +148,7 @@ def dExdq_1D(q):
     r32 = g_e_rho - (3*(g-1)) * k
     r33 = g * u
     
-    dEdq = fn.block_diag(r0,r1,r0,r21,r22,r23,r31,r32,r33)
+    dEdq = fn.build_gbdiag(r0,r1,r0,r21,r22,r23,r31,r32,r33)
     return dEdq
 
 @njit    
@@ -175,7 +175,7 @@ def dEndq_1D(q,dxidx):
     r32 = dxidx*(g_e_rho - (3 * g1) * k) 
     r33 = g * un
     
-    dEdq = fn.block_diag(r0,dxidx,r0,r21,r22,r23,r31,r32,r33)
+    dEdq = fn.build_gbdiag(r0,dxidx,r0,r21,r22,r23,r31,r32,r33)
     return dEdq
 
 @njit   
@@ -186,7 +186,7 @@ def dEndw_abs_1D(q,dxidx,entropy_fix=False):
      are the eigenvalues of dExdq '''
     
     Lam, X, _, XT = dEndq_eigs_1D(q,dxidx,val=True,vec=True,inv=False,trans=True,entropy_fix=entropy_fix)
-    dEndw_abs = fn.gm_gm(X, fn.gdiag_gm(cabs(Lam), XT))
+    dEndw_abs = fn.gbdiag_gbdiag(X, fn.gdiag_gm(cabs(Lam), XT))
     return dEndw_abs
 
 @njit   
@@ -196,7 +196,7 @@ def dExdw_abs_1D(q,entropy_fix=False):
      are the eigenvalues of dExdq '''
     
     Lam, X, _, XT = dExdq_eigs_1D(q,val=True,vec=True,inv=False,trans=True,entropy_fix=entropy_fix)
-    dEndw_abs = fn.gm_gm(X, fn.gdiag_gm(cabs(Lam), XT))
+    dEndw_abs = fn.gbdiag_gbdiag(X, fn.gdiag_gm(cabs(Lam), XT))
     return dEndw_abs
 
 @njit
@@ -206,7 +206,7 @@ def dEndw_abs_2D(q,dxidx,entropy_fix=False):
      are the eigenvalues of dExdq '''
     
     Lam, X, _, XT = dEndq_eigs_2D(q,dxidx,val=True,vec=True,inv=False,trans=True,entropy_fix=entropy_fix)
-    dEndw_abs = fn.gm_gm(X, fn.gdiag_gm(cabs(Lam), XT))
+    dEndw_abs = fn.gbdiag_gbdiag(X, fn.gdiag_gbdiag(cabs(Lam), XT))
     return dEndw_abs
 
 @njit
@@ -216,7 +216,7 @@ def dEndw_abs_3D(q,dxidx,entropy_fix=False):
      are the eigenvalues of dExdq '''
     
     Lam, X, _, XT = dEndq_eigs_3D(q,dxidx,val=True,vec=True,inv=False,trans=True,entropy_fix=entropy_fix)
-    dEndw_abs = fn.gm_gm(X, fn.gdiag_gm(cabs(Lam), XT))
+    dEndw_abs = fn.gbdiag_gbdiag(X, fn.gdiag_gbdiag(cabs(Lam), XT))
     return dEndw_abs
 
 
@@ -228,7 +228,7 @@ def dEndq_abs_1D(q,dxidx,entropy_fix=False):
      are the eigenvalues of dExdq '''
     
     Lam, X, Xinv, _ = dEndq_eigs_1D(q,dxidx,val=True,vec=True,inv=True,trans=False,entropy_fix=entropy_fix)
-    dEndq_abs = fn.gm_gm(X, fn.gdiag_gm(cabs(Lam), Xinv))
+    dEndq_abs = fn.gbdiag_gbdiag(X, fn.gdiag_gbdiag(cabs(Lam), Xinv))
     return dEndq_abs
 
 @njit   
@@ -238,7 +238,7 @@ def dExdq_abs_1D(q,entropy_fix=False):
      are the eigenvalues of dExdq '''
     
     Lam, X, Xinv, _ = dExdq_eigs_1D(q,val=True,vec=True,inv=True,trans=False,entropy_fix=entropy_fix)
-    dEndq_abs = fn.gm_gm(X, fn.gdiag_gm(cabs(Lam), Xinv))
+    dEndq_abs = fn.gbdiag_gbdiag(X, fn.gdiag_gbdiag(cabs(Lam), Xinv))
     return dEndq_abs
 
 @njit
@@ -248,7 +248,7 @@ def dEndq_abs_2D(q,dxidx,entropy_fix=False):
      are the eigenvalues of dExdq '''
     
     Lam, X, Xinv, _ = dEndq_eigs_2D(q,dxidx,val=True,vec=True,inv=True,trans=False,entropy_fix=entropy_fix)
-    dEndq_abs = fn.gm_gm(X, fn.gdiag_gm(cabs(Lam), Xinv))
+    dEndq_abs = fn.gbdiag_gbdiag(X, fn.gdiag_gbdiag(cabs(Lam), Xinv))
     return dEndq_abs
 
 @njit    
@@ -276,7 +276,7 @@ def dExdq_2D(q):
     r43 = -g1 * u * v
     r44 = g * u
     
-    dEdq = fn.block_diag(r0,r1,r0,r0,r21,r22,r23,r24,r31,v,u,r0,r41,r42,r43,r44)
+    dEdq = fn.build_gbdiag(r0,r1,r0,r0,r21,r22,r23,r24,r31,v,u,r0,r41,r42,r43,r44)
     return dEdq
 
 @njit    
@@ -304,7 +304,7 @@ def dEydq_2D(q):
     r43 = g_e_rho - g1*(k + v2)
     r44 = g * v
     
-    dEdq = fn.block_diag(r0,r0,r1,r0,r21,v,u,r0,r31,r32,r33,r34,r41,r42,r43,r44)
+    dEdq = fn.build_gbdiag(r0,r0,r1,r0,r21,v,u,r0,r31,r32,r33,r34,r41,r42,r43,r44)
     return dEdq
 
 @njit    
@@ -341,7 +341,7 @@ def dEndq_2D(q,n):
     r43 = ny*(g_e_rho - g1*(k + v2)) - g1*nx*uv
     r44 = g * uvn
     
-    dEdq = fn.block_diag(r0,nx,ny,r0,r21,r22,r23,r24,r31,r32,r33,r34,r41,r42,r43,r44)
+    dEdq = fn.build_gbdiag(r0,nx,ny,r0,r21,r22,r23,r24,r31,r32,r33,r34,r41,r42,r43,r44)
     return dEdq
 
 @njit    
@@ -373,7 +373,7 @@ def dExdq_3D(q):
     r54 = -g1 * u * w
     r55 = g * u
     
-    dEdq = fn.block_diag(r0,r1,r0,r0,r0,r21,r22,r23,r24,r25,r31,v,u,r0,r0,r41,w,r0,u,r0,r51,r52,r53,r54,r55)
+    dEdq = fn.build_gbdiag(r0,r1,r0,r0,r0,r21,r22,r23,r24,r25,r31,v,u,r0,r0,r41,w,r0,u,r0,r51,r52,r53,r54,r55)
     return dEdq
 
 @njit    
@@ -405,7 +405,7 @@ def dEydq_3D(q):
     r54 = -g1 * v * w
     r55 = g * v
     
-    dEdq = fn.block_diag(r0,r0,r1,r0,r0,r21,v,u,r0,r0,r31,r32,r33,r34,r35,r41,r0,w,v,r0,r51,r52,r53,r54,r55)
+    dEdq = fn.build_gbdiag(r0,r0,r1,r0,r0,r21,v,u,r0,r0,r31,r32,r33,r34,r35,r41,r0,w,v,r0,r51,r52,r53,r54,r55)
     return dEdq
 
 @njit    
@@ -437,7 +437,7 @@ def dEzdq_3D(q):
     r54 = g_e_rho - g1*(k + w2)
     r55 = g * w
     
-    dEdq = fn.block_diag(r0,r0,r0,r1,r0,r21,w,r0,u,r0,r31,r0,w,v,r0,r41,r42,r43,r44,r45,r51,r52,r53,r54,r55)
+    dEdq = fn.build_gbdiag(r0,r0,r0,r1,r0,r21,w,r0,u,r0,r31,r0,w,v,r0,r41,r42,r43,r44,r45,r51,r52,r53,r54,r55)
     return dEdq
 
 @njit    
@@ -487,7 +487,7 @@ def dEndq_3D(q,n):
     r54 = -(nx * g1 * uw) - (ny * g1 * vw) + nz*(g_e_rho - g1*(k + w2))
     r55 = g * uvwn
     
-    dEdq = fn.block_diag(r0,nx,ny,nz,r0,r21,r22,r23,r24,r25,r31,r32,r33,r34,r35,r41,r42,r43,r44,r45,r51,r52,r53,r54,r55)
+    dEdq = fn.build_gbdiag(r0,nx,ny,nz,r0,r21,r22,r23,r24,r25,r31,r32,r33,r34,r35,r41,r42,r43,r44,r45,r51,r52,r53,r54,r55)
     return dEdq
 
 @njit
@@ -549,9 +549,9 @@ def dExdq_eigs_1D(q,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
         r32 = r12*k
         r31 = r11*k + t1*(a/g1-u)
         r33 = r11*k + t1*(a/g1+u)
-        Y = fn.block_diag(r11,r12,r11,r21,r22,r23,r31,r32,r33)
+        Y = fn.build_gbdiag(r11,r12,r11,r21,r22,r23,r31,r32,r33)
         if trans:
-            YT = fn.block_diag(r11,r21,r31,r12,r22,r32,r11,r23,r33)
+            YT = fn.build_gbdiag(r11,r21,r31,r12,r22,r32,r11,r23,r33)
         else:
             YT = None        
     else:
@@ -569,7 +569,7 @@ def dExdq_eigs_1D(q,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
         t1 = t1*u
         r11 = r13*k + t1
         r31 = r13*k - t1
-        Yinv = fn.block_diag(r11,r12,r13,r21,r22,r23,r31,r32,r13)
+        Yinv = fn.build_gbdiag(r11,r12,r13,r21,r22,r23,r31,r32,r13)
     else:
         Yinv = None
     
@@ -620,14 +620,14 @@ def dEndq_eigs_1D(q,n,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
         r32 = r12*k
         r31 = r11*k + t1*(a/g1-u)
         r33 = r11*k + t1*(a/g1+u)
-        Y = fn.block_diag(r11,r12,r11,r21,r22,r23,r31,r32,r33)
+        Y = fn.build_gbdiag(r11,r12,r11,r21,r22,r23,r31,r32,r33)
         if trans:
-            YT = fn.block_diag(r11,r21,r31,r12,r22,r32,r11,r23,r33)
+            YT = fn.build_gbdiag(r11,r21,r31,r12,r22,r32,r11,r23,r33)
         else:
             YT = np.zeros_like(Y)       
     else:
-        Y = np.zeros((1,1,1),dtype=q.dtype)
-        YT = np.zeros((1,1,1),dtype=q.dtype)
+        Y = np.zeros((1,1,1,1),dtype=q.dtype)
+        YT = np.zeros((1,1,1,1),dtype=q.dtype)
     if inv:
         t1 = np.sqrt(g1/p)
         r23 = -t1/a
@@ -640,9 +640,9 @@ def dEndq_eigs_1D(q,n,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
         t1 = t1*u
         r11 = r13*k + t1
         r31 = r13*k - t1
-        Yinv = fn.block_diag(r11,r12,r13,r21,r22,r23,r31,r32,r13)
+        Yinv = fn.build_gbdiag(r11,r12,r13,r21,r22,r23,r31,r32,r13)
     else:
-        Yinv = np.zeros((1,1,1),dtype=q.dtype)
+        Yinv = np.zeros((1,1,1,1),dtype=q.dtype)
     
     return Lam, Y, Yinv, YT 
         
@@ -673,7 +673,7 @@ def dExdq_eigs_2D(q,val=True,vec=True,inv=True,trans=False):
         Lam[2::4,:] = u + a
         Lam[3::4,:] = u - a
     else:
-        Lam = None
+        Lam = np.zeros((1,1),dtype=q.dtype)
         
     if vec:
         r11 = np.sqrt(rho*(g1/g))
@@ -690,14 +690,14 @@ def dExdq_eigs_2D(q,val=True,vec=True,inv=True,trans=False):
         r43 = k*r13 - u*r32/np.sqrt(2) + p/((2*g1)*r13)
         r44 = k*r13 + u*r32/np.sqrt(2) + p/((2*g1)*r13)
         
-        Y = fn.block_diag(r11,r0,r13,r13,r21,r0,r23,r24,r31,r32,r33,r33,r41,r42,r43,r44)
+        Y = fn.build_gbdiag(r11,r0,r13,r13,r21,r0,r23,r24,r31,r32,r33,r33,r41,r42,r43,r44)
         if trans:
-            YT = fn.block_diag(r11,r21,r31,r41,r0,r0,r32,r42,r13,r23,r33,r43,r13,r24,r33,r44)
+            YT = fn.build_gbdiag(r11,r21,r31,r41,r0,r0,r32,r42,r13,r23,r33,r43,r13,r24,r33,r44)
         else:
-            YT = None 
+            YT = np.zeros((1,1,1,1),dtype=q.dtype)
     else:
-        Y = None
-        YT = None
+        Y = np.zeros((1,1,1,1),dtype=q.dtype)
+        YT = np.zeros((1,1,1,1),dtype=q.dtype)
     if inv:
         r22 = np.zeros_like(rho)
         t4 = np.sqrt(g/rho)
@@ -718,9 +718,9 @@ def dExdq_eigs_2D(q,val=True,vec=True,inv=True,trans=False):
         r21 = -r23*v
         r12 = -r14*u
         r13 = -r14*v
-        Yinv = fn.block_diag(r11,r12,r13,r14,r21,r22,r23,r22,r31,r32,r33,r44,r41,r42,r33,r44)
+        Yinv = fn.build_gbdiag(r11,r12,r13,r14,r21,r22,r23,r22,r31,r32,r33,r44,r41,r42,r33,r44)
     else:
-        Yinv = None
+        Yinv = np.zeros((1,1,1,1),dtype=q.dtype)
     
     return Lam, Y, Yinv, YT     
         
@@ -752,7 +752,7 @@ def dEydq_eigs_2D(q,val=True,vec=True,inv=True,trans=False):
         Lam[2::4,:] = v + a
         Lam[3::4,:] = v - a
     else:
-        Lam = None
+        Lam = np.zeros((1,1),dtype=q.dtype)
     if vec:
         t3 = 1/np.sqrt(2)
         t2 = np.sqrt(rho/g)
@@ -773,15 +773,15 @@ def dEydq_eigs_2D(q,val=True,vec=True,inv=True,trans=False):
         t1 = a2_g1 + k
         r43 = r13*(t1 + t2)
         r44 = r13*(t1 - t2)
-        Y = fn.block_diag(r11,r12,r13,r13,r21,r22,r23,r23,r31,r32,r33,r34,r41,r42,r43,r44)
+        Y = fn.build_gbdiag(r11,r12,r13,r13,r21,r22,r23,r23,r31,r32,r33,r34,r41,r42,r43,r44)
 
         if trans:
-            YT = fn.block_diag(r11,r21,r31,r41,r12,r22,r32,r42,r13,r23,r33,r43,r13,r23,r34,r44)
+            YT = fn.build_gbdiag(r11,r21,r31,r41,r12,r22,r32,r42,r13,r23,r33,r43,r13,r23,r34,r44)
         else:
-            YT = None 
+            YT = np.zeros((1,1,1,1),dtype=q.dtype)
     else:
-        Y = None
-        YT = None
+        Y = np.zeros((1,1,1,1),dtype=q.dtype)
+        YT = np.zeros((1,1,1,1),dtype=q.dtype)
     if inv:        
         t4 = np.sqrt(g/rho)
         r44 = t4/a2_g1/np.sqrt(2)
@@ -805,10 +805,10 @@ def dEydq_eigs_2D(q,val=True,vec=True,inv=True,trans=False):
         r21 = r24*k + t1 - t2
         r13 = r24*v 
         r23 = r14*v
-        Yinv = fn.block_diag(r11,r12,r13,r14,r21,r22,r23,r24,r31,r32,r33,r44,r41,r32,r43,r44)
+        Yinv = fn.build_gbdiag(r11,r12,r13,r14,r21,r22,r23,r24,r31,r32,r33,r44,r41,r32,r43,r44)
         
     else:
-        Yinv = None
+        Yinv = np.zeros((1,1,1,1),dtype=q.dtype)
     
     return Lam, Y, Yinv, YT  
 
@@ -877,14 +877,14 @@ def dEndq_eigs_2D(q,n,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
         t1 = a2_g1 + k
         r43 = r13*(t1 + t2)
         r44 = r13*(t1 - t2)
-        Y = fn.block_diag(r11,r12,r13,r13,r21,r22,r23,r24,r31,r32,r33,r34,r41,r42,r43,r44)
+        Y = fn.build_gbdiag(r11,r12,r13,r13,r21,r22,r23,r24,r31,r32,r33,r34,r41,r42,r43,r44)
         if trans:
-            YT = fn.block_diag(r11,r21,r31,r41,r12,r22,r32,r42,r13,r23,r33,r43,r13,r24,r34,r44)
+            YT = fn.build_gbdiag(r11,r21,r31,r41,r12,r22,r32,r42,r13,r23,r33,r43,r13,r24,r34,r44)
         else:
-            YT = np.zeros((1,1,1),dtype=q.dtype)
+            YT = np.zeros((1,1,1,1),dtype=q.dtype)
     else:
-        Y = np.zeros((1,1,1),dtype=q.dtype)
-        YT = np.zeros((1,1,1),dtype=q.dtype)
+        Y = np.zeros((1,1,1,1),dtype=q.dtype)
+        YT = np.zeros((1,1,1,1),dtype=q.dtype)
     if inv:
         t4 = np.sqrt(g/rho)
         r44 = t4/a2_g1/np.sqrt(2)
@@ -917,9 +917,9 @@ def dEndq_eigs_2D(q,n,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
         t1 = t4*nx
         r13 = -r14*v + t1*t5
         r23 = -r24*v - t1*t3
-        Yinv = fn.block_diag(r11,r12,r13,r14,r21,r22,r23,r24,r31,r32,r33,r44,r41,r42,r43,r44)
+        Yinv = fn.build_gbdiag(r11,r12,r13,r14,r21,r22,r23,r24,r31,r32,r33,r44,r41,r42,r43,r44)
     else:
-        Yinv = np.zeros((1,1,1),dtype=q.dtype)
+        Yinv = np.zeros((1,1,1,1),dtype=q.dtype)
     
     return Lam, Y, Yinv, YT 
 
@@ -942,7 +942,7 @@ def symmetrizer_1D(q):
     r23 = rhou*(p+e)/rho
     r33 = g*e*e/rho - ((g-1)/4)*rhou2*rhou2/rho
     
-    P = fn.block_diag(rho,rhou,e,rhou,r22,r23,e,r23,r33)
+    P = fn.build_gbdiag(rho,rhou,e,rhou,r22,r23,e,r23,r33)
     return P
 
 @njit
@@ -1009,7 +1009,7 @@ def symmetrizer_dw_derigs_1D(q,qg):
     r23 = (e_bar+p_avg)*u_avg
     r33 = (p_ln*p_ln/g1 + e_bar*e_bar)/rho_ln + p_avg*u2
     
-    P = fn.block_diag(rho_ln,rho_ln_u_avg,e_bar,
+    P = fn.build_gbdiag(rho_ln,rho_ln_u_avg,e_bar,
                       rho_ln_u_avg,r22,r23,
                       e_bar,r23,r33)
     return P
@@ -1038,7 +1038,7 @@ def symmetrizer_2D(q):
     r34 = rhov*(p+e)/rho
     r44 = g*e**2/rho - (g-1)*(rhou2+rhov2)**2/4/rho
     
-    P = fn.block_diag(rho,rhou,rhov,e,rhou,r22,r23,r24,rhov,r23,r33,r34,e,r24,r34,r44)
+    P = fn.build_gbdiag(rho,rhou,rhov,e,rhou,r22,r23,r24,rhov,r23,r33,r34,e,r24,r34,r44)
     return P
 
 @njit    
@@ -1083,7 +1083,7 @@ def symmetrizer_dw_derigs_2D(q,qg):
     r34 = (e_bar+p_avg)*v_avg
     r44 = (p_ln*p_ln/g1 + e_bar*e_bar)/rho_ln + p_avg*u2
     
-    P = fn.block_diag(rho_ln,rho_ln_u_avg,rho_ln_v_avg,e_bar,
+    P = fn.build_gbdiag(rho_ln,rho_ln_u_avg,rho_ln_v_avg,e_bar,
                       rho_ln_u_avg,r22,r23,r24,
                       rho_ln_v_avg,r23,r33,r34,
                       e_bar,r24,r34,r44)
@@ -1118,7 +1118,7 @@ def symmetrizer_3D(q):
     r45 = rhow*(p+e)/rho
     r55 = g*e**2/rho - (g-1)*(rhou2+rhov2+rhow2)**2/4/rho
     
-    P = fn.block_diag(rho,rhou,rhov,rhow,e,rhou,r22,r23,r24,r25,rhov,r23,r33,r34,r35,rhow,r24,r34,r44,r45,e,r25,r35,r45,r55)
+    P = fn.build_gbdiag(rho,rhou,rhov,rhow,e,rhou,r22,r23,r24,r25,rhov,r23,r33,r34,r35,rhow,r24,r34,r44,r45,e,r25,r35,r45,r55)
     return P
 
 @njit    
@@ -1171,7 +1171,7 @@ def symmetrizer_dw_derigs_3D(q,qg):
     r45 = (e_bar+p_avg)*w_avg
     r55 = (p_ln*p_ln/g1 + e_bar*e_bar)/rho_ln + p_avg*u2
     
-    P = fn.block_diag(rho_ln,rho_ln_u_avg,rho_ln_v_avg,rho_ln_w_avg,e_bar,
+    P = fn.build_gbdiag(rho_ln,rho_ln_u_avg,rho_ln_v_avg,rho_ln_w_avg,e_bar,
                       rho_ln_u_avg,r22,r23,r24,r25,
                       rho_ln_v_avg,r23,r33,r34,r35,
                       rho_ln_w_avg,r24,r34,r44,r45,
@@ -1226,9 +1226,9 @@ def dExdq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
         r53 = v*r33
         r54 = k*b + u*c + p/((2*g1)*b)
         r55 = k*b - u*c + p/((2*g1)*b)     
-        Y = fn.block_diag(a,r0,r0,b,b,r21,r0,r0,r24,r25,r31,r0,r33,r34,r34,r41,-r33,r0,r44,r44,r51,r52,r53,r54,r55)
+        Y = fn.build_gbdiag(a,r0,r0,b,b,r21,r0,r0,r24,r25,r31,r0,r33,r34,r34,r41,-r33,r0,r44,r44,r51,r52,r53,r54,r55)
         if trans:
-            YT = fn.block_diag(a,r21,r31,r41,r51,r0,r0,r0,-r33,r52,r0,r0,r33,r0,r53,b,r24,r34,r44,r54,b,r25,r34,r44,r55)
+            YT = fn.build_gbdiag(a,r21,r31,r41,r51,r0,r0,r0,-r33,r52,r0,r0,r33,r0,r53,b,r24,r34,r44,r54,b,r25,r34,r44,r55)
         else:
             YT = None
     else:
@@ -1255,7 +1255,7 @@ def dExdq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
         r44 = -w*b
         r51 = k*b + u*c
         r52 = -c - u*b
-        Yinv = fn.block_diag(r11,r12,r13,r14,r15,r21,r0,r0,-r33,r0,r31,r0,r33,r0,r0,r41,r42,r43,r44,b,r51,r52,r43,r44,b)
+        Yinv = fn.build_gbdiag(r11,r12,r13,r14,r15,r21,r0,r0,-r33,r0,r31,r0,r33,r0,r0,r41,r42,r43,r44,b,r51,r52,r43,r44,b)
     else:
         Yinv = None
     
@@ -1309,9 +1309,9 @@ def dEydq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
         r53 = -u*r41
         r54 = k*b + v*c + p/((2*g1)*b)
         r55 = k*b - v*c + p/((2*g1)*b)     
-        Y = fn.block_diag(r0,a,r0,b,b,r0,r22,-r41,r24,r24,r0,r32,r0,r34,r35,r41,r42,r0,r44,r44,r51,r52,r53,r54,r55)
+        Y = fn.build_gbdiag(r0,a,r0,b,b,r0,r22,-r41,r24,r24,r0,r32,r0,r34,r35,r41,r42,r0,r44,r44,r51,r52,r53,r54,r55)
         if trans:
-            YT = fn.block_diag(r0,r0,r0,r41,r51,a,r22,r32,r42,r52,r0,-r41,r0,r0,r53,b,r24,r34,r44,r54,b,r24,r35,r44,r55)
+            YT = fn.build_gbdiag(r0,r0,r0,r41,r51,a,r22,r32,r42,r52,r0,-r41,r0,r0,r53,b,r24,r34,r44,r54,b,r24,r35,r44,r55)
         else:
             YT = None
     else:
@@ -1337,7 +1337,7 @@ def dEydq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
         r44 = -w*b
         r51 = k*b + v*c
         r53 = -c - v*b
-        Yinv = fn.block_diag(r11,r0,r0,-r14,r0,r21,r22,r23,r24,r25,r31,r14,r0,r0,r0,r41,r42,r43,r44,b,r51,r42,r53,r44,b)
+        Yinv = fn.build_gbdiag(r11,r0,r0,-r14,r0,r21,r22,r23,r24,r25,r31,r14,r0,r0,r0,r41,r42,r43,r44,b,r51,r42,r53,r44,b)
     else:
         Yinv = None
     
@@ -1391,9 +1391,9 @@ def dEzdq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
         r53 = k*a
         r54 = k*b + w*c + p/((2*g1)*b)
         r55 = k*b - w*c + p/((2*g1)*b)     
-        Y = fn.block_diag(r0,r0,a,b,b,r0,r22,r23,r24,r24,-r22,r0,r33,r34,r34,r0,r0,r43,r44,r45,r51,r52,r53,r54,r55)
+        Y = fn.build_gbdiag(r0,r0,a,b,b,r0,r22,r23,r24,r24,-r22,r0,r33,r34,r34,r0,r0,r43,r44,r45,r51,r52,r53,r54,r55)
         if trans:
-            YT = fn.block_diag(r0,r0,-r22,r0,r51,r0,r22,r0,r0,r52,a,r23,r33,r43,r53,b,r24,r34,r44,r54,b,r24,r34,r45,r55)
+            YT = fn.build_gbdiag(r0,r0,-r22,r0,r51,r0,r22,r0,r0,r52,a,r23,r33,r43,r53,b,r24,r34,r44,r54,b,r24,r34,r45,r55)
         else:
             YT = None
     else:
@@ -1419,7 +1419,7 @@ def dEzdq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
         r44 = c -w*b
         r51 = k*b + w*c
         r54 = -c - w*b
-        Yinv = fn.block_diag(r11,r0,-r22,r0,r0,r21,r22,r0,r0,r0,r31,r32,r33,r34,r35,r41,r42,r43,r44,b,r51,r42,r43,r54,b)
+        Yinv = fn.build_gbdiag(r11,r0,-r22,r0,r0,r21,r22,r0,r0,r0,r31,r32,r33,r34,r35,r41,r42,r43,r44,b,r51,r42,r43,r54,b)
     else:
         Yinv = None
     
@@ -1490,9 +1490,9 @@ def dEndq_eigs_3D(q,n,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
         r53 = nz*k*a + (nx*v-ny*u)*c
         r54 = k*b + uvwn*c*fac + p/((2*g1)*b)
         r55 = k*b - uvwn*c*fac + p/((2*g1)*b)     
-        Y = fn.block_diag(r11,r12,r13,b,b,r21,r22,r23,r24,r25,r31,r32,r33,r34,r35,r41,r42,r43,r44,r45,r51,r52,r53,r54,r55)
+        Y = fn.build_gbdiag(r11,r12,r13,b,b,r21,r22,r23,r24,r25,r31,r32,r33,r34,r35,r41,r42,r43,r44,r45,r51,r52,r53,r54,r55)
         if trans:
-            YT = fn.block_diag(r11,r21,r31,r41,r51,r12,r22,r32,r42,r52,r13,r23,r33,r43,r53,b,r24,r34,r44,r54,b,r25,r35,r45,r55)
+            YT = fn.build_gbdiag(r11,r21,r31,r41,r51,r12,r22,r32,r42,r52,r13,r23,r33,r43,r53,b,r24,r34,r44,r54,b,r25,r35,r45,r55)
         else:
             YT = None
     else:
@@ -1527,7 +1527,7 @@ def dEndq_eigs_3D(q,n,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
         r52 = -u*b - nx*c
         r53 = -v*b - ny*c
         r54 = -w*b - nz*c
-        Yinv = fn.block_diag(r11,r12,r13,r14,r15,r21,r22,r23,r24,r25,r31,r32,r33,r34,r35,r41,r42,r43,r44,b,r51,r52,r53,r54,b)
+        Yinv = fn.build_gbdiag(r11,r12,r13,r14,r15,r21,r22,r23,r24,r25,r31,r32,r33,r34,r35,r41,r42,r43,r44,b,r51,r52,r53,r54,b)
     else:
         Yinv = None
     
@@ -2114,27 +2114,25 @@ def Chandrashekar_fluxes_2D(qL,qR):
 
 
 @njit
-def StegerWarming_diss_1D(q, n):
+def StegerWarming_diss_1D(q):
     ''' get the dissipative part of the steger-warming splitting. See gassner upwind paper.'''
     rho = q[::3,:]
     u = q[1::3,:]/rho
     k = (u*u)/2
     e = q[2::3,:]
     p = g1*(q[2::3,:]-rho*k) # pressure
-    norm = cabs(n)
     a = np.sqrt(g*p/rho)
-    un = u*n
 
     H = (e + p)/rho
-    lam1 = cabs(un - norm*a)
-    lam2 = cabs(un)
-    lam3 = cabs(un + norm*a)
+    lam1 = cabs(u - a)
+    lam2 = cabs(u)
+    lam3 = cabs(u + a)
 
     # assemble_vec 
     f = np.zeros_like(q)
     f[::3,:] = rho*(lam1 + 2*g1*lam2 + lam3)
     f[1::3,:] = rho*((u-a)*lam1 + 2*g1*u*lam2 + (u+a)*lam3)
-    f[2::3,:] = rho*((H-un*a/norm)*lam1 + 2*g1*k*lam2 + (H+un*a/norm)*lam3)
+    f[2::3,:] = rho*((H-u*a)*lam1 + 2*g1*k*lam2 + (H+u*a)*lam3)
     f = (0.5/g)*f
     return f
 
@@ -2916,8 +2914,8 @@ def Derigs_dExdq_eigs_1D(qL,qR,entropy_fix=False):
     r23 = uavg + abar
     r31 = hbar - uavg*abar
     r33 = hbar + uavg*abar
-    Y = fn.block_diag(r11,r11,r11,r21,uavg,r23,r31,u2bar_2,r33)
-    YT = fn.block_diag(r11,r21,r31,r11,uavg,u2bar_2,r11,r23,r33)
+    Y = fn.build_gbdiag(r11,r11,r11,r21,uavg,r23,r31,u2bar_2,r33)
+    YT = fn.build_gbdiag(r11,r21,r31,r11,uavg,u2bar_2,r11,r23,r33)
 
     Tfix = np.zeros_like(qL)
     Tfix[::3,:] = 0.5*rholn/g
@@ -2933,7 +2931,7 @@ def dExdw_abs_1D_derigs(qL,qR,entropy_fix=False):
      are the eigenvalues of dExdq '''
     
     Lam, Y, YT, Tfix = Derigs_dExdq_eigs_1D(qL,qR,entropy_fix)
-    dEndw_abs = fn.gm_gm(Y, fn.gdiag_gm(cabs(Lam)*Tfix, YT))
+    dEndw_abs = fn.gbdiag_gbdiag(Y, fn.gdiag_gbdiag(cabs(Lam)*Tfix, YT))
     return dEndw_abs
 
 @njit   
@@ -2944,7 +2942,7 @@ def dExdq_abs_1D_derigs(qL,qR,entropy_fix=False):
      NOTE: this is very inefficient '''
     
     Lam, Y, _, _ = Derigs_dExdq_eigs_1D(qL,qR,entropy_fix)
-    dEndq_abs = fn.gm_gm(Y, fn.gdiag_gm(cabs(Lam), fn.inv_gm(Y)))
+    dEndq_abs = fn.gbdiag_gbdiag(Y, fn.gdiag_gbdiag(cabs(Lam), fn.inv_gm(Y)))
     return dEndq_abs
 
 
@@ -2969,14 +2967,8 @@ if __name__ == "__main__":
     maxeig = maxeig_dEndq_1D(q1D,n1D)
     P1D = symmetrizer_1D(q1D)
     P31D = symmetrizer_dw_derigs_1D(q1D,q1D)
-    P1Dd = fn.gm_gm(Y1Dd, fn.gdiag_gm(Tfix,YT1Dd))
-    AP1D = fn.gm_gm(An1D,P1D)
-    from scipy.linalg import block_diag
-    xblocks = []
-    for node in range(nen):
-        xblocks.append(np.ones((3,3))*n1D[node,0])
-    Nx = block_diag(*xblocks)
-    An21D = Ax1D[:,:,0]*Nx
+    P1Dd = fn.gbdiag_gbdiag(Y1Dd, fn.gdiag_gbdiag(Tfix,YT1Dd))
+    AP1D = fn.gbdiag_gbdiag(An1D,P1D)
 
     q = q1D[:3,0]
     F = calcEx_1D(q1D[:3,:1])[:,0]
@@ -2986,19 +2978,19 @@ if __name__ == "__main__":
     F_Chandrashekar = Chandrashekar_flux_1D(q,q)
     
     print('---- Testing 1D functions (all should be zero) ----')
-    print('An = nx*Ax: ', np.max(cabs(An1D[:,:,0]-An21D)))
+    print('An = nx*Ax: ', np.max(cabs(An1D[0,:,:,0]-Ax1D[0,:,:,0]*n1D[0,0])))
     print('maxeig(An): ', np.max(cabs(maxeig - fn.spec_rad(An1D,3))))
-    print('n eigenvectors: ', np.max(cabs(Y1D*Lam1D - fn.gm_gm(An1D, Y1D))))
-    print('x eigenvectors: ', np.max(cabs(Yx1D*Lamx1D - fn.gm_gm(Ax1D, Yx1D))))
-    print('Derigs x eigenvectors: ', np.max(cabs(Y1Dd*Lam1Dd - fn.gm_gm(Ax1D, Y1Dd))))
-    print('n eigenvector inverse: ', np.max(cabs(np.linalg.inv(Y1D[:,:,0])-Yinv1D[:,:,0])))
-    print('x eigenvector inverse: ', np.max(cabs(np.linalg.inv(Yx1D[:,:,0])-Yinvx1D[:,:,0])))
-    print('n eigenvector transpose: ', np.max(cabs(Y1D[:,:,0].T - YT1D[:,:,0])))
-    print('x eigenvector transpose: ', np.max(cabs(Yx1D[:,:,0].T - YTx1D[:,:,0])))
-    print('n eigendecomposition: ', np.max(cabs(An1D - fn.gm_gm(Y1D,fn.gdiag_gm(Lam1D,Yinv1D)))))
-    print('x eigendecomposition: ', np.max(cabs(Ax1D - fn.gm_gm(Yx1D,fn.gdiag_gm(Lamx1D,Yinvx1D)))))
-    print('A @ P symmetrizer: ', np.max(cabs(AP1D[:,:,0] - AP1D[:,:,0].T)))
-    print('P = Y@Y.T symmetrizer: ', np.max(cabs(P1D - fn.gm_gm(Y1D,YT1D))))
+    print('n eigenvectors: ', np.max(cabs(fn.gbdiag_gdiag(Y1D,Lam1D) - fn.gbdiag_gbdiag(An1D, Y1D))))
+    print('x eigenvectors: ', np.max(cabs(fn.gbdiag_gdiag(Yx1D,Lamx1D) - fn.gbdiag_gbdiag(Ax1D, Yx1D))))
+    print('Derigs x eigenvectors: ', np.max(cabs(fn.gbdiag_gdiag(Y1Dd,Lam1Dd) - fn.gbdiag_gbdiag(Ax1D, Y1Dd))))
+    print('n eigenvector inverse: ', np.max(cabs(np.linalg.inv(Y1D[0,:,:,0])-Yinv1D[0,:,:,0])))
+    print('x eigenvector inverse: ', np.max(cabs(np.linalg.inv(Yx1D[0,:,:,0])-Yinvx1D[0,:,:,0])))
+    print('n eigenvector transpose: ', np.max(cabs(Y1D[0,:,:,0].T - YT1D[0,:,:,0])))
+    print('x eigenvector transpose: ', np.max(cabs(Yx1D[0,:,:,0].T - YTx1D[0,:,:,0])))
+    print('n eigendecomposition: ', np.max(cabs(An1D - fn.gbdiag_gbdiag(Y1D,fn.gdiag_gbdiag(Lam1D,Yinv1D)))))
+    print('x eigendecomposition: ', np.max(cabs(Ax1D - fn.gbdiag_gbdiag(Yx1D,fn.gdiag_gbdiag(Lamx1D,Yinvx1D)))))
+    print('A @ P symmetrizer: ', np.max(cabs(AP1D[0,:,:,0] - AP1D[0,:,:,0].T)))
+    print('P = Y@Y.T symmetrizer: ', np.max(cabs(P1D - fn.gbdiag_gbdiag(Y1D,YT1D))))
     print('P = Pjump(q,q): ', np.max(cabs(P1D-P31D))) 
     print('P = Pjump(q,q): ', np.max(cabs(P1D-P1Dd))) 
     print('----')
@@ -3032,18 +3024,9 @@ if __name__ == "__main__":
     Ax2D = dExdq_2D(q2D)
     Ay2D = dEydq_2D(q2D)
     P2D = symmetrizer_2D(q2D)
-    P22D = fn.gm_gm(Y2D,YT2D)
+    P22D = fn.gbdiag_gbdiag(Y2D,YT2D)
     P32D = symmetrizer_dw_derigs_2D(q2D,q2D)
-    AP2D = fn.gm_gm(An2D,P2D)
-    from scipy.linalg import block_diag
-    xblocks = []
-    yblocks = []
-    for node in range(nen):
-        xblocks.append(np.ones((4,4))*n2D[node,0,0])
-        yblocks.append(np.ones((4,4))*n2D[node,1,0])
-    Nx = block_diag(*xblocks)
-    Ny = block_diag(*yblocks)
-    An22D = Ax2D[:,:,0]*Nx + Ay2D[:,:,0]*Ny
+    AP2D = fn.gbdiag_gbdiag(An2D,P2D)
 
     q = q2D[:4,0]
     Fx, Fy = calcExEy_2D(q2D[:4,:1])
@@ -3054,11 +3037,11 @@ if __name__ == "__main__":
     Fx_Chandra, Fy_Chandra = Chandrashekar_fluxes_2D(q,q)
     
     print('---- Testing 2D functions (all should be zero) ----')
-    print('An = nx*Ax + ny*Ay: ', np.max(cabs(An2D[:,:,0]-An22D)))
+    print('An = nx*Ax + ny*Ay: ', np.max(cabs(An2D[0,:,:,0] - Ax2D[0,:,:,0]*n2D[0,0,0] - Ay2D[0,:,:,0]*n2D[0,1,0])))
     print('maxeig(An): ', np.max(cabs(maxeig - fn.spec_rad(An2D,4))))
-    print('x eigenvectors: ', np.max(cabs(Yx2D*Lamx2D - fn.gm_gm(Ax2D, Yx2D))))
-    print('y eigenvectors: ', np.max(cabs(Yy2D*Lamy2D - fn.gm_gm(Ay2D, Yy2D))))
-    print('n eigenvectors: ', np.max(cabs(Y2D*Lam2D - fn.gm_gm(An2D, Y2D))))
+    print('x eigenvectors: ', np.max(cabs(fn.gbdiag_gdiag(Yx2D,Lamx2D) - fn.gbdiag_gbdiag(Ax2D, Yx2D))))
+    print('y eigenvectors: ', np.max(cabs(fn.gbdiag_gdiag(Yy2D,Lamy2D) - fn.gbdiag_gbdiag(Ay2D, Yy2D))))
+    print('n eigenvectors: ', np.max(cabs(fn.gbdiag_gdiag(Y2D,Lam2D) - fn.gbdiag_gbdiag(An2D, Y2D))))
     print('x/nx eigenvalues: ', np.max(cabs(Lamx2D-Lamx22D)))
     print('y/ny eigenvalues: ', np.max(cabs(Lamy2D-Lamy22D)))
     print('x/nx eigenvectors: ', np.max(cabs(Yx2D-Yx22D)))
@@ -3067,20 +3050,20 @@ if __name__ == "__main__":
     print('y/ny eigenvector transpose: ', np.max(cabs(YTy2D-YTy22D)))
     print('x/nx eigenvector inverse: ', np.max(cabs(Yinvx2D-Yinvx22D)))
     print('y/ny eigenvector inverse: ', np.max(cabs(Yinvy2D-Yinvy22D)))
-    print('x eigenvector inverse: ', np.max(cabs(np.linalg.inv(Yx2D[:,:,0])-Yinvx2D[:,:,0])))
-    print('y eigenvector inverse: ', np.max(cabs(np.linalg.inv(Yy2D[:,:,0])-Yinvy2D[:,:,0])))
-    print('n eigenvector inverse: ', np.max(cabs(np.linalg.inv(Y2D[:,:,0])-Yinv2D[:,:,0])))
-    print('x eigenvector transpose: ', np.max(cabs(Yx2D[:,:,0].T - YTx2D[:,:,0])))
-    print('y eigenvector transpose: ', np.max(cabs(Yy2D[:,:,0].T - YTy2D[:,:,0])))
-    print('n eigenvector transpose: ', np.max(cabs(Y2D[:,:,0].T - YT2D[:,:,0])))
-    print('x eigendecomposition: ', np.max(cabs(Ax2D - fn.gm_gm(Yx2D,fn.gdiag_gm(Lamx2D,Yinvx2D)))))
-    print('y eigendecomposition: ', np.max(cabs(Ay2D - fn.gm_gm(Yy2D,fn.gdiag_gm(Lamy2D,Yinvy2D)))))
-    print('nx eigendecomposition: ', np.max(cabs(Ax2D - fn.gm_gm(Yx22D,fn.gdiag_gm(Lamx22D,Yinvx22D)))))
-    print('ny eigendecomposition: ', np.max(cabs(Ay2D - fn.gm_gm(Yy22D,fn.gdiag_gm(Lamy22D,Yinvy22D)))))
-    print('n eigendecomposition: ', np.max(cabs(An2D - fn.gm_gm(Y2D,fn.gdiag_gm(Lam2D,Yinv2D)))))
+    print('x eigenvector inverse: ', np.max(cabs(np.linalg.inv(Yx2D[0,:,:,0])-Yinvx2D[0,:,:,0])))
+    print('y eigenvector inverse: ', np.max(cabs(np.linalg.inv(Yy2D[0,:,:,0])-Yinvy2D[0,:,:,0])))
+    print('n eigenvector inverse: ', np.max(cabs(np.linalg.inv(Y2D[0,:,:,0])-Yinv2D[0,:,:,0])))
+    print('x eigenvector transpose: ', np.max(cabs(Yx2D[0,:,:,0].T - YTx2D[0,:,:,0])))
+    print('y eigenvector transpose: ', np.max(cabs(Yy2D[0,:,:,0].T - YTy2D[0,:,:,0])))
+    print('n eigenvector transpose: ', np.max(cabs(Y2D[0,:,:,0].T - YT2D[0,:,:,0])))
+    print('x eigendecomposition: ', np.max(cabs(Ax2D - fn.gbdiag_gbdiag(Yx2D,fn.gdiag_gbdiag(Lamx2D,Yinvx2D)))))
+    print('y eigendecomposition: ', np.max(cabs(Ay2D - fn.gbdiag_gbdiag(Yy2D,fn.gdiag_gbdiag(Lamy2D,Yinvy2D)))))
+    print('nx eigendecomposition: ', np.max(cabs(Ax2D - fn.gbdiag_gbdiag(Yx22D,fn.gdiag_gbdiag(Lamx22D,Yinvx22D)))))
+    print('ny eigendecomposition: ', np.max(cabs(Ay2D - fn.gbdiag_gbdiag(Yy22D,fn.gdiag_gbdiag(Lamy22D,Yinvy22D)))))
+    print('n eigendecomposition: ', np.max(cabs(An2D - fn.gbdiag_gbdiag(Y2D,fn.gdiag_gbdiag(Lam2D,Yinv2D)))))
     print('P = Y@Y.T symmetrizer:', np.max(cabs(P2D-P22D))) 
     print('P = Pjump(q,q): ', np.max(cabs(P2D-P32D))) 
-    print('An @ P symmetry: ', np.max(cabs(AP2D[:,:,0] - AP2D[:,:,0].T)))
+    print('An @ P symmetry: ', np.max(cabs(AP2D[0,:,:,0] - AP2D[0,:,:,0].T)))
     print('----')
     print('Consistency of Ismail Roe flux: ', np.max(cabs(np.array([Fx-Fx_IsmailRoe,Fy-Fy_IsmailRoe]))))
     print('Consistency of Central flux: ', np.max(cabs(np.array([Fx-Fx_Central,Fy-Fy_Central]))))

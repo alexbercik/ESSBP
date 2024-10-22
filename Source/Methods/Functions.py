@@ -70,7 +70,7 @@ def gm_gm(A,B):
             for l in range(nen3):
                 for e in range(nelem):
                     c[i,l,e] += A[i,j,e]*B[j,l,e]
-    return c  
+    return c 
 
 @njit
 def gm_lm(A,B):
@@ -239,78 +239,63 @@ def gs_lm(A,B):
     return c
 
 @njit
-def gv_lm(A,B):
+def gdiag_lm(H, D):
     '''
-    Takes a global vector of shape (nen1,nelem) and a local matrix of shape (nen1,nen2) 
-    and returns a global matrix of shape (nen2,nelem)
+    Takes a global array of shape (nen1, nelem) that simulates a global diagonal
+    matrix of shape (nen1, nen1, nelem), and a local matrix of shape (nen1, nen2) 
+    and returns a global matrix of shape (nen1, nen2, nelem), i.e. H @ D
 
     Parameters
     ----------
-    A : numpy array of shape (nen1,nelem)
-    B : numpy array of shape (nen1,nen2)
+    H : numpy array of shape (nen1, nelem)
+    D : numpy array of shape (nen1, nen2)
 
     Returns
     -------
-    c : numpy array of shape (nen1,nen2,nelem)
-    '''
-    nen1,nelem = np.shape(A)
-    nen1b,nen2 = np.shape(B)
-    if nen1!=nen1b:
+    c : numpy array of shape (nen1, nen2, nelem)
+    ''' 
+    nen1, nelem = H.shape
+    nen1b, nen2 = D.shape
+    if nen1 != nen1b:
         raise Exception('shapes do not match')
-    c = np.zeros((nen2,nelem),dtype=B.dtype)
+    
+    c = np.zeros((nen1, nen2, nelem), dtype=D.dtype)
+    
+    # Optimized loop ordering for better performance
     for e in range(nelem):
-            c[:,e] = A[:,e] @ B
-
+        for j in range(nen2):
+            for i in range(nen1):
+                c[i, j, e] = H[i, e] * D[i, j]
+                
     return c
 
 @njit
-def gdiag_lm(H,D):
+def lm_gdiag(D, H):
     '''
-    Takes a global array of shape (nen1,nelem) that simulates a global diagonal
-    matrix of shape (nen1,nen1,nelem), and a local matrix of shape (nen1,nen2) 
-    and returns a global matrix of shape (nen1,nen2,nelem), i.e. H @ D
+    Takes a local matrix of shape (nen1, nen2) and a global array of shape 
+    (nen2, nelem) that simulates a global diagonal matrix of shape (nen2, nen2, nelem), 
+    and returns a global matrix of shape (nen1, nen2, nelem), i.e. D @ H
 
     Parameters
     ----------
-    H : numpy array of shape (nen1,nelem)
-    D : numpy array of shape (nen1,nen2)
+    D : numpy array of shape (nen1, nen2)
+    H : numpy array of shape (nen2, nelem)
 
     Returns
     -------
-    c : numpy array of shape (nen1,nen2,nelem)
+    c : numpy array of shape (nen1, nen2, nelem)
     ''' 
-    nen1,nelem = np.shape(H)
-    nen1b,nen2 = np.shape(D)
-    if nen1!=nen1b:
-        raise Exception('shapes do not match')
-    c = np.zeros((nen1,nen2,nelem),dtype=D.dtype) 
-    for e in range(nelem):
-        c[:,:,e] = (D.T * H[:,e]).T
-    return c
-
-@njit
-def lm_gdiag(D,H):
-    '''
-    Takes a a local matrix of shape (nen1,nen2) and a global array of shape 
-    (nen2,nelem) that simulates a global diagonal matrix of shape (nen2,nen2,nelem), 
-    and returns a global matrix of shape (nen1,nen2,nelem), i.e. D @ H
-
-    Parameters
-    ----------
-    D : numpy array of shape (nen1,nen2)
-    H : numpy array of shape (nen2,nelem)
-
-    Returns
-    -------
-    c : numpy array of shape (nen1,nen2,nelem)
-    ''' 
-    nen2b,nelem = np.shape(H)
-    nen1,nen2 = np.shape(D)
+    nen2, nelem = H.shape
+    nen1, nen2b = D.shape
     if nen2!=nen2b:
         raise Exception('shapes do not match')
-    c = np.zeros((nen1,nen2,nelem),dtype=H.dtype) 
+    
+    c = np.zeros((nen1, nen2, nelem), dtype=H.dtype)
     for e in range(nelem):
-        c[:,:,e] = D * H[:,e]
+        for j in range(nen2):
+            for i in range(nen1):
+                c[i, j, e] = D[i, j] * H[j, e]
+                
     return c
 
 @njit
@@ -335,9 +320,13 @@ def gdiag_gm(H,D):
         raise Exception('array shapes do not match')    
     if nelem!=nelemb:
         raise Exception('element shapes do not match')   
-    c = np.zeros((nen1,nen2,nelem),dtype=D.dtype)
+    
+    c = np.zeros((nen1, nen2, nelem), dtype=D.dtype)
     for e in range(nelem):
-        c[:,:,e] = (D[:,:,e].T * H[:,e]).T
+        for j in range(nen2):
+            for i in range(nen1):
+                c[i, j, e] = H[i, e] * D[i, j, e]
+                
     return c
 
 
@@ -423,6 +412,134 @@ def ldiag_gv(H,q):
     return c
 
 @njit
+def gbdiag_gbdiag(A,B):
+    '''
+    Takes two global arrays of shape (nen,neq,neq,nelem) and simulates matrix 
+    multiplication between 2 global block-diagonal matrices
+    equivalent to np.einsum('nije,njke->nike', A, B)
+
+    Parameters
+    ----------
+    A : numpy array of shape (nen,neq,neq,nelem)
+    B : numpy array of shape (nen,neq,neq,nelem)
+
+    Returns
+    -------
+    c : numpy array of shape (nen,neq,neq,nelem)
+    '''
+    nen,neq,neq2,nelem = np.shape(A)
+    nenb,neqb,neqb2,nelemb = np.shape(B)
+    if nen!=nenb or neq!=neqb or neq2!=neqb2 or nelem!=nelemb:
+        raise Exception('array shapes do not match')
+    if neq!=neq2:
+        raise Exception('array shapes are not block diagonal')
+    
+    c = np.zeros((nen,neq,neq,nelem),dtype=B.dtype)
+    for e in range(nelem):
+        for n in range(nen):
+            for k in range(neq): 
+                for i in range(neq):
+                    sum_value = 0
+                    for j in range(neq):
+                        sum_value += A[n, i, j, e] * B[n, j, k, e]
+                    c[n, i, k, e] = sum_value
+    return c
+
+@njit
+def gbdiag_gv(A,b):
+    '''
+    Takes a global arrays of shape (nen,neq,neq,nelem) and a global
+    vector of shape (nen*neq) and simulates matrix multiplication
+
+    Parameters
+    ----------
+    A : numpy array of shape (nen,neq,neq,nelem)
+    b : numpy array of shape (nen*neq,nelem)
+
+    Returns
+    -------
+    c : numpy array of shape (nen*neq,nelem)
+    '''
+    nen,neq,neq2,nelem = np.shape(A)
+    nen_neq,nelemb = np.shape(b)
+    if nen*neq!=nen_neq or nelem!=nelemb:
+        raise Exception('array shapes do not match')
+    if neq!=neq2:
+        raise Exception('array is not block diagonal')
+    
+    c = np.zeros((nen_neq,nelem),dtype=b.dtype)
+    for e in range(nelem):
+        for n in range(nen):
+            for i in range(neq):
+                sum_value = 0
+                for j in range(neq):
+                    sum_value += A[n, i, j, e] * b[n * neq + j, e]
+                c[n * neq + i, e] = sum_value
+    return c
+
+@njit
+def gdiag_gbdiag(A,B):
+    '''
+    Takes a global diagonal array (nen*neq,nelem) and a 
+    global arrays of shape (nen,neq,neq,nelem) and simulates matrix 
+    multiplication, returning a global array of shape (nen,neq,neq,nelem)
+
+    Parameters
+    ----------
+    A : numpy array of shape (nen*neq,nelem)
+    B : numpy array of shape (nen,neq,neq,nelem)
+
+    Returns
+    -------
+    c : numpy array of shape (nen,neq,neq,nelem)
+    '''
+    nen_neq,nelem = np.shape(A)
+    nen,neq,neqb,nelemb = np.shape(B)
+    if nen*neq!=nen_neq or nelem!=nelemb:
+        raise Exception('array shapes do not match')
+    if neq!=neqb:
+        raise Exception('array is not block diagonal')
+    
+    c = np.zeros((nen,neq,neq,nelem),dtype=B.dtype)
+    for e in range(nelem):
+        for n in range(nen):
+            for i in range(neq):
+                for j in range(neq):
+                    c[n, i, j, e] = A[n * neq + i, e] * B[n, i, j, e]
+    return c
+
+@njit
+def gbdiag_gdiag(A,B):
+    '''
+    Takes a global block diagonal array (nen,neq,neq,nelem) and a 
+    global diagonal array of shape (nen*neq,nelem) and simulates matrix 
+    multiplication, returning a global array of shape (nen,neq,neq,nelem)
+
+    Parameters
+    ----------
+    A : numpy array of shape (nen,neq,neq,nelem)
+    B : numpy array of shape (nen*neq,nelem)
+
+    Returns
+    -------
+    c : numpy array of shape (nen,neq,neq,nelem)
+    '''
+    nen_neq,nelem = np.shape(B)
+    nen,neq,neqb,nelemb = np.shape(A)
+    if nen*neq!=nen_neq or nelem!=nelemb:
+        raise Exception('array shapes do not match')
+    if neq!=neqb:
+        raise Exception('array is not block diagonal')
+    
+    c = np.zeros((nen,neq,neq,nelem),dtype=B.dtype)
+    for e in range(nelem):
+        for n in range(nen):
+            for i in range(neq):
+                for j in range(neq):
+                    c[n, i, j, e] = A[n, i, j, e] * B[n * neq + j, e]
+    return c
+
+@njit
 def gm_gv_colmultiply(A,q):
     '''
     Takes a global matrix of shape (nen1,nen2,nelem) and a global vector of
@@ -494,6 +611,23 @@ def gm_to_gdiag(A):
         c[:,e] = np.diag(A[:,:,e])
     return c
 
+@njit
+def gdiag_to_gbdiag(q):
+    '''
+    Takes a 2-dim numpy array q of shape (nen,nelem) and returns a 3-dim
+    array of shape (nen,1,1,nelem) simulating a global block-diagonal matrix
+
+    Parameters
+    ----------
+    q : numpy array of shape (nen,nelem)
+
+    Returns
+    -------
+    c : numpy array of shape (nen,nen,nelem)
+    '''
+    nen,nelem = np.shape(q)
+    c = np.reshape(q,(nen,1,1,nelem),dtype=q.dtype)
+    return c
 
 def check_q_shape(q):
     '''
@@ -504,13 +638,13 @@ def check_q_shape(q):
     return q
 
 @njit
-def block_diag(*entries):
+def build_gbdiag(*entries):
     '''
-    Takes neq_node^2 2-dim numpy arrays q of shape (nen,nelem) and returns a 3-dim
-    array of shape (nen*neq_node,nen*neq_node,nelem) where each local elem matrix
-    is block diagonal with (neq_node,neq_node) 2-dim array blocks with entries
-    given from the *entries arrays in order from top left, left to right, then 
-    top to bottom (normal reading direction)
+    Takes neq_node^2 2-dim numpy arrays q of shape (nen,nelem) and returns an
+    array of shape (nen,neq_node,neq_node,nelem) simulating a global block-diagonal
+    matrix, where each entry in nen is a (neq_node,neq_node) local elem matrix
+    with entries given from the *entries arrays in order from top left, 
+    left to right, then top to bottom (normal reading direction)
 
     Parameters
     ----------
@@ -518,32 +652,26 @@ def block_diag(*entries):
 
     Returns
     -------
-    c : numpy array of shape (nen*neq_node,nen*neq_node)
-    TODO: Speed up?
+    c : numpy array of shape (nen,neq_node,neq_node,nelem)
     '''
     neq_node = int(np.sqrt(len(entries)))
     nen,nelem = entries[0].shape
     dtype = entries[0].dtype
-    blocks = np.zeros((nen,neq_node,neq_node,nelem),dtype=dtype)
-    mat = np.zeros((nen*neq_node,nen*neq_node,nelem),dtype=dtype)
+    mat = np.zeros((nen,neq_node,neq_node,nelem),dtype=dtype)
 
     idx = 0
     for entry in literal_unroll(entries): # add literal_unroll for heterogeneous tuple types
         row = idx // neq_node
         col = idx % neq_node
-        blocks[:,row,col,:] = entry
+        mat[:,row,col,:] = entry
         idx += 1
-    for i in range(nen):
-        a = i*neq_node
-        b = (i+1)*neq_node
-        mat[a:b,a:b,:] = blocks[i,:,:,:]    
     return mat
 
 @njit
 def abs_eig_mat(mat):
     '''
-    Given a 3d array in the shape (nen*neq_node,nen*neq_node,nelem), return
-    a 3d array in the same shape where the matrices in each element are now
+    Given a 4d array in the shape (nen,neq,neq,nelem), return
+    a 4d array in the same shape where the matrices in each nen,nelem are now
     absoluted through it's eigenvalues. That is, if A is one such matrix, 
     and it has eigenvalues L and right eigenvectors X, then this returns
     X @ abs(L) @ inv(X
@@ -557,12 +685,15 @@ def abs_eig_mat(mat):
     -------
     c : numpy array of shape (nen*neq_node,nen*neq_node)
     '''
-    nodes,_,nelem = mat.shape
-    dtype=mat.dtype
-    mat_abs = np.zeros((nodes,nodes,nelem),dtype=dtype)
-    for elem in range(nelem):
-        eig_val, eig_vec = np.linalg.eig(mat[:,:,elem])
-        mat_abs[:,:,elem] = eig_vec @ np.diag(np.abs(eig_val)).astype(dtype) @ np.linalg.inv(eig_vec)
+    nen,neq,neqb,nelem = mat.shape
+    if neq!=neqb:
+        raise Exception('array shapes are not block diagonal')
+    mattype=mat.dtype
+    mat_abs = np.zeros((nen,neq,neq,nelem),dtype=mattype)
+    for e in range(nelem):
+        for n in range(nen):
+            eig_val, eig_vec = np.linalg.eig(mat[n,:,:,e])
+            mat_abs[n,:,:,e] = eig_vec @ np.diag(np.abs(eig_val)).astype(mattype) @ np.linalg.inv(eig_vec)
     return mat_abs
 
 @njit
@@ -578,10 +709,9 @@ def inv_gm(mat):
 @njit
 def spec_rad(mat,neq):
     '''
-    Given a 3d block diagonal array in the shape (nen*neq,nen*neq,nelem)
+    Given a 4d block diagonal array in the shape (nen,neq,neq,nelem)
     with blocks of size neq*neq, return a 2d array in the shape (nen,nelem) 
     , i.e. like a global scalar, where the values are the spectral radius of each 
-    # Note: assumes eigenvalues are real, otherwise can cause errors in jit
     
     Parameters
     ----------
@@ -591,12 +721,13 @@ def spec_rad(mat,neq):
     -------
     c : numpy array of shape (nen*neq_node,nen*neq_node)
     '''
-    nen_neq, _, nelem = mat.shape
-    nen = int(nen_neq / neq)
+    nen, neq, neq2, nelem = mat.shape
+    if neq!=neq2:
+        raise Exception('array shapes are not block diagonal')
     rho = np.zeros((nen,nelem),dtype=mat.dtype)
     for e in range(nelem):
         for i in range(nen):
-            A = mat[i*neq:(i+1)*neq,i*neq:(i+1)*neq,e].astype(np.complex128)
+            A = mat[i,:,:,e].astype(np.complex128)
             eigs = np.abs(np.linalg.eigvals(A))
             rho[i,e] = np.max(eigs)
     return rho
@@ -1354,7 +1485,8 @@ def sparse_block_diag_L_1D(A):
 def assemble_satx_2d(mat_list,nelemx,nelemy):
     ''' given a list of matrices of shape (nen,nen2,nelem[idx]), 
     put them back in global order (nen,nen2,nelem)
-    where each entry idx is one row in x'''
+    where each entry is a list of matrices that would be selected
+     by e.g. satx.vol_x_mat[idx], where idx is one row in x '''''
     nelemy2 = len(mat_list)
     if nelemy2 != nelemy:
         raise Exception('nelemy does not match',nelemy2,nelemy)
@@ -1373,7 +1505,8 @@ def assemble_satx_2d(mat_list,nelemx,nelemy):
 def assemble_saty_2d(mat_list,nelemx,nelemy):
     ''' given a list of matrices of shape (nen,nen2,nelem[idx]), 
     put them back in global order (nen,nen2,nelem)
-    where each entry idx is one row in y'''
+    where each entry is a list of matrices that would be selected
+     by e.g. satx.vol_y_mat[idx], where idx is one row in y '''
     nelemx2 = len(mat_list)
     if nelemx2 != nelemx:
         raise Exception('nelemy does not match',nelemx2,nelemx)

@@ -497,13 +497,13 @@ class Euler(PdeBase):
         return np.zeros_like(q)
     
     def dExdq(self, q):
-        return np.zeros((self.nn * 4, self.nn * 4))
+        return np.zeros((self.nn, 4, 4, self.nelem))
     
     def dEydq(self, q):
-        return np.zeros((self.nn * 4, self.nn * 4))
+        return np.zeros((self.nn, 4, 4, self.nelem))
         
     def dqdw(self,q):
-        return np.zeros((self.nn * 4, self.nn * 4))
+        return np.zeros((self.nn, 4, 4, self.nelem))
     
     def calcG(self, q, t):
         return np.zeros_like(q)

@@ -83,14 +83,16 @@ for i in range(n_runs):
         op = 'csbp'
         p_op = p
         sat = {'diss_type':'es', 'jac_type':'sca', 'maxeig':'rusanov'}
-        diss = {'diss_type':'dcp', 'jac_type':'sca', 's':'p+1', 'coeff':3.125/5**s, 'bdy_fix':True, 'use_H':True}
+        diss = {'diss_type':'dcp', 'jac_type':'sca', 's':'p+1', 'coeff':3.125/5**s, 
+                'bdy_fix':True, 'use_H':True, 'avg_half_nodes':True}
         use_split_form = True
         labels.append(f"$\\sigma={diss['coeff']}$")
     elif i == 5: # entropy-dissipative with lower sigma
         op = 'csbp'
         p_op = p
         sat = {'diss_type':'es', 'jac_type':'sca', 'maxeig':'rusanov'}
-        diss = {'diss_type':'dcp', 'jac_type':'sca', 's':'p+1', 'coeff':0.625/5**s, 'bdy_fix':True, 'use_H':True}
+        diss = {'diss_type':'dcp', 'jac_type':'sca', 's':'p+1', 'coeff':0.625/5**s, 
+                'bdy_fix':True, 'use_H':True, 'avg_half_nodes':True}
         use_split_form = True
         labels.append(f"$\\sigma={diss['coeff']}$")
 

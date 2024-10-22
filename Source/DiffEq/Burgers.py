@@ -84,7 +84,7 @@ class Burgers(PdeBase):
 
     def dExdq(self, q):
 
-        dExdq = fn.gdiag_to_gm(q)
+        dExdq = fn.gdiag_to_gbdiag(q)
         return dExdq
     
     def d2Exdq2(self, q):
@@ -113,7 +113,7 @@ class Burgers(PdeBase):
 
     def dExdq_abs(self, q, entropy_fix):
 
-        dExdq_abs = fn.gdiag_to_gm(abs(q))
+        dExdq_abs = fn.gdiag_to_gbdiag(abs(q))
         return dExdq_abs
     
     def maxeig_dExdq(self, q):
@@ -129,6 +129,14 @@ class Burgers(PdeBase):
     
     def dqdw(self,q):
         return fn.gdiag_to_gm(np.ones(q.shape))
+    
+    def maxeig_dqdw(self,q):
+        return np.ones(q.shape)
+    
+    def dExdw_abs(self, q, entropy_fix):
+
+        dExdw_abs = fn.gdiag_to_gbdiag(abs(q))
+        return dExdw_abs
     
     def entropy(self,q):
         e = q**2/2
