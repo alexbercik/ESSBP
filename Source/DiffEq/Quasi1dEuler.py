@@ -996,7 +996,7 @@ class Quasi1dEuler(PdeBase):
         r32 = self.g * q2_q0 - (3/2)*(self.g-1) * u2
         r33 = self.g * u
         
-        dEdq = fn.block_diag(r0,r1,r0,r21,r22,r23,r31,r32,r33)
+        dEdq = fn.build_gbdiag(r0,r1,r0,r21,r22,r23,r31,r32,r33)
 
         return dEdq
         
@@ -1011,7 +1011,7 @@ class Quasi1dEuler(PdeBase):
         r23 = rhou*(p+e)/rho
         r33 = self.g*e*e/rho - ((self.g-1)/4)*rhou2*rhou2/rho
         
-        P = fn.block_diag(rho,rhou,e,rhou,r22,r23,e,r23,r33)
+        P = fn.build_gbdiag(rho,rhou,e,rhou,r22,r23,e,r23,r33)
         return P
     
     def calcG(self, q, t):

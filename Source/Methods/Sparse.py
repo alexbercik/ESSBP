@@ -326,20 +326,20 @@ def lm_gv(csr, b):
     return c
 
 @njit
-def set_gm_sparsity(gm_list):
+def set_gm_union_sparsity(gm_list):
     '''
     Set the sparsity pattern of a list of global dense matrices (shape: nen1, nen2, nelem)
-    to the intersection of all sparsity patterns.
+    to the union of all sparsity patterns.
 
     Parameters
     ----------
-    csr_lists : List of global matrices
+    gm_list : List of global matrices
         Each element in the list is an ndarray (nen1, nen2, nelem)
 
     Returns
     -------
     sparsity : tuple (indices, indptr)
-        The sparsity pattern of the intersection of all given matrices
+        The sparsity pattern of the union of all given matrices
     '''
     ngm = len(gm_list)
     nen1, nen2, nelem = gm_list[0].shape
@@ -372,6 +372,64 @@ def set_gm_sparsity(gm_list):
         sp_gm_list.append((np.array(indices), np.array(indptr)))
     
     return sp_gm_list
+
+
+@njit
+def set_spgm_union_sparsity(csr_list):
+    '''
+    Set the sparsity pattern of a list of global CSR matrices to the union of all sparsity patterns.
+
+    Parameters
+    ----------
+    csr_list : List of global matrices
+        Each element in the list is a list of tuples (data, indices, indptr),
+        where data, indices, and indptr represent the CSR components of the matrix.
+
+    Returns
+    -------
+    sparsity_list : List of tuples (indices_glob, indptr_glob)
+        A list where each entry is the sparsity pattern of the union of all given matrices for that element.
+    '''
+    ngm = len(csr_list)
+    nelem = len(csr_list[0])
+
+    # Validate that all matrices have the same number of elements
+    for csr in csr_list:
+        if len(csr) != nelem:
+            raise ValueError('Number of elements do not match')
+
+    sparsity_list = List()
+
+    for e in range(nelem):
+        # Ensure all matrices have the same number of rows
+        n_rows = len(csr_list[0][e][2]) - 1
+        for csr in csr_list:
+            if len(csr[e][2]) - 1 != n_rows:
+                raise ValueError('Number of rows do not match')
+
+        indices_glob = []
+        indptr_glob = [0]
+        nnz = 0
+
+        # Loop over each row to determine the union of nonzero elements
+        for row in range(n_rows):
+            row_indices_set = set()
+            for k in range(ngm):
+                _, indices, indptr_local = csr_list[k][e]
+                row_start = indptr_local[row]
+                row_end = indptr_local[row + 1]
+                for col_ptr in range(row_start, row_end):
+                    row_indices_set.add(indices[col_ptr])
+
+            row_indices_sorted = sorted(row_indices_set)
+            indices_glob.extend(row_indices_sorted)
+            nnz += len(row_indices_sorted)
+            indptr_glob.append(nnz)
+
+        sparsity_list.append((np.array(indices_glob, dtype=np.int32), np.array(indptr_glob, dtype=np.int32)))
+
+    return sparsity_list
+
 
 
 
@@ -760,12 +818,12 @@ def build_F_vol_sca(q, flux, sparsity):
         new_data = np.zeros((len(indices)), dtype=q.dtype)       
         colptrs = np.zeros(nen, dtype=np.int32)
         
-        for i in range(nen): # loop over rows, NOT kroned with neq
+        for i in range(nen): # loop over rows
 
             col_start = indptr[i]
             col_end = indptr[i + 1]
 
-            for j in range(i,nen): # loop over columns, NOT kroned with neq
+            for j in range(i,nen): # loop over columns
 
                 col_start_T = indptr[j]
                 col_end_T = indptr[j + 1]
@@ -925,6 +983,98 @@ def build_F_sys(neq, q1, q2, flux, sparsity_unkronned, sparsity):
 
         F.append((new_data, new_indices, new_indptr))
     return F
+
+@njit
+def build_F_vol_sca_2d(q, flux, xsparsity, ysparsity):
+    '''
+    Builds sparsified Flux differencing matrices (used for Hadamard form) for a 2D problem given a 
+    solution vector q, a 2-point flux function, and sparsity patterns for both x and y directions. 
+    Only computes the entries specified by indices and indptr in the given sparsity patterns.
+    Takes advantage of symmetry since q1 = q2 = q.
+
+    Parameters
+    ----------
+    q : ndarray
+        Solution vector of shape (nen, nelem).
+    flux : function
+        A 2-point flux function that takes two arguments and returns flux values.
+    xsparsity : List of CSR matrices
+        Sparsity pattern for the x-direction, where each entry is a tuple (indices, indptr).
+    ysparsity : List of CSR matrices
+        Sparsity pattern for the y-direction, where each entry is a tuple (indices, indptr).
+
+    Returns
+    -------
+    Fx_vol : List of CSR matrices
+        A list where each entry is a tuple (data, indices, indptr) representing the flux differencing matrix in the x direction.
+    Fy_vol : List of CSR matrices
+        A list where each entry is a tuple (data, indices, indptr) representing the flux differencing matrix in the y direction.
+    '''
+    nen, nelem = q.shape
+    Fx_vol = List()
+    Fy_vol = List()
+
+    for e in range(nelem):
+        # Initialize lists to store CSR data for x and y directions
+        xindices = xsparsity[e][0]
+        xindptr = xsparsity[e][1]
+        yindices = ysparsity[e][0]
+        yindptr = ysparsity[e][1]
+
+        xnew_data = np.zeros(len(xindices), dtype=q.dtype)
+        ynew_data = np.zeros(len(yindices), dtype=q.dtype)
+        xcolptrs = np.zeros(nen, dtype=np.int32)
+        ycolptrs = np.zeros(nen, dtype=np.int32)
+
+        for i in range(nen):  # Loop over rows
+            xcol_start = xindptr[i]
+            xcol_end = xindptr[i + 1]
+            ycol_start = yindptr[i]
+            ycol_end = yindptr[i + 1]
+
+            for j in range(i, nen):  # Loop over columns
+                xcol_start_T = xindptr[j]
+                xcol_end_T = xindptr[j + 1]
+                ycol_start_T = yindptr[j]
+                ycol_end_T = yindptr[j + 1]
+
+                xadd_entry = (j in xindices[xcol_start:xcol_end])
+                xadd_entry_T = (i in xindices[xcol_start_T:xcol_end_T]) and (i != j)
+                yadd_entry = (j in yindices[ycol_start:ycol_end])
+                yadd_entry_T = (i in yindices[ycol_start_T:ycol_end_T]) and (i != j)
+
+                if xadd_entry or xadd_entry_T or yadd_entry or yadd_entry_T:
+                    fij_x, fij_y = flux(q[i, e], q[j, e])
+
+                    if xadd_entry:
+                        xnew_col_ptr = xcol_start + xcolptrs[i]
+                        xnew_data[xnew_col_ptr] = fij_x
+
+                    if xadd_entry_T:
+                        xnew_col_ptr = xcol_start_T + xcolptrs[j]
+                        xnew_data[xnew_col_ptr] = fij_x
+
+                    if yadd_entry:
+                        ynew_col_ptr = ycol_start + ycolptrs[i]
+                        ynew_data[ynew_col_ptr] = fij_y
+
+                    if yadd_entry_T:
+                        ynew_col_ptr = ycol_start_T + ycolptrs[j]
+                        ynew_data[ynew_col_ptr] = fij_y
+
+                    if xadd_entry:
+                        xcolptrs[i] += 1
+                    if xadd_entry_T:
+                        xcolptrs[j] += 1
+                    if yadd_entry:
+                        ycolptrs[i] += 1
+                    if yadd_entry_T:
+                        ycolptrs[j] += 1
+
+        Fx_vol.append((xnew_data, xindices, xindptr))
+        Fy_vol.append((ynew_data, yindices, yindptr))
+
+    return Fx_vol, Fy_vol
     
 @njit 
 def build_F_vol_sys_2d(neq, q, flux, xsparsity_unkronned, xsparsity,
@@ -1078,6 +1228,176 @@ def build_F_sys_2d(neq, q1, q2, flux, xsparsity_unkronned, xsparsity,
         Fy.append((ynew_data, ynew_indices, ynew_indptr))
     return Fx, Fy
 
+@njit
+def unkron_neq_gm(csr_list, neq):
+    '''
+    Take a list of CSR matrices of shape (nen*neq, nen2*neq, nelem) and return a new list of CSR matrices
+    of shape (nen, nen2, nelem), effectively undoing the Kronecker product operation for
+    the operator acting on a vector (nen2*neq, nelem).
+
+    Parameters
+    ----------
+    csr_list : List of CSR matrices
+        Each element in the list is a tuple (data, indices, indptr), representing the CSR components of the matrix.
+    neq : int
+        Number of equations per node.
+
+    Returns
+    -------
+    unkron_csr_list : List of CSR matrices
+        A list where each entry is a tuple (data, indices, indptr) representing the un-kronned version of the original matrix.
+    '''
+    unkron_csr_list = List()
+
+    for e in range(len(csr_list)):
+        data, indices, indptr = csr_list[e]
+        nen_neq = len(indptr) - 1
+        nen = nen_neq // neq
+
+        new_data = []
+        new_indices = []
+        new_indptr = [0] * (nen + 1)
+
+        for row in range(nen):
+            row_start = indptr[row * neq]
+            row_end = indptr[row * neq + 1]
+            nnz_counter = 0
+
+            for col_idx in range(row_start, row_end):
+                col = indices[col_idx]
+                if col % neq == 0:
+                    new_data.append(data[col_idx])
+                    new_indices.append(indices[col_idx] // neq)
+                    nnz_counter += 1
+
+            new_indptr[row + 1] = new_indptr[row] + nnz_counter
+
+        unkron_csr_list.append((np.array(new_data, dtype=data.dtype),
+                                np.array(new_indices, dtype=np.int32),
+                                np.array(new_indptr, dtype=np.int32)))
+
+    return unkron_csr_list
+
+@njit
+def unkron_neq_sparsity(csr_list, neq):
+    '''
+    Take a list of CSR sparsity tuples (indices, indptr) and return a new list of
+    CSR sparsity tuples, effectively undoing the Kronecker product operation for
+    the operator acting on a vector (nen*neq, nelem).
+
+    Parameters
+    ----------
+    csr_list : List of CSR matrices
+        Each element in the list is a tuple (indices, indptr), representing the CSR components of the matrix.
+    neq : int
+        Number of equations per node.
+
+    Returns
+    -------
+    unkron_csr_list : List of CSR matrices
+        A list where each entry is a tuple (indices, indptr) representing the un-kronned version of the original matrix.
+    '''
+    unkron_csr_list = List()
+
+    for e in range(len(csr_list)):
+        indices, indptr = csr_list[e]
+        nen_neq = len(indptr) - 1
+        nen = nen_neq // neq
+
+        new_indices = []
+        new_indptr = [0] * (nen + 1)
+
+        for row in range(nen):
+            row_start = indptr[row * neq]
+            row_end = indptr[row * neq + 1]
+            nnz_counter = 0
+
+            for col_idx in range(row_start, row_end):
+                col = indices[col_idx]
+                if col % neq == 0:
+                    new_indices.append(indices[col_idx] // neq)
+                    nnz_counter += 1
+
+            new_indptr[row + 1] = new_indptr[row] + nnz_counter
+
+        unkron_csr_list.append((np.array(new_indices, dtype=np.int32),
+                                np.array(new_indptr, dtype=np.int32)))
+
+    return unkron_csr_list
+
+@njit
+def assemble_satx_2d(csr_list,nelemx,nelemy):
+    ''' given a list of csr matrices like (nen,nen2,nelem[idx]), 
+    put them back in global order (nen,nen2,nelem)
+    where each entry is a list of matrices that would be selected
+     by e.g. satx.vol_x_mat[idx], where idx is one row in x
+
+    Parameters
+    ----------
+    csr_list : List of CSR matrices
+        Each element in the list is a list of tuples (data, indices, indptr),
+        where data, indices, and indptr represent the CSR components of the matrix.
+    nelemx : int
+        Number of elements in the x direction.
+    nelemy : int
+        Number of elements in the y direction.
+
+    Returns
+    -------
+    mat_glob : List of CSR matrices
+        A list where each entry is a tuple (data, indices, indptr) representing the global CSR matrix.
+    '''
+    nelemy2 = len(csr_list)
+    if nelemy2 != nelemy:
+        raise ValueError('nelemy does not match', nelemy2, nelemy)
+    nelemx2 = len(csr_list[0])
+    if nelemx2 != nelemx:
+        raise ValueError('nelemx does not match', nelemx2, nelemx)
+
+    mat_glob = [None] * (nelemx * nelemy)
+    for ey in range(nelemy):
+        for ex in range(nelemx):
+            idx = ex * nelemy + ey
+            mat_glob[idx] = csr_list[ey][ex]
+    return mat_glob
+
+@njit
+def assemble_saty_2d(csr_list,nelemx,nelemy):
+    '''
+    Given a list of CSR matrices of shape (nen, nen2, nelem[idx]),
+    put them back in global order (nen, nen2, nelem)
+    where each entry is a list of matrices that would be selected
+    by e.g. saty.vol_y_mat[idx], where idx is one row in y.
+
+    Parameters
+    ----------
+    csr_list : List of CSR matrices
+        Each element in the list is a list of tuples (data, indices, indptr),
+        where data, indices, and indptr represent the CSR components of the matrix.
+    nelemx : int
+        Number of elements in the x direction.
+    nelemy : int
+        Number of elements in the y direction.
+
+    Returns
+    -------
+    mat_glob : List of CSR matrices
+        A list where each entry is a tuple (data, indices, indptr) representing the global CSR matrix.
+    '''
+    nelemx2 = len(csr_list)
+    if nelemx2 != nelemx:
+        raise ValueError('nelemx does not match', nelemx2, nelemx)
+    nelemy2 = len(csr_list[0])
+    if nelemy2 != nelemy:
+        raise ValueError('nelemy does not match', nelemy2, nelemy)
+
+    mat_glob = [None] * (nelemx * nelemy)
+    for ex in range(nelemx):
+        for ey in range(nelemy):
+            idx = ex * nelemy + ey
+            mat_glob[idx] = csr_list[ex][ey]
+    return mat_glob
+
 
 if __name__ == '__main__':
     import Functions as fn
@@ -1132,12 +1452,23 @@ if __name__ == '__main__':
     c2 = fn.gm_gm_had_diff(gm, gm2)
     print('test gm_gm_had_diff:', np.max(abs(c-c2)))
 
-    sp_gm_list = set_gm_sparsity(gm_list)
+    sp_gm_list = set_gm_union_sparsity(gm_list)
     diff = 0.
     for e in range(3):
         diff += np.max(abs(sp_gm_list[e][0] - gm_sp[e][1]))
         diff += np.max(abs(sp_gm_list[e][1] - gm_sp[e][2]))
-    print('test set_sparsity:', diff)
+    print('test set_gm_union_sparsity:', diff)
+
+    gm_list = [gm, gm2]
+    spgm_list = [gm_sp, gm2_sp]
+    sp_gm_list = set_gm_union_sparsity(gm_list)
+    sp_gm_list2 = set_spgm_union_sparsity(spgm_list)
+    diff = 0.
+    for e in range(3):
+        diff += np.max(abs(sp_gm_list[e][0] - sp_gm_list2[e][0]))
+        diff += np.max(abs(sp_gm_list[e][1] - sp_gm_list2[e][1]))
+    print('test set_spgm_union_sparsity:', diff)
+
 
     print('test sp_to_gm:', np.max(abs(sp_to_gm(gm_sp)) - gm))
 
@@ -1200,8 +1531,16 @@ if __name__ == '__main__':
     gm[1, 2, 0] = 0.
     gm[2, 2, 1] = 0.
     gm[0, 2, 1] = 0.
-    sparsity = set_gm_sparsity([gm])
+    sparsity = set_gm_union_sparsity([gm])
     gm_sp = gm_to_sp(gm)
+    gm2 = np.random.rand(nen, nen, nelem)
+    # add some sparsity
+    gm2[2, 0, 0] = 0.
+    gm2[1, 1, 0] = 0.
+    gm2[0, 2, 1] = 0.
+    gm2[1, 2, 1] = 0.
+    sparsity2 = set_gm_union_sparsity([gm2])
+    gm2_sp = gm_to_sp(gm2)
 
     F = build_F_vol_sca(q, flux, sparsity)
     c = gm_gm_had_diff(gm_sp, F)
@@ -1215,6 +1554,16 @@ if __name__ == '__main__':
     c2 = fn.gm_gm_had_diff(gm, F2)
     print('test build_F_sca:', np.max(abs(c-c2)))
 
+    @njit
+    def flux(q1,q2):
+        return 0.5*(q1 + q2), 2*(q1 - 0.5*q2)
+
+    F, F2 = build_F_vol_sca_2d(q, flux, sparsity, sparsity2)
+    c = gm_gm_had_diff(gm_sp, F) + gm_gm_had_diff(gm2_sp, F2)
+    F, F2 = fn.build_F_vol_sca_2d(q, flux)
+    c2 = fn.gm_gm_had_diff(gm, F) + fn.gm_gm_had_diff(gm2, F2)
+    print('test build_F_vol_sca_2d:', np.max(abs(c-c2)))
+
     neq = 2
     nelem = 2
     nen = 3
@@ -1226,10 +1575,11 @@ if __name__ == '__main__':
     gm[1, 2, 0] = 0.
     gm[2, 2, 1] = 0.
     gm[0, 2, 1] = 0.
+    gm_sp = gm_to_sp(gm)
     gm_kron = fn.kron_neq_gm(gm, neq)
     gm_kron_sp = gm_to_sp(gm_kron)
-    sparsity_unkronned = set_gm_sparsity([gm])
-    sparsity_kron = set_gm_sparsity([gm_kron])
+    sparsity_unkronned = set_gm_union_sparsity([gm])
+    sparsity_kron = set_gm_union_sparsity([gm_kron])
     gm2 = np.random.rand(nen, nen, nelem)
     # add some sparsity
     gm2[0, 1, 0] = 0.
@@ -1238,8 +1588,21 @@ if __name__ == '__main__':
     gm2[1, 1, 1] = 0.
     gm2_kron = fn.kron_neq_gm(gm2, neq)
     gm2_kron_sp = gm_to_sp(gm2_kron)
-    sparsity_unkronned2 = set_gm_sparsity([gm2])
-    sparsity_kron2 = set_gm_sparsity([gm2_kron])
+    sparsity_unkronned2 = set_gm_union_sparsity([gm2])
+    sparsity_kron2 = set_gm_union_sparsity([gm2_kron])
+
+    gm_sp2 = unkron_neq_gm(gm_kron_sp, neq)
+    diff = 0.
+    for e in range(nelem):
+        diff += np.max(abs(gm_sp2[e][0] - gm_sp[e][0]))
+        diff += np.max(abs(gm_sp2[e][1] - gm_sp[e][1]))
+        diff += np.max(abs(gm_sp2[e][2] - gm_sp[e][2]))
+    print('test unkron_neq_gm:', diff)
+    
+
+    @njit
+    def flux(q1,q2):
+        return 0.5*(q1 + q2)
     
     F = build_F_vol_sys(neq, q, flux, sparsity_unkronned, sparsity_kron)
     c = gm_gm_had_diff(gm_kron_sp, F)

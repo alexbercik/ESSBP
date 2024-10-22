@@ -36,7 +36,8 @@ class PdeSolver:
                  bc=None, xmin=0, xmax=1,     # Domain
                  cons_obj_name=None,         # Other
                  bool_plot_sol=False, print_sol_norm=False,
-                 print_residual=False, check_resid_conv=False):
+                 print_residual=False, check_resid_conv=False,
+                 sparse=None, sat_sparse=None):
         '''
         Parameters
         ----------
@@ -145,6 +146,10 @@ class PdeSolver:
 
         # Initial solution
         self.q0 = q0
+
+        # Sparsity
+        self.sparse = sparse
+        self.sat_sparse = sat_sparse
         
         # Discretization
         self.dim = self.diffeq.dim

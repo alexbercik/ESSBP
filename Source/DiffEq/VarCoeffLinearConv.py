@@ -122,8 +122,8 @@ class LinearConv(PdeBase):
         return dExdx
 
     def dExdq(self, q):
-        
-        return self.a
+        dExdq = np.reshape(self.a, (self.nen,1,1,self.nelem))
+        return dExdq
     
     def d2Exdq2(self, q):
 
@@ -131,8 +131,8 @@ class LinearConv(PdeBase):
         return d2Exdq2
     
     def dExdq_abs(self, q, entropy_fix):
-
-        return abs(self.a)
+        dExdq = np.reshape(np.abs(self.a), (self.nen,1,1,self.nelem))
+        return dExdq
     
     def maxeig_dExdq(self, q):
         ''' return the maximum eigenvalue - used for LF fluxes '''

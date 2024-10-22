@@ -213,8 +213,8 @@ class SatDer1:
         A_upwind = (A + self.coeff*A_abs)/2
         A_downwind = (A - self.coeff*A_abs)/2
         
-        sat = self.lm_gv(self.tR, fn.gm_gv(A_downwind, qf_jump)[:,1:]) \
-            + self.lm_gv(self.tL, fn.gm_gv(A_upwind, qf_jump)[:,:-1])
+        sat = self.lm_gv(self.tR, fn.gbdiag_gv(A_downwind, qf_jump)[:,1:]) \
+            + self.lm_gv(self.tL, fn.gbdiag_gv(A_upwind, qf_jump)[:,:-1])
         return sat
 
     
@@ -248,8 +248,8 @@ class SatDer1:
         A_upwind = (Ax + self.coeff*Ax_abs)/2 * bdy_metricsx + (Ay + self.coeff*Ay_abs)/2 * bdy_metricsy
         A_downwind = (Ax - self.coeff*Ax_abs)/2 * bdy_metricsx + (Ay - self.coeff*Ay_abs)/2 * bdy_metricsy
         
-        sat = self.lm_gv(self.tR, (self.Hperp * fn.gm_gv(A_downwind, qf_jump)[:,1:])) \
-            + self.lm_gv(self.tL, (self.Hperp * fn.gm_gv(A_upwind, qf_jump)[:,:-1]))
+        sat = self.lm_gv(self.tR, (self.Hperp * fn.gbdiag_gv(A_downwind, qf_jump)[:,1:])) \
+            + self.lm_gv(self.tL, (self.Hperp * fn.gbdiag_gv(A_upwind, qf_jump)[:,:-1]))
         return sat
     
     def upwind_div_3d(self, q, Ex, Ey, Ez, idx, q_bdyL=None, q_bdyR=None):
@@ -289,8 +289,8 @@ class SatDer1:
                    + (Ay - self.coeff*Ay_abs)/2 * bdy_metricsy \
                    + (Az - self.coeff*Az_abs)/2 * bdy_metricsz
         
-        sat = self.lm_gv(self.tR, (self.Hperp * fn.gm_gv(A_downwind, qf_jump)[:,1:])) \
-            + self.lm_gv(self.tL, (self.Hperp * fn.gm_gv(A_upwind, qf_jump)[:,:-1]))
+        sat = self.lm_gv(self.tR, (self.Hperp * fn.gbdiag_gv(A_downwind, qf_jump)[:,1:])) \
+            + self.lm_gv(self.tL, (self.Hperp * fn.gbdiag_gv(A_upwind, qf_jump)[:,:-1]))
         return sat
 
 
