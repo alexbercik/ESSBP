@@ -25,7 +25,7 @@ from scipy.linalg import null_space
 
 from Source.Disc.BasisFun import BasisFun
 from Source.Disc.SbpQuadRule import SbpQuadRule
-from Source.Disc.CSbpOp import CSbpOp
+from Source.Disc.CSbpOp import CSbpOp, HGTLOp, HGTOp, MattOp
 import Source.Methods.Functions as fn
 from Source.Disc.MakeMesh import MakeMesh
 from contextlib import redirect_stdout
@@ -155,6 +155,36 @@ class MakeSbpOp:
                     self.H, self.D = np.diag(H[:,0]), D[:,:,0]
                     self.Q = self.H @ self.D
                     self.S = self.Q - self.E/2
+
+        elif sbp_type.lower()=='hgtl' or sbp_type.lower()=='hgt' or sbp_type.lower()=='mattsson':
+            ''' Build Hybrid Gauss Trapezoidal Lobatto and Hybrid Gauss Trapezoidal Operators '''
+            
+            self.quad = None 
+            assert self.nn > 1 , "Please specify number of nodes nn > 1"
+            if p==2 and nn<9:
+                print('WARNING: nn set too small ({0}). Automatically increasing to minimum 9.'.format(nn))
+                self.nn=9
+            elif p==3 and nn<13:
+                print('WARNING: nn set too small ({0}). Automatically increasing to minimum 13.'.format(nn))
+                self.nn = 13
+            elif p==4 and nn<17:
+                print('WARNING: nn set too small ({0}). Automatically increasing to minimum 17.'.format(nn))
+                self.nn = 17
+
+            if sbp_type.lower()=='hgtl':
+                self.sbp_fam = 'hgtl'
+                self.H, self.D, self.Q, self.E, self.S, self.dx, self.x = HGTLOp(self.p,self.nn)
+                self.tL, self.tR = np.zeros(self.nn), np.zeros(self.nn)
+                self.tL[0] , self.tR[-1] = 1 , 1
+            elif sbp_type.lower()=='hgt':
+                self.sbp_fam = 'hgt'
+                self.H, self.D, self.Q, self.E, self.S, self.dx, self.x, self.tL, self.tR = HGTOp(self.p,self.nn)
+            else:
+                self.sbp_fam = 'mattsson'
+                self.H, self.D, self.Q, self.E, self.S, self.dx, self.x = MattOp(self.p,self.nn)
+                self.tL, self.tR = np.zeros(self.nn), np.zeros(self.nn)
+                self.tL[0] , self.tR[-1] = 1 , 1
+
 
         elif sbp_type.lower()=='upwind':
             from Source.Disc.UpwindOp import UpwindOp
