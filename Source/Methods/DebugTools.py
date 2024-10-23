@@ -61,7 +61,7 @@ class TaylorSeries1D:
             terms += sp.Rational(1, sp.factorial(i))*self.df[i]*h**i
         return terms
     
-def Check_Taylor_Series_1D(Mat,x,num_terms=4,notebook=True):
+def Check_Taylor_Series_1D(Mat,x,num_terms=4,lim_terms=2,notebook=True,decimals=10):
     ''' Check the taylor expansion of the rows of a 1D matrix given x'''
     if notebook:
         from IPython.display import display, Math
@@ -79,13 +79,16 @@ def Check_Taylor_Series_1D(Mat,x,num_terms=4,notebook=True):
         for number in expr.atoms(sp.Number):
             num_float = float(number)
             nearest_integer = round(num_float)
-            nearest_decimal = round(num_float, 5)
+            nearest_decimal = round(num_float, 3)
+            printing_decimal = round(num_float, decimals)
             # Check if the number is close to an integer
             if abs(num_float - nearest_integer) < threshold:
                 rounded_expr = rounded_expr.subs(number, nearest_integer)
             # Check if the number is close to a simple decimal up to 3 places
             elif abs(num_float - nearest_decimal) < threshold:
                 rounded_expr = rounded_expr.subs(number, nearest_decimal)
+            else:
+                rounded_expr = rounded_expr.subs(number, printing_decimal)
         return rounded_expr
 
     for i in range(len(x)):
@@ -98,7 +101,7 @@ def Check_Taylor_Series_1D(Mat,x,num_terms=4,notebook=True):
                 taylor = u_Taylor(hx)
                 dx += Mat[i,j]*taylor * (h_avg/h) 
     
-        dx = sp.simplify(dx)
+        dx = sp.expand(sp.simplify(dx))
         #threshold = 1e-12
         #small_numbers = set([e for e in dx.atoms(sp.Number) if abs(e) < threshold])
         #numbers_near_one = set([e for e in dx.atoms(sp.Number) if abs(e - 1) < threshold])
@@ -106,13 +109,19 @@ def Check_Taylor_Series_1D(Mat,x,num_terms=4,notebook=True):
         #d.update({s: 1 for s in numbers_near_one})
         #Dxs.append(dx.subs(d))
         dx = round_to_nearest_simple_decimal(dx)
-        Dxs.append(dx)
+
+        if lim_terms < len(dx.as_ordered_terms()):
+            limited_terms = sum(dx.as_ordered_terms()[-lim_terms:])
+            Dxs.append(limited_terms)
+        else:
+            Dxs.append(dx)
+
 
     if notebook:
-        out = f"\\text{{Using a value of }} \Delta x =  {latex(h_avg)}"
+        out = f"\\text{{Using a value of }} \\Delta x = {latex(h_avg)}"
         display(Math(out))
     else:
-        print(f"Using a value of \Delta x = {h_avg}") 
+        print(f"Using a value of \\Delta x = {h_avg}") 
     for i in range(len(x)):
         if notebook:
             out = f'\\text{{Mat[{i}] = }} {latex(Dxs[i])}'
