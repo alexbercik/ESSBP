@@ -5,12 +5,10 @@ Created on Mon Mar 4 2024
 
 @author: bercik
 """
-#import numpy as np
-
 import numpy as np
 import Source.Methods.Functions as fn
 import Source.Methods.Sparse as sp
-from Source.Disc.DissOp import BaselineDiss, make_dcp_diss_op
+from Source.Disc.DissOp import BaselineDiss, make_dcp_diss_op, make_dcp_diss_op2
 import Source.Methods.Sparse as sp
 
 
@@ -183,7 +181,7 @@ class ADiss():
                     self.jac_type = 'scalarscalar'
                     self.dissipation = self.dissipation_entB_scalarscalar
             
-            elif self.type == 'dcp' or self.type == 'w':
+            elif self.type == 'dcp' or self.type == 'w' or self.type == 'dcp2':
                 if self.jac_type == 'scalar' or self.jac_type == 'sca':
                     self.dissipation = self.dissipation_dcp_scalar
                 else:
@@ -316,8 +314,11 @@ class ADiss():
             self.rhs_D = fn.kron_neq_lm(Ds,self.neq_node) 
             #self.lhs_D = fn.gdiag_gm(-(self.solver.H_inv_phys * xavg**(2*self.s-1)), DsT * self.solver.H_phys)
             self.lhs_D = fn.gdiag_lm(-(self.solver.H_inv_phys * xavg**(2*self.s-1)),fn.kron_neq_lm(DsT @ self.solver.sbp.H,self.neq_node))
-        elif self.type == 'dcp' or self.type == 'entdcp':
-            Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen, self.bdy_fix)
+        elif self.type == 'dcp' or self.type == 'entdcp' or self.type == 'dcp2':
+            if self.type == 'dcp2':
+                Ds, B = make_dcp_diss_op2(self.solver.disc_nodes, self.s, self.nen, self.bdy_fix)
+            else:
+                Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen, self.bdy_fix)
             self.rhs_D = fn.kron_neq_lm(Ds,self.neq_node) 
             if self.use_H:
                 Hundvd = self.solver.sbp.H / self.solver.sbp.dx
@@ -413,7 +414,7 @@ class ADiss():
             raise Exception(self.type + ' not set up yet')
         
         if self.sparse:
-            if self.type in ['w', 'entw', 'dcp', 'entdcp']:
+            if self.type in ['w', 'entw', 'dcp', 'entdcp', 'dcp2']:
                 self.rhs_D = sp.lm_to_sp(self.rhs_D)
                 self.lhs_D = sp.gm_to_sp(self.lhs_D)
             elif self.type == 'upwind':
