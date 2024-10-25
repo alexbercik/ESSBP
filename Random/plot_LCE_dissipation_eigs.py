@@ -15,32 +15,55 @@ from Source.Methods.Analysis import plot_eigs
 
 ''' Set default parameters for simultation '''
 
-para = 1.0  
+p = 3 # SBP polynomial degree
+s = p+1 # dissipation order
+coeff = 0.001 # volume dissipation coefficient
+# for csbp/hgtl: 3.125*5**(-s)
+# for hgt: 0.6*3.125*5**(-s)
+# for mattsson: 0.02 for p2, 0.001 for p3
+nelem = 4 # number of elements
+nen = 24 # number of nodes per element
+sat = 'lf' # surface dissipation type
+op = 'mattsson' # operator type - try 'csbp', 'hgtl', 'hgt', 'mattsson', 'lg', 'lgl'
+
+plot_convex_hull = False # plot convex hull of eigenvalues?
+plot_individual_eigs = True # plot individual eigenvalues?
+include_upwind_2p = True # include upwind 2*p for comparison?
+include_upwind_2p1 = False # include upwind 2*p+1 for comparison?
+include_nodiss = True # include surface dissipation only for comparison?
+
+q0_type = 'GaussWave_sbpbook' # doesn't actually matter here
+settings = {} # warp mesh?
+para = 1.0 # wave speed - doesn't actually matter here
 tm_method = 'rk4' # doesn't actually matter here
 dt = 0.001 # doesn't actually matter here
 tf = 1. # doesn't actually matter here
-nelem = 4 # number of elements
-nen = 24 # number of nodes per element
-q0_type = 'GaussWave_sbpbook' # doesn't actually matter here
-settings = {}
+
+# Initialize Diffeq Object
 diffeq = LinearConv(para, q0_type)
 
+savefile = None
+savefile = 'LCEeigs_0001_Mattssonp3lf4e24n.png'
 
+runs, labels = [], []
+if include_upwind_2p:
+    runs.append({'op':'upwind', 'p':2*p, 'sat':sat, 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}})
+    labels.append(f'Upwind $p={int(2*p)}$')
+if include_upwind_2p1:
+    runs.append({'op':'upwind', 'p':2*p+1, 'sat':sat, 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}})
+    labels.append(f'Upwind $p={int(2*p+1)}$')
+if include_nodiss:
+    runs.append({'op':op, 'p':p, 'sat':sat, 'diss':'nd'})
+    labels.append(r'$\sigma = 0$')
 
-#savefile = None
-
-savefile = 'LCEeigs_0001_CSBPp4lf4e24n.png'
-runs = [{'op':'upwind', 'p':8, 'sat':'lf', 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}},
-        {'op':'upwind', 'p':9, 'sat':'lf', 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}},
-        {'op':'csbp', 'p':4, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.001, 's':'p+1', 'bdy_fix':False, 'use_H':False}},
-        {'op':'csbp', 'p':4, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.001, 's':'p+1', 'bdy_fix':False, 'use_H':True}},
-        {'op':'csbp', 'p':4, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.001, 's':'p+1', 'bdy_fix':True, 'use_H':False}},
-        {'op':'csbp', 'p':4, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.001, 's':'p+1', 'bdy_fix':True, 'use_H':True}},]
-labels = [r'Upwind $p=8$', r'Upwind $p=9$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \mathsf{B} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \mathsf{B} \tilde{\mathsf{D}}$']
+runs.extend([   {'op':op, 'p':p, 'sat':sat, 'diss':{'diss_type':'dcp', 'coeff':coeff, 's':s, 'bdy_fix':False, 'use_H':False}},
+                {'op':op, 'p':p, 'sat':sat, 'diss':{'diss_type':'dcp', 'coeff':coeff, 's':s, 'bdy_fix':False, 'use_H':True}},
+                {'op':op, 'p':p, 'sat':sat, 'diss':{'diss_type':'dcp', 'coeff':coeff, 's':s, 'bdy_fix':True, 'use_H':False}},
+                {'op':op, 'p':p, 'sat':sat, 'diss':{'diss_type':'dcp', 'coeff':coeff, 's':s, 'bdy_fix':True, 'use_H':True}} ])
+labels.extend([ r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{D}}$',
+                r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \tilde{\mathsf{D}}$',
+                r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \mathsf{B} \tilde{\mathsf{D}}$',
+                r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \mathsf{B} \tilde{\mathsf{D}}$' ])
 
 As = []
 for run, label in zip(runs, labels):
@@ -51,144 +74,10 @@ for run, label in zip(runs, labels):
     A = solver.calc_LHS()
     As.append(A)
 
-plot_eigs(As,labels=labels,savefile=savefile,line_width=2,equal_axes=True,title_size=14,legend_size=12)
+colors = ['tab:blue', 'tab:orange', 'tab:green', 'k', 'm', 'tab:red']
+markers = ['o', '^', 's', 'd', 'x', '+']
+linestyles = ['-', '--', '-.', ':', (0, (1, 1)), (0, (3, 5, 1, 5)), (0, (1, 2, 3, 2))]
 
-
-
-# The following combinations were used in the paper:
-"""
-savefile = 'LCEeigs_0125_CSBPp1lf4e24n.png'
-runs = [{'op':'upwind', 'p':2, 'sat':'lf', 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}},
-        {'op':'upwind', 'p':3, 'sat':'lf', 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}},
-        {'op':'csbp', 'p':1, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.125, 's':'p+1', 'bdy_fix':False, 'use_H':False}},
-        {'op':'csbp', 'p':1, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.125, 's':'p+1', 'bdy_fix':False, 'use_H':True}},
-        {'op':'csbp', 'p':1, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.125, 's':'p+1', 'bdy_fix':True, 'use_H':False}},
-        {'op':'csbp', 'p':1, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.125, 's':'p+1', 'bdy_fix':True, 'use_H':True}},]
-labels = [r'Upwind $p=2$', r'Upwind $p=3$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \mathsf{B} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \mathsf{B} \tilde{\mathsf{D}}$']
-
-savefile = 'LCEeigs_0025_CSBPp2lf4e24n.png'
-runs = [{'op':'upwind', 'p':4, 'sat':'lf', 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}},
-        {'op':'upwind', 'p':5, 'sat':'lf', 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}},
-        {'op':'csbp', 'p':2, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.025, 's':'p+1', 'bdy_fix':False, 'use_H':False}},
-        {'op':'csbp', 'p':2, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.025, 's':'p+1', 'bdy_fix':False, 'use_H':True}},
-        {'op':'csbp', 'p':2, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.025, 's':'p+1', 'bdy_fix':True, 'use_H':False}},
-        {'op':'csbp', 'p':2, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.025, 's':'p+1', 'bdy_fix':True, 'use_H':True}},]
-labels = [r'Upwind $p=4$', r'Upwind $p=5$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \mathsf{B} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \mathsf{B} \tilde{\mathsf{D}}$']
-
-savefile = 'LCEeigs_0005_CSBPp3lf4e24n.png'
-runs = [{'op':'upwind', 'p':6, 'sat':'lf', 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}},
-        {'op':'upwind', 'p':7, 'sat':'lf', 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}},
-        {'op':'csbp', 'p':3, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.005, 's':'p+1', 'bdy_fix':False, 'use_H':False}},
-        {'op':'csbp', 'p':3, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.005, 's':'p+1', 'bdy_fix':False, 'use_H':True}},
-        {'op':'csbp', 'p':3, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.005, 's':'p+1', 'bdy_fix':True, 'use_H':False}},
-        {'op':'csbp', 'p':3, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.005, 's':'p+1', 'bdy_fix':True, 'use_H':True}},]
-labels = [r'Upwind $p=6$', r'Upwind $p=7$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \mathsf{B} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \mathsf{B} \tilde{\mathsf{D}}$']
-
-savefile = 'LCEeigs_0001_CSBPp4lf4e24n.png'
-runs = [{'op':'upwind', 'p':8, 'sat':'lf', 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}},
-        {'op':'upwind', 'p':9, 'sat':'lf', 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}},
-        {'op':'csbp', 'p':4, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.001, 's':'p+1', 'bdy_fix':False, 'use_H':False}},
-        {'op':'csbp', 'p':4, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.001, 's':'p+1', 'bdy_fix':False, 'use_H':True}},
-        {'op':'csbp', 'p':4, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.001, 's':'p+1', 'bdy_fix':True, 'use_H':False}},
-        {'op':'csbp', 'p':4, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.001, 's':'p+1', 'bdy_fix':True, 'use_H':True}},]
-labels = [r'Upwind $p=8$', r'Upwind $p=9$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \mathsf{B} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \mathsf{B} \tilde{\mathsf{D}}$']
-"""
-
-
-# The following combinations were NOT used in the paper:
-"""
-savefile = 'LCEeigs_0025_CSBPp2central4e48n.png'
-runs = [{'op':'upwind', 'p':4, 'sat':'central', 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}},
-        {'op':'upwind', 'p':5, 'sat':'central', 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}},
-        {'op':'csbp', 'p':2, 'sat':'central', 'diss':{'diss_type':'dcp', 'coeff':0.025, 's':'p+1', 'bdy_fix':False, 'use_H':False}},
-        {'op':'csbp', 'p':2, 'sat':'central', 'diss':{'diss_type':'dcp', 'coeff':0.025, 's':'p+1', 'bdy_fix':False, 'use_H':True}},
-        {'op':'csbp', 'p':2, 'sat':'central', 'diss':{'diss_type':'dcp', 'coeff':0.025, 's':'p+1', 'bdy_fix':True, 'use_H':False}},
-        {'op':'csbp', 'p':2, 'sat':'central', 'diss':{'diss_type':'dcp', 'coeff':0.025, 's':'p+1', 'bdy_fix':True, 'use_H':True}},]
-labels = [r'Upwind $p=4$', r'Upwind $p=5$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \mathsf{B} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \mathsf{B} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \mathsf{B} \tilde{\mathsf{D}}$']
-
-savefile = 'LCEeigs_CSBPp3lf4e24n.png'
-runs = [{'op':'upwind', 'p':6, 'sat':'lf', 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}},
-        {'op':'upwind', 'p':7, 'sat':'lf', 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}},
-        {'op':'csbp', 'p':3, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.005, 's':'p+1', 'bdy_fix':False, 'use_H':True}},
-        {'op':'csbp', 'p':3, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.005, 's':'p+1', 'bdy_fix':True, 'use_H':True}},
-        {'op':'csbp', 'p':3, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.0075, 's':'p+1', 'bdy_fix':True, 'use_H':True}},
-        {'op':'csbp', 'p':3, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.0025, 's':'p+1', 'bdy_fix':True, 'use_H':True}},]
-labels = [r'Upwind $p=6$', r'Upwind $p=7$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \tilde{\mathsf{D}}, \ \sigma = 0.005$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \mathsf{B} \tilde{\mathsf{D}}, \ \sigma = 0.005$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \mathsf{B} \tilde{\mathsf{D}}, \ \sigma = 0.075$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \mathsf{B} \tilde{\mathsf{D}}, \ \sigma = 0.025$']
-
-savefile = 'LCEeigs_0005_CSBPp3lf4e48n.png'
-runs = [{'op':'upwind', 'p':6, 'sat':'lf', 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}},
-        {'op':'upwind', 'p':7, 'sat':'lf', 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}},
-        {'op':'csbp', 'p':3, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.005, 's':'p+1', 'bdy_fix':False, 'use_H':False}},
-        {'op':'csbp', 'p':3, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.005, 's':'p+1', 'bdy_fix':False, 'use_H':True}},
-        {'op':'csbp', 'p':3, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.005, 's':'p+1', 'bdy_fix':True, 'use_H':False}},
-        {'op':'csbp', 'p':3, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.005, 's':'p+1', 'bdy_fix':True, 'use_H':True}},]
-labels = [r'Upwind $p=6$', r'Upwind $p=7$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \mathsf{B} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \mathsf{B} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \mathsf{B} \tilde{\mathsf{D}}$']
-
-savefile = 'LCEeigs_CSBPp4lf4e24n.png'
-runs = [{'op':'upwind', 'p':8, 'sat':'lf', 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}},
-        {'op':'upwind', 'p':9, 'sat':'lf', 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}},
-        {'op':'csbp', 'p':4, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.001, 's':'p+1', 'bdy_fix':False, 'use_H':True}},
-        {'op':'csbp', 'p':4, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.001, 's':'p+1', 'bdy_fix':True, 'use_H':True}},
-        {'op':'csbp', 'p':4, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.0015, 's':'p+1', 'bdy_fix':True, 'use_H':True}},
-        {'op':'csbp', 'p':4, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.0005, 's':'p+1', 'bdy_fix':True, 'use_H':True}},]
-labels = [r'Upwind $p=6$', r'Upwind $p=7$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \tilde{\mathsf{D}}, \ \sigma = 10^{-3}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \mathsf{B} \tilde{\mathsf{D}}, \ \sigma = 10^{-3}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \mathsf{B} \tilde{\mathsf{D}}, \ \sigma = 1.5 \times 10^{-3}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \mathsf{B} \tilde{\mathsf{D}}, \ \sigma = 5.0 \times 10^{-4}$']
-
-savefile = 'LCEeigs_CSBPp4lf4e48n.png'
-runs = [{'op':'upwind', 'p':8, 'sat':'lf', 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}},
-        {'op':'upwind', 'p':9, 'sat':'lf', 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}},
-        {'op':'csbp', 'p':4, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.001, 's':'p+1', 'bdy_fix':False, 'use_H':True}},
-        {'op':'csbp', 'p':4, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.001, 's':'p+1', 'bdy_fix':True, 'use_H':True}},
-        {'op':'csbp', 'p':4, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.0015, 's':'p+1', 'bdy_fix':True, 'use_H':True}},
-        {'op':'csbp', 'p':4, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.0005, 's':'p+1', 'bdy_fix':True, 'use_H':True}},]
-labels = [r'Upwind $p=6$', r'Upwind $p=7$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \tilde{\mathsf{D}}, \ \sigma = 10^{-3}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \mathsf{B} \tilde{\mathsf{D}}, \ \sigma = 10^{-3}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \mathsf{B} \tilde{\mathsf{D}}, \ \sigma = 1.5 \times 10^{-3}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \mathsf{B} \tilde{\mathsf{D}}, \ \sigma = 5.0 \times 10^{-4}$']
-
-savefile = 'LCEeigs_0001_CSBPp4lf4e48n.png'
-runs = [{'op':'upwind', 'p':8, 'sat':'lf', 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}},
-        {'op':'upwind', 'p':9, 'sat':'lf', 'diss':{'diss_type':'upwind', 'coeff':1.0, 'fluxvec':'lf'}},
-        {'op':'csbp', 'p':4, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.001, 's':'p+1', 'bdy_fix':False, 'use_H':False}},
-        {'op':'csbp', 'p':4, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.001, 's':'p+1', 'bdy_fix':False, 'use_H':True}},
-        {'op':'csbp', 'p':4, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.001, 's':'p+1', 'bdy_fix':True, 'use_H':False}},
-        {'op':'csbp', 'p':4, 'sat':'lf', 'diss':{'diss_type':'dcp', 'coeff':0.001, 's':'p+1', 'bdy_fix':True, 'use_H':True}},]
-labels = [r'Upwind $p=8$', r'Upwind $p=9$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \mathsf{B} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \mathsf{B} \tilde{\mathsf{D}}$',
-        r'$\sigma \mathsf{H}^{-1} \tilde{\mathsf{D}}^\mathsf{T} \tilde{\mathsf{H}} \mathsf{B} \tilde{\mathsf{D}}$']
-
-"""
+plot_eigs(As,plot_convex_hull,plot_individual_eigs,labels=labels,savefile=savefile,
+          line_width=2,equal_axes=True,title_size=14,legend_size=12,markersize=40, 
+          markeredge=1.5, colors=colors, linestyles=linestyles, markers=markers)

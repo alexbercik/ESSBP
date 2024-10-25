@@ -15,9 +15,8 @@ from Source.Solvers.PdeSolverSbp import PdeSolverSbp
 from Source.Methods.Analysis import run_convergence, plot_conv
 
 ''' Set parameters for simultation 
-combinations used for paper: p=1, p=2, p=3, p=4
 '''
-savefile = 'lce_conv_p4_lf_4e.png' # None for no save
+savefile = 'LCEconv_CSBPp4lf4e.png' # None for no save
 a = 1.0 # wave speed 
 tm_method = 'rk4'
 cfl = 0.1
@@ -86,8 +85,12 @@ errors = np.vstack((errors2, errors3, errors1))
 labels = labels2 + labels3 + labels1
 
 colors = ['tab:blue', 'tab:orange', 'tab:green', 'k', 'm', 'tab:red', 'tab:brown']
+markers = ['o', '^', 's', 'd','x', '+']
+if p==1 or p==2 or p==3: loc = 'lower left'
+elif p==4: loc = 'upper right'
+else: loc = 'best'
 plot_conv(dofs, errors, labels, 1, 
           title=title, savefile=savefile, xlabel=xlabel, ylabel=ylabel, 
-          ylim=(4e-11,9.5e-2),xlim=(68,760), grid=True, legendloc='lower left',
+          ylim=(4e-11,9.5e-2),xlim=(68,760), grid=True, legendloc=loc,
           figsize=(6,4), convunc=False, extra_xticks=True, scalar_xlabel=False,
-          serif=True, colors=colors)
+          serif=True, colors=colors, markers=markers)
