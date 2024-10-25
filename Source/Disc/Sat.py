@@ -578,11 +578,12 @@ class Sat(SatDer1, SatDer2):
                         self.diffeq_dqdw = solver.diffeq.dqdw
                     print(f'... average={self.average}, maxeig={self.maxeig_type}, P_derigs={self.P_derigs}, coeff={self.coeff}')
                 elif self.jac_type == 'matmat':
-                    print(str_base + ' and sca-mat diss on ent vars')
+                    print(str_base + ' and mat-mat diss on ent vars')
                     if self.dim == 1: 
                         self.calc_absAP_dw = self.calc_absAP_dw_matmat_1D
                         if self.P_derigs and self.A_derigs:
-                            self.calc_absAP = lambda qL,qR: self.diffeq.dExdw_abs_derigs(qL,qR,self.entropy_fix)
+                            self.calc_absAP = lambda qL,qR: solver.diffeq.dExdw_abs_derigs(qL,qR,self.entropy_fix)
+                            self.average = 'none'
                         elif self.P_derigs:
                             self.calc_P = solver.diffeq.dqdw_derigs
                             self.calc_absA = self.calc_absA_matdiffeq_1d
@@ -590,7 +591,7 @@ class Sat(SatDer1, SatDer2):
                         elif self.A_derigs:
                             self.calc_P = self.calc_P_avg
                             self.diffeq_dqdw = solver.diffeq.dqdw
-                            self.calc_absA = lambda qL,qR: self.diffeq.dExdq_abs_derigs(qL,qR,self.entropy_fix)
+                            self.calc_absA = lambda qL,qR: solver.diffeq.dExdq_abs_derigs(qL,qR,self.entropy_fix)
                             self.calc_absAP = self.calc_absAP_base_1d
                         else:
                             try:
@@ -605,7 +606,7 @@ class Sat(SatDer1, SatDer2):
                     else: 
                         self.calc_absAP_dw = self.calc_absAP_dw_matmat_nD
                         if self.P_derigs and self.A_derigs:
-                            self.calc_absAP = lambda qL,qR,mets: self.diffeq.dEndw_abs_derigs(qL,qR,mets,self.entropy_fix)
+                            self.calc_absAP = lambda qL,qR,mets: solver.diffeq.dEndw_abs_derigs(qL,qR,mets,self.entropy_fix)
                         elif self.P_derigs:
                             self.calc_P = solver.diffeq.dqdw_derigs
                             self.calc_absA = self.calc_absA_matdiffeq_nd
@@ -613,7 +614,7 @@ class Sat(SatDer1, SatDer2):
                         elif self.A_derigs:
                             self.calc_P = self.calc_P_avg
                             self.diffeq_dqdw = solver.diffeq.dqdw
-                            self.calc_absA = lambda qL,qR,mets: self.diffeq.dExdq_abs_derigs(qL,qR,mets,self.entropy_fix)
+                            self.calc_absA = lambda qL,qR,mets: solver.diffeq.dExdq_abs_derigs(qL,qR,mets,self.entropy_fix)
                             self.calc_absAP = self.calc_absAP_base_nd
                         else:
                             try:
@@ -721,7 +722,7 @@ class Sat(SatDer1, SatDer2):
 
 
             else:
-                raise Exception('Choice of SAT not understood.')
+                raise Exception(f'Choice of SAT not understood: {self.diss_type}')
 
             # TODO: Use hasattribute to check for additional parameters?
             # Set the method for the sat and dfdq_sat for the first derivative

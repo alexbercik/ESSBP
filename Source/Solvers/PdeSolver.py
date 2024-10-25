@@ -212,7 +212,7 @@ class PdeSolver:
             self.surf_diss = surf_diss
             assert(isinstance(self.surf_diss, dict)),"surf_diss must be a dictionary"
             assert(isinstance(self.surf_diss['diss_type'], str)),"surf_diss must contain a key 'diss_type'"
-        if vol_diss == None:
+        if vol_diss == None or vol_diss == 'ND' or vol_diss == 'nd':
             self.vol_diss = {'diss_type':'ND'}
         else:
             self.vol_diss = vol_diss
@@ -586,7 +586,7 @@ class PdeSolver:
         # set the number of time steps
         if isinstance(self.t_final, int) or isinstance(self.t_final, float):
             self.n_ts = int(np.round(self.t_final / self.dt))
-            if abs(self.n_ts - (self.t_final / self.dt)) > 1e-10:
+            if abs(self.n_ts - (self.t_final / self.dt)) > 1e-12:
                 dt_old = np.copy(self.dt)
                 self.dt = self.t_final/self.n_ts
                 print('WARNING: To ensure final time is exact, changing dt from {0} to {1}'.format(dt_old,self.dt))
