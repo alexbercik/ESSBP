@@ -186,7 +186,7 @@ def dEndw_abs_1D(q,dxidx,entropy_fix=False):
      are the eigenvalues of dExdq '''
     
     Lam, X, _, XT = dEndq_eigs_1D(q,dxidx,val=True,vec=True,inv=False,trans=True,entropy_fix=entropy_fix)
-    dEndw_abs = fn.gbdiag_gbdiag(X, fn.gdiag_gm(cabs(Lam), XT))
+    dEndw_abs = fn.gbdiag_gbdiag(X, fn.gdiag_gbdiag(cabs(Lam), XT))
     return dEndw_abs
 
 @njit   
@@ -196,7 +196,7 @@ def dExdw_abs_1D(q,entropy_fix=False):
      are the eigenvalues of dExdq '''
     
     Lam, X, _, XT = dExdq_eigs_1D(q,val=True,vec=True,inv=False,trans=True,entropy_fix=entropy_fix)
-    dEndw_abs = fn.gbdiag_gbdiag(X, fn.gdiag_gm(cabs(Lam), XT))
+    dEndw_abs = fn.gbdiag_gbdiag(X, fn.gdiag_gbdiag(cabs(Lam), XT))
     return dEndw_abs
 
 @njit
@@ -537,7 +537,7 @@ def dExdq_eigs_1D(q,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
         Lam[1::3] = u 
         Lam[2::3] = lam2
     else:
-        Lam = None
+        Lam = np.empty((1,1),dtype=q.dtype)
     if vec:
         r11 = np.sqrt(rho/(2*g))
         t1 = np.sqrt(p/2)
@@ -553,10 +553,10 @@ def dExdq_eigs_1D(q,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
         if trans:
             YT = fn.build_gbdiag(r11,r21,r31,r12,r22,r32,r11,r23,r33)
         else:
-            YT = None        
+            YT = np.empty((1,1,1,1),dtype=q.dtype)       
     else:
-        Y = None
-        YT = None
+        Y = np.empty((1,1,1,1),dtype=q.dtype)      
+        YT = np.empty((1,1,1,1),dtype=q.dtype)      
     if inv:
         t1 = np.sqrt(g1/p)
         r23 = -t1/a
@@ -571,7 +571,7 @@ def dExdq_eigs_1D(q,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
         r31 = r13*k - t1
         Yinv = fn.build_gbdiag(r11,r12,r13,r21,r22,r23,r31,r32,r13)
     else:
-        Yinv = None
+        Yinv = np.empty((1,1,1,1),dtype=q.dtype)      
     
     return Lam, Y, Yinv, YT
 
@@ -624,10 +624,10 @@ def dEndq_eigs_1D(q,n,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
         if trans:
             YT = fn.build_gbdiag(r11,r21,r31,r12,r22,r32,r11,r23,r33)
         else:
-            YT = np.zeros_like(Y)       
+            YT = np.empty((1,1,1,1),dtype=q.dtype)     
     else:
-        Y = np.zeros((1,1,1,1),dtype=q.dtype)
-        YT = np.zeros((1,1,1,1),dtype=q.dtype)
+        Y = np.empty((1,1,1,1),dtype=q.dtype)
+        YT = np.empty((1,1,1,1),dtype=q.dtype)
     if inv:
         t1 = np.sqrt(g1/p)
         r23 = -t1/a
@@ -642,7 +642,7 @@ def dEndq_eigs_1D(q,n,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
         r31 = r13*k - t1
         Yinv = fn.build_gbdiag(r11,r12,r13,r21,r22,r23,r31,r32,r13)
     else:
-        Yinv = np.zeros((1,1,1,1),dtype=q.dtype)
+        Yinv = np.empty((1,1,1,1),dtype=q.dtype)
     
     return Lam, Y, Yinv, YT 
         
@@ -673,7 +673,7 @@ def dExdq_eigs_2D(q,val=True,vec=True,inv=True,trans=False):
         Lam[2::4,:] = u + a
         Lam[3::4,:] = u - a
     else:
-        Lam = np.zeros((1,1),dtype=q.dtype)
+        Lam = np.empty((1,1),dtype=q.dtype)
         
     if vec:
         r11 = np.sqrt(rho*(g1/g))
@@ -694,10 +694,10 @@ def dExdq_eigs_2D(q,val=True,vec=True,inv=True,trans=False):
         if trans:
             YT = fn.build_gbdiag(r11,r21,r31,r41,r0,r0,r32,r42,r13,r23,r33,r43,r13,r24,r33,r44)
         else:
-            YT = np.zeros((1,1,1,1),dtype=q.dtype)
+            YT = np.empty((1,1,1,1),dtype=q.dtype)
     else:
-        Y = np.zeros((1,1,1,1),dtype=q.dtype)
-        YT = np.zeros((1,1,1,1),dtype=q.dtype)
+        Y = np.empty((1,1,1,1),dtype=q.dtype)
+        YT = np.empty((1,1,1,1),dtype=q.dtype)
     if inv:
         r22 = np.zeros_like(rho)
         t4 = np.sqrt(g/rho)
@@ -720,7 +720,7 @@ def dExdq_eigs_2D(q,val=True,vec=True,inv=True,trans=False):
         r13 = -r14*v
         Yinv = fn.build_gbdiag(r11,r12,r13,r14,r21,r22,r23,r22,r31,r32,r33,r44,r41,r42,r33,r44)
     else:
-        Yinv = np.zeros((1,1,1,1),dtype=q.dtype)
+        Yinv = np.empty((1,1,1,1),dtype=q.dtype)
     
     return Lam, Y, Yinv, YT     
         
@@ -752,7 +752,7 @@ def dEydq_eigs_2D(q,val=True,vec=True,inv=True,trans=False):
         Lam[2::4,:] = v + a
         Lam[3::4,:] = v - a
     else:
-        Lam = np.zeros((1,1),dtype=q.dtype)
+        Lam = np.empty((1,1),dtype=q.dtype)
     if vec:
         t3 = 1/np.sqrt(2)
         t2 = np.sqrt(rho/g)
@@ -778,10 +778,10 @@ def dEydq_eigs_2D(q,val=True,vec=True,inv=True,trans=False):
         if trans:
             YT = fn.build_gbdiag(r11,r21,r31,r41,r12,r22,r32,r42,r13,r23,r33,r43,r13,r23,r34,r44)
         else:
-            YT = np.zeros((1,1,1,1),dtype=q.dtype)
+            YT = np.empty((1,1,1,1),dtype=q.dtype)
     else:
-        Y = np.zeros((1,1,1,1),dtype=q.dtype)
-        YT = np.zeros((1,1,1,1),dtype=q.dtype)
+        Y = np.empty((1,1,1,1),dtype=q.dtype)
+        YT = np.empty((1,1,1,1),dtype=q.dtype)
     if inv:        
         t4 = np.sqrt(g/rho)
         r44 = t4/a2_g1/np.sqrt(2)
@@ -808,7 +808,7 @@ def dEydq_eigs_2D(q,val=True,vec=True,inv=True,trans=False):
         Yinv = fn.build_gbdiag(r11,r12,r13,r14,r21,r22,r23,r24,r31,r32,r33,r44,r41,r32,r43,r44)
         
     else:
-        Yinv = np.zeros((1,1,1,1),dtype=q.dtype)
+        Yinv = np.empty((1,1,1,1),dtype=q.dtype)
     
     return Lam, Y, Yinv, YT  
 
@@ -881,10 +881,10 @@ def dEndq_eigs_2D(q,n,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
         if trans:
             YT = fn.build_gbdiag(r11,r21,r31,r41,r12,r22,r32,r42,r13,r23,r33,r43,r13,r24,r34,r44)
         else:
-            YT = np.zeros((1,1,1,1),dtype=q.dtype)
+            YT = np.empty((1,1,1,1),dtype=q.dtype)
     else:
-        Y = np.zeros((1,1,1,1),dtype=q.dtype)
-        YT = np.zeros((1,1,1,1),dtype=q.dtype)
+        Y = np.empty((1,1,1,1),dtype=q.dtype)
+        YT = np.empty((1,1,1,1),dtype=q.dtype)
     if inv:
         t4 = np.sqrt(g/rho)
         r44 = t4/a2_g1/np.sqrt(2)
@@ -919,7 +919,7 @@ def dEndq_eigs_2D(q,n,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
         r23 = -r24*v - t1*t3
         Yinv = fn.build_gbdiag(r11,r12,r13,r14,r21,r22,r23,r24,r31,r32,r33,r44,r41,r42,r43,r44)
     else:
-        Yinv = np.zeros((1,1,1,1),dtype=q.dtype)
+        Yinv = np.empty((1,1,1,1),dtype=q.dtype)
     
     return Lam, Y, Yinv, YT 
 
@@ -1206,7 +1206,7 @@ def dExdq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
         Lam[3::5,:] = u + a
         Lam[4::5,:] = u - a
     else:
-        Lam = None
+        Lam = np.empty((1,1),dtype=q.dtype)
     if vec:
         a = np.sqrt(rho*(g1/g)) # useful constants
         b = np.sqrt(rho/(2*g))
@@ -1230,10 +1230,10 @@ def dExdq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
         if trans:
             YT = fn.build_gbdiag(a,r21,r31,r41,r51,r0,r0,r0,-r33,r52,r0,r0,r33,r0,r53,b,r24,r34,r44,r54,b,r25,r34,r44,r55)
         else:
-            YT = None
+            YT = np.empty((1,1,1,1),dtype=q.dtype)
     else:
-        Y = None
-        YT = None
+        Y = np.empty((1,1,1,1),dtype=q.dtype)
+        YT = np.empty((1,1,1,1),dtype=q.dtype)
     if inv:
         a = np.sqrt(rho*(g1/g)) # useful constants
         b = g1 * (np.sqrt(rho/(2*g)) / p)
@@ -1257,7 +1257,7 @@ def dExdq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
         r52 = -c - u*b
         Yinv = fn.build_gbdiag(r11,r12,r13,r14,r15,r21,r0,r0,-r33,r0,r31,r0,r33,r0,r0,r41,r42,r43,r44,b,r51,r52,r43,r44,b)
     else:
-        Yinv = None
+        Yinv = np.empty((1,1,1,1),dtype=q.dtype)
     
     return Lam, Y, Yinv, YT     
         
@@ -1289,7 +1289,7 @@ def dEydq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
         Lam[3::5,:] = v + a
         Lam[4::5,:] = v - a
     else:
-        Lam = None
+        Lam = np.empty((1,1),dtype=q.dtype)
     if vec:
         a = np.sqrt(rho*(g1/g)) # useful constants
         b = np.sqrt(rho/(2*g))
@@ -1313,10 +1313,10 @@ def dEydq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
         if trans:
             YT = fn.build_gbdiag(r0,r0,r0,r41,r51,a,r22,r32,r42,r52,r0,-r41,r0,r0,r53,b,r24,r34,r44,r54,b,r24,r35,r44,r55)
         else:
-            YT = None
+            YT = np.empty((1,1,1,1),dtype=q.dtype)
     else:
-        Y = None
-        YT = None
+        Y = np.empty((1,1,1,1),dtype=q.dtype)
+        YT = np.empty((1,1,1,1),dtype=q.dtype)
     if inv:
         a = np.sqrt(rho*(g1/g)) # useful constants
         b = g1 * (np.sqrt(rho/(2*g)) / p)
@@ -1339,7 +1339,7 @@ def dEydq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
         r53 = -c - v*b
         Yinv = fn.build_gbdiag(r11,r0,r0,-r14,r0,r21,r22,r23,r24,r25,r31,r14,r0,r0,r0,r41,r42,r43,r44,b,r51,r42,r53,r44,b)
     else:
-        Yinv = None
+        Yinv = np.empty((1,1,1,1),dtype=q.dtype)
     
     return Lam, Y, Yinv, YT  
         
@@ -1371,7 +1371,7 @@ def dEzdq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
         Lam[3::5,:] = w + a
         Lam[4::5,:] = w - a
     else:
-        Lam = None
+        Lam = np.empty((1,1),dtype=q.dtype)
     if vec:
         a = np.sqrt(rho*(g1/g)) # useful constants
         b = np.sqrt(rho/(2*g))
@@ -1395,10 +1395,10 @@ def dEzdq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
         if trans:
             YT = fn.build_gbdiag(r0,r0,-r22,r0,r51,r0,r22,r0,r0,r52,a,r23,r33,r43,r53,b,r24,r34,r44,r54,b,r24,r34,r45,r55)
         else:
-            YT = None
+            YT = np.empty((1,1,1,1),dtype=q.dtype)
     else:
-        Y = None
-        YT = None
+        Y = np.empty((1,1,1,1),dtype=q.dtype)
+        YT = np.empty((1,1,1,1),dtype=q.dtype)
     if inv:
         a = np.sqrt(rho*(g1/g)) # useful constants
         b = g1 * (np.sqrt(rho/(2*g)) / p)
@@ -1421,7 +1421,7 @@ def dEzdq_eigs_3D(q,val=True,vec=True,inv=True,trans=False):
         r54 = -c - w*b
         Yinv = fn.build_gbdiag(r11,r0,-r22,r0,r0,r21,r22,r0,r0,r0,r31,r32,r33,r34,r35,r41,r42,r43,r44,b,r51,r42,r43,r54,b)
     else:
-        Yinv = None
+        Yinv = np.empty((1,1,1,1),dtype=q.dtype)
     
     return Lam, Y, Yinv, YT 
 
@@ -1460,7 +1460,7 @@ def dEndq_eigs_3D(q,n,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
         Lam[3::5,:] = lam2
         Lam[4::5,:] = lam1
     else:
-        Lam = None
+        Lam = np.empty((1,1),dtype=q.dtype)
     if vec:
         a = np.sqrt(rho*(g1/g)) # useful constants
         b = np.sqrt(rho/(2*g))
@@ -1494,10 +1494,10 @@ def dEndq_eigs_3D(q,n,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
         if trans:
             YT = fn.build_gbdiag(r11,r21,r31,r41,r51,r12,r22,r32,r42,r52,r13,r23,r33,r43,r53,b,r24,r34,r44,r54,b,r25,r35,r45,r55)
         else:
-            YT = None
+            YT = np.empty((1,1,1,1),dtype=q.dtype)
     else:
-        Y = None
-        YT = None
+        Y = np.empty((1,1,1,1),dtype=q.dtype)
+        YT = np.empty((1,1,1,1),dtype=q.dtype)
     if inv:
         a = np.sqrt(rho*(g1/g))
         ap = np.sqrt(rho*(g1/g))/p # useful constants
@@ -1529,7 +1529,7 @@ def dEndq_eigs_3D(q,n,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
         r54 = -w*b - nz*c
         Yinv = fn.build_gbdiag(r11,r12,r13,r14,r15,r21,r22,r23,r24,r25,r31,r32,r33,r34,r35,r41,r42,r43,r44,b,r51,r52,r53,r54,b)
     else:
-        Yinv = None
+        Yinv = np.empty((1,1,1,1),dtype=q.dtype)
     
     return Lam, Y, Yinv, YT  
 

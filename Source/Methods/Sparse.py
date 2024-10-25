@@ -374,7 +374,7 @@ def set_gm_union_sparsity(gm_list):
     return sp_gm_list
 
 
-@njit
+#@njit # njit leads to some error that I don't care enough to fix. Only gets called once anyway.
 def set_spgm_union_sparsity(csr_list):
     '''
     Set the sparsity pattern of a list of global CSR matrices to the union of all sparsity patterns.
@@ -398,7 +398,7 @@ def set_spgm_union_sparsity(csr_list):
         if len(csr) != nelem:
             raise ValueError('Number of elements do not match')
 
-    sparsity_list = List()
+    sparsity_list = [] #List()
 
     for e in range(nelem):
         # Ensure all matrices have the same number of rows

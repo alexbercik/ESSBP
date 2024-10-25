@@ -820,7 +820,8 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
     else: 
         assert(isinstance(colors, list)), "colors must be a list"
     if markers == None:
-        markers=['o','^','s','D','>','<','8']
+        #markers=['o','^','s','D','>','<','8']
+        markers = ['o', '^', 's', 'd','x', '+']
     else: 
         assert(isinstance(markers, list)), "markers must be a list"
     if linestyles == None:
@@ -848,24 +849,24 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
                 unc = np.round(np.sqrt(p_cov[0,0]),abs(acc))
                 acc = int(np.floor(np.log10(unc)))
                 if acc >=0:
-                    slope = r": ${0} \pm {1}$".format(int(p_opt[0]),int(unc))
+                    slope = r" $({0} \pm {1})$".format(int(p_opt[0]),int(unc))
                 elif acc==-1:
-                    slope = r": ${0:9.1f} \pm {1:6.1f}$".format(p_opt[0],unc)
+                    slope = r" $({0:9.1f} \pm {1:6.1f})$".format(p_opt[0],unc)
                 elif acc==-2:
-                    slope = r": ${0:9.2f} \pm {1:6.2f}$".format(p_opt[0],unc)
+                    slope = r" $({0:9.2f} \pm {1:6.2f})$".format(p_opt[0],unc)
                 elif acc==-3:
-                    slope = r": ${0:9.3f} \pm {1:6.3f}$".format(p_opt[0],unc)
+                    slope = r" $({0:9.3f} \pm {1:6.3f})$".format(p_opt[0],unc)
                 else:
-                    slope = r": ${0:9.4f} \pm {1:6.1g}$".format(p_opt[0],unc)
+                    slope = r" $({0:9.4f} \pm {1:6.1g})$".format(p_opt[0],unc)
             else:
-                slope = r": ${0:9.2f}$".format(p_opt[0])
+                slope = r" $({0:9.2f})$".format(p_opt[0])
             plt.loglog(dof_mod,err_mod,markers[i%len(markers)],markersize=8, color=colors[i%len(colors)],
                        markerfacecolor = 'none', markeredgewidth=2, label=string+slope)
             plt.loglog(np.linspace(dof_mod[skipfit[i]],dof_mod[-1]), # plot
                        np.exp(fit_func(np.log(np.linspace(dof_mod[skipfit[i]],dof_mod[-1])), *p_opt)), 
                        linewidth=1, linestyle = linestyles[i%len(linestyles)], color=colors[i%len(colors)])
         elif len(dof_mod) == 2:
-            slope = r": ${0:9.3}$".format(-(np.log(err_mod[1])-np.log(err_mod[0]))/(np.log(dof_mod[1])-np.log(dof_mod[0])))
+            slope = r" $({0:9.3})$".format(-(np.log(err_mod[1])-np.log(err_mod[0]))/(np.log(dof_mod[1])-np.log(dof_mod[0])))
             plt.loglog(dof_mod,err_mod,markers[i%len(markers)],markersize=8, color=colors[i%len(colors)],
                        markerfacecolor = 'none', markeredgewidth=2, label=string+slope)
             plt.loglog(dof_mod, err_mod, linewidth=1, linestyle = linestyles[i%len(linestyles)], color=colors[i%len(colors)])
@@ -1536,15 +1537,20 @@ def read_from_diablo(filename=None):
     dofs = np.sqrt(nodes)
 
 
-def plot_eigs(A, plot_hull=True, plot_all=False, labels=None, savefile=None,
+def plot_eigs(A, plot_hull=True, plot_individual_eigs=False, labels=None, savefile=None,
               save_format='png', dpi=600, line_width=1.5, equal_axes=False, 
-              title_size=12, legend_size=12):
+              title_size=12, legend_size=12, markersize=16, markeredge=2,
+              colors=None, markers=None, linestyles=None):
     if plot_hull:
         from scipy.spatial import ConvexHull
 
     # Define colors and linestyles for the hulls
-    colors = ['tab:blue', 'tab:orange', 'tab:green', 'k', 'm', 'tab:red', 'tab:brown']
-    linestyles = ['-', '--', '-.', ':', (0, (1, 1)), (0, (3, 5, 1, 5)), (0, (1, 2, 3, 2))]
+    if colors is None:
+        colors = ['tab:blue', 'tab:orange', 'tab:green', 'k', 'm', 'tab:red', 'tab:brown']
+    if markers is None:
+        markers = ['o', '^', 's', 'd','x', '+']
+    if linestyles is None:
+        linestyles = ['-', '--', '-.', ':', (0, (1, 1)), (0, (3, 5, 1, 5)), (0, (1, 2, 3, 2))]
     
     # Check if A is a list of matrices or a single matrix
     if isinstance(A, list):
@@ -1576,11 +1582,18 @@ def plot_eigs(A, plot_hull=True, plot_all=False, labels=None, savefile=None,
         if np.all(np.abs(real_part) < 1e-12):
             # Plot a line along the imaginary axis
             plt.plot(np.zeros_like(imag_part), imag_part, color=colors[idx % len(colors)], 
-                     linestyle=linestyles[idx % len(linestyles)], linewidth=line_width, label=label)
+                     linestyle=linestyles[idx % len(linestyles)], linewidth=line_width)
         else:
-            # Plot individual eigenvalues as scatter if plot_all is True
-            if plot_all:
-                plt.scatter(real_part, imag_part, color=colors[idx % len(colors)], s=16)
+            # Plot individual eigenvalues as scatter if plot_individual_eigs is True
+            if plot_individual_eigs:
+                if markers[idx % len(markers)] in ['x', '+', '|', '_']:  # Markers without a face color
+                    plt.scatter(real_part, imag_part, s=markersize,
+                                marker=markers[idx % len(markers)], facecolors=colors[idx % len(colors)],
+                                linewidths=markeredge)
+                else:
+                    plt.scatter(real_part, imag_part, s=markersize,
+                                marker=markers[idx % len(markers)], facecolors='none', edgecolors=colors[idx % len(colors)], 
+                                linewidths=markeredge)
             
             # Plot convex hull around the outermost eigenvalues
             if plot_hull and len(eig_values) > 2:  # ConvexHull needs at least 3 points
@@ -1600,10 +1613,24 @@ def plot_eigs(A, plot_hull=True, plot_all=False, labels=None, savefile=None,
                         color=colors[idx % len(colors)], 
                         linestyle=linestyles[idx % len(linestyles)], 
                         linewidth=line_width)
-
-                # Add the label only once for both the scatter and hull
+                
+            # Add a dummy artist to create a combined legend entry for both scatter and hull
+            if plot_individual_eigs and plot_hull:
                 plt.plot([], [], color=colors[idx % len(colors)], linestyle=linestyles[idx % len(linestyles)], 
-                         linewidth=line_width, label=label)
+                        linewidth=line_width, marker=markers[idx % len(markers)], markersize=np.sqrt(markersize),
+                        markerfacecolor='none', markeredgewidth=markeredge, label=label)
+            elif plot_individual_eigs:
+                if markers[idx % len(markers)] in ['x', '+', '|', '_']:  # Markers without a face color
+                    plt.scatter([], [], s=markersize,
+                                marker=markers[idx % len(markers)], facecolors=colors[idx % len(colors)],
+                                linewidths=markeredge, label=label)
+                else:
+                    plt.scatter([], [], s=markersize,
+                                marker=markers[idx % len(markers)], facecolors='none', edgecolors=colors[idx % len(colors)], 
+                                linewidths=markeredge, label=label)
+            elif plot_hull:
+                plt.plot([], [], color=colors[idx % len(colors)], linestyle=linestyles[idx % len(linestyles)], 
+                        linewidth=line_width, label=label)
     
     # Add grid and labels
     plt.axhline(0, color='black', linewidth=0.5)

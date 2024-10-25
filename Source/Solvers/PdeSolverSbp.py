@@ -192,10 +192,11 @@ class PdeSolverSbp(PdeSolver):
             if self.dim == 1:
                 self.vol_sparsity = sp.set_spgm_union_sparsity([self.Dx, [self.sat.Esurf]*self.nelem])
                 if self.neq_node == 1:
-                    self.build_F_vol = staticmethod(lambda q: sp.build_F_vol_sca(q, self.calc_had_flux))
+                    self.build_F_vol = staticmethod(lambda q: sp.build_F_vol_sca(q, self.calc_had_flux, self.vol_sparsity))
                 else:
                     self.vol_sparsity_unkronned = sp.unkron_neq_sparsity(self.vol_sparsity, self.neq_node) 
-                    self.build_F_vol = staticmethod(lambda q: sp.build_F_vol_sys(self.neq_node, q, self.calc_had_flux))
+                    self.build_F_vol = staticmethod(lambda q: sp.build_F_vol_sys(self.neq_node, q, self.calc_had_flux,
+                                                                                 self.vol_sparsity_unkronned, self.vol_sparsity))
             elif self.dim == 2:
                 self.xvol_sparsity = sp.set_spgm_union_sparsity([self.Dx,
                         sp.assemble_satx_2d(self.satx.vol_x_mat,*self.nelem),
@@ -204,7 +205,8 @@ class PdeSolverSbp(PdeSolver):
                         sp.assemble_satx_2d(self.satx.vol_y_mat,*self.nelem),
                         sp.assemble_saty_2d(self.saty.vol_y_mat,*self.nelem)])
                 if self.neq_node == 1:
-                    self.build_F_vol = staticmethod(lambda q: sp.build_F_vol_sca_2d(q, self.calc_had_flux))
+                    self.build_F_vol = staticmethod(lambda q: sp.build_F_vol_sca_2d(q, self.calc_had_flux,
+                                                                                    self.xvol_sparsity, self.yvol_sparsity))
                 else:
                     self.xvol_sparsity_unkronned = self.vol_sparsity_unkronned = sp.unkron_neq_sparsity(self.xvol_sparsity, self.neq_node) 
                     self.yvol_sparsity_unkronned = self.vol_sparsity_unkronned = sp.unkron_neq_sparsity(self.yvol_sparsity, self.neq_node) 

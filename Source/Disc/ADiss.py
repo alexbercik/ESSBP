@@ -50,7 +50,7 @@ class ADiss():
         self.sparse = self.solver.sparse
 
         self.type = self.solver.vol_diss['diss_type']
-        if isinstance(self.type, int): self.type = self.type.lower()
+        if isinstance(self.type, str): self.type = self.type.lower()
         if self.type == 'nd':
             self.dissipation = self.no_diss
             return
@@ -196,7 +196,6 @@ class ADiss():
                     self.dissipation = self.dissipation_entdcp_scalarmatrix
                 elif self.jac_type == 'matrixmatrix' or self.jac_type == 'matmat':
                     self.dissipation = self.dissipation_entdcp_matrixmatrix
-                    self.dEndw_abs = self.solver.diffeq.dEndw_abs
                 else:
                     print("WARNING: jac method not understood for type='entDCP' or type='entW' dissipation. Defaulting to jac_type = 'scalarscalar'.")
                     self.jac_type = 'scalarscalar'
@@ -251,9 +250,9 @@ class ADiss():
                         else:
                             self.rho_dqdw = lambda q: fn.spec_rad(self.dqdw(q),self.neq_node)
                 elif self.jac_type == 'scalarmatrix' or self.jac_type == 'scamat':
-                    self.dissipation = lambda q: self.dissipation_entdcp_scalarmatrix(q,self.coeff)
+                    self.dissipation = lambda q: self.dissipation_entdcp_scalarmatrix(q)
                 elif self.jac_type == 'matrixmatrix' or self.jac_type == 'matmat':
-                    self.dissipation = lambda q: self.dissipation_entdcp_matrixmatrix(q,self.coeff)
+                    self.dissipation = lambda q: self.dissipation_entdcp_matrixmatrix(q)
                     if self.neq_node == 1:
                         if hasattr(self.solver.diffeq, 'dExdw_abs'):
                             self.dExdw_abs = lambda q: self.solver.diffeq.dExdw_abs(q, self.entropy_fix)
@@ -261,11 +260,18 @@ class ADiss():
                             print('WARNING: diffeq.dExdw_abs not found. Defaulting to dExdq_abs @ dqdw, which is slower.')
                             self.dExdw_abs = self.calc_absAP_base_1d
                     else:
-                        if hasattr(self.solver.diffeq, 'dEndw_abs'):
-                            self.dEndw_abs = lambda q, metrics: self.solver.diffeq.dEndw_abs(q, metrics, self.entropy_fix)
+                        if self.dim == 1:
+                            if hasattr(self.solver.diffeq, 'dExdw_abs'):
+                                self.dExdw_abs = lambda q: self.solver.diffeq.dExdw_abs(q, self.entropy_fix)
+                            else:
+                                print('WARNING: diffeq.dExdw_abs not found. Defaulting to dExdq_abs @ dqdw, which is slower.')
+                                self.dExdw_abs = self.calc_absAP_base_1d
                         else:
-                            print('WARNING: diffeq.dEndw_abs not found. Defaulting to dEndq_abs @ dqdw, which is slower.')
-                            self.dEndw_abs = self.calc_absAP_base_nd
+                            if hasattr(self.solver.diffeq, 'dEndw_abs'):
+                                self.dEndw_abs = lambda q, metrics: self.solver.diffeq.dEndw_abs(q, metrics, self.entropy_fix)
+                            else:
+                                print('WARNING: diffeq.dEndw_abs not found. Defaulting to dEndq_abs @ dqdw, which is slower.')
+                                self.dEndw_abs = self.calc_absAP_base_nd
                 else:
                     raise Exception('Artificial dissipation: jac_type not understood, '+ str(self.jac_type)) # should not happen
 
@@ -639,21 +645,21 @@ class ADiss():
             AP = maxeig*rho_dqdw
             if self.s % 2 == 1 and self.avg_half_nodes:
                 AP[:-1] = 0.5*(AP[:-1] + AP[1:])
-            AP = fn.repeat_neq_gv(AP)
+            AP = self.repeat_neq_gv(AP)
             diss = self.gm_gv(self.lhs_D, AP * self.lm_gv(self.rhs_D, w))
         elif self.dim == 2:
             maxeig = self.maxeig_dEndq(q,self.dxidx) 
             AP = maxeig*rho_dqdw
             if self.s % 2 == 1 and self.avg_half_nodes:
                 AP[:-self.nen:self.nen] = 0.5*(AP[:-self.nen:self.nen] + AP[self.nen::self.nen])
-            AP = fn.repeat_neq_gv(AP)
+            AP = self.repeat_neq_gv(AP)
             diss = self.gm_gv(self.lhs_Dxi, AP * self.lm_gv(self.rhs_Dxi, w)) # xi part
             maxeig = self.maxeig_dEndq(q,self.detadx) 
-            AP = fn.repeat_neq_gv(maxeig*rho_dqdw)
+            AP = self.repeat_neq_gv(maxeig*rho_dqdw)
             if self.s % 2 == 1 and self.avg_half_nodes:
                 for xi_idx in range(self.nen):
                     AP[xi_idx*self.nen:(xi_idx+1)*self.nen-1] = 0.5*(AP[xi_idx*self.nen:(xi_idx+1)*self.nen-1] + AP[xi_idx*self.nen+1:(xi_idx+1)*self.nen])
-            AP = fn.repeat_neq_gv(AP)        
+            AP = self.repeat_neq_gv(AP)        
             diss += self.gm_gv(self.lhs_Deta, AP * self.lm_gv(self.rhs_Deta, w)) # eta part
         elif self.dim == 3:
             raise Exception('TODO')
@@ -666,7 +672,7 @@ class ADiss():
         rho_dqdw = self.rho_dqdw(q)
         if self.dim == 1:
             maxeig = self.maxeig_dEndq(q,self.dxidx)
-            AP = fn.repeat_neq_gv(maxeig*rho_dqdw,self.neq_node)
+            AP = self.repeat_neq_gv(maxeig*rho_dqdw,self.neq_node)
             if self.s == 1:
                 diss = self.gm_gv(self.lhs_D1, AP * self.lm_gv(self.rhs_D1, w)) + \
                        self.gm_gv(self.lhs_D2, AP * self.lm_gv(self.rhs_D2, w))
