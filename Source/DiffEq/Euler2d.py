@@ -33,7 +33,7 @@ class Euler(PdeBase):
     para_fix = [R_fix,g_fix]
 
     # Plotting constants
-    plt_var2plot_name = r'$\rho$' # rho, u, e, p, a, mach    
+    var2plot_name = r'$\rho$' # rho, u, e, p, a, mach    
 
     def __init__(self, para, q0_type=None, test_case='subsonic_nozzle',
                  nozzle_shape='book', bc='periodic'):
@@ -453,7 +453,7 @@ class Euler(PdeBase):
             q[3::4] = q[3::4] * self.e_inf
         
         if var2plot_name is None:
-            var2plot_name = self.plt_var2plot_name
+            var2plot_name = self.var2plot_name
         rho, u, v, e, P, a = self.cons2prim(q)
         #T = P / (rho * self.R)
         #w = self.entropy_var(q)

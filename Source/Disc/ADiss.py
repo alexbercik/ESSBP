@@ -250,9 +250,8 @@ class ADiss():
                         else:
                             self.rho_dqdw = lambda q: fn.spec_rad(self.dqdw(q),self.neq_node)
                 elif self.jac_type == 'scalarmatrix' or self.jac_type == 'scamat':
-                    self.dissipation = lambda q: self.dissipation_entdcp_scalarmatrix(q)
+                    pass
                 elif self.jac_type == 'matrixmatrix' or self.jac_type == 'matmat':
-                    self.dissipation = lambda q: self.dissipation_entdcp_matrixmatrix(q)
                     if self.neq_node == 1:
                         if hasattr(self.solver.diffeq, 'dExdw_abs'):
                             self.dExdw_abs = lambda q: self.solver.diffeq.dExdw_abs(q, self.entropy_fix)

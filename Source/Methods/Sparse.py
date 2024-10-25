@@ -768,7 +768,7 @@ def lm_dgm_had_diff(A,B):
     
     # Perform sparse hadamard product for each element
     for e in range(nelem):
-        c[:, e] = lm_dlm_had_diff(A, B[e])
+        c[:, e] = lm_dlm_had_diff(A, B[:,:,e])
     
     return c
 
@@ -1451,6 +1451,10 @@ if __name__ == '__main__':
     c = gm_gm_had_diff(gm_sp, gm2_sp)
     c2 = fn.gm_gm_had_diff(gm, gm2)
     print('test gm_gm_had_diff:', np.max(abs(c-c2)))
+
+    c = lm_dgm_had_diff(lm_sp, gm)
+    c2 = fn.lm_gm_had_diff(lm, gm)
+    print('test lm_dgm_had_diff:', np.max(abs(c-c2)))
 
     sp_gm_list = set_gm_union_sparsity(gm_list)
     diff = 0.

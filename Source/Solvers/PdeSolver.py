@@ -952,11 +952,25 @@ class PdeSolver:
                 #plt.plot(time[:final_idx],abs(self.cons_obj[i]-norm)) 
                 #plt.yscale('log')
                 #plt.gca().invert_yaxis()
+                plt.yscale('symlog',linthresh=1e-14)
+                ax = plt.gca()
+                ymin, ymax = ax.get_ylim()
+                positive_ticks = [0] + [10**exp for exp in range(-12, int(np.log10(ymax)) + 1, 4)]
+                negative_ticks = [-10**exp for exp in range(-12, int(np.log10(-ymin)) + 1, 4)]
+                custom_ticks = negative_ticks[::-1] + positive_ticks
+                ax.set_yticks(custom_ticks)
                 
             elif cons_obj_name_i == 'entropy':
                 plt.title(r'Change in Entropy',fontsize=18)
                 plt.ylabel(r'$ 1 H s(x,t) - 1 H s(x,0) $',fontsize=16)
                 plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]-norm) 
+                plt.yscale('symlog',linthresh=1e-14)
+                ax = plt.gca()
+                ymin, ymax = ax.get_ylim()
+                positive_ticks = [0] + [10**exp for exp in range(-12, int(np.log10(ymax)) + 1, 4)]
+                negative_ticks = [-10**exp for exp in range(-12, int(np.log10(-ymin)) + 1, 4)]
+                custom_ticks = negative_ticks[::-1] + positive_ticks
+                ax.set_yticks(custom_ticks)
     
             elif cons_obj_name_i == 'conservation':
                 plt.title(r'Change in Conservation',fontsize=18)
