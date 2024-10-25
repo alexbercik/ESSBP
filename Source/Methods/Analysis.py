@@ -100,7 +100,7 @@ def animate(solver, file_name='animation', make_video=True, make_gif=False,
     if 'var2plot_name' in plotargs: 
         var2plot_name = plotargs['var2plot_name']
     else:
-        var2plot_name = solver.diffeq.plt_var2plot_name
+        var2plot_name = solver.diffeq.var2plot_name
     ax.plot([0,0],[np.min(solver.diffeq.var2plot(np.min(solver.q_sol,axis=2),var2plot_name)),np.max(solver.diffeq.var2plot(np.max(solver.q_sol,axis=2),var2plot_name))])
     ymin,ymax= ax.get_ylim()
     plt.close()

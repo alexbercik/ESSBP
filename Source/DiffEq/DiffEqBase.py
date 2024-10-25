@@ -78,7 +78,7 @@ class PdeBase:
                      {'color':'r','linestyle':'-.','linewidth':2,'marker':''},
                      {'color':'g','linestyle':':','linewidth':2,'marker':''}]
     plt_label_font_size = 15
-    plt_var2plot_name = None
+    var2plot_name = None
     plt_mesh_settings = {'label lines': True,   # if True, x and y ticks are based on grid lines
                          'plot nodes': True,    # whether or not to display the nodes
                          'node size': 4,        # markersize used on nodes
@@ -307,7 +307,7 @@ class PdeBase:
         '''
 
         if var2plot_name is None:
-            var2plot_name = self.plt_var2plot_name
+            var2plot_name = self.var2plot_name
         if legendloc is None:
             legendloc = 'best'
         

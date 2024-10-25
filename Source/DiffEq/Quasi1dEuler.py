@@ -37,7 +37,7 @@ class Quasi1dEuler(PdeBase):
     para_fix = [R_fix,g_fix]
 
     # Plotting constants
-    plt_var2plot_name = r'$\rho$' # rho, u, e, p, a, mach    
+    var2plot_name = r'$\rho$' # rho, u, e, p, a, mach    
 
     def __init__(self, para, q0_type=None, test_case='subsonic_nozzle',
                  nozzle_shape='book', bc='periodic'):
@@ -437,6 +437,7 @@ class Quasi1dEuler(PdeBase):
             nondimensionalize = self.nondimensionalize
 
         if self.nondimensionalize:
+            print(f'exact_sol: calculating at t={time/self.t_scale:.3g} instead of input t={time:.3g} due to nondimensionalization.')
             time /= self.t_scale
         
         if x is None:
@@ -744,7 +745,7 @@ class Quasi1dEuler(PdeBase):
             
             # just like linear convection equation. See Gassner et al 2020
             xy_mod = np.mod((x - self.xmin) - self.u0*tf, self.dom_len) + self.xmin
-            q = self.set_q0(xy=xy_mod)
+            q = self.set_q0(xy=xy_mod, nondimensionalize=False)
             rho, u, e, p, a = self.cons2prim(q, svec)
             T = p / (rho * self.R)
             mach = u / a
@@ -827,7 +828,7 @@ class Quasi1dEuler(PdeBase):
         self.svec_der_elem = np.reshape(self.svec_der,(self.nen,self.nelem),'F')
             
 
-    def set_q0(self, q0_type=None, xy=None):
+    def set_q0(self, q0_type=None, xy=None, nondimensionalize=None):
         # overwrite base function from PdeBase
         
         if q0_type is None:
@@ -839,6 +840,9 @@ class Quasi1dEuler(PdeBase):
             svec = self.svec_elem
         else:
             svec = self.fun_s(xy)
+
+        if nondimensionalize is None:
+            nondimensionalize = self.nondimensionalize
 
         if self.test_case == 'density_wave':
             if q0_type != 'density_wave':
@@ -882,7 +886,7 @@ class Quasi1dEuler(PdeBase):
                 q0 = self.exact_sol(time=0, x=xy, nondimensionalize=False)
     
             elif q0_type == 'linear':
-                if self.nondimensionalize: # must redimensionalize first
+                if nondimensionalize: # must redimensionalize first
                     rhoL, rhoR = self.rhoL*self.rho_inf, self.rhoR*self.rho_inf
                     uL, uR = self.uL*self.a_inf, self.uR*self.a_inf
                     eL, eR = self.eL*self.rho_inf*self.a_inf**2, self.eR*self.rho_inf*self.a_inf**2
@@ -900,7 +904,7 @@ class Quasi1dEuler(PdeBase):
                 q0 = PdeBase.set_q0(self, q0_type=q0_type, xy=xy)
                 fn.repeat_neq_gv(q0,self.neq_node)
         
-        if self.nondimensionalize:
+        if nondimensionalize:
             q0[0::3] = q0[0::3] / self.rho_inf
             q0[1::3] = q0[1::3] / (self.rho_inf*self.a_inf)
             q0[2::3] = q0[2::3] / (self.rho_inf*self.a_inf*self.a_inf)
@@ -931,7 +935,7 @@ class Quasi1dEuler(PdeBase):
             return q[::self.neq_node]
         
         if var2plot_name is None:
-            var2plot_name = self.plt_var2plot_name
+            var2plot_name = self.var2plot_name
         rho, u, e, P, a = self.cons2prim(q, svec)
         w = self.entropy_var(q)
 
