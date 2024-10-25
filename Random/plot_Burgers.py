@@ -13,7 +13,6 @@ path.append(folder_path)
 from Source.DiffEq.Burgers import Burgers
 from Source.Solvers.PdeSolverSbp import PdeSolverSbp
 import matplotlib.pyplot as plt
-import matplotlib.ticker as tik
 from matplotlib import rc
 rc('text', usetex=True)
 plt.rcParams['text.latex.preamble'] = r'\usepackage{amsmath} \usepackage{bm}'
@@ -22,14 +21,16 @@ plt.rcParams['font.family'] = 'serif'
 ''' Set parameters for simultation 
 combinations used for paper: p=1,2,3,4
 '''
-savefile = 'burgers_p4_rus_4e' # None for no save, '.png' added automatically at end
+savefile = None #'burgers_p4_rus_4e' # None for no save, '.png' added automatically at end
 tm_method = 'rk4'
 dt = 0.00005
 tf = 0.155 # final time
 nelem = 4 # number of elements
 nen = 24 # number of nodes per element
-p = 4 # polynomial degree
+p = 2 # polynomial degree
 s = p+1 # dissipation degree
+op = 'csbp' # operator type
+coeff_fix = 1. # additional coefficient by which to modify 3.125/5**s and 0.625/5**s
 q0_type = 'SinWave' # initial condition 
 q0_amplitude = 1. # amplitude of initial condition
 xmin = 0.
@@ -52,46 +53,46 @@ assert cons_obj[-1] == 'time', 'time must be the last element of cons_obj'
 for i in range(n_runs):
     # set the different solver settings
     if i == 0: # upwind 2p
-        op = 'upwind'
+        op_ = 'upwind'
         p_op = int(2*p)
         sat = {'diss_type':'cons', 'jac_type':'sca', 'maxeig':'rusanov'}
         diss = {'diss_type':'upwind', 'coeff':1., 'fluxvec':'lf'}
         use_split_form = False
         labels.append(f'Upwind $p={p_op}$')
     elif i == 1: # upwind 2p+1
-        op = 'upwind'
+        op_ = 'upwind'
         p_op = int(2*p+1)
         sat = {'diss_type':'cons', 'jac_type':'sca', 'maxeig':'rusanov'}
         diss = {'diss_type':'upwind', 'coeff':1., 'fluxvec':'lf'}
         use_split_form = False
         labels.append(f'Upwind $p={p_op}$')
     elif i == 2: # entropy-conservative
-        op = 'csbp'
+        op_ = op
         p_op = p
         sat = {'diss_type':'ec'}
         diss = {'diss_type':'nd'}
         use_split_form = True
         labels.append('E.C.')
     elif i == 3: # entropy-disipative SATs only
-        op = 'csbp'
+        op_ = op
         p_op = p
         sat = {'diss_type':'es', 'jac_type':'sca', 'maxeig':'rusanov'}
         diss = {'diss_type':'nd'}
         use_split_form = True
         labels.append(r'$\sigma=0$')
     elif i == 4: # entropy-dissipative with comparable sigma
-        op = 'csbp'
+        op_ = op
         p_op = p
         sat = {'diss_type':'es', 'jac_type':'sca', 'maxeig':'rusanov'}
-        diss = {'diss_type':'dcp', 'jac_type':'sca', 's':'p+1', 'coeff':3.125/5**s, 
+        diss = {'diss_type':'dcp', 'jac_type':'sca', 's':'p+1', 'coeff':coeff_fix*3.125/5**s, 
                 'bdy_fix':True, 'use_H':True, 'avg_half_nodes':True}
         use_split_form = True
         labels.append(f"$\\sigma={diss['coeff']}$")
     elif i == 5: # entropy-dissipative with lower sigma
-        op = 'csbp'
+        op_ = op
         p_op = p
         sat = {'diss_type':'es', 'jac_type':'sca', 'maxeig':'rusanov'}
-        diss = {'diss_type':'dcp', 'jac_type':'sca', 's':'p+1', 'coeff':0.625/5**s, 
+        diss = {'diss_type':'dcp', 'jac_type':'sca', 's':'p+1', 'coeff':coeff_fix*0.625/5**s, 
                 'bdy_fix':True, 'use_H':True, 'avg_half_nodes':True}
         use_split_form = True
         labels.append(f"$\\sigma={diss['coeff']}$")
@@ -101,7 +102,7 @@ for i in range(n_runs):
     diffeq.use_split_form = use_split_form
     solver = PdeSolverSbp(diffeq, settings, tm_method, dt, tf, 
                         p=p_op, surf_diss=sat, vol_diss=diss,
-                        nelem=nelem, nen=nen, disc_nodes=op,
+                        nelem=nelem, nen=nen, disc_nodes=op_,
                         bc='periodic', xmin=xmin, xmax=xmax,
                         cons_obj_name=cons_obj)
     solver.skip_ts = skip_ts
