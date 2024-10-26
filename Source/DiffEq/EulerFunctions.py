@@ -494,7 +494,7 @@ def dEndq_3D(q,n):
 def calc_entropy_fix(u,a):
     lam1 = u - a
     lam2 = u + a
-    eps = 0.02 * (cabs(u) + a)
+    eps = 0.02 * np.abs((cabs(u) + a))
     idcs = np.where(np.abs(np.real(u - a)) < eps)
     for i in range(len(idcs[0])):
         idx = (idcs[0][i], idcs[1][i])
@@ -529,10 +529,11 @@ def dExdq_eigs_1D(q,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
     
     if val:
         Lam = np.zeros_like(q)
-        lam1 = u - a
-        lam2 = u + a
         if entropy_fix:
             lam1,lam2 = calc_entropy_fix(u,a)
+        else:
+            lam1 = u - a
+            lam2 = u + a
         Lam[::3] = lam1
         Lam[1::3] = u 
         Lam[2::3] = lam2
@@ -602,10 +603,11 @@ def dEndq_eigs_1D(q,n,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
     Lam = np.zeros_like(q)
     if val:
         Lam = np.zeros_like(q)
-        lam1 = un - norm*a
-        lam2 = un + norm*a
         if entropy_fix:
             lam1,lam2 = calc_entropy_fix(un,norm*a)
+        else:
+            lam1 = un - norm*a
+            lam2 = un + norm*a
         Lam[::3] = lam1
         Lam[1::3] = un
         Lam[2::3] = lam2
@@ -841,10 +843,11 @@ def dEndq_eigs_2D(q,n,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
     
     Lam = np.zeros_like(q)
     if val:
-        lam1 = uvn - norm*a
-        lam2 = uvn + norm*a
         if entropy_fix:
             lam1,lam2 = calc_entropy_fix(uvn,norm*a)
+        else:
+            lam1 = uvn - norm*a
+            lam2 = uvn + norm*a
         Lam[::4,:] = uvn
         Lam[1::4,:] = uvn
         Lam[2::4,:] = lam2
@@ -1450,10 +1453,11 @@ def dEndq_eigs_3D(q,n,val=True,vec=True,inv=True,trans=False,entropy_fix=False):
     if val:
         Lam = np.zeros_like(q)
         a = np.sqrt(g*p/rho) # sound speed
-        lam1 = uvwn - a
-        lam2 = uvwn + a
         if entropy_fix:
             lam1,lam2 = calc_entropy_fix(uvwn,a)
+        else:
+            lam1 = uvwn - a
+            lam2 = uvwn + a
         Lam[::5,:] = uvwn
         Lam[1::5,:] = uvwn
         Lam[2::5,:] = uvwn
@@ -2892,7 +2896,7 @@ def Derigs_dExdq_eigs_1D(qL,qR,entropy_fix=False):
     rhoavg = 0.5*(rhoL + rhoR)
     rholn = logmean_vec(rhoL,rhoR)
     pavg = 0.5*rhoavg/betaavg
-    pln = 0.5*rholn/betaln
+    #pln = 0.5*rholn/betaln
     uavg = 0.5*(uL + uR)
     u2avg = 0.5*(uL*uL + uR*uR)
     u2bar_2 = uavg*uavg - 0.5*u2avg
@@ -2900,10 +2904,11 @@ def Derigs_dExdq_eigs_1D(qL,qR,entropy_fix=False):
     hbar = 0.5*g/(betaln*g1) + u2bar_2
 
     Lam = np.zeros_like(qL)
-    lam1 = uavg - abar
-    lam2 = uavg + abar
     if entropy_fix:
         lam1,lam2 = calc_entropy_fix(uavg,abar)
+    else:
+        lam1 = uavg - abar
+        lam2 = uavg + abar
     Lam[::3] = lam1
     Lam[1::3] = uavg
     Lam[2::3] = lam2

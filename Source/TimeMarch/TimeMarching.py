@@ -332,6 +332,7 @@ class TimeMarching(TimeMarchingRk):
                         return q_sol[:,:,:int(mod_t_idx)+2]
             else:
                 if self.failsim:
+                    self.t_final = (t_idx-1)*dt
                     print('... returning solution q at t =', self.t_final, '. Note: will contain NaNs. Consider running with keep_all_ts = True')
                 return q
         else:

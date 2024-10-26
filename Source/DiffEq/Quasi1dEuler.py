@@ -54,7 +54,7 @@ class Quasi1dEuler(PdeBase):
             self.q0_type = 'linear' # can be exact, linear
 
         if self.nondimensionalize:
-            print('Using non-dimensionalized variables.')
+            print('Using non-dimensionalized variables (unless explicitly overwritten).')
 
         ''' Set flow and problem dependent parameters  '''
         

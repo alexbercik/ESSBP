@@ -98,7 +98,7 @@ class Sat(SatDer1, SatDer2):
                 self.maxeig_type = solver.surf_diss['maxeig'].lower()
             else:
                 self.maxeig_type = 'lf'
-            options = ['lf','rusanov','lf2','rusanov2']
+            options = ['lf','rusanov','lf2','rusanov2','none']
             assert self.maxeig_type in options, "SAT: maxeig must be one of" + str(options)
 
             if 'A_derigs' in solver.surf_diss.keys():
