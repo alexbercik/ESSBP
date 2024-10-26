@@ -184,8 +184,10 @@ class ADiss():
             elif self.type == 'dcp' or self.type == 'w' or self.type == 'dcp2':
                 if self.jac_type == 'scalar' or self.jac_type == 'sca':
                     self.dissipation = self.dissipation_dcp_scalar
+                elif self.jac_type == 'matrix' or self.jac_type == 'mat':
+                    self.dissipation = self.dissipation_dcp_matrix
                 else:
-                    print("WARNING: Only scalar dissipation set up for type='DCP' and type='W' dissipation. Defaulting to jac_type = 'scalar'.")
+                    print("WARNING: Only scalar and matrix dissipation set up for type='DCP' and type='W' dissipation. Defaulting to jac_type = 'scalar'.")
                     self.jac_type = 'scalar'
                     self.dissipation = self.dissipation_dcp_scalar
 
@@ -344,6 +346,7 @@ class ADiss():
                     print('WARNING: H of sbp operator does not match H of dissipation operator! Not provably stable.')
             self.Ddiss = fn.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), fn.kron_neq_lm(Ddiss,self.neq_node))
         elif self.type == 'b' or self.type == 'entb':
+            assert(self.disc_nodes.lower() == 'csbp'), 'Baseline dissipation only implemented for csbp.'
             D = BaselineDiss(self.s, self.nen)
             if self.use_H:
                 Hundvd = self.solver.sbp.H / self.solver.sbp.dx
@@ -602,6 +605,28 @@ class ADiss():
             maxeig = self.maxeig_dEndq(q,self.dzetadx)
             A = self.repeat_neq_gv(maxeig)
             diss += self.gm_gv(self.lhs_Dzeta, A * self.lm_gv(self.rhs_Dzeta, q)) # zeta part
+        return self.coeff*diss
+    
+    def dissipation_dcp_matrix(self, q):
+        ''' dissipation function for w and dcp, scalar functions or systems'''
+        # TODO: for now we always take a simple sum at half-nodes, but should generalize.
+        if self.dim == 1:
+            A = self.dExdq_abs(q)
+            if self.s % 2 == 1 and self.avg_half_nodes:
+                A[:-1] = 0.5*(A[:-1] + A[1:])
+            diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(A, self.lm_gv(self.rhs_D, q)))
+        elif self.dim == 2:
+            A = self.dEndq_abs(q,self.dxidx)
+            if self.s % 2 == 1 and self.avg_half_nodes:
+                A[:-self.nen:self.nen] = 0.5*(A[:-self.nen:self.nen] + A[self.nen::self.nen])
+            diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(A, self.lm_gv(self.rhs_D, q)))
+            A = self.dEndq_abs(q,self.detadx)
+            if self.s % 2 == 1 and self.avg_half_nodes:
+                for xi_idx in range(self.nen):
+                    A[xi_idx*self.nen:(xi_idx+1)*self.nen-1] = 0.5*(A[xi_idx*self.nen:(xi_idx+1)*self.nen-1] + A[xi_idx*self.nen+1:(xi_idx+1)*self.nen])
+            diss += self.gm_gv(self.lhs_Deta, fn.gbdiag_gv(A, self.lm_gv(self.rhs_Deta, q)))
+        elif self.dim == 3:
+            raise Exception('TODO')
         return self.coeff*diss
     
     def dissipation_B_scalar(self, q):
