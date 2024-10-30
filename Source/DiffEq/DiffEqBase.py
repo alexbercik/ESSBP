@@ -226,7 +226,7 @@ class PdeBase:
             stdev2 = 0.08**2
             exp = -0.5*(xy-0.5)**2/stdev2
             q0 = np.exp(exp)
-        elif 'gausswave_debug' in q0_type:
+        elif q0_type == 'gausswave_1d' or 'gausswave_debug' in q0_type:
             if 'y' in q0_type: xyz = 1
             elif 'z' in q0_type: xyz = 2
             else: xyz = 0
@@ -411,7 +411,7 @@ class PdeBase:
                 title = 'Exact Solution'
             exa_sol = self.exact_sol(time)
             self.plot_sol(exa_sol, time=time, plot_exa=True, savefile=savefile,
-                 show_fig=show_fig, solmin=ymin, solmax=ymax, display_time=display_time, 
+                 show_fig=show_fig, ymin=ymin, ymax=ymax, display_time=display_time, 
                  title=title, plot_mesh=plot_mesh, save_format=save_format, dpi=dpi,
                  plot_only_exa=True)
             

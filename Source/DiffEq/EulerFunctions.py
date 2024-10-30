@@ -992,16 +992,19 @@ def symmetrizer_dw_derigs_1D(q,qg):
     ug = qg[1::3]/rhog
     p = (g-1)*(q[2::3] - (rho * (u*u))/2)
     pg = (g-1)*(qg[2::3] - (rhog * (ug*ug))/2)
+    beta = 0.5*rho/p
+    betag = 0.5*rhog/pg
 
-    # logarithmic mean of rho
+    # logarithmic mean of rho, beta
     rho_ln = logmean_vec(rho,rhog)
+    beta_ln = logmean_vec(beta,betag)
 
-    # logarithmic mean of p
-    p_ln = logmean_vec(p,pg)
-
-    # arithmetic means of u, p
+    # arithmetic mean of u
     u_avg = 0.5*(u+ug)
-    p_avg = 0.5*(p+pg)
+
+    # special means of p
+    p_avg = 0.5*(rho+rhog)/(beta+betag)
+    p_ln = 0.5*rho_ln/beta_ln
 
     # additional useful quantities
     u2 = (u_avg*u_avg)
@@ -1061,17 +1064,20 @@ def symmetrizer_dw_derigs_2D(q,qg):
     vg = qg[2::4]/rhog
     p = (g-1)*(q[3::4] - (rho * (u*u + v*v))/2)
     pg = (g-1)*(qg[3::4] - (rhog * (ug*ug + vg*vg))/2)
+    beta = 0.5*rho/p
+    betag = 0.5*rhog/pg
 
-    # logarithmic mean of rho
+    # logarithmic mean of rho, beta
     rho_ln = logmean_vec(rho,rhog)
+    beta_ln = logmean_vec(beta,betag)
 
-    # logarithmic mean of p
-    p_ln = logmean_vec(p,pg)
-
-    # arithmetic means of u, v, w, p
+    # arithmetic means of u, v, w
     u_avg = 0.5*(u+ug)
     v_avg = 0.5*(v+vg)
-    p_avg = 0.5*(p+pg)
+
+    # special means of p
+    p_avg = 0.5*(rho+rhog)/(beta+betag)
+    p_ln = 0.5*rho_ln/beta_ln
 
     # additional useful quantities
     u2 = (u_avg*u_avg + v_avg*v_avg)
@@ -2950,7 +2956,97 @@ def dExdq_abs_1D_derigs(qL,qR,entropy_fix=False):
     dEndq_abs = fn.gbdiag_gbdiag(Y, fn.gdiag_gbdiag(cabs(Lam), fn.inv_gm(Y)))
     return dEndq_abs
 
+@njit 
+def Derigs_dEndq_eigs_2D(dxidx,qL,qR,entropy_fix=False):
+    ''' take a q of shape (nen*4,nelem) and performs an eigendecomposition,
+    returns the eigenvectors, eigenvalues, inverse or transpose. 
+    From: `A uniquely defined entropy stable matrix dissipation operator for high
+    Mach number ideal MHD and compressible Euler simulations', Winters et al 2017 '''
+    nx = dxidx[:,0,:]
+    ny = dxidx[:,1,:]
+    dA = np.sqrt(nx*nx + ny*ny)
+    nx_dA = nx/dA
+    ny_dA = ny/dA
 
+    # decompose q
+    rhoL = qL[0::4]
+    uL = qL[1::4] / rhoL
+    vL = qL[2::4] / rhoL
+    kL = (uL*uL+vL*vL)/2
+    pL = g1*(qL[3::4] - rhoL*kL)  
+    betaL = 0.5*rhoL/pL
+    rhoR = qR[0::4]
+    uR = qR[1::4] / rhoR
+    vR = qR[2::4] / rhoR
+    kR = (uR*uR+vR*vR)/2
+    pR = g1*(qR[3::4] - rhoR*kR)  
+    betaR = 0.5*rhoR/pR
+
+    # compute important quantities
+    betaavg = 0.5*(betaL + betaR)
+    betaln = logmean_vec(betaL,betaR)
+    rhoavg = 0.5*(rhoL + rhoR)
+    rholn = logmean_vec(rhoL,rhoR)
+    pavg = 0.5*rhoavg/betaavg
+    #pln = 0.5*rholn/betaln
+    uavg = 0.5*(uL + uR)
+    vavg = 0.5*(vL + vR)
+    u2bar_2 = uavg*uavg + vavg*vavg - 0.25*(uL*uL + uR*uR + vL*vL + vR*vR)
+    abar = np.sqrt(g*pavg/rholn)
+    hbar = 0.5*g/(betaln*g1) + u2bar_2
+
+    un = uavg*nx + vavg*ny
+    Lam = np.zeros_like(qL)
+    if entropy_fix:
+        lam1,lam2 = calc_entropy_fix(un,abar*dA)
+    else:
+        lam1 = un - abar*dA
+        lam2 = un + abar*dA
+    Lam[::4] = lam1
+    Lam[1::4] = un
+    Lam[2::4] = un
+    Lam[3::4] = lam2
+
+    r11 = np.ones_like(rhoL)
+    r13 = np.zeros_like(rhoL)
+    r21 = uavg - abar*nx_dA
+    r24 = uavg + abar*nx_dA
+    r31 = vavg - abar*ny_dA
+    r34 = vavg + abar*ny_dA
+    r41 = hbar - un*abar/dA
+    r43 = ny_dA*uavg-nx_dA*vavg
+    r44 = hbar + un*abar/dA
+    Y = fn.build_gbdiag(r11,r11,r13,r11,r21,uavg,ny_dA,r24,r31,vavg,-nx_dA,r34,r41,u2bar_2,r43,r44)
+    YT = fn.build_gbdiag(r11,r21,r31,r41,r11,uavg,vavg,u2bar_2,r13,ny_dA,-nx_dA,r43,r11,r24,r34,r44)
+
+    Tfix = np.zeros_like(qL)
+    Tfix[::4,:] = 0.5*rholn/g
+    Tfix[1::4,:] = rholn*g1/g
+    Tfix[2::4,:] = pavg
+    Tfix[3::4,:] = 0.5*rholn/g
+    
+    return Lam, Y, YT, Tfix
+
+@njit   
+def dEndw_abs_2D_derigs(qL,qR,dxidx,entropy_fix=False):
+    ''' uses the Barth scaling to compute X @ cabs(Lam) @ X.T, where X
+     are the eigenvectors of dEndq that symmetrixe P=dqdw, and Lam
+     are the eigenvalues of dEndq '''
+    
+    Lam, Y, YT, Tfix = Derigs_dEndq_eigs_2D(dxidx,qL,qR,entropy_fix)
+    dEndw_abs = fn.gbdiag_gbdiag(Y, fn.gdiag_gbdiag(cabs(Lam)*Tfix, YT))
+    return dEndw_abs
+
+@njit   
+def dEndq_abs_2D_derigs(qL,qR,dxidx,entropy_fix=False):
+    ''' uses the Barth scaling to compute X @ cabs(Lam) @ Xinv, where X
+     are the eigenvectors of dEndq that symmetrixe P=dqdw, and Lam
+     are the eigenvalues of dEndq 
+     NOTE: this is very inefficient '''
+    
+    Lam, Y, _, _ = Derigs_dEndq_eigs_2D(dxidx,qL,qR,entropy_fix)
+    dEndq_abs = fn.gbdiag_gbdiag(Y, fn.gdiag_gbdiag(cabs(Lam), fn.inv_gm(Y)))
+    return dEndq_abs
 
 if __name__ == "__main__":
 
@@ -2961,6 +3057,7 @@ if __name__ == "__main__":
     
     q1D = np.random.rand(nen*3,nelem) + 10
     q1D[2::3,:] *= 1000 # fix e to ensure pressure is positive
+    q1D2 = q1D + 0.02*(np.random.rand(nen*3,nelem)-0.5)
 
     n1D = np.random.rand(nen,nelem)
     
@@ -2998,6 +3095,10 @@ if __name__ == "__main__":
     print('P = Y@Y.T symmetrizer: ', np.max(cabs(P1D - fn.gbdiag_gbdiag(Y1D,YT1D))))
     print('P = Pjump(q,q): ', np.max(cabs(P1D-P31D))) 
     print('P = Pjump(q,q): ', np.max(cabs(P1D-P1Dd))) 
+    P31D = symmetrizer_dw_derigs_1D(q1D,q1D2)
+    Lam1Dd, Y1Dd, YT1Dd, Tfix = Derigs_dExdq_eigs_1D(q1D,q1D2)
+    P1Dd = fn.gbdiag_gbdiag(Y1Dd, fn.gdiag_gbdiag(Tfix,YT1Dd))
+    print('Pjump(q1,q2) = Y@Y.T: ', np.max(cabs(P31D-P1Dd))) 
     print('----')
     print('Consistency of Ismail Roe flux: ', np.max(cabs(F-F_IsmailRoe)))
     print('Consistency of Central flux: ', np.max(cabs(F-F_Central)))
@@ -3010,6 +3111,7 @@ if __name__ == "__main__":
     
     q2D = np.random.rand(nen*4,nelem) + 10
     q2D[3::4,:] *= 1000 # fix e to ensure pressure is positive
+    q2D2 = q2D + 0.02*(np.random.rand(nen*4,nelem)-0.5)
     
     n2D = np.random.rand(nen,2,nelem)
     #norm = np.sqrt(n2D[:,0,:]**2 + n2D[:,1,:]**2)
@@ -3023,6 +3125,7 @@ if __name__ == "__main__":
     Lamy2D, Yy2D, Yinvy2D, YTy2D = dEydq_eigs_2D(q2D,val=True,vec=True,inv=True,trans=True)
     Lamx22D, Yx22D, Yinvx22D, YTx22D = dEndq_eigs_2D(q2D,nx2D,val=True,vec=True,inv=True,trans=True)
     Lamy22D, Yy22D, Yinvy22D, YTy22D = dEndq_eigs_2D(q2D,ny2D,val=True,vec=True,inv=True,trans=True)
+    Lam2Dd, Y2Dd, YT2Dd, Tfix = Derigs_dEndq_eigs_2D(n2D,q2D,q2D)
     
     An2D = dEndq_2D(q2D,n2D)
     maxeig = maxeig_dEndq_2D(q2D,n2D)
@@ -3047,6 +3150,7 @@ if __name__ == "__main__":
     print('x eigenvectors: ', np.max(cabs(fn.gbdiag_gdiag(Yx2D,Lamx2D) - fn.gbdiag_gbdiag(Ax2D, Yx2D))))
     print('y eigenvectors: ', np.max(cabs(fn.gbdiag_gdiag(Yy2D,Lamy2D) - fn.gbdiag_gbdiag(Ay2D, Yy2D))))
     print('n eigenvectors: ', np.max(cabs(fn.gbdiag_gdiag(Y2D,Lam2D) - fn.gbdiag_gbdiag(An2D, Y2D))))
+    print('Derigs n eigenvectors: ', np.max(cabs(fn.gbdiag_gdiag(Y2Dd,Lam2Dd) - fn.gbdiag_gbdiag(An2D, Y2Dd))))
     print('x/nx eigenvalues: ', np.max(cabs(Lamx2D-Lamx22D)))
     print('y/ny eigenvalues: ', np.max(cabs(Lamy2D-Lamy22D)))
     print('x/nx eigenvectors: ', np.max(cabs(Yx2D-Yx22D)))
@@ -3068,6 +3172,10 @@ if __name__ == "__main__":
     print('n eigendecomposition: ', np.max(cabs(An2D - fn.gbdiag_gbdiag(Y2D,fn.gdiag_gbdiag(Lam2D,Yinv2D)))))
     print('P = Y@Y.T symmetrizer:', np.max(cabs(P2D-P22D))) 
     print('P = Pjump(q,q): ', np.max(cabs(P2D-P32D))) 
+    P32D = symmetrizer_dw_derigs_2D(q2D,q2D2)
+    Lam2Dd, Y2Dd, YT2Dd, Tfix = Derigs_dEndq_eigs_2D(n2D,q2D,q2D2)
+    P2Dd = fn.gbdiag_gbdiag(Y2Dd, fn.gdiag_gbdiag(Tfix,YT2Dd))
+    print('Pjump(q1,q2) = Y@Y.T: ', np.max(cabs(P32D-P2Dd))) 
     print('An @ P symmetry: ', np.max(cabs(AP2D[0,:,:,0] - AP2D[0,:,:,0].T)))
     print('----')
     print('Consistency of Ismail Roe flux: ', np.max(cabs(np.array([Fx-Fx_IsmailRoe,Fy-Fy_IsmailRoe]))))

@@ -90,6 +90,10 @@ class LinearConv(PdeBase):
         nen,nelem = np.shape(q)
         dEydq = self.ay*np.ones((nen,1,1,nelem),dtype=q.dtype)
         return dEydq
+    
+    def dEndq(self, q, metrics):
+        dEydq = metrics[:,0,:]*self.ax + metrics[:,1,:]*self.ay
+        return dEydq
 
     def dExdq_abs(self, q, entropy_fix):
         nen,nelem = np.shape(q)
@@ -101,14 +105,20 @@ class LinearConv(PdeBase):
         dEydq = abs(self.ay)*np.ones((nen,1,1,nelem),dtype=q.dtype)
         return dEydq
     
+    def dEndq_abs(self, q, metrics):
+        maxeig = np.abs(metrics[:,0,:]*self.ax + metrics[:,1,:]*self.ay)
+        return maxeig
+    
     def maxeig_dExdq(self, q):
         ''' return the maximum eigenvalue - used for LF fluxes '''
-        maxeig = np.ones(q.shape)*self.ax
+        nen,nelem = np.shape(q)
+        maxeig = abs(self.ax)*np.ones((nen,1,1,nelem),dtype=q.dtype)
         return maxeig
 
     def maxeig_dEydq(self, q):
         ''' return the maximum eigenvalue - used for LF fluxes '''
-        maxeig = np.ones(q.shape)*self.ay
+        nen,nelem = np.shape(q)
+        maxeig = abs(self.ax)*np.ones((nen,1,1,nelem),dtype=q.dtype)
         return maxeig
     
     def maxeig_dEndq(self, q, metrics):
