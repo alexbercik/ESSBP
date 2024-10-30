@@ -223,9 +223,11 @@ class Sat(SatDer1, SatDer2):
                 self.tL = np.kron(np.kron(np.eye(self.nen), tL), np.eye(self.neq_node))
                 self.tR = np.kron(np.kron(np.eye(self.nen), tR), np.eye(self.neq_node))
                 self.set_metrics_2d_y(solver.mesh.metrics, solver.mesh.bdy_metrics)
-            self.calc_had_flux = solver.calc_had_flux
+            self.tLT = self.tL.T
+            self.tRT = self.tR.T
             self.dExdq = solver.diffeq.dExdq
             self.dEydq = solver.diffeq.dEydq
+            self.dEndq = solver.diffeq.dEndq
             #self.d2Exdq2 = solver.diffeq.d2Exdq2
             #self.d2Eydq2 = solver.diffeq.d2Eydq2
             self.dExdq_abs = solver.diffeq.dExdq_abs
@@ -234,11 +236,13 @@ class Sat(SatDer1, SatDer2):
             self.maxeig_dExdq = solver.diffeq.maxeig_dExdq
             self.maxeig_dEydq = solver.diffeq.maxeig_dEydq
             self.maxeig_dEndq = solver.diffeq.maxeig_dEndq
+            self.calc_had_flux = solver.calc_had_flux
 
             if self.disc_type == 'had':
                 if self.neq_node == 1:
                     if self.sparse:
-                        self.build_F = staticmethod(lambda q1, q2: sp.build_F_sca_2d(q1, q2, self.calc_had_flux))
+                        self.build_F = staticmethod(lambda q1, q2: sp.build_F_sca_2d(q1, q2, self.calc_had_flux,
+                                                                                     self.xsparsity,self.ysparsity))
                     else:
                         self.build_F = staticmethod(lambda q1, q2: fn.build_F_sca_2d(q1, q2, self.calc_had_flux))
                 else:
@@ -247,9 +251,7 @@ class Sat(SatDer1, SatDer2):
                                                                                     self.xsparsity_unkronned, self.xsparsity,
                                                                                     self.ysparsity_unkronned, self.ysparsity))
                     else:
-                        self.build_F = staticmethod(lambda q1, q2: fn.build_F_sys_2d(self.neq_node, q1, q2, self.calc_had_flux, 
-                                                                                    self.xsparsity_unkronned, self.xsparsity,
-                                                                                    self.ysparsity_unkronned, self.ysparsity))
+                        self.build_F = staticmethod(lambda q1, q2: fn.build_F_sys_2d(self.neq_node, q1, q2, self.calc_had_flux))
 
             ''' save useful matrices so as not to calculate on each loop '''
 
@@ -267,16 +269,20 @@ class Sat(SatDer1, SatDer2):
 
             if self.sparse:
                 self.tLHperp = sp.lm_to_sp(self.tLHperp)
-                self.tLHperp = sp.lm_to_sp(self.tLHperp)
+                self.tRHperp = sp.lm_to_sp(self.tRHperp)
+                self.tLT = sp.lm_to_sp(self.tLT)
+                self.tRT = sp.lm_to_sp(self.tRT)
                 self.vol_x_mat = [sp.gm_to_sp(gm_mat) for gm_mat in self.vol_x_mat]   
                 self.vol_y_mat = [sp.gm_to_sp(gm_mat) for gm_mat in self.vol_y_mat]
                 if (self.disc_type == 'had'):
+                    # save this before we overwrite as sparse
                     taphysxT = [np.ascontiguousarray(np.transpose(gm_mat,(1,0,2))) for gm_mat in self.taphysx]
                     taphysyT = [np.ascontiguousarray(np.transpose(gm_mat,(1,0,2))) for gm_mat in self.taphysy]
                     taphysxT_pad = [fn.pad_gm_1dR(taphysxT[i],self.tbphysx[i][:,:,-1]) for i in range(len(taphysxT))]
                     taphysyT_pad = [fn.pad_gm_1dR(taphysyT[i],self.tbphysy[i][:,:,-1]) for i in range(len(taphysxT))]
                     tbphysx_pad = [fn.pad_gm_1dL(self.tbphysx[i],taphysxT[i][:,:,0]) for i in range(len(taphysxT))]
                     tbphysy_pad = [fn.pad_gm_1dL(self.tbphysy[i],taphysyT[i][:,:,0]) for i in range(len(taphysyT))]
+                
                 self.tbphysx = [sp.gm_to_sp(gm_mat) for gm_mat in self.tbphysx]
                 self.tbphysy = [sp.gm_to_sp(gm_mat) for gm_mat in self.tbphysy] 
                 if (self.disc_type == 'had'):
@@ -659,30 +665,30 @@ class Sat(SatDer1, SatDer2):
                     print(str_base + ' and mat diss on cons vars (diablo 1)')
                     print(f'... average=roe, entropy_fix=hicken, coeff={self.coeff}')
                     if self.dim == 1: 
-                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_abs_dq(qL,qR,1)
+                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_abs_dq(qR,qL,1)
                     else: 
-                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dEndq_abs_dq(qL,qR,1)
+                        self.calc_absA_dq = lambda qL,qR,met : solver.diffeq.dEndq_abs_dq(met,qR,qL,1)
                 elif self.diss_type=='diablo2':
                     print(str_base + ' and mat diss on cons vars (diablo 2)')
                     print(f'... average=roe, entropy_fix=diablo, coeff={self.coeff}')
                     if self.dim == 1: 
-                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_abs_dq(qL,qR,2)
+                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_abs_dq(qR,qL,2)
                     else: 
-                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dEndq_abs_dq(qL,qR,2)
+                        self.calc_absA_dq = lambda qL,qR,met : solver.diffeq.dEndq_abs_dq(met,qR,qL,2)
                 elif self.diss_type=='diablo3':
                     print(str_base + ' and sca diss on cons vars (diablo 3)')
                     print(f'... average=roe, maxeig=lf, entropy_fix=hicken, coeff={self.coeff}')
                     if self.dim == 1: 
-                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_abs_dq(qL,qR,3)
+                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_abs_dq(qR,qL,3)
                     else: 
-                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dEndq_abs_dq(qL,qR,3)
+                        self.calc_absA_dq = lambda qL,qR,met : solver.diffeq.dEndq_abs_dq(met,qR,qL,3)
                 elif self.diss_type=='diablo4':
                     print(str_base + ' and sca diss on cons vars (diablo 4)')
                     print(f'... average=roe, maxeig=lf, entropy_fix=False, coeff={self.coeff}')
                     if self.dim == 1: 
-                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_abs_dq(qL,qR,4)
+                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_abs_dq(qR,qL,4)
                     else: 
-                        self.calc_absA_dq = lambda qL,qR : solver.diffeq.dEndq_abs_dq(qL,qR,4)
+                        self.calc_absA_dq = lambda qL,qR,met : solver.diffeq.dEndq_abs_dq(met,qR,qL,4)
                 else:
                     raise Exception("SAT: diablo type not understood. Must be one of 'diablo1', 'diablo2', 'diablo3', or 'diablo4'. Given:", self.diss_type)
         
@@ -1043,7 +1049,7 @@ class Sat(SatDer1, SatDer2):
         metrics = fn.pad_ndR(self.bdy_metrics[idx][::self.neq_node,0,:,:], self.bdy_metrics[idx][::self.neq_node,1,:,-1])
         absA_dq = self.calc_absA_dq(qL,qR,metrics)
         dissL = self.lm_gv(self.tLHperp, absA_dq[:,:-1])
-        dissR = self.lm_gv(self.tLHperp, absA_dq[:,1:])
+        dissR = self.lm_gv(self.tRHperp, absA_dq[:,1:])
         
         diss = (dissL - dissR)/2
         return diss
@@ -1062,7 +1068,7 @@ class Sat(SatDer1, SatDer2):
         metrics = fn.pad_ndR(self.bdy_metrics[idx][::self.neq_node,0,:,:], self.bdy_metrics[idx][::self.neq_node,1,:,-1])
         absAP_dw = self.calc_absAP_dw(qL,qR,metrics)
         dissL = self.lm_gv(self.tLHperp, absAP_dw[:,:-1])
-        dissR = self.lm_gv(self.tLHperp, absAP_dw[:,1:])
+        dissR = self.lm_gv(self.tRHperp, absAP_dw[:,1:])
         
         diss = (dissL - dissR)/2
         return diss

@@ -101,15 +101,15 @@ class ADiss():
                     self.use_H = self.solver.vol_diss['use_H']
                     self.use_noH = False
                 else:
-                    assert (isinstance(self.solver.vol_diss['use_H'], str) and (self.solver.vol_diss['use_H'] in ['True','False','noH'])), \
-                            "Artificial Dissipation: use_H must be a boolean or one of 'True','False','Diablo', {0}".format(self.solver.vol_diss['use_H'])
+                    assert (isinstance(self.solver.vol_diss['use_H'], str) and (self.solver.vol_diss['use_H'] in ['True','False','None'])), \
+                            "Artificial Dissipation: use_H must be a boolean or one of 'True','False','None', {0}".format(self.solver.vol_diss['use_H'])
                     self.use_H = self.solver.vol_diss['use_H']
                     if self.use_H == 'True':
                         self.use_H = True
                     elif self.use_H == 'False':
                         self.use_H = False
                         self.use_noH = False
-                    else:
+                    else: #== None
                         self.use_H = False
                         self.use_noH = True
             else:
@@ -344,7 +344,7 @@ class ADiss():
                     print(x)
                 if np.any(abs(H - self.solver.sbp.H) > 1e-14):
                     print('WARNING: H of sbp operator does not match H of dissipation operator! Not provably stable.')
-            self.Ddiss = fn.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), fn.kron_neq_lm(Ddiss,self.neq_node))
+            self.Ddiss = fn.gdiag_lm( self.repeat_neq_gv(-self.solver.mesh.det_jac_inv), fn.kron_neq_lm(Ddiss,self.neq_node))
         elif self.type == 'b' or self.type == 'entb':
             assert(self.disc_nodes.lower() == 'csbp'), 'Baseline dissipation only implemented for csbp.'
             D = BaselineDiss(self.s, self.nen)
@@ -489,18 +489,18 @@ class ADiss():
             self.rhs_Deta = fn.kron_neq_lm(np.kron(eye, Ds),self.neq_node) 
             if self.use_H:
                 Hundvd = self.solver.sbp.H / self.solver.sbp.dx
-                DsTxi = np.kron(Ds.T @ np.diag(B) @ Hundvd, Hundvd)
-                DsTeta = np.kron(Hundvd, Ds.T @ np.diag(B) @ Hundvd)
+                DsTxi = np.kron(Ds.T @ np.diag(B) @ Hundvd, self.solver.sbp.H)
+                DsTeta = np.kron(self.solver.sbp.H, Ds.T @ np.diag(B) @ Hundvd)
             else:
                 if self.use_noH:
                     # uses no H at all
-                    DsTxi = np.kron(Ds.T @ np.diag(B), eye)
-                    DsTeta = np.kron(eye, Ds.T @ np.diag(B))
+                    DsTxi = np.kron(Ds.T @ np.diag(B), eye) * self.solver.sbp.dx
+                    DsTeta = np.kron(eye, Ds.T @ np.diag(B)) * self.solver.sbp.dx
                 else:
-                    # uses H in the perpendicular direction only
-                    Hundvd = self.solver.sbp.H
-                    DsTxi = np.kron(Ds.T @ np.diag(B), eye) @ np.kron(eye, Hundvd)
-                    DsTeta = np.kron(eye, Ds.T @ np.diag(B)) @ np.kron(Hundvd, eye)
+                    # uses divided H in the perpendicular direction
+                    #Hundvd = self.solver.sbp.H / self.solver.sbp.dx
+                    DsTxi = np.kron(Ds.T @ np.diag(B), self.solver.sbp.H) 
+                    DsTeta = np.kron(self.solver.sbp.H, Ds.T @ np.diag(B))
             self.lhs_Dxi = fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(DsTxi,self.neq_node))
             self.lhs_Deta = fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(DsTeta,self.neq_node))
         elif self.type == 'upwind':
@@ -515,9 +515,9 @@ class ADiss():
                     print(x)
                 if np.any(abs(H - self.solver.sbp.H) > 1e-14):
                     print('WARNING: H of sbp operator does not match H of dissipation operator! Not provably stable.')
-            eye = np.eye(self.mesh.nen)
-            self.Dxidiss = fn.gdiag_lm( fn.repeat_neq_gv(-self.solver.det_jac_inv), fn.kron_neq_lm(np.kron(Ddiss, eye),self.neq_node)) 
-            self.Detadiss = fn.gdiag_lm( fn.repeat_neq_gv(-self.solver.det_jac_inv), fn.kron_neq_lm(np.kron(eye, Ddiss),self.neq_node))
+            eye = np.eye(self.nen)
+            self.Dxidiss = fn.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), fn.kron_neq_lm(np.kron(Ddiss, eye),self.neq_node)) 
+            self.Detadiss = fn.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), fn.kron_neq_lm(np.kron(eye, Ddiss),self.neq_node))
         else:
             raise Exception(self.type + ' not set up yet')
         
@@ -529,7 +529,7 @@ class ADiss():
                 self.lhs_Deta = sp.gm_to_sp(self.lhs_Deta)
             elif self.type == 'upwind':
                 self.Dxidiss = sp.gm_to_sp(self.Dxidiss)
-                self.Dxidiss = sp.gm_to_sp(self.Dxidiss)
+                self.Detadiss = sp.gm_to_sp(self.Detadiss)
 
 
     def no_diss(self, *args, **kwargs):
@@ -619,7 +619,7 @@ class ADiss():
             A = self.dEndq_abs(q,self.dxidx)
             if self.s % 2 == 1 and self.avg_half_nodes:
                 A[:-self.nen:self.nen] = 0.5*(A[:-self.nen:self.nen] + A[self.nen::self.nen])
-            diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(A, self.lm_gv(self.rhs_D, q)))
+            diss = self.gm_gv(self.lhs_Dxi, fn.gbdiag_gv(A, self.lm_gv(self.rhs_Dxi, q)))
             A = self.dEndq_abs(q,self.detadx)
             if self.s % 2 == 1 and self.avg_half_nodes:
                 for xi_idx in range(self.nen):
@@ -739,7 +739,7 @@ class ADiss():
             AP = fn.gdiag_gbdiag(maxeig, dqdw)
             if self.s % 2 == 1 and self.avg_half_nodes:
                 AP[:-self.nen:self.nen] = 0.5*(AP[:-self.nen:self.nen] + AP[self.nen::self.nen])
-            diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_D, w)))
+            diss = self.gm_gv(self.lhs_Dxi, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_Dxi, w)))
             maxeig = self.repeat_neq_gv(self.maxeig_dEndq(q,self.detadx))
             AP = fn.gdiag_gbdiag(maxeig, dqdw)
             if self.s % 2 == 1 and self.avg_half_nodes:
@@ -795,7 +795,7 @@ class ADiss():
             AP = self.dEndw_abs(q,self.dxidx)
             if self.s % 2 == 1 and self.avg_half_nodes:
                 AP[:-self.nen:self.nen] = 0.5*(AP[:-self.nen:self.nen] + AP[self.nen::self.nen])
-            diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_D, w)))
+            diss = self.gm_gv(self.lhs_Dxi, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_Dxi, w)))
             AP = self.dEndw_abs(q,self.detadx)
             if self.s % 2 == 1 and self.avg_half_nodes:
                 for xi_idx in range(self.nen):
@@ -805,7 +805,7 @@ class ADiss():
             if self.avg_half_nodes:
                 raise Exception('TODO')
             AP = self.dEndw_abs(q,self.dxidx)
-            diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_D, w)))
+            diss = self.gm_gv(self.lhs_Dxi, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_Dxi, w)))
             AP = self.dEndw_abs(q,self.detadx)
             diss += self.gm_gv(self.lhs_Deta, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_Deta, w)))
             AP = self.dEndw_abs(q,self.dzetadx)

@@ -133,8 +133,8 @@ class SatDer1:
         A non-dissipative central flux in 2D, that calls an external dissipation function..
         '''
         
-        q_a = fn.lm_gv(self.tLT, q)
-        q_b = fn.lm_gv(self.tRT, q)
+        q_a = self.lm_gv(self.tLT, q)
+        q_b = self.lm_gv(self.tRT, q)
         if q_bdyL is None: # periodic
             qf_L = fn.pad_1dL(q_b, q_b[:,-1])
             qf_R = fn.pad_1dR(q_a, q_a[:,0])

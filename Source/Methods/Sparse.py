@@ -1354,7 +1354,7 @@ def assemble_satx_2d(csr_list,nelemx,nelemy):
     if nelemx2 != nelemx:
         raise ValueError('nelemx does not match', nelemx2, nelemx)
 
-    mat_glob = [None] * (nelemx * nelemy)
+    mat_glob = [(np.zeros(0, dtype=csr_list[0][0][0].dtype), np.zeros(0, dtype=np.int64), np.zeros(0, dtype=np.int64))] * (nelemx * nelemy)
     for ey in range(nelemy):
         for ex in range(nelemx):
             idx = ex * nelemy + ey
@@ -1391,7 +1391,7 @@ def assemble_saty_2d(csr_list,nelemx,nelemy):
     if nelemy2 != nelemy:
         raise ValueError('nelemy does not match', nelemy2, nelemy)
 
-    mat_glob = [None] * (nelemx * nelemy)
+    mat_glob = [(np.zeros(0, dtype=csr_list[0][0][0].dtype), np.zeros(0, dtype=np.int64), np.zeros(0, dtype=np.int64))] * (nelemx * nelemy)
     for ex in range(nelemx):
         for ey in range(nelemy):
             idx = ex * nelemy + ey

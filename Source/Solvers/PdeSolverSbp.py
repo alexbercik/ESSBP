@@ -315,7 +315,7 @@ class PdeSolverSbp(PdeSolver):
         else:
             raise Exception('Not coded up yet')
         
-        dqdt = - dExdx - dEydy - dEzdz + self.H_inv_phys * (satx + saty + satz) + self.diffeq.calcG(q,t)
+        dqdt = - dExdx - dEydy - dEzdz + self.H_inv_phys * (satx + saty + satz) + self.diffeq.calcG(q,t) + self.dissipation(q)
         return dqdt
         
     def dqdt_1d_had(self, q, t):
@@ -360,7 +360,7 @@ class PdeSolverSbp(PdeSolver):
         else:
             raise Exception('Not coded up yet')
         
-        dqdt = - dExdx -dEydy + (self.H_inv_phys * (satx + saty)) + self.diffeq.calcG(q,t)
+        dqdt = - dExdx -dEydy + (self.H_inv_phys * (satx + saty)) + self.diffeq.calcG(q,t) + self.dissipation(q)
         return dqdt
         
     def dqdt_3d_had(self, q, t):
@@ -393,7 +393,7 @@ class PdeSolverSbp(PdeSolver):
         else:
             raise Exception('Not coded up yet')
         
-        dqdt = - dExdx - dEydy - dEzdz + self.H_inv_phys * (satx + saty + satz) + self.diffeq.calcG(q,t)
+        dqdt = - dExdx - dEydy - dEzdz + self.H_inv_phys * (satx + saty + satz) + self.diffeq.calcG(q,t) + self.dissipation(q)
         return dqdt
     
 

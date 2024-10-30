@@ -159,6 +159,8 @@ class Euler(PdeBase):
             self.dqdw = efn.symmetrizer_2D
             self.dEndq_abs = efn.dEndq_abs_2D
             self.dEndw_abs = efn.dEndw_abs_2D
+            self.dEndq_abs_derigs = efn.dEndq_abs_2D_derigs
+            self.dEndw_abs_derigs = efn.dEndw_abs_2D_derigs
             self.dqdw_derigs = efn.symmetrizer_dw_derigs_2D
             self.calc_p = efn.calc_p_2D
             self.roe_avg = efn.Roe_avg_2D
