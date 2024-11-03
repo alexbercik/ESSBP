@@ -116,7 +116,6 @@ class ADiss():
                 self.use_H = True
 
             if self.type == 'upwind':
-                print("WARNING: upwind volume dissipation is experimental and only provably stable for linear, constant-coeff. equations.")
                 if 'fluxvec' in self.solver.vol_diss.keys():
                     self.fluxvec = self.solver.vol_diss['fluxvec']
                 else:
@@ -149,17 +148,6 @@ class ADiss():
                 self.entropy_fix = True
 
             # Set operators and methods
-
-            if self.dim == 1:
-                self.set_ops_1D()
-            elif self.dim == 2:
-                self.dxidx = self.solver.mesh.metrics[:,:2,:]
-                self.detadx = self.solver.mesh.metrics[:,2:,:]
-                self.set_ops_2D()
-            elif self.dim == 3:
-                self.dxidx = self.solver.mesh.metrics[:,:3,:]
-                self.detadx = self.solver.mesh.metrics[:,3:6,:]
-                self.dzetadx = self.solver.mesh.metrics[:,6:,:]
 
             if self.type == 'b':
                 if self.jac_type == 'scalar' or self.jac_type == 'sca':
@@ -290,10 +278,41 @@ class ADiss():
             if self.sparse:
                 self.gm_gv = sp.gm_gv
                 self.lm_gv = sp.lm_gv
+                self.gdiag_lm = sp.gdiag_lm
+                self.lm_to_lmT = sp.lm_to_lmT
+                self.lm_lm = sp.lm_lm
+                self.lm_ldiag = sp.lm_ldiag
+                self.kron_neq_lm = sp.kron_neq_lm
+                self.kron_neq_gm = sp.kron_neq_gm
+                self.kron_lm_eye = sp.kron_lm_eye
+                self.kron_eye_lm = sp.kron_eye_lm
+                self.kron_lm_ldiag = sp.kron_lm_ldiag
+                self.kron_ldiag_lm = sp.kron_ldiag_lm
             else:
                 self.gm_gv = fn.gm_gv
                 self.lm_gv = fn.lm_gv
                 self.gdiag_gm = fn.gdiag_gm
+                self.gdiag_lm = fn.gdiag_lm
+                self.lm_to_lmT = lambda lm, *args: lm.T
+                self.lm_lm = lambda lm1, lm2: lm1 @ lm2
+                self.lm_ldiag = fn.lm_ldiag
+                self.kron_neq_lm = fn.kron_neq_lm
+                self.kron_neq_gm = fn.kron_neq_gm
+                self.kron_lm_eye = lambda lm, nen: np.kron(lm, np.eye(nen))
+                self.kron_eye_lm = lambda lm, nen, nen2: np.kron(np.eye(nen), lm)
+                self.kron_lm_ldiag = fn.kron_lm_ldiag
+                self.kron_ldiag_lm = lambda diag, Dx, nen: fn.kron_ldiag_lm(diag, Dx)
+
+            if self.dim == 1:
+                self.set_ops_1D()
+            elif self.dim == 2:
+                self.dxidx = self.solver.mesh.metrics[:,:2,:]
+                self.detadx = self.solver.mesh.metrics[:,2:,:]
+                self.set_ops_2D()
+            elif self.dim == 3:
+                self.dxidx = self.solver.mesh.metrics[:,:3,:]
+                self.detadx = self.solver.mesh.metrics[:,3:6,:]
+                self.dzetadx = self.solver.mesh.metrics[:,6:,:]
 
     def calc_absAP_base_1d(self, q):
         # calls the base methods for both absA and P
@@ -316,28 +335,35 @@ class ADiss():
         xavg = (1.-0.)/(self.nen-1) # this is the reference spacing. Physical spacing is taken care of implicitly by metrics.
 
         if self.type == 'w' or self.type == 'entw':
-            #Ds = np.copy(self.solver.Dx_phys)
-            Ds = np.copy(self.solver.sbp.D)
+            Ds1 = self.solver.sbp.D
+            if self.sparse: 
+                Ds1 = sp.lm_to_sp(Ds1)
+                Ds = (np.copy(Ds1[0]), np.copy(Ds1[1]), np.copy(Ds1[2]))
+            else:
+                Ds = np.copy(Ds1)
             for i in range(1,self.s):
-                #Ds = fn.gm_gm(self.solver.Dx_phys,Ds)
-                Ds = self.solver.sbp.D @ Ds
-            #DsT = np.transpose(Ds,axes=(1,0,2))
-            DsT = Ds.T
+                Ds = self.lm_lm(Ds1, Ds)
+            DsT = self.lm_to_lmT(Ds,self.nen,self.nen)
             
-            self.rhs_D = fn.kron_neq_lm(Ds,self.neq_node) 
-            #self.lhs_D = fn.gdiag_gm(-(self.solver.H_inv_phys * xavg**(2*self.s-1)), DsT * self.solver.H_phys)
-            self.lhs_D = fn.gdiag_lm(-(self.solver.H_inv_phys * xavg**(2*self.s-1)),fn.kron_neq_lm(DsT @ self.solver.sbp.H,self.neq_node))
+            self.rhs_D = self.kron_neq_lm(Ds,self.neq_node) 
+            if self.use_H:
+                H = np.diag(self.solver.sbp.H)
+            else:
+                H = np.ones(self.nen)
+            self.lhs_D = self.gdiag_lm(-(self.solver.H_inv_phys * xavg**(2*self.s-1)),self.kron_neq_lm(self.lm_ldiag(DsT, H),self.neq_node))
         elif self.type == 'dcp' or self.type == 'entdcp' or self.type == 'dcp2':
             if self.type == 'dcp2':
                 Ds, B = make_dcp_diss_op2(self.solver.disc_nodes, self.s, self.nen, self.bdy_fix)
             else:
                 Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen, self.bdy_fix)
-            self.rhs_D = fn.kron_neq_lm(Ds,self.neq_node) 
+            if self.sparse: Ds = sp.lm_to_sp(Ds)
+            self.rhs_D = self.kron_neq_lm(Ds,self.neq_node) 
+            DsT = self.lm_to_lmT(Ds,self.nen,self.nen)
             if self.use_H:
-                Hundvd = self.solver.sbp.H / self.solver.sbp.dx
-                self.lhs_D = fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(Ds.T @ np.diag(B) @ Hundvd, self.neq_node))
+                Hundvd = np.diag(self.solver.sbp.H) / self.solver.sbp.dx
+                self.lhs_D = self.gdiag_lm(-self.solver.H_inv_phys,self.kron_neq_lm(self.lm_ldiag(DsT, B * Hundvd), self.neq_node))
             else:
-                self.lhs_D = fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(Ds.T @ np.diag(B), self.neq_node))
+                self.lhs_D = self.gdiag_lm(-self.solver.H_inv_phys,self.kron_neq_lm(self.lm_ldiag(DsT, B), self.neq_node))
         elif self.type == 'upwind':
             if self.solver.disc_nodes.lower() == 'upwind':
                 Ddiss = self.solver.sbp.Ddiss
@@ -350,7 +376,8 @@ class ADiss():
                     print(x)
                 if np.any(abs(H - self.solver.sbp.H) > 1e-14):
                     print('WARNING: H of sbp operator does not match H of dissipation operator! Not provably stable.')
-            self.Ddiss = fn.gdiag_lm( self.repeat_neq_gv(-self.solver.mesh.det_jac_inv), fn.kron_neq_lm(Ddiss,self.neq_node))
+            if self.sparse: Ddiss = sp.lm_to_sp(Ddiss)
+            self.Ddiss = self.gdiag_lm( self.repeat_neq_gv(-self.solver.mesh.det_jac_inv), self.kron_neq_lm(Ddiss,self.neq_node))
         elif self.type == 'b' or self.type == 'entb':
             assert(self.disc_nodes.lower() == 'csbp'), 'Baseline dissipation only implemented for csbp.'
             D = BaselineDiss(self.s, self.nen)
@@ -367,6 +394,11 @@ class ADiss():
                 self.rhs_D2 = fn.kron_neq_lm(D.D2,self.neq_node)
                 self.lhs_D1 = fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D.D1.T @ D.B1 @ Hundvd, self.neq_node))
                 self.lhs_D2 = 0.25*fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D.D2.T @ D.B2 @ Hundvd, self.neq_node))
+                if self.sparse:
+                    self.rhs_D1 = sp.lm_to_sp(self.rhs_D1)
+                    self.rhs_D2 = sp.lm_to_sp(self.rhs_D2)
+                    self.lhs_D1 = sp.gm_to_sp(self.lhs_D1)
+                    self.lhs_D2 = sp.gm_to_sp(self.lhs_D2)
             elif self.s == 2:
                 D.updateD1()
                 D.updateD3()
@@ -381,6 +413,13 @@ class ADiss():
                 self.lhs_D2 = fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D2.T @ D.B1 @ Hundvd, self.neq_node))
                 self.lhs_D3 = 0.5 * fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D.D3.T @ D.B3 @ Hundvd, self.neq_node))
                 self.lhs_D4 = 0.0625 * fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D.D4.T @ D.B4 @ Hundvd, self.neq_node))
+                if self.sparse:
+                    self.rhs_D2 = sp.lm_to_sp(self.rhs_D2)
+                    self.rhs_D3 = sp.lm_to_sp(self.rhs_D3)
+                    self.rhs_D4 = sp.lm_to_sp(self.rhs_D4)
+                    self.lhs_D2 = sp.gm_to_sp(self.lhs_D2)
+                    self.lhs_D3 = sp.gm_to_sp(self.lhs_D3)
+                    self.lhs_D4 = sp.gm_to_sp(self.lhs_D4)
             elif self.s == 3:
                 D.updateD1()
                 D.updateD4()
@@ -399,6 +438,15 @@ class ADiss():
                 self.lhs_D4 = 0.75 * fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D.D4.T @ D.B4 @ Hundvd, self.neq_node))
                 self.lhs_D5 = 0.3125 * fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D.D5.T @ D.B5 @ Hundvd, self.neq_node))
                 self.lhs_D6 = (1./96.) * fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D.D6.T @ D.B6 @ Hundvd, self.neq_node))
+                if self.sparse:
+                    self.rhs_D3 = sp.lm_to_sp(self.rhs_D3)
+                    self.rhs_D4 = sp.lm_to_sp(self.rhs_D4)
+                    self.rhs_D5 = sp.lm_to_sp(self.rhs_D5)
+                    self.rhs_D6 = sp.lm_to_sp(self.rhs_D6)
+                    self.lhs_D3 = sp.gm_to_sp(self.lhs_D3)
+                    self.lhs_D4 = sp.gm_to_sp(self.lhs_D4)
+                    self.lhs_D5 = sp.gm_to_sp(self.lhs_D5)
+                    self.lhs_D6 = sp.gm_to_sp(self.lhs_D6)
             elif self.s == 4:
                 D.updateD1()
                 D.updateD5()
@@ -421,41 +469,7 @@ class ADiss():
                 self.lhs_D6 = 0.875 * fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D.D6.T @ D.B6 @ Hundvd, self.neq_node))
                 self.lhs_D7 = 0.0875 * fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D.D7.T @ D.B7 @ Hundvd, self.neq_node))
                 self.lhs_D8 = 0.00171875 * fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D.D8.T @ D.B8 @ Hundvd, self.neq_node))
-            else:
-                raise ValueError('only s=1,2,3,4 coded up for baseline dissipation.')
-
-        else:
-            raise Exception(self.type + ' not set up yet')
-        
-        if self.sparse:
-            if self.type in ['w', 'entw', 'dcp', 'entdcp', 'dcp2']:
-                self.rhs_D = sp.lm_to_sp(self.rhs_D)
-                self.lhs_D = sp.gm_to_sp(self.lhs_D)
-            elif self.type == 'upwind':
-                self.Ddiss = sp.gm_to_sp(self.Ddiss)
-            elif self.type in ['b', 'entb']:
-                if self.s == 1:
-                    self.rhs_D1 = sp.lm_to_sp(self.rhs_D1)
-                    self.rhs_D2 = sp.lm_to_sp(self.rhs_D2)
-                    self.lhs_D1 = sp.gm_to_sp(self.lhs_D1)
-                    self.lhs_D2 = sp.gm_to_sp(self.lhs_D2)
-                elif self.s == 2:
-                    self.rhs_D2 = sp.lm_to_sp(self.rhs_D2)
-                    self.rhs_D3 = sp.lm_to_sp(self.rhs_D3)
-                    self.rhs_D4 = sp.lm_to_sp(self.rhs_D4)
-                    self.lhs_D2 = sp.gm_to_sp(self.lhs_D2)
-                    self.lhs_D3 = sp.gm_to_sp(self.lhs_D3)
-                    self.lhs_D4 = sp.gm_to_sp(self.lhs_D4)
-                elif self.s == 3:
-                    self.rhs_D3 = sp.lm_to_sp(self.rhs_D3)
-                    self.rhs_D4 = sp.lm_to_sp(self.rhs_D4)
-                    self.rhs_D5 = sp.lm_to_sp(self.rhs_D5)
-                    self.rhs_D6 = sp.lm_to_sp(self.rhs_D6)
-                    self.lhs_D3 = sp.gm_to_sp(self.lhs_D3)
-                    self.lhs_D4 = sp.gm_to_sp(self.lhs_D4)
-                    self.lhs_D5 = sp.gm_to_sp(self.lhs_D5)
-                    self.lhs_D6 = sp.gm_to_sp(self.lhs_D6)
-                elif self.s == 4:
+                if self.sparse:
                     self.rhs_D4 = sp.lm_to_sp(self.rhs_D4)
                     self.rhs_D5 = sp.lm_to_sp(self.rhs_D5)
                     self.rhs_D6 = sp.lm_to_sp(self.rhs_D6)
@@ -466,6 +480,11 @@ class ADiss():
                     self.lhs_D6 = sp.gm_to_sp(self.lhs_D6)
                     self.lhs_D7 = sp.gm_to_sp(self.lhs_D7)
                     self.lhs_D8 = sp.gm_to_sp(self.lhs_D8)
+            else:
+                raise ValueError('only s=1,2,3,4 coded up for baseline dissipation.')
+
+        else:
+            raise Exception(self.type + ' not set up yet')
 
         
     def set_ops_2D(self):
@@ -476,39 +495,49 @@ class ADiss():
         # NOTE: assumes D is the same in each direction
 
         if self.type == 'W' or self.type == 'entW':
-            Ds = np.copy(self.solver.sbp.D)
+            Ds1 = self.solver.sbp.D
+            if self.sparse: 
+                Ds1 = sp.lm_to_sp(Ds1)
+                Ds = (np.copy(Ds1[0]), np.copy(Ds1[1]), np.copy(Ds1[2]))
+            else:
+                Ds = np.copy(Ds1)
             for i in range(1,self.s):
-                Ds = self.solver.sbp.D @ Ds
-            DsT = Ds.T
-            
-            eye = np.eye(self.mesh.nen)
-            self.rhs_Dxi = fn.kron_neq_lm(np.kron(Ds, eye),self.neq_node) 
-            self.rhs_Deta = fn.kron_neq_lm(np.kron(eye, Ds),self.neq_node) 
-            DsTxi = np.kron(DsT @ self.solver.sbp.H, eye)
-            DsTeta = np.kron(eye, DsT @ self.solver.sbp.H)
-            self.lhs_Dxi = fn.kron_neq_gm(fn.gdiag_lm(-(self.solver.H_inv_phys * xavg**(2*self.s-1)),DsTxi),self.neq_node) 
-            self.lhs_Deta = fn.kron_neq_gm(fn.gdiag_lm(-(self.solver.H_inv_phys * xavg**(2*self.s-1)),DsTeta),self.neq_node) 
+                Ds = self.lm_lm(Ds1, Ds)
+            DsT = self.lm_to_lmT(Ds,self.nen,self.nen)
+            H = np.diag(self.solver.sbp.H)
+
+            self.rhs_Dxi = self.kron_neq_lm(self.kron_lm_eye(Ds, self.nen),self.neq_node) 
+            self.rhs_Deta = self.kron_neq_lm(self.kron_eye_lm(Ds, self.nen, self.nen),self.neq_node) 
+            DsTxi = self.kron_lm_eye(self.lm_ldiag(DsT, H), self.nen)
+            DsTeta = self.kron_eye_lm(self.lm_ldiag(DsT, self.solver.sbp.H), self.nen, self.nen)
+            self.lhs_Dxi = self.kron_neq_gm(self.gdiag_lm(-(self.solver.H_inv_phys * xavg**(2*self.s-1)),DsTxi),self.neq_node) 
+            self.lhs_Deta = self.kron_neq_gm(self.gdiag_lm(-(self.solver.H_inv_phys * xavg**(2*self.s-1)),DsTeta),self.neq_node) 
         elif self.type == 'dcp' or self.type == 'entdcp':                
             Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen, self.bdy_fix)
-            eye = np.eye(self.nen)
-            self.rhs_Dxi = fn.kron_neq_lm(np.kron(Ds, eye),self.neq_node) 
-            self.rhs_Deta = fn.kron_neq_lm(np.kron(eye, Ds),self.neq_node) 
+            if self.sparse: Ds = sp.lm_to_sp(Ds)
+            DsT = self.lm_to_lmT(Ds,self.nen,self.nen)
+            self.rhs_Dxi = self.kron_neq_lm(self.kron_lm_eye(Ds, self.nen),self.neq_node) 
+            self.rhs_Deta = self.kron_neq_lm(self.kron_eye_lm(Ds,self.nen,self.nen),self.neq_node) 
             if self.use_H:
-                Hundvd = self.solver.sbp.H / self.solver.sbp.dx
-                DsTxi = np.kron(Ds.T @ np.diag(B) @ Hundvd, self.solver.sbp.H)
-                DsTeta = np.kron(self.solver.sbp.H, Ds.T @ np.diag(B) @ Hundvd)
+                H = np.diag(self.solver.sbp.H)
+                Hundvd = H / self.solver.sbp.dx
+                DsTBH = self.lm_ldiag(DsT, B * Hundvd)
+                DsTxi = self.kron_lm_ldiag(DsTBH, H)
+                DsTeta = self.kron_ldiag_lm(H, DsTBH, self.nen)
             else:
                 if self.use_noH:
                     # uses no H at all
-                    DsTxi = np.kron(Ds.T @ np.diag(B), eye) * self.solver.sbp.dx
-                    DsTeta = np.kron(eye, Ds.T @ np.diag(B)) * self.solver.sbp.dx
+                    DsTB = self.lm_ldiag(DsT, B * self.solver.sbp.dx)
+                    DsTxi = self.kron_lm_eye(DsTB, self.nen)
+                    DsTeta = self.kron_eye_lm(DsTB, self.nen, self.nen)
                 else:
                     # uses divided H in the perpendicular direction
-                    #Hundvd = self.solver.sbp.H / self.solver.sbp.dx
-                    DsTxi = np.kron(Ds.T @ np.diag(B), self.solver.sbp.H) 
-                    DsTeta = np.kron(self.solver.sbp.H, Ds.T @ np.diag(B))
-            self.lhs_Dxi = fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(DsTxi,self.neq_node))
-            self.lhs_Deta = fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(DsTeta,self.neq_node))
+                    H = np.diag(self.solver.sbp.H)
+                    DsTB = self.lm_ldiag(DsT, B)
+                    DsTxi = self.kron_lm_ldiag(DsTB, H) 
+                    DsTeta = self.kron_ldiag_lm(H, DsTB, self.nen)
+            self.lhs_Dxi = self.gdiag_lm(-self.solver.H_inv_phys,self.kron_neq_lm(DsTxi,self.neq_node))
+            self.lhs_Deta = self.gdiag_lm(-self.solver.H_inv_phys,self.kron_neq_lm(DsTeta,self.neq_node))
         elif self.type == 'upwind':
             if self.solver.disc_nodes.lower() == 'upwind':
                 Ddiss = self.solver.sbp.Ddiss
@@ -519,23 +548,13 @@ class ADiss():
                     print('WARNING: x of sbp operator does not match x of dissipation operator!')
                     print(self.solver.sbp.x)
                     print(x)
-                if np.any(abs(H - self.solver.sbp.H) > 1e-14):
+                if np.any(abs(np.diag(H) - np.diag(self.solver.sbp.H)) > 1e-14):
                     print('WARNING: H of sbp operator does not match H of dissipation operator! Not provably stable.')
-            eye = np.eye(self.nen)
-            self.Dxidiss = fn.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), fn.kron_neq_lm(np.kron(Ddiss, eye),self.neq_node)) 
-            self.Detadiss = fn.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), fn.kron_neq_lm(np.kron(eye, Ddiss),self.neq_node))
+            if self.sparse: Ddiss = sp.lm_to_sp(Ddiss)
+            self.Dxidiss = self.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), self.kron_neq_lm(self.kron_lm_eye(Ddiss, self.nen),self.neq_node)) 
+            self.Detadiss = self.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), self.kron_neq_lm(self.kron_eye_lm(Ddiss, self.nen, self.nen),self.neq_node))
         else:
             raise Exception('ADiss: diss_type ' + self.type + ' not set up yet')
-        
-        if self.sparse:
-            if self.type in ['w', 'entw', 'dcp', 'entdcp']:
-                self.rhs_Dxi = sp.lm_to_sp(self.rhs_Dxi)
-                self.rhs_Deta = sp.lm_to_sp(self.rhs_Deta)
-                self.lhs_Dxi = sp.gm_to_sp(self.lhs_Dxi)
-                self.lhs_Deta = sp.gm_to_sp(self.lhs_Deta)
-            elif self.type == 'upwind':
-                self.Dxidiss = sp.gm_to_sp(self.Dxidiss)
-                self.Detadiss = sp.gm_to_sp(self.Detadiss)
 
 
     def no_diss(self, *args, **kwargs):

@@ -165,12 +165,12 @@ class TimeMarching(TimeMarchingRk):
                 return
 
         if self.keep_all_ts or self.bool_calc_cons_obj:
-            mod_t_idx = t_idx/(self.skip_ts+1)
-            if mod_t_idx.is_integer():
+            if int(t_idx) % (self.skip_ts + 1) == 0:
+                mod_t_idx = int(t_idx/(self.skip_ts+1))
                 if self.keep_all_ts:
-                    q_sol[:, :, int(mod_t_idx)] = q
+                    q_sol[:, :, mod_t_idx] = q
                 if self.bool_calc_cons_obj:
-                    self.cons_obj[:, int(mod_t_idx)] = self.fun_calc_cons_obj(q,t_idx * dt)
+                    self.cons_obj[:, mod_t_idx] = self.fun_calc_cons_obj(q,t_idx * dt)
 
         if self.bool_plot_sol:
             tf = t_idx * dt
@@ -185,7 +185,7 @@ class TimeMarching(TimeMarchingRk):
             resid = np.linalg.norm(dqdt)
             resid = resid*resid # I actually want the norm squared
         
-        if (t_idx*100/n_ts).is_integer():
+        if t_idx % (n_ts // 100) == 0:
             if t_idx == 0:
                 print('--- Beginning Simulation ---')
                 self.start_time = tm.time()
@@ -222,12 +222,12 @@ class TimeMarching(TimeMarchingRk):
 
             if self.keep_all_ts:
                 mod_t_idx = t_idx/(self.skip_ts+1)
-                if mod_t_idx.is_integer():
+                if abs(mod_t_idx - round(mod_t_idx)) < 1e-9:
                     q_sol[:, :, int(mod_t_idx)] = q
 
             if self.keep_all_ts or self.bool_calc_cons_obj:
                 mod_t_idx = t_idx/(self.skip_ts+1)
-                if mod_t_idx.is_integer():
+                if abs(mod_t_idx - round(mod_t_idx)) < 1e-9:
                     if self.keep_all_ts:
                         q_sol[:, :, int(mod_t_idx)] = q
                     if self.bool_calc_cons_obj:
@@ -296,7 +296,7 @@ class TimeMarching(TimeMarchingRk):
                     mod_t_idx = (t_idx-1)/(self.skip_ts+1)
                     # recall we only saved q every mod_t_idx, but that may or many not be now
                     # since the program could have exited for a t_idx between these checkpoints
-                    if mod_t_idx.is_integer() and (not self.return_failed_itn):
+                    if abs(mod_t_idx - round(mod_t_idx)) < 1e-9 and (not self.return_failed_itn):
                         # only return up to but not including this mod_t_idx 
                         self.t_final = (int(mod_t_idx)-1)*(self.skip_ts+1)*dt
                         print("... returning q's up to and including t =", self.t_final, "t_idx =", int(mod_t_idx)-1)
@@ -317,7 +317,7 @@ class TimeMarching(TimeMarchingRk):
                     self.t_final = t_idx*dt
                     # recall we only saved q every mod_t_idx, but that may or many not be now
                     # since the program could have exited for a t_idx between these checkpoints
-                    if mod_t_idx.is_integer():
+                    if abs(mod_t_idx - round(mod_t_idx)) < 1e-9:
                         # return up to and including this mod_t_idx, which is the most recent t_idx
                         print("... returning q's up to and including t =", self.t_final, "t_idx =", int(mod_t_idx))
                         if self.bool_calc_cons_obj:

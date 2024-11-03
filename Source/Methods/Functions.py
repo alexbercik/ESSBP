@@ -1408,6 +1408,67 @@ def is_pos_def(A):
     else:
         return False
 
+@njit    
+def kron_lm_ldiag(Dx, diag):
+    '''
+    Compute the Kronecker product of a dense matrix Dx and a diagonal matrix defined by diag.
+
+    Parameters
+    ----------
+    Dx : ndarray
+        A dense matrix of shape (m, n).
+    diag : ndarray
+        A 1D array representing the diagonal entries of a p x p diagonal matrix.
+
+    Returns
+    -------
+    result : ndarray
+        The resulting matrix of the Kronecker product with shape (m * p, n * p).
+    '''
+    m, n = Dx.shape
+    p = len(diag)
+    
+    # Allocate the result matrix
+    result = np.zeros((m * p, n * p), dtype=Dx.dtype)
+    
+    # Populate the result matrix by scaling each block of Dx by diag[k]
+    for i in range(m):
+        for j in range(n):
+            # Scale Dx[i, j] by each entry in diag and place it in the correct block
+            result[i * p:(i + 1) * p, j * p:(j + 1) * p] = Dx[i, j] * np.diag(diag)
+    
+    return result
+
+@njit
+def kron_ldiag_lm(diag, Dx):
+    '''
+    Compute the Kronecker product of a diagonal matrix (represented by diag) and a dense matrix Dx.
+
+    Parameters
+    ----------
+    diag : ndarray
+        A 1D array representing the diagonal entries of a p x p diagonal matrix.
+    Dx : ndarray
+        A dense matrix of shape (m, n).
+
+    Returns
+    -------
+    result : ndarray
+        The resulting matrix of the Kronecker product with shape (p * m, p * n).
+    '''
+    p = len(diag)      # Size of the diagonal matrix
+    m, n = Dx.shape    # Shape of the dense matrix Dx
+    
+    # Allocate the result matrix
+    result = np.zeros((p * m, p * n), dtype=Dx.dtype)
+    
+    # Populate the result matrix by scaling each block of Dx by diag[i]
+    for i in range(p):
+        # Scale the entire Dx matrix by diag[i] and place it in the appropriate block
+        result[i * m:(i + 1) * m, i * n:(i + 1) * n] = diag[i] * Dx
+    
+    return result
+
 @njit
 def repeat_neq_gv(q,neq_node):
     ''' take array of shape (nen,nelem) and return (nen*neq_node,nelem)
