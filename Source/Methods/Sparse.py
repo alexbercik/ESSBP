@@ -2016,6 +2016,104 @@ def kron_lm_eye(Dx, p):
     return expanded_data, expanded_indices, expanded_indptr
 
 @njit
+def kron_ldiag_lm(diag, Dy, n=0):
+    '''
+    Compute the Kronecker product of a p x p diagonal matrix and a CSR matrix Dy.
+
+    Parameters
+    ----------
+    Dy : tuple
+        A tuple (data, indices, indptr) representing a sparse matrix in CSR format.
+    diag : array-like
+        A 1D array representing the diagonal entries of the p x p diagonal matrix.
+    n : int, optional
+        Number of columns in Dy. If not provided, it will be inferred as the maximum value in indices + 1.
+
+    Returns
+    -------
+    csr_kron : tuple
+        A tuple (data, indices, indptr) representing the CSR matrix of the Kronecker product.
+    '''
+    Dy_data, Dy_indices, Dy_indptr = Dy
+    p = len(diag)  # The size of the diagonal matrix is inferred from the length of diag
+
+    # Infer dimensions of Dy if not provided
+    m = len(Dy_indptr) - 1  # rows in Dy
+    if n == 0:
+        n = max(Dy_indices) + 1  # columns in Dy
+
+    # Prepare arrays for CSR format
+    data = np.zeros(len(Dy_data) * p, dtype=Dy_data.dtype)
+    indices = np.zeros(len(Dy_indices) * p, dtype=np.int64)
+    indptr = np.zeros(m * p + 1, dtype=np.int64)
+
+    # Manually repeat Dy_data and Dy_indices for each block, scaling by diag elements
+    for i in range(p):
+        start_data = i * len(Dy_data)
+        start_indices = i * len(Dy_indices)
+        
+        for j in range(len(Dy_data)):
+            # Scale each entry of Dy by the corresponding diagonal element
+            data[start_data + j] = Dy_data[j] * diag[i]
+            indices[start_indices + j] = Dy_indices[j] + i * n
+        
+        # Update indptr for each row block
+        for k in range(m + 1):
+            indptr[i * m + k] = Dy_indptr[k] + i * len(Dy_data)
+    
+    return data, indices, indptr
+
+@njit
+def kron_lm_ldiag(Dx, diag):
+    '''
+    Compute the Kronecker product of a CSR matrix Dx and a p x p diagonal matrix.
+
+    Parameters
+    ----------
+    Dx : tuple
+        A tuple (data, indices, indptr) representing a sparse matrix in CSR format.
+    diag : array-like
+        A 1D array representing the diagonal entries of the p x p diagonal matrix.
+
+    Returns
+    -------
+    csr_kron : tuple
+        A tuple (data, indices, indptr) representing the CSR matrix of the Kronecker product.
+    '''
+    Dx_data, Dx_indices, Dx_indptr = Dx
+    m = len(Dx_indptr) - 1  # Number of rows in Dx
+    p = len(diag)  # The size of the diagonal matrix is inferred from the length of diag
+
+    # Prepare arrays for the expanded CSR format
+    expanded_data = np.zeros(len(Dx_data) * p, dtype=Dx_data.dtype)
+    expanded_indices = np.zeros(len(Dx_indices) * p, dtype=np.int64)
+    expanded_indptr = np.zeros(m * p + 1, dtype=np.int64)
+
+    data_index = 0  # Position in expanded_data and expanded_indices
+
+    # Iterate over each row in Dx, expanding into p rows in the result
+    for i in range(m):
+        row_start = Dx_indptr[i]
+        row_end = Dx_indptr[i + 1]
+
+        # For each row in the p x p block
+        for k in range(p):
+            # For each non-zero element in the current row of Dx
+            for j in range(row_start, row_end):
+                value = Dx_data[j] * diag[k]  # Scale by diag[k]
+                col_index = Dx_indices[j]
+
+                # Place the value in the appropriate block position
+                expanded_data[data_index] = value
+                expanded_indices[data_index] = col_index * p + k
+                data_index += 1
+
+            # Update indptr for the next row in the expanded matrix
+            expanded_indptr[i * p + k + 1] = data_index
+
+    return expanded_data, expanded_indices, expanded_indptr
+
+@njit
 def kron_gm_eye(Dx_list, p):
     '''
     Compute the Kronecker product of a list of CSR matrices and a p x p identity matrix.
