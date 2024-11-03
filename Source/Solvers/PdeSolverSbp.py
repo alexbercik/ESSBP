@@ -32,44 +32,47 @@ class PdeSolverSbp(PdeSolver):
         self.nen = self.sbp.nn
         self.p = self.sbp.p
         self.x_op = self.sbp.x
-        self.tL = self.sbp.tL.reshape((self.nen,1))
-        self.tR = self.sbp.tR.reshape((self.nen,1))
-        self.tLT = self.tL.T
-        self.tRT = self.tR.T
+        #self.tL = self.sbp.tL.reshape((self.nen,1))
+        #self.tR = self.sbp.tR.reshape((self.nen,1))
+        #self.tLT = self.tL.T
+        #self.tRT = self.tR.T
         if self.dim == 1:
             self.nn = self.nelem * self.nen
             self.qshape = (self.nen * self.neq_node , self.nelem)
         elif self.dim == 2:
             self.nn = (self.nelem[0] * self.nen, self.nelem[1] * self.nen)
             self.qshape = (self.nen**2 * self.neq_node , self.nelem[0] * self.nelem[1])
-            self.H_perp = np.diag(self.sbp.H)
+            #self.H_perp = np.diag(self.sbp.H)
         elif self.dim == 3:
             self.nn = (self.nelem[0] * self.nen, self.nelem[1] * self.nen, self.nelem[2] * self.nen)
-            self.qshape = (self.nen**3 * self.neq_node , self.nelem[0] * self.nelem[1] * self.nelem[2])   
-            self.H_perp = np.diag(np.kron(self.sbp.H,self.sbp.H))
+            self.qshape = (self.nen**3 * self.neq_node , self.nelem[0] * self.nelem[1] * self.nelem[2])  
+            #H = np.diag(self.sbp.H) 
+            #self.H_perp = np.kron(H,H)
 
         
         # decide whether to use sparse formulation or not
         if self.sparse is None:
             self.sparse = False
             if self.dim == 1: 
-                if self.disc_nodes == 'csbp' or self.disc_nodes == 'upwind':
+                if self.disc_nodes in ['csbp', 'upwind', 'hgtl', 'mattsson']:
                     self.sparse = True
                 if (self.disc_type == 'had') and (self.neq_node > 1):
                     self.sparse = True
             elif self.dim == 2:
                 self.sparse = True
+                if self.disc_nodes in ['lgl','lg']:
+                    self.sparse = False
+                    self.satsparse = False
             elif self.dim == 3:
                 self.sparse = False # TODO: Not set up yet
 
-        if self.sat_sparse is None:
+        if self.sparse: self.sat_sparse = True
+        elif self.sat_sparse is None:
             self.sat_sparse = False
-            if self.sparse:
+            if self.disc_nodes in ['csbp', 'upwind', 'hgtl', 'mattsson']:
                 self.sat_sparse = True
-            if self.disc_nodes == 'csbp' or self.disc_nodes == 'upwind':
-                self.sat_sparse = True
-            if self.disc_nodes == 'lgl' and (self.dim > 1 or self.p > 3):
-                self.sat_sparse = True
+            #if self.disc_nodes == 'lgl' and (self.dim > 1 or self.p > 3):
+            #    self.sat_sparse = True
 
 
         ''' Setup the mesh and apply required transformations to SBP operators '''
@@ -78,6 +81,7 @@ class PdeSolverSbp(PdeSolver):
                              warp_factor=self.settings['warp_factor'],
                              warp_type=self.settings['warp_type'])
 
+        #TODO: Should probably sparsify this
         self.mesh.get_jac_metrics(self.sbp, self.periodic,
                         metric_method = self.settings['metric_method'], 
                         bdy_metric_method = self.settings['bdy_metric_method'],
@@ -91,43 +95,23 @@ class PdeSolverSbp(PdeSolver):
         if self.settings['stop_after_metrics']:
             return
         
-        self.Dx_phys_nd, self.Dy_phys_nd = None, None
-        if self.settings['skew_sym']:
-            form = 'skew_sym'
-        else:
-            form = 'div'
-        if self.dim == 1:
-            self.H_phys, self.Dx_phys, self.Dx_phys_nd = self.sbp.ref_2_phys(self.mesh, form)
-        elif self.dim == 2:
-            self.H_phys, self.Dx_phys, self.Dy_phys, self.Dx_phys_nd, self.Dy_phys_nd = self.sbp.ref_2_phys(self.mesh, form)
-        elif self.dim == 3:
-            self.H_phys, self.Dx_phys, self.Dy_phys, self.Dz_phy = self.sbp.ref_2_phys(self.mesh, form)
-        self.H_inv_phys = 1/self.H_phys
+        # Set physical operators, and sparsify operators if needed
+        if self.settings['skew_sym']: form = 'skew_sym'
+        else: form = 'div'
+        
+        self.sbp.ref_2_phys(self.mesh, self.neq_node, form, self.sparse, self.sat_sparse, self.calc_nd_ops)
+        self.H_phys, self.H_inv_phys, self.H_phys_unkronned = self.sbp.H_phys, self.sbp.H_inv_phys, self.sbp.H_phys_unkronned
+        self.Dx = self.sbp.Dx
+        if self.calc_nd_ops: self.Dx_nd = self.sbp.Dx_nd
+        if self.dim > 1:
+            self.Dy = self.sbp.Dy
+            if self.calc_nd_ops: self.Dy_nd = self.sbp.Dy_nd
+        if self.dim > 2:
+            self.Dz = self.sbp.Dz
+            if self.calc_nd_ops: self.Dz_nd = self.sbp.Dz_nd
 
-
-        # Apply kron products to SBP operators for nelem per node
-        self.H_phys_unkronned = np.copy(self.H_phys) # need for entropy even if self.neq_node == 1 
-        if self.neq_node > 1:
-            self.H_phys = fn.repeat_neq_gv(self.H_phys,self.neq_node) 
-            self.H_inv_phys = fn.repeat_neq_gv(self.H_inv_phys,self.neq_node) 
-            self.tL = fn.kron_neq_lm(self.tL,self.neq_node)
-            self.tR = fn.kron_neq_lm(self.tR,self.neq_node)
-            self.tLT = fn.kron_neq_lm(self.tLT,self.neq_node)
-            self.tRT = fn.kron_neq_lm(self.tRT,self.neq_node)
-
-            self.Dx_phys_unkronned = self.Dx_phys
-            self.Dx_phys = fn.kron_neq_gm(self.Dx_phys,self.neq_node)
-            if self.Dx_phys_nd is not None:
-                self.Dx_phys_nd = fn.kron_neq_gm(self.Dx_phys_nd,self.neq_node)
-            if self.dim == 2 or self.dim == 3:
-                self.Dy_phys_unkronned = self.Dy_phys
-                self.Dy_phys = fn.kron_neq_gm(self.Dy_phys,self.neq_node)
-                if self.Dy_phys_nd is not None:
-                    self.Dy_phys_nd = fn.kron_neq_gm(self.Dy_phys_nd,self.neq_node)
-                self.H_perp = np.repeat(self.H_perp,self.neq_node)
-            if self.dim == 3:
-                self.Dz_phys_unkronned = self.Dz_phys
-                self.Dz_phys = fn.kron_neq_gm(self.Dz_phys,self.neq_node)
+        # no need to save tL, tR, Dx_unkronned, etc.
+        # but if there is, we can access them from self.sat
 
         self.adiss = ADiss(self)
         self.dissipation = self.adiss.dissipation
@@ -136,7 +120,6 @@ class PdeSolverSbp(PdeSolver):
 
         self.diffeq.set_mesh(self.mesh)
         if self.dim == 1:
-            #self.diffeq.set_sbp_op(self.H_phys, self.H_inv_phys, self.Dx_phys) # do we need this any more?
             if self.disc_type == 'div':
                 self.dqdt = self.dqdt_1d_div
                 self.dfdq = self.dfdq_1d_div
@@ -145,7 +128,6 @@ class PdeSolverSbp(PdeSolver):
                 self.dfdq = self.dfdq_1d_had  
             self.sat = Sat(self, None, form)
         elif self.dim == 2:
-            #self.diffeq.set_sbp_op(self.H_phys, self.H_inv_phys, self.Dx_phys, self.Dy_phys)
             if self.disc_type == 'div':
                 self.dqdt = self.dqdt_2d_div
                 self.dfdq = self.dfdq_2d_div
@@ -155,7 +137,6 @@ class PdeSolverSbp(PdeSolver):
             self.satx = Sat(self, 'x', form)
             self.saty = Sat(self, 'y', form)
         elif self.dim == 3:
-            #self.diffeq.set_sbp_op(self.H_phys, self.H_inv_phys, self.Dx_phys, self.Dy_phys, self.Dz_phys)
             if self.disc_type == 'div':
                 self.dqdt = self.dqdt_3d_div
                 self.dfdq = self.dfdq_3d_div
@@ -168,26 +149,15 @@ class PdeSolverSbp(PdeSolver):
 
         # save sparsity information
         if self.sparse:
-            self.Dx = sp.gm_to_sp(self.Dx_phys)
-            if self.dim >1:
-                self.Dy = sp.gm_to_sp(self.Dy_phys)
-            if self.dim >2:
-                self.Dz = sp.gm_to_sp(self.Dz_phys)
-
             self.gm_gv = staticmethod(sp.gm_gv)
             self.gm_gm_had_diff = staticmethod(sp.gm_gm_had_diff)
 
         else:
-            self.Dx = self.Dx_phys
-            if self.dim >1:
-                self.Dy = self.Dy_phys
-            if self.dim >2:
-                self.Dz = self.Dz_phys
-            
             self.gm_gv = staticmethod(fn.gm_gv)
             self.gm_gm_had_diff = staticmethod(fn.gm_gm_had_diff)
 
         if self.sparse and (self.disc_type == 'had'):
+            # TODO: Could probably clean this up by directly utilizing the sparsity from sbp.Exsurf_phys or sbp.Dx_nd (unkronned)
             assert self.sat_sparse, 'sat_sparse=True must be True if sparse=True and disc_type=had, at least for now.'
             if self.dim == 1:
                 self.vol_sparsity = sp.set_spgm_union_sparsity([self.Dx, [self.sat.Esurf]*self.nelem])
@@ -341,10 +311,10 @@ class PdeSolverSbp(PdeSolver):
         if self.periodic[0]:   # x sat (in ref space) 
             for row in range(self.nelem[1]):
                 # starts at bottom left to bottom right, then next row up
-                if self.neq_node == 1:
-                    satx[:,row::self.nelem[1]] = self.satx.calc(q[:,row::self.nelem[1]],Fxvol[:,:,row::self.nelem[1]],Fyvol[:,:,row::self.nelem[1]],row)   
-                else:
+                if self.sparse:
                     satx[:,row::self.nelem[1]] = self.satx.calc(q[:,row::self.nelem[1]],Fxvol[row::self.nelem[1]],Fyvol[row::self.nelem[1]],row)    
+                else:
+                    satx[:,row::self.nelem[1]] = self.satx.calc(q[:,row::self.nelem[1]],Fxvol[:,:,row::self.nelem[1]],Fyvol[:,:,row::self.nelem[1]],row)   
         else:
             raise Exception('Not coded up yet')
             
@@ -353,10 +323,10 @@ class PdeSolverSbp(PdeSolver):
                 # starts at bottom left to top left, then next column to right
                 start = col*self.nelem[0]
                 end = start + self.nelem[1]
-                if self.neq_node == 1:
-                    saty[:,start:end] = self.saty.calc(q[:,start:end],Fxvol[:,:,start:end],Fyvol[:,:,start:end],col)
-                else:
+                if self.sparse:
                     saty[:,start:end] = self.saty.calc(q[:,start:end],Fxvol[start:end],Fyvol[start:end],col)
+                else:
+                    saty[:,start:end] = self.saty.calc(q[:,start:end],Fxvol[:,:,start:end],Fyvol[:,:,start:end],col)
         else:
             raise Exception('Not coded up yet')
         
@@ -407,7 +377,7 @@ class PdeSolverSbp(PdeSolver):
             raise Exception('Not coded up')
         else:
             A = self.diffeq.dExdq(q)
-            vol = -fn.gm_gm(self.Dx_phys, A) # TODO: Dx is a gm (possibly sparse), but A is a gbdiag
+            vol = -fn.gm_gm(self.Dx, A) # TODO: Dx is a gm (possibly sparse), but A is a gbdiag
 
         if self.periodic:
             sat = self.sat.calc_dfdq(q, A)
@@ -444,9 +414,15 @@ class PdeSolverSbp(PdeSolver):
         
  
     
-    def sbp_energy(self,q):
+    def sbp_energy(self,q,nen=None):
         ''' compute the global SBP energy of global solution vector q '''
-        return np.tensordot(q, self.H_phys * q)
+        if (nen == self.neq_node) or (nen is None):
+            H_phys = self.H_phys
+        elif nen == 1:
+            H_phys = self.H_phys_unkronned
+        else:
+            raise Exception('Something went wrong, nen = ',nen)
+        return np.tensordot(q, H_phys * q)
 
     def sbp_conservation(self,q):
         ''' compute the global SBP conservation of global solution vector q '''

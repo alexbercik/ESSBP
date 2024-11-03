@@ -2125,7 +2125,9 @@ def Chandrashekar_fluxes_2D(qL,qR):
 
 @njit
 def StegerWarming_diss_1D(q):
-    ''' get the dissipative part of the steger-warming splitting. See gassner upwind paper.'''
+    ''' get the dissipative part of the steger-warming splitting. 
+    See ranocha et al. 'on the robustness of high-order upwind summation-by-parts-methods for 
+    nonlinear conservation laws' 2024 for details. '''
     rho = q[::3,:]
     u = q[1::3,:]/rho
     k = (u*u)/2
@@ -2148,8 +2150,10 @@ def StegerWarming_diss_1D(q):
 
 @njit
 def StegerWarming_diss_2D(q, n):
-    ''' get the dissipative part of the steger-warming splitting. See gassner upwind paper.
-    TODO: not entirely sure the curvilinear part is ok... '''
+    ''' get the dissipative part of the steger-warming splitting. 
+    See ranocha et al. 'on the robustness of high-order upwind summation-by-parts-methods for 
+    nonlinear conservation laws' 2024 for details. 
+    TODO: Not confident that curvilinear part is correct '''
     rho = q[::4,:]
     u = q[1::4,:]/rho
     v = q[2::4,:]/rho
@@ -2174,6 +2178,38 @@ def StegerWarming_diss_2D(q, n):
     f[2::4,:] = rho*((v-a)*lam1 + 2*g1*v*lam2 + (v+a)*lam3)
     f[3::4,:] = rho*((H-uvn*a/norm)*lam1 + 2*g1*k*lam2 + (H+uvn*a/norm)*lam3)
     f = (0.5/g)*f
+    return f
+
+@njit
+def DrikakisTsangaris_diss_2D(q, n):
+    ''' get the dissipative part of the Drikakis-Tsangaris splitting, a variant of steger-warming.
+    See ranocha et al. 'on the robustness of high-order upwind summation-by-parts-methods for 
+    nonlinear conservation laws' 2024 for details. '''
+    rho = q[::4,:]
+    u = q[1::4,:]/rho
+    v = q[2::4,:]/rho
+    #k = (u*u+v*v)/2
+    e = q[3::4,:]
+    p = g1*(e-0.5*rho*(u*u+v*v))
+    nx = n[:,0,:]
+    ny = n[:,1,:]
+    a = np.sqrt(g*p/rho)
+    #H = (e + p)/rho
+    un = nx*u + ny*v
+    norm = np.sqrt(nx*nx + ny*ny)
+
+    alam1 = cabs(un-norm*a)
+    alam2 = cabs(un+norm*a)
+    dun = 0.5*(alam2 + alam1) # dissipation on un
+    dp = (0.5/g)*rho*a*(alam2 - alam1) # dissipation on p
+
+    # assemble_vec 
+    f = np.zeros_like(q)
+    f1 = rho*dun
+    f[::4,:] = f1
+    f[1::4,:] = f1*u + nx*dp/norm
+    f[2::4,:] = f1*v + ny*dp/norm
+    f[3::4,:] = dun*(e + p)
     return f
 
 @njit

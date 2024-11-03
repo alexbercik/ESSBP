@@ -125,6 +125,10 @@ class Sat(SatDer1, SatDer2):
             self.lm_gv = sp.lm_gv
             self.lm_lm = sp.lm_lm
             self.gm_gv = sp.gm_gv
+            self.lm_gm = sp.lm_gm
+            self.lm_gdiag = sp.lm_gdiag
+            self.gdiag_lm = sp.gdiag_lm
+            self.lm_ldiag = sp.lm_ldiag
             self.lm_gm_had_diff = sp.lm_gm_had_diff
             self.lmT_gm_had_diff = sp.lmT_gm_had_diff
             self.gm_gm_had_diff = sp.gm_gm_had_diff
@@ -141,6 +145,10 @@ class Sat(SatDer1, SatDer2):
             self.lm_gv = fn.lm_gv
             self.lm_lm = fn.lm_lm
             self.gm_gv = fn.gm_gv
+            self.lm_gm = fn.lm_gm
+            self.lm_gdiag = fn.lm_gdiag
+            self.gdiag_lm = fn.gdiag_lm
+            self.lm_ldiag = fn.lm_ldiag
             self.lm_gm_had_diff = fn.lm_gm_had_diff
             self.lm_gmT_had_diff = staticmethod(lambda lm,gm: fn.lm_gm_had_diff(lm,np.transpose(gm,(1,0,2))))
             self.gm_gm_had_diff = fn.gm_gm_had_diff
@@ -150,10 +158,10 @@ class Sat(SatDer1, SatDer2):
             #self.lm_dgm = fn.lm_gm
         
         if self.dim == 1:
-            self.tL = solver.tL
-            self.tR = solver.tR
-            self.tLT = self.tL.T
-            self.tRT = self.tR.T
+            self.tL = solver.sbp.ta
+            self.tR = solver.sbp.tb
+            self.tLT = solver.sbp.taT
+            self.tRT = solver.sbp.tbT
             self.calcEx = solver.diffeq.calcEx
             self.dExdq = solver.diffeq.dExdq
             #self.d2Exdq2 = solver.diffeq.d2Exdq2
@@ -179,52 +187,39 @@ class Sat(SatDer1, SatDer2):
                         self.build_F = staticmethod(lambda q1, q2: fn.build_F_sys(self.neq_node, q1, q2, self.calc_had_flux))
                     
             ''' save useful matrices so as not to calculate on each loop '''
+            self.Esurf = solver.sbp.Esurf
+            self.ta = self.lm_lm(self.tL, self.tRT)
+            self.tb = self.lm_lm(self.tR, self.tLT)
+            # NOTE: metrics and bdy_metrics = 1 for 1D
 
-            self.Esurf = self.tR @ self.tRT - self.tL @ self.tLT
-            #self.vol_mat = fn.lm_gdiag(self.Esurf,self.metrics) # metrics are = 1 for 1D
-            self.ta = self.tL @ self.tRT
-            self.tb = self.tR @ self.tLT
-            #self.taphys = fn.lm_gm(self.tL, fn.gdiag_lm(self.bdy_metrics[:,0,:],self.tRT))
-            #self.tbphys = fn.lm_gm(self.tR, fn.gdiag_lm(self.bdy_metrics[:,1,:],self.tLT))
-
-            if self.sparse:
-                self.Esurf = sp.lm_to_sp(self.Esurf)
-                self.tL = sp.lm_to_sp(self.tL)
-                self.tR = sp.lm_to_sp(self.tR)
-                self.tLT = sp.lm_to_sp(self.tLT)
-                self.tRT = sp.lm_to_sp(self.tRT)
-                if self.disc_type == 'had':
-                    # save this before we overwrite as sparse
-                    taT = np.ascontiguousarray(self.ta.T)
-                    taphysT_pad = np.repeat(taT[:,:,np.newaxis], self.nelem + 1, axis=2)
-                    taphysT_pad[:,:,-1] = self.tb.T
-                    tbphys_pad = np.repeat(self.tb[:,:,np.newaxis], self.nelem + 1, axis=2)
-                    tbphys_pad[:,:,0] = self.ta
-                
-                self.ta = sp.lm_to_sp(self.ta)
-                self.tb = sp.lm_to_sp(self.tb)
-                if self.disc_type == 'had':
-                    self.taT = sp.lm_to_sp(taT)
-                    self.sparsity = sp.set_gm_union_sparsity([taphysT_pad,tbphys_pad])
-                    if self.neq_node > 1:
-                        self.sparsity_unkronned = sp.set_gm_union_sparsity([fn.unkron_neq_gm(taphysT_pad,self.neq_node),
-                                                                    fn.unkron_neq_gm(tbphys_pad,self.neq_node)])
+            if self.sparse and (self.disc_type == 'had'):
+                nrows = self.nen*self.neq_node
+                self.taT = sp.lm_to_lmT(self.ta,nrows,nrows)
+                taphysT_pad = [self.taT]*self.nelem
+                taphysT_pad.append(sp.lm_to_lmT(self.tb,nrows,nrows))
+                tbphys_pad = [self.tb]*self.nelem
+                tbphys_pad.insert(0,self.ta)
+                self.sparsity = sp.set_spgm_union_sparsity([taphysT_pad,tbphys_pad])
+                if self.neq_node > 1:
+                    self.sparsity_unkronned = sp.unkron_neq_sparsity(self.sparsity, self.neq_node)
             
         elif self.dim == 2:
 
-            tL = solver.tL[::self.neq_node,::self.neq_node]
-            tR = solver.tR[::self.neq_node,::self.neq_node]
-            self.Hperp = solver.H_perp # should be flat
+            self.Hperp = solver.sbp.Hperp # should be flat
             if self.direction == 'x': # computational direction, not physical direction
-                self.tL = np.kron(np.kron(tL, np.eye(self.nen)), np.eye(self.neq_node))
-                self.tR = np.kron(np.kron(tR, np.eye(self.nen)), np.eye(self.neq_node))
+                self.tL = solver.sbp.txa
+                self.tR = solver.sbp.txb
+                self.tLT = solver.sbp.txaT
+                self.tRT = solver.sbp.txbT
+                self.Esurf = solver.sbp.Exsurf
                 self.set_metrics_2d_x(solver.mesh.metrics, solver.mesh.bdy_metrics)
             elif self.direction == 'y':
-                self.tL = np.kron(np.kron(np.eye(self.nen), tL), np.eye(self.neq_node))
-                self.tR = np.kron(np.kron(np.eye(self.nen), tR), np.eye(self.neq_node))
+                self.tL = solver.sbp.tya
+                self.tR = solver.sbp.tyb
+                self.tLT = solver.sbp.tyaT
+                self.tRT = solver.sbp.tybT
+                self.Esurf = solver.sbp.Eysurf
                 self.set_metrics_2d_y(solver.mesh.metrics, solver.mesh.bdy_metrics)
-            self.tLT = self.tL.T
-            self.tRT = self.tR.T
             self.dExdq = solver.diffeq.dExdq
             self.dEydq = solver.diffeq.dEydq
             self.dEndq = solver.diffeq.dEndq
@@ -255,49 +250,31 @@ class Sat(SatDer1, SatDer2):
 
             ''' save useful matrices so as not to calculate on each loop '''
 
-            self.Esurf = self.tR @ np.diag(self.Hperp) @ self.tRT - self.tL @ np.diag(self.Hperp) @ self.tLT
             # for volume terms, matrices to contract with x_phys and y_phys flux matrices
-            self.vol_x_mat = [fn.lm_gdiag(self.Esurf,metrics[:,0,:]) for metrics in self.metrics]
-            self.vol_y_mat = [fn.lm_gdiag(self.Esurf,metrics[:,1,:]) for metrics in self.metrics]
+            self.vol_x_mat = [self.lm_gdiag(self.Esurf,metrics[:,0,:]) for metrics in self.metrics]
+            self.vol_y_mat = [self.lm_gdiag(self.Esurf,metrics[:,1,:]) for metrics in self.metrics]
             # for surface terms, matrices to contract with x_phys and y_phys flux matrices on a and b facets
-            self.taphysx = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,0,0,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
-            self.taphysy = [fn.lm_gm(self.tL, fn.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,0,1,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
-            self.tbphysx = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,1,0,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
-            self.tbphysy = [fn.lm_gm(self.tR, fn.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,1,1,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
-            self.tLHperp = self.tL * self.Hperp
-            self.tRHperp = self.tR * self.Hperp
+            self.taphysx = [self.lm_gm(self.tL, self.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,0,0,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
+            self.taphysy = [self.lm_gm(self.tL, self.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,0,1,:]), self.tRT)) for bdy_metrics in self.bdy_metrics]
+            self.tbphysx = [self.lm_gm(self.tR, self.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,1,0,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
+            self.tbphysy = [self.lm_gm(self.tR, self.gdiag_lm((self.Hperp[:,None] * bdy_metrics[:,1,1,:]), self.tLT)) for bdy_metrics in self.bdy_metrics]
+            self.tLHperp = self.lm_ldiag(self.tL, self.Hperp)
+            self.tRHperp = self.lm_ldiag(self.tR, self.Hperp)
 
-            if self.sparse:
-                self.tLHperp = sp.lm_to_sp(self.tLHperp)
-                self.tRHperp = sp.lm_to_sp(self.tRHperp)
-                self.tLT = sp.lm_to_sp(self.tLT)
-                self.tRT = sp.lm_to_sp(self.tRT)
-                self.vol_x_mat = [sp.gm_to_sp(gm_mat) for gm_mat in self.vol_x_mat]   
-                self.vol_y_mat = [sp.gm_to_sp(gm_mat) for gm_mat in self.vol_y_mat]
-                if (self.disc_type == 'had'):
-                    # save this before we overwrite as sparse
-                    taphysxT = [np.ascontiguousarray(np.transpose(gm_mat,(1,0,2))) for gm_mat in self.taphysx]
-                    taphysyT = [np.ascontiguousarray(np.transpose(gm_mat,(1,0,2))) for gm_mat in self.taphysy]
-                    taphysxT_pad = [fn.pad_gm_1dR(taphysxT[i],self.tbphysx[i][:,:,-1]) for i in range(len(taphysxT))]
-                    taphysyT_pad = [fn.pad_gm_1dR(taphysyT[i],self.tbphysy[i][:,:,-1]) for i in range(len(taphysxT))]
-                    tbphysx_pad = [fn.pad_gm_1dL(self.tbphysx[i],taphysxT[i][:,:,0]) for i in range(len(taphysxT))]
-                    tbphysy_pad = [fn.pad_gm_1dL(self.tbphysy[i],taphysyT[i][:,:,0]) for i in range(len(taphysyT))]
-                
-                self.tbphysx = [sp.gm_to_sp(gm_mat) for gm_mat in self.tbphysx]
-                self.tbphysy = [sp.gm_to_sp(gm_mat) for gm_mat in self.tbphysy] 
-                if (self.disc_type == 'had'):
-                    self.taphysxT = [sp.gm_to_sp(gm_mat) for gm_mat in taphysxT]
-                    self.taphysyT = [sp.gm_to_sp(gm_mat) for gm_mat in taphysyT]
-                    self.xsparsity = sp.set_gm_union_sparsity([*taphysxT_pad,*tbphysx_pad])
-                    self.ysparsity = sp.set_gm_union_sparsity([*taphysyT_pad,*tbphysy_pad])
-                    if self.neq_node > 1:
-                        self.xsparsity_unkronned = sp.set_gm_union_sparsity([*[fn.unkron_neq_gm(mat,self.neq_node) for mat in taphysxT_pad],
-                                                                    *[fn.unkron_neq_gm(mat,self.neq_node) for mat in tbphysx_pad]]) 
-                        self.ysparsity_unkronned = sp.set_gm_union_sparsity([*[fn.unkron_neq_gm(mat,self.neq_node) for mat in taphysyT_pad],
-                                                                    *[fn.unkron_neq_gm(mat,self.neq_node) for mat in tbphysy_pad]]) 
-                else:
-                    self.taphysx = [sp.gm_to_sp(gm_mat) for gm_mat in self.taphysx]
-                    self.taphysy = [sp.gm_to_sp(gm_mat) for gm_mat in self.taphysy] 
+            if self.sparse and (self.disc_type == 'had'):
+                nrows = self.nen*self.nen*self.neq_node
+                self.taphysxT = [sp.gm_to_gmT(gm_mat,nrows,nrows) for gm_mat in self.taphysx]
+                self.taphysyT = [sp.gm_to_gmT(gm_mat,nrows,nrows) for gm_mat in self.taphysy]
+                len_taphysxT = len(self.taphysxT)
+                taphysxT_pad = [list(self.taphysxT[i]) + [self.tbphysx[i][-1]] for i in range(len_taphysxT)]
+                taphysyT_pad = [list(self.taphysyT[i]) + [self.tbphysy[i][-1]] for i in range(len_taphysxT)]
+                tbphysx_pad = [[self.taphysxT[i][0]] + list(self.tbphysx[i]) for i in range(len_taphysxT)]
+                tbphysy_pad = [[self.taphysyT[i][0]] + list(self.tbphysy[i]) for i in range(len_taphysxT)]
+                self.xsparsity = sp.set_spgm_union_sparsity([*taphysxT_pad,*tbphysx_pad])
+                self.ysparsity = sp.set_spgm_union_sparsity([*taphysyT_pad,*tbphysy_pad])
+                if self.neq_node > 1:
+                    self.xsparsity_unkronned = sp.unkron_neq_sparsity(self.xsparsity, self.neq_node)
+                    self.ysparsity_unkronned = sp.unkron_neq_sparsity(self.ysparsity, self.neq_node)
         
         elif self.dim == 3:
 
@@ -613,6 +590,7 @@ class Sat(SatDer1, SatDer2):
                         self.calc_absAP_dw = self.calc_absAP_dw_matmat_nD
                         if self.P_derigs and self.A_derigs:
                             self.calc_absAP = lambda qL,qR,mets: solver.diffeq.dEndw_abs_derigs(qL,qR,mets,self.entropy_fix)
+                            self.average = 'none'
                         elif self.P_derigs:
                             self.calc_P = solver.diffeq.dqdw_derigs
                             self.calc_absA = self.calc_absA_matdiffeq_nd

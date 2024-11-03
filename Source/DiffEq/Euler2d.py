@@ -489,6 +489,8 @@ class Euler(PdeBase):
             return w[2::3]
         elif var2plot_name == 's' or var2plot_name == r'$s$' or var2plot_name == 'entropy':
             return self.entropy(q)
+        elif var2plot_name == 'q':
+            return q
         else:
             raise Exception('Requested variable to plot is not available, '+var2plot_name)
 
