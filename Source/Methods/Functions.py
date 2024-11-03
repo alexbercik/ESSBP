@@ -412,6 +412,53 @@ def ldiag_gv(H,q):
     return c
 
 @njit
+def ldiag_lm(H_diag, M):
+    '''
+    Multiply a diagonal matrix H with diagonal entries H_diag by a dense matrix M.
+
+    Parameters
+    ----------
+    H_diag : 1D numpy array
+        The diagonal elements of the matrix H.
+    M : 2D numpy array
+        The dense matrix to be multiplied.
+
+    Returns
+    -------
+    result : 2D numpy array
+        The result of H * M where H is a diagonal matrix with elements H_diag.
+    '''
+    rows, cols = M.shape
+    result = np.zeros((rows, cols), dtype=M.dtype)
+
+    # Scale each row of M by the corresponding element in H_diag
+    for i in range(rows):
+        for j in range(cols):
+            result[i, j] = H_diag[i] * M[i, j]
+    
+    return result
+    
+@njit
+def lm_ldiag(M, H_diag):
+    '''
+    Multiply a dense matrix M by a diagonal matrix H with diagonal entries H_diag.
+
+    Parameters
+    ----------
+    M : 2D numpy array
+        The dense matrix to be multiplied.
+    H_diag : 1D numpy array
+        The diagonal elements of the matrix H.
+
+    Returns
+    -------
+    result : 2D numpy array
+        The result of M * H where H is a diagonal matrix with elements H_diag.
+    '''
+    
+    return M * H_diag
+
+@njit
 def gbdiag_gbdiag(A,B):
     '''
     Takes two global arrays of shape (nen,neq,neq,nelem) and simulates matrix 
@@ -915,7 +962,10 @@ def gm_gm_had_diff(A,B):
     -------
     c : numpy array of shape (nen2,nelem)
     '''
-    nen,nen2,nelem = B.shape
+    nen,nen2,nelem = A.shape
+    nenb,nen2b,nelemb = B.shape
+    if nen!=nenb or nen2!=nen2b or nelem!=nelemb:
+        raise Exception(f'array shapes do not match, ({nen},{nen2},{nelem}) != ({nenb},{nen2b},{nelemb})')
     c = np.zeros((nen,nelem),dtype=B.dtype)
     for e in range(nelem):
         for j in range(nen2):

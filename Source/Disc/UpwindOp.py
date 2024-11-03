@@ -1,8 +1,8 @@
 import numpy as np
-import julia
 from julia import Main
 
 julia_code = """
+module UpwindOperators
 
 # Check if virtual environment has already been set up & compiled. If not, activate.
 if !haskey(ENV, "JULIA_UPWIND_ENV_READY")
@@ -19,7 +19,6 @@ using SummationByPartsOperators
 using LinearAlgebra
 
 function getOps(p,n)
-
     Dup = upwind_operators(Mattsson2017, derivative_order=1, accuracy_order=p,
                             xmin=0.0, xmax=1.0, N=n)
     H = mass_matrix(Dup)
@@ -29,12 +28,18 @@ function getOps(p,n)
     x = SummationByPartsOperators.grid(Dup)
 
     return Matrix(D), Matrix(Dup.plus), Matrix(Dup.minus), Matrix(Q), Matrix(diss), Matrix(H), x 
-
 end
+
+end # module UpwindOperators
 """
 
 # Evaluate the Julia code
 Main.eval(julia_code)
+
+# Import the function from the module
+Main.eval("using .UpwindOperators: getOps")
+
+# Access the function
 getOps = Main.getOps
 
 def UpwindOp(p,nn):

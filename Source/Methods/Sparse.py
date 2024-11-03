@@ -70,7 +70,7 @@ def gm_to_sp(A):
     return csr_list
 
 @njit
-def sp_to_lm(csr):
+def sp_to_lm(csr, nen1=0, nen2=0):
     '''
     Converts a sparse CSR format to dense 2D matrix (nen1, nen2).
 
@@ -88,8 +88,12 @@ def sp_to_lm(csr):
     # Get the CSR data for the current element
     data, indices, indptr = csr
 
-    nen1 = len(indptr) - 1
-    nen2 = np.max(indices) + 1
+    if nen1 == 0:
+        nen1 = len(indptr) - 1
+    else:
+        assert nen1 == len(indptr) - 1, f'Number of rows in CSR matrix {len(indptr) - 1} does not match inputted nen1 {nen1}'
+    if nen2 == 0:
+        nen2 = np.max(indices) + 1
     A = np.zeros((nen1, nen2), dtype=data.dtype)
     
     for i in range(nen1):
@@ -118,13 +122,24 @@ def sp_to_gm(csr_list):
 
     nelem = len(csr_list)
     nen1 = len(csr_list[0][2]) - 1
-    nen2 = np.max(csr_list[0][1]) + 1
+    nen2 = get_gm_max_numcols(csr_list)
     A = np.zeros((nen1, nen2, nelem), dtype=csr_list[0][0].dtype)
+    if nen2 == 0: return A
     
     for e in range(nelem):
-        A[:, :, e] = sp_to_lm(csr_list[e])
+        A[:, :, e] = sp_to_lm(csr_list[e], nen1, nen2)
     
     return A
+
+@njit
+def get_gm_max_numcols(csr_list):
+    max_value = 0
+    for csr in csr_list:
+        # Loop through each element in csr[1] to find the maximum
+        for val in csr[1]:
+            if val + 1 > max_value:
+                max_value = val + 1
+    return max_value
 
 @njit
 def lm_lv(csr, vec):
@@ -180,21 +195,38 @@ def lm_lm(csr1, csr2):
 
     data1, indices1, indptr1 = csr1
     data2, indices2, indptr2 = csr2
+    dtype = data1.dtype
 
-    nrows = len(indptr1) - 1
-    ncols = max(indices2) + 1  # This assumes that csr2 is well-formed.
-    indptr_result = np.zeros(nrows + 1, dtype=np.int32)
+    # Check the number of rows and columns in csr1
+    nrows_csr1 = len(indptr1) - 1
+    ncols_csr1 = max(indices1) + 1  # Number of columns in csr1
+
+    # Check the number of rows and columns in csr2
+    nrows_csr2 = len(indptr2) - 1
+    ncols_csr2 = max(indices2) + 1  # Number of columns in csr2
+
+    # Ensure matrices are compatible for multiplication
+    if ncols_csr1 > nrows_csr2:
+        raise ValueError(f"Matrix dimension mismatch: csr1 has >={ncols_csr1} columns, csr2 has {nrows_csr2} rows.")
+
+    # Initialize result arrays
+    nrows = nrows_csr1
+    ncols = ncols_csr2
+    indptr_result = np.zeros(nrows + 1, dtype=np.int64)
 
     data_result = []
     indices_result = []
 
-    row_accumulator = np.zeros(ncols, dtype=np.float64)
-    marker = -np.ones(ncols, dtype=np.int32)  # Marker array to track columns in row_accumulator
-    
+    # Working arrays to accumulate results
+    row_accumulator = np.zeros(ncols, dtype=dtype)
+    marker = -np.ones(ncols, dtype=np.int64)  # Marker array to track columns in row_accumulator
+
+    # Perform the multiplication
     for i in range(nrows):
-        row_start = indptr_result[i]
-        current_length = 0
-        
+        # Reset the row accumulator and marker for each row
+        row_accumulator.fill(0)
+        marker.fill(-1)
+
         # Iterate over non-zero elements of row i in csr1
         for jj in range(indptr1[i], indptr1[i+1]):
             col1 = indices1[jj]
@@ -207,12 +239,174 @@ def lm_lm(csr1, csr2):
 
                 # Accumulate the result in row_accumulator
                 if marker[col2] != i:
-                    row_accumulator[col2] = 0
                     marker[col2] = i
-                row_accumulator[col2] += val1 * val2
+                    row_accumulator[col2] = val1 * val2
+                else:
+                    row_accumulator[col2] += val1 * val2
 
         # Now collect all non-zero entries from row_accumulator for this row
+        current_length = 0
         for j in range(ncols):
+            if marker[j] == i and row_accumulator[j] != 0:
+                indices_result.append(j)
+                data_result.append(row_accumulator[j])
+                current_length += 1
+        
+        # Update row pointer
+        indptr_result[i + 1] = indptr_result[i] + current_length
+
+    # Convert lists to arrays for CSR format
+    data_result = np.array(data_result, dtype=dtype)
+    indices_result = np.array(indices_result, dtype=np.int64)
+
+    return data_result, indices_result, indptr_result
+
+@njit
+def lm_gm(csr, csr_list):
+    '''
+    multiply a local matrix and global matrix
+
+    Parameters
+    ----------
+    csr : tuple (data, indices, indptr)
+        CSR representation of the first matrix (non-zero values, column indices, row pointers)
+    csr_list : List of CSR matrices
+        Each element in the list is a tuple (data, indices, indptr) representing a sparse matrix in CSR format
+
+    '''
+    # Initialize result array
+    c = List()
+    
+    # Perform sparse matrix-vector multiplication for each element
+    for e in range(len(csr_list)):
+        c.append(lm_lm(csr, csr_list[e]))
+    
+    return c
+
+@njit
+def lm_to_lmT(csr,nrows=0,ncols=0):
+    '''
+    Transpose a sparse matrix in CSR format, returning it as a new CSR format matrix.
+
+    Parameters
+    ----------
+    csr : tuple
+        The input CSR matrix in (data, indices, indptr) format.
+    nrows : int
+        Number of rows in the original matrix.
+    ncols : int
+        Number of columns in the original matrix.
+
+    Returns
+    -------
+    csr_transposed : tuple
+        Transposed matrix in CSR format (data, indices, indptr).
+    '''
+    data, indices, indptr = csr
+    nnz = len(data)
+
+    # Infer nrows and ncols from csr
+    if nrows == 0: 
+        nrows = len(indptr) - 1
+    else:
+        assert (nrows == len(indptr) - 1), f'Number of rows in CSR matrix {len(indptr) - 1} does not match inputted nrows {nrows}'
+    if ncols == 0: ncols = max(indices) + 1
+    
+    # Step 1: Count non-zeros per column (to allocate space)
+    col_counts = np.zeros(ncols, dtype=np.int64)
+    for idx in indices:
+        col_counts[idx] += 1
+
+    # Step 2: Build indptr for the transposed matrix
+    trans_indptr = np.zeros(ncols + 1, dtype=np.int64)
+    trans_indptr[1:] = np.cumsum(col_counts)
+
+    # Step 3: Initialize arrays for data and indices
+    trans_data = np.zeros(nnz, dtype=data.dtype)
+    trans_indices = np.zeros(nnz, dtype=np.int64)
+    next_position = np.zeros(ncols, dtype=np.int64)
+
+    # Step 4: Populate transposed data and indices
+    for row in range(nrows):
+        row_start = indptr[row]
+        row_end = indptr[row + 1]
+        for i in range(row_start, row_end):
+            col = indices[i]
+            dest = trans_indptr[col] + next_position[col]
+            trans_data[dest] = data[i]
+            trans_indices[dest] = row
+            next_position[col] += 1
+
+    return trans_data, trans_indices, trans_indptr
+
+@njit
+def gm_to_gmT(csr_list, nrows=0, ncols=0):
+    '''
+    Take the tanspose of a list of CSR matrices.
+
+    Parameters
+    ----------
+    csr_list : List of CSR matrices
+        Each element in the list is a tuple (data, indices, indptr) representing a sparse matrix in CSR format
+
+    '''
+    c = [lm_to_lmT(csr,nrows,ncols) for csr in csr_list]
+    return c
+
+@njit
+def lm_lmT(csr1, csr2):
+    '''
+    Perform sparse matrix-matrix multiplication where the second matrix is transposed, in CSR format.
+
+    Parameters
+    ----------
+    csr1 : tuple (data1, indices1, indptr1)
+        CSR representation of the first matrix A (non-zero values, column indices, row pointers).
+    csr2 : tuple (data2, indices2, indptr2)
+        CSR representation of the second matrix B (non-zero values, column indices, row pointers).
+
+    Returns
+    -------
+    result_csr : tuple (data, indices, indptr)
+        CSR representation of the result of the matrix-matrix multiplication A * B^T.
+    '''
+    data1, indices1, indptr1 = csr1
+    trans_data, trans_indices, trans_indptr = lm_to_lmT(csr2)
+    dtype = trans_data.dtype
+
+    # Infer dimensions from csr1 and csr2
+    nrows_A = len(indptr1) - 1
+    ncols_B = len(trans_indptr) - 1
+
+    indptr_result = np.zeros(nrows_A + 1, dtype=np.int64)
+    data_result = []
+    indices_result = []
+
+    row_accumulator = np.zeros(nrows_A, dtype=dtype)
+    marker = -np.ones(nrows_A, dtype=np.int64)  # Marker array to track columns in row_accumulator
+    
+    for i in range(nrows_A):
+        row_start = indptr_result[i]
+        current_length = 0
+        
+        # Iterate over non-zero elements of row i in csr1 (A)
+        for jj in range(indptr1[i], indptr1[i+1]):
+            colA = indices1[jj]
+            valA = data1[jj]
+
+            # Multiply with corresponding row in transposed csr2 (B^T)
+            for kk in range(trans_indptr[colA], trans_indptr[colA+1]):
+                rowB = trans_indices[kk]  # Row index in B (treated as column index in B^T)
+                valB = trans_data[kk]
+
+                # Accumulate the result in row_accumulator
+                if marker[rowB] != i:
+                    row_accumulator[rowB] = 0
+                    marker[rowB] = i
+                row_accumulator[rowB] += valA * valB
+
+        # Now collect all non-zero entries from row_accumulator for this row
+        for j in range(ncols_B):
             if marker[j] == i and row_accumulator[j] != 0:
                 indices_result.append(j)
                 data_result.append(row_accumulator[j])
@@ -221,8 +415,8 @@ def lm_lm(csr1, csr2):
         # Update row pointer
         indptr_result[i+1] = row_start + current_length
 
-    data_result = np.array(data_result, dtype=np.float64)
-    indices_result = np.array(indices_result, dtype=np.int32)
+    data_result = np.array(data_result, dtype=dtype)
+    indices_result = np.array(indices_result, dtype=np.int64)
 
     return data_result, indices_result, indptr_result
 
@@ -326,6 +520,279 @@ def lm_gv(csr, b):
     return c
 
 @njit
+def lm_gdiag(csr, H):
+    '''
+    Perform local matrix - global diagonal multiplication by scaling columns using a single CSR matrix and multiple scaling factors.
+
+    Parameters
+    ----------
+    csr : tuple (data, indices, indptr)
+        CSR representation of the input matrix.
+    H : numpy array of shape (nen, nelem)
+        The global diagonal scaling factors. Each column in H corresponds to a different scaled output.
+
+    Returns
+    -------
+    List of CSR matrices
+        Each element in the list is a CSR matrix (data, indices, indptr) representing the scaled matrix.
+    '''
+    data, indices, indptr = csr
+    #nen1 = len(indptr) - 1  # Number of rows in the CSR matrix
+    nen2, nelem = H.shape  # Dimensions of H (columns must match the CSR matrix's columns)
+
+    # Check for dimension compatibility
+    max_col = max(indices) + 1
+    if nen2 < max_col:
+        raise ValueError('Dimensions do not match: number of columns in CSR matrix must be <= the number of rows in H', max_col, nen2)
+
+    # Initialize result list
+    csr_result_list = List()
+
+    # Loop over each column in H, corresponding to a different diagonal scaling
+    for e in range(nelem):
+        # Prepare a new array to store scaled data for the current CSR matrix
+        new_data = np.empty_like(data)
+
+        # Scale each non-zero element in `data` by the corresponding H element for this `e`
+        for i in range(len(data)):
+            col = indices[i]
+            # Scale data by the corresponding element in H for this column and element `e`
+            new_data[i] = data[i] * H[col, e]
+
+        # Append the scaled CSR matrix to the result list
+        csr_result_list.append((new_data, indices, indptr))
+
+    return csr_result_list
+
+@njit
+def gdiag_lm(H, csr):
+    '''
+    Perform global diagonal - local matrix multiplication using a CSR matrix.
+
+    Parameters
+    ----------
+    csr : CSR matrix
+        a tuple (data, indices, indptr) representing a sparse matrix in CSR format
+    H : numpy array of shape (nen2, nelem)
+        The global diagonal for multiplication
+
+    Returns
+    -------
+    csr : CSR matrix
+        a tuple (data, indices, indptr) representing a sparse matrix in CSR format
+    '''
+    
+    # Initialize result array
+    data, indices, indptr = csr
+    nen1 = len(indptr) - 1  # Number of rows in the sparse matrix 
+    nen2, nelem = np.shape(H)  # Number of elements
+    if nen1 != nen2:
+        raise ValueError('Dimensions do not match', nen1, nen2)
+    csr_list = List()
+    
+    # Perform sparse matrix-vector multiplication for each element
+    for e in range(nelem):
+        # Copy data for each new CSR matrix to preserve the original matrix
+        new_data = np.zeros_like(data)
+
+        # Multiply each row's data by the corresponding H element for this `e`
+        for row in range(nen1):
+            start = indptr[row]
+            end = indptr[row + 1]
+            
+            # Scale non-zero elements in the row by H[row, e]
+            row_scale = H[row, e]
+            for i in range(start, end):
+                new_data[i] = data[i] * row_scale
+        
+        # Append the resulting CSR matrix to the list
+        csr_list.append((new_data, indices, indptr))
+    
+    return csr_list
+
+@njit
+def gdiag_gm(H, csr_list):
+    '''
+    Perform global diagonal - global matrix multiplication using a list of CSR matrices.
+
+    Parameters
+    ----------
+    csr_list : List of CSR matrices
+        Each element in the list is a tuple (data, indices, indptr) representing a sparse matrix in CSR format.
+    H : numpy array of shape (nen2, nelem)
+        The global diagonal for multiplication.
+
+    Returns
+    -------
+    List of CSR matrices
+        Each element in the list is a CSR matrix (data, indices, indptr) representing the scaled matrix.
+    '''
+    nen2, nelem = H.shape  # H's dimensions
+
+    # Check if the number of CSR matrices matches the number of elements in H
+    if len(csr_list) != nelem:
+        raise ValueError('Dimensions do not match: number of CSR matrices must equal columns in H')
+
+    # Initialize result list
+    csr_result_list = List()
+
+    # Perform scaling for each CSR matrix in csr_list
+    for e in range(nelem):
+        data, indices, indptr = csr_list[e]
+        nen1 = len(indptr) - 1  # Number of rows in the CSR matrix
+
+        # Check if the matrix dimensions match H
+        if nen1 != nen2:
+            raise ValueError(f'Dimensions do not match for element {e}: {nen1} rows in CSR matrix vs {nen2} in H')
+
+        # Initialize a new array to hold the scaled data for the current CSR matrix
+        new_data = np.empty_like(data)
+
+        # Scale each row's data by the corresponding H element for this matrix `e`
+        for row in range(nen1):
+            start = indptr[row]
+            end = indptr[row + 1]
+            
+            # Scale non-zero elements in the row by H[row, e]
+            row_scale = H[row, e]
+            for i in range(start, end):
+                new_data[i] = data[i] * row_scale
+
+        # Append the resulting CSR matrix to the list
+        csr_result_list.append((new_data, indices, indptr))
+
+    return csr_result_list
+
+@njit
+def lm_ldiag(csr, H):
+    '''
+    Scale each column of a sparse matrix in CSR format by a corresponding entry in a 1D array H.
+    Simulates csr @ np.diag(H) where csr is a sparse matrix in CSR format.
+
+    Parameters
+    ----------
+    csr : tuple
+        A tuple (data, indices, indptr) representing a sparse matrix in CSR format.
+    H : 1D array
+        A 1D array where H[j] scales column j of the matrix.
+
+    Returns
+    -------
+    scaled_csr : tuple
+        A tuple (data, indices, indptr) representing the scaled sparse matrix in CSR format.
+    '''
+    data, indices, indptr = csr
+    
+    # Scale each entry in data by the corresponding entry in H based on the column index
+    scaled_data = np.empty_like(data)
+    for i in range(len(data)):
+        col_index = indices[i]
+        scaled_data[i] = data[i] * H[col_index]
+    
+    # Return the scaled matrix in CSR format
+    return scaled_data, indices, indptr
+
+@njit
+def add_lm_lm(csr1, csr2):
+    '''
+    Add two sparse matrices in CSR format.
+
+    Parameters
+    ----------
+    csr1 : tuple (data1, indices1, indptr1)
+        CSR representation of the first matrix.
+    csr2 : tuple (data2, indices2, indptr2)
+        CSR representation of the second matrix.
+
+    Returns
+    -------
+    result_csr : tuple (data, indices, indptr)
+        CSR representation of the sum of the two matrices.
+    '''
+    data1, indices1, indptr1 = csr1
+    data2, indices2, indptr2 = csr2
+
+    # Ensure both CSR matrices have the same number of rows
+    nrows = len(indptr1) - 1
+    if len(indptr2) - 1 != nrows:
+        raise ValueError("CSR matrices must have the same number of rows.")
+    
+    indptr_result = np.zeros(nrows + 1, dtype=np.int64)
+    data_result = []
+    indices_result = []
+
+    # Iterate over each row
+    for i in range(nrows):
+        start1, end1 = indptr1[i], indptr1[i + 1]
+        start2, end2 = indptr2[i], indptr2[i + 1]
+        
+        # Initialize pointers for both rows
+        idx1 = start1
+        idx2 = start2
+        
+        # Merge the rows by iterating over both in sorted order
+        while idx1 < end1 or idx2 < end2:
+            if idx1 < end1 and (idx2 >= end2 or indices1[idx1] < indices2[idx2]):
+                # Element from csr1 only
+                col = indices1[idx1]
+                val = data1[idx1]
+                idx1 += 1
+            elif idx2 < end2 and (idx1 >= end1 or indices2[idx2] < indices1[idx1]):
+                # Element from csr2 only
+                col = indices2[idx2]
+                val = data2[idx2]
+                idx2 += 1
+            else:
+                # Elements from both csr1 and csr2
+                col = indices1[idx1]  # indices1[idx1] == indices2[idx2] here
+                val = data1[idx1] + data2[idx2]
+                idx1 += 1
+                idx2 += 1
+            
+            # Append only non-zero results
+            if val != 0:
+                indices_result.append(col)
+                data_result.append(val)
+
+        # Update the row pointer for the result matrix
+        indptr_result[i + 1] = len(data_result)
+
+    # Convert lists to arrays for CSR format
+    data_result = np.array(data_result, dtype=data1.dtype)
+    indices_result = np.array(indices_result, dtype=np.int64)
+
+    return data_result, indices_result, indptr_result
+
+@njit
+def add_gm_gm(csr_list1, csr_list2):
+    '''
+    Perform global matrix addition using a list of CSR matrices.
+
+    Parameters
+    ----------
+    csr_list : List of CSR matrices
+        Each element in the list is a tuple (data, indices, indptr) representing a sparse matrix in CSR format
+
+    '''
+    nen1 = len(csr_list1[0][2]) - 1  # Number of rows in the sparse matrix (from indptr)
+    nelem = len(csr_list1)  # Number of elements (same as the third dimension of the original tensor)
+
+    nen2 = len(csr_list1[0][2]) - 1  
+    nelem2 = len(csr_list1) 
+
+    if nen1 != nen2 or nelem != nelem2:
+        raise ValueError('Dimensions do not match', nen1, nen2, nelem, nelem2)
+    
+    # Initialize result array
+    c = List()
+    
+    # Perform sparse matrix-vector multiplication for each element
+    for e in range(nelem):
+        c.append(add_lm_lm(csr_list1[e], csr_list2[e]))
+    
+    return c
+
+@njit
 def set_gm_union_sparsity(gm_list):
     '''
     Set the sparsity pattern of a list of global dense matrices (shape: nen1, nen2, nelem)
@@ -405,7 +872,7 @@ def set_spgm_union_sparsity(csr_list):
         n_rows = len(csr_list[0][e][2]) - 1
         for csr in csr_list:
             if len(csr[e][2]) - 1 != n_rows:
-                raise ValueError('Number of rows do not match')
+                raise ValueError('Number of rows do not match', n_rows, len(csr[e][2]) - 1)
 
         indices_glob = []
         indptr_glob = [0]
@@ -426,7 +893,7 @@ def set_spgm_union_sparsity(csr_list):
             nnz += len(row_indices_sorted)
             indptr_glob.append(nnz)
 
-        sparsity_list.append((np.array(indices_glob, dtype=np.int32), np.array(indptr_glob, dtype=np.int32)))
+        sparsity_list.append((np.array(indices_glob, dtype=np.int64), np.array(indptr_glob, dtype=np.int64)))
 
     return sparsity_list
 
@@ -649,7 +1116,7 @@ def gm_dgm_had_diff(A,B):
     
     # Perform sparse hadamard product for each element
     for e in range(nelem):
-        c[:, e] = lm_lm_had_diff(A[e], B[:,:,e])
+        c[:, e] = lm_dlm_had_diff(A[e], B[:,:,e])
     
     return c
 
@@ -816,7 +1283,7 @@ def build_F_vol_sca(q, flux, sparsity):
         indices = sparsity[e][0]
         indptr = sparsity[e][1]
         new_data = np.zeros((len(indices)), dtype=q.dtype)       
-        colptrs = np.zeros(nen, dtype=np.int32)
+        colptrs = np.zeros(nen, dtype=np.int64)
         
         for i in range(nen): # loop over rows
 
@@ -897,7 +1364,7 @@ def build_F_vol_sys(neq, q, flux, sparsity_unkronned, sparsity):
         new_indices = sparsity[e][0]
         new_indptr = sparsity[e][1]
         new_data = np.zeros((len(new_indices)), dtype=q.dtype)       
-        colptrs = np.zeros(nen, dtype=np.int32)
+        colptrs = np.zeros(nen, dtype=np.int64)
         
         for i in range(nen): # loop over rows, NOT kroned with neq
             idxi = i * neq # actual dense initial row index
@@ -1023,8 +1490,8 @@ def build_F_vol_sca_2d(q, flux, xsparsity, ysparsity):
 
         xnew_data = np.zeros(len(xindices), dtype=q.dtype)
         ynew_data = np.zeros(len(yindices), dtype=q.dtype)
-        xcolptrs = np.zeros(nen, dtype=np.int32)
-        ycolptrs = np.zeros(nen, dtype=np.int32)
+        xcolptrs = np.zeros(nen, dtype=np.int64)
+        ycolptrs = np.zeros(nen, dtype=np.int64)
 
         for i in range(nen):  # Loop over rows
             xcol_start = xindptr[i]
@@ -1099,8 +1566,8 @@ def build_F_vol_sys_2d(neq, q, flux, xsparsity_unkronned, xsparsity,
         ynew_indptr = ysparsity[e][1]
         xnew_data = np.zeros((len(xnew_indices)), dtype=q.dtype)      
         ynew_data = np.zeros((len(ynew_indices)), dtype=q.dtype)      
-        xcolptrs = np.zeros(nen, dtype=np.int32)
-        ycolptrs = np.zeros(nen, dtype=np.int32)
+        xcolptrs = np.zeros(nen, dtype=np.int64)
+        ycolptrs = np.zeros(nen, dtype=np.int64)
         
         for i in range(nen): # loop over rows, NOT kroned with neq
             idxi = i * neq # actual dense initial row index
@@ -1273,8 +1740,8 @@ def unkron_neq_gm(csr_list, neq):
             new_indptr[row + 1] = new_indptr[row] + nnz_counter
 
         unkron_csr_list.append((np.array(new_data, dtype=data.dtype),
-                                np.array(new_indices, dtype=np.int32),
-                                np.array(new_indptr, dtype=np.int32)))
+                                np.array(new_indices, dtype=np.int64),
+                                np.array(new_indptr, dtype=np.int64)))
 
     return unkron_csr_list
 
@@ -1320,8 +1787,8 @@ def unkron_neq_sparsity(csr_list, neq):
 
             new_indptr[row + 1] = new_indptr[row] + nnz_counter
 
-        unkron_csr_list.append((np.array(new_indices, dtype=np.int32),
-                                np.array(new_indptr, dtype=np.int32)))
+        unkron_csr_list.append((np.array(new_indices, dtype=np.int64),
+                                np.array(new_indptr, dtype=np.int64)))
 
     return unkron_csr_list
 
@@ -1398,6 +1865,287 @@ def assemble_saty_2d(csr_list,nelemx,nelemy):
             mat_glob[idx] = csr_list[ex][ey]
     return mat_glob
 
+@njit
+def kron_lm_lm(Dx, Dy):
+    '''
+    Compute the Kronecker product of two CSR matrices Dx and Dy.
+
+    Parameters
+    ----------
+    Dx : tuple
+        A tuple (data, indices, indptr) representing a sparse matrix in CSR format.
+    Dy : tuple
+        A tuple (data, indices, indptr) representing a sparse matrix in CSR format.
+
+    Returns
+    -------
+    csr_kron : tuple
+        A tuple (data, indices, indptr) representing the CSR matrix of the Kronecker product.
+    '''
+    Dx_data, Dx_indices, Dx_indptr = Dx
+    Dy_data, Dy_indices, Dy_indptr = Dy
+    
+    Dx_rows = len(Dx_indptr) - 1
+    Dy_rows = len(Dy_indptr) - 1
+    Dx_cols = max(Dx_indices) + 1
+    Dy_cols = max(Dy_indices) + 1
+
+    # Initialize lists to store the resulting CSR components
+    data = []
+    indices = []
+    indptr = [0]
+    
+    for i in range(Dx_rows):
+        for j in range(Dy_rows):
+            # Get the non-zero row slices for current row in Dx and Dy
+            Dx_row_start = Dx_indptr[i]
+            Dx_row_end = Dx_indptr[i + 1]
+            Dy_row_start = Dy_indptr[j]
+            Dy_row_end = Dy_indptr[j + 1]
+            
+            for dx_idx in range(Dx_row_start, Dx_row_end):
+                for dy_idx in range(Dy_row_start, Dy_row_end):
+                    # Compute the data value
+                    value = Dx_data[dx_idx] * Dy_data[dy_idx]
+                    data.append(value)
+                    
+                    # Compute the column index
+                    dx_col = Dx_indices[dx_idx]
+                    dy_col = Dy_indices[dy_idx]
+                    col_index = dx_col * Dy_cols + dy_col
+                    indices.append(col_index)
+                    
+            # Update indptr for the Kronecker product row
+            indptr.append(len(data))
+    
+    # Convert lists to arrays for CSR format
+    return np.array(data), np.array(indices), np.array(indptr)
+
+@njit
+def kron_eye_lm(Dy, p, n=0):
+    '''
+    Compute the Kronecker product of a p x p identity matrix and a CSR matrix Dy.
+
+    Parameters
+    ----------
+    Dy : tuple
+        A tuple (data, indices, indptr) representing a sparse matrix in CSR format.
+    p : int
+        Size of the identity matrix.
+    n : int, optional
+        Number of columns in Dy. If not provided, it will be inferred as the maximum value in indices + 1.
+
+    Returns
+    -------
+    csr_kron : tuple
+        A tuple (data, indices, indptr) representing the CSR matrix of the Kronecker product.
+    '''
+    Dy_data, Dy_indices, Dy_indptr = Dy
+
+    # Infer dimensions of Dy if not provided
+    m = len(Dy_indptr) - 1 # rows in Dy
+    if n == 0: n = max(Dy_indices) + 1 # columns in Dy
+
+    # Prepare arrays for CSR format
+    data = np.zeros(len(Dy_data) * p, dtype=Dy_data.dtype)
+    indices = np.zeros(len(Dy_indices) * p, dtype=np.int64)
+    indptr = np.zeros(m * p + 1, dtype=np.int64)
+
+    # Manually repeat Dy_data and Dy_indices for each block
+    for i in range(p):
+        start_data = i * len(Dy_data)
+        start_indices = i * len(Dy_indices)
+        
+        for j in range(len(Dy_data)):
+            data[start_data + j] = Dy_data[j]
+            indices[start_indices + j] = Dy_indices[j] + i * n
+        
+        # Update indptr for each row block
+        for k in range(m + 1):
+            indptr[i * m + k] = Dy_indptr[k] + i * len(Dy_data)
+    
+    return data, indices, indptr
+
+@njit
+def kron_lm_eye(Dx, p):
+    '''
+    Compute the Kronecker product of a CSR matrix Dx and a p x p identity matrix.
+
+    Parameters
+    ----------
+    Dx : tuple
+        A tuple (data, indices, indptr) representing a sparse matrix in CSR format.
+    p : int
+        Size of the identity matrix.
+
+    Returns
+    -------
+    csr_kron : tuple
+        A tuple (data, indices, indptr) representing the CSR matrix of the Kronecker product.
+    '''
+    Dx_data, Dx_indices, Dx_indptr = Dx
+    m = len(Dx_indptr) - 1  # Number of rows in Dx
+
+    # Prepare arrays for the expanded CSR format
+    expanded_data = np.zeros(len(Dx_data) * p, dtype=Dx_data.dtype)
+    expanded_indices = np.zeros(len(Dx_indices) * p, dtype=np.int64)
+    expanded_indptr = np.zeros(m * p + 1, dtype=np.int64)
+
+    data_index = 0  # Position in expanded_data and expanded_indices
+
+    # Iterate over each row in Dx, expanding into p rows in the result
+    for i in range(m):
+        row_start = Dx_indptr[i]
+        row_end = Dx_indptr[i + 1]
+
+        # For each row in the p x p block
+        for k in range(p):
+            # For each non-zero element in the current row of Dx
+            for j in range(row_start, row_end):
+                value = Dx_data[j]
+                col_index = Dx_indices[j]
+
+                # Place the value along the diagonal of the p x p block
+                expanded_data[data_index] = value
+                expanded_indices[data_index] = col_index * p + k
+                data_index += 1
+
+            # Update indptr for the next row in the expanded matrix
+            expanded_indptr[i * p + k + 1] = data_index
+
+    return expanded_data, expanded_indices, expanded_indptr
+
+@njit
+def kron_gm_eye(Dx_list, p):
+    '''
+    Compute the Kronecker product of a list of CSR matrices and a p x p identity matrix.
+
+    Parameters
+    ----------
+    Dx_list : List of CSR matrices
+        Each element is a tuple (data, indices, indptr) representing a sparse matrix in CSR format.
+    p : int
+        Size of the identity matrix.
+
+    Returns
+    -------
+    List of CSR matrices
+        Each element in the list is a CSR matrix (data, indices, indptr) representing the Kronecker product for each CSR in Dx_list.
+    '''
+    # Prepare a list to store the result CSR matrices
+    kron_result_list = List()
+
+    # Iterate over each CSR matrix in Dx_list
+    for Dx in Dx_list:
+        Dx_data, Dx_indices, Dx_indptr = Dx
+        m = len(Dx_indptr) - 1  # Number of rows in the current Dx
+
+        # Prepare arrays for the expanded CSR format for this Dx
+        expanded_data = np.zeros(len(Dx_data) * p, dtype=Dx_data.dtype)
+        expanded_indices = np.zeros(len(Dx_indices) * p, dtype=np.int64)
+        expanded_indptr = np.zeros(m * p + 1, dtype=np.int64)
+
+        data_index = 0  # Position in expanded_data and expanded_indices
+
+        # Iterate over each row in Dx, expanding into p rows in the result
+        for i in range(m):
+            row_start = Dx_indptr[i]
+            row_end = Dx_indptr[i + 1]
+
+            # For each row in the p x p block
+            for k in range(p):
+                # For each non-zero element in the current row of Dx
+                for j in range(row_start, row_end):
+                    value = Dx_data[j]
+                    col_index = Dx_indices[j]
+
+                    # Place the value along the diagonal of the p x p block
+                    expanded_data[data_index] = value
+                    expanded_indices[data_index] = col_index * p + k
+                    data_index += 1
+
+                # Update indptr for the next row in the expanded matrix
+                expanded_indptr[i * p + k + 1] = data_index
+
+        # Append the resulting expanded CSR matrix for this Dx to the result list
+        kron_result_list.append((expanded_data, expanded_indices, expanded_indptr))
+
+    return kron_result_list
+
+@njit
+def kron_neq_lm(Dx, neq_node):
+    '''
+    Compute the modified Kronecker product of a CSR matrix Dx with a neq_node x neq_node structured pattern.
+
+    Parameters
+    ----------
+    Dx : tuple
+        A tuple (data, indices, indptr) representing a sparse matrix in CSR format.
+    neq_node : int
+        Number of degrees of freedom per node.
+
+    Returns
+    -------
+    csr_kron : tuple
+        A tuple (data, indices, indptr) representing the CSR matrix of the expanded operator.
+    '''
+    Dx_data, Dx_indices, Dx_indptr = Dx
+    m = len(Dx_indptr) - 1  # Number of rows in Dx
+
+    # Prepare arrays for the expanded CSR format
+    expanded_data = np.zeros(len(Dx_data) * neq_node, dtype=Dx_data.dtype)
+    expanded_indices = np.zeros(len(Dx_indices) * neq_node, dtype=np.int64)
+    expanded_indptr = np.zeros(m * neq_node + 1, dtype=np.int64)
+
+    data_index = 0  # Position in expanded_data and expanded_indices
+
+    # Iterate over each row in Dx, expanding into neq_node rows in the result
+    for i in range(m):
+        row_start = Dx_indptr[i]
+        row_end = Dx_indptr[i + 1]
+
+        # For each degree of freedom in the neq_node block
+        for n in range(neq_node):
+            # For each non-zero element in the current row of Dx
+            for j in range(row_start, row_end):
+                value = Dx_data[j]
+                col_index = Dx_indices[j]
+
+                # Spread the value across the appropriate positions
+                expanded_data[data_index] = value
+                expanded_indices[data_index] = col_index * neq_node + n
+                data_index += 1
+
+            # Update indptr for the next row in the expanded matrix
+            expanded_indptr[i * neq_node + n + 1] = data_index
+
+    return expanded_data, expanded_indices, expanded_indptr
+
+@njit
+def kron_neq_gm(csr_list, neq_node):
+    '''
+    Compute the modified Kronecker product of a global CSR matrix Dx with a neq_node x neq_node structured pattern.
+
+    Parameters
+    ----------
+    Dx : list oftuple
+        A list of tuples (data, indices, indptr) representing a global sparse matrix in CSR format.
+    neq_node : int
+        Number of degrees of freedom per node.
+
+    Returns
+    -------
+    c : list of tuples
+        A list of tuples (data, indices, indptr) representing the CSR matrix of the expanded operator.
+    '''
+    # Initialize result array
+    c = List()
+    
+    # Perform sparse matrix-vector multiplication for each element
+    for e in range(len(csr_list)):
+        c.append(kron_neq_lm(csr_list[e], neq_node))
+    
+    return c
 
 if __name__ == '__main__':
     import Functions as fn
@@ -1415,10 +2163,13 @@ if __name__ == '__main__':
     gm2_sp = gm_to_sp(gm2)
     lv = np.random.rand(11)
     gv = np.random.rand(11, 3)
+    gv2 = np.random.rand(10, 3)
     lm = np.random.rand(10, 11)
     lm_sp = lm_to_sp(lm)
     lm2 = np.random.rand(11, 10)
     lm2_sp = lm_to_sp(lm2)
+    lm3 = np.random.rand(10, 11)
+    lm3_sp = lm_to_sp(lm3)
     gm_list = [gm, gm]
 
     c = lm_lv(lm_sp, lv)
@@ -1429,6 +2180,10 @@ if __name__ == '__main__':
     c2 = fn.lm_lm(lm, lm2)
     print('test lm_lm:', np.max(abs(c-c2)))
 
+    c = sp_to_lm(lm_lmT(lm_sp, lm3_sp))
+    c2 = lm @ lm3.T
+    print('test lm_lmT:', np.max(abs(c-c2)))
+
     c = lm_gv(lm_sp, gv)
     c2 = fn.lm_gv(lm, gv)
     print('test lm_gv:', np.max(abs(c-c2)))
@@ -1437,9 +2192,50 @@ if __name__ == '__main__':
     c2 = fn.gm_gv(gm, gv)
     print('test gm_gv:', np.max(abs(c-c2)))
 
+    c = sp_to_gm(lm_gdiag(lm_sp, gv))
+    c2 = fn.lm_gdiag(lm, gv)
+    print('test lm_gdiag:', np.max(abs(c-c2)))
+
+    c = sp_to_gm(gdiag_lm(gv, lm2_sp))
+    c2 = fn.gdiag_lm(gv, lm2)
+    print('test gdiag_lm:', np.max(abs(c-c2)))
+
+    c = sp_to_gm(gdiag_gm(gv2, gm_sp))
+    c2 = fn.gdiag_gm(gv2, gm)
+    print('test gdiag_gm:', np.max(abs(c-c2)))
+
+    c = sp_to_lm(lm_ldiag(lm_sp, lv))
+    c2 = lm @ np.diag(lv)
+    print('test lm_ldiag:', np.max(abs(c-c2)))
+
+    c = sp_to_gm(lm_gm(lm2_sp, gm_sp))
+    c2 = fn.lm_gm(lm2, gm)
+    print('test lm_gm:', np.max(abs(c-c2)))
+
     c = lm_dgm(lm2_sp, gm)
     c2 = fn.lm_gm(lm2, gm)
     print('test lm_dgm:', np.max(abs(c-c2)))
+
+    c = sp_to_gm(add_gm_gm(gm_sp, gm2_sp))
+    c2 = gm + gm2
+    print('test add_gm_gm:', np.max(abs(c-c2)))
+
+    c = sp_to_lm(kron_lm_lm(lm_sp, lm2_sp))
+    c2 = np.kron(lm, lm2)
+    print('test kron_lm_lm:', np.max(abs(c-c2)))
+
+    eye = np.eye(5)
+    c = sp_to_lm(kron_eye_lm(lm2_sp, 5))
+    c2 = np.kron(eye, lm2)
+    print('test kron_eye_lm:', np.max(abs(c-c2)))
+
+    c = sp_to_lm(kron_lm_eye(lm_sp, 5))
+    c2 = np.kron(lm, eye)
+    print('test kron_lm_eye:', np.max(abs(c-c2)))
+
+    c = sp_to_lm(kron_neq_lm(lm_sp, 5))
+    c2 = fn.kron_neq_lm(lm, 5)
+    print('test kron_neq_lm:', np.max(abs(c-c2)))
 
     lm2 = np.random.rand(10, 11)
     lm2_sp = lm_to_sp(lm2)

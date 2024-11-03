@@ -27,6 +27,7 @@ from Source.Disc.BasisFun import BasisFun
 from Source.Disc.SbpQuadRule import SbpQuadRule
 from Source.Disc.CSbpOp import CSbpOp, HGTLOp, HGTOp, MattOp
 import Source.Methods.Functions as fn
+import Source.Methods.Sparse as sp
 from Source.Disc.MakeMesh import MakeMesh
 from contextlib import redirect_stdout
 
@@ -375,8 +376,10 @@ class MakeSbpOp:
 
 
 
-    def ref_2_phys(self, mesh, form):
+    def ref_2_phys(self, mesh, neq, form, sparse, sat_sparse, calc_nd_ops):
         '''
+        Set the physical operators, and set to sparse if necessary
+
         Parameters
         ----------
         mesh : class instance of MakeMesh.py defining mesh
@@ -396,66 +399,187 @@ class MakeSbpOp:
         assert fn.isDiag(self.H), 'H matrix is not diagonal!'
 
         if mesh.dim == 1:
-            
 
-            D_phys = fn.gdiag_lm(mesh.det_jac_inv, self.D) # remember in 1D metrics = 1
-            H_phys = np.diag(self.H)[:,None] * mesh.det_jac
-            tb = self.tR.reshape((mesh.nen,1))
-            ta = self.tL.reshape((mesh.nen,1))
-            E = tb @ tb.T - ta @ ta.T
-            D_phys_nd = D_phys
+            self.H_phys_unkronned = np.diag(self.H)[:,None] * mesh.det_jac
+            self.H_phys = fn.repeat_neq_gv(self.H_phys_unkronned,neq)
+            self.H_inv_phys = 1/self.H_phys
             
-            return H_phys, D_phys, D_phys_nd
+            # remember in 1D metrics = 1
+            if sparse:
+                D = sp.lm_to_sp(self.D)
+                Dx = sp.gdiag_lm(mesh.det_jac_inv, D)
+                self.Dx = sp.kron_gm_eye(Dx, neq)
+            else:
+                Dx = fn.gdiag_lm(mesh.det_jac_inv, self.D)
+                self.Dx = fn.kron_neq_gm(Dx, neq)
+            
+            if calc_nd_ops:
+                # use unkronned for multi-dim Dx
+                self.Dx_nd = Dx
+            
+            if sat_sparse:
+                self.tb = sp.kron_neq_lm(sp.lm_to_sp(self.tR.reshape(self.nn,1)), neq)
+                self.ta = sp.kron_neq_lm(sp.lm_to_sp(self.tL.reshape(self.nn,1)), neq)
+                self.tbT = sp.kron_neq_lm(sp.lm_to_sp(self.tR.reshape(1,self.nn)), neq)
+                self.taT = sp.kron_neq_lm(sp.lm_to_sp(self.tL.reshape(1,self.nn)), neq)
+                self.Esurf = sp.kron_neq_lm(sp.lm_to_sp(self.E), neq)
+            else:
+                self.tb = fn.kron_neq_lm(self.tR.reshape((self.nn,1)), neq)
+                self.ta = fn.kron_neq_lm(self.tL.reshape((self.nn,1)), neq)
+                self.tbT = self.tb.T
+                self.taT = self.ta.T
+                self.Esurf = fn.kron_neq_lm(self.E, neq)
         
         elif mesh.dim == 2:
             
-            eye = np.eye(mesh.nen)
-            H_phys = np.diag(np.kron(self.H,self.H))[:,None] * mesh.det_jac
-            
-            Dx = np.kron(self.D, eye) # shape (nen^2,nen^2)
-            Dy = np.kron(eye, self.D)
-            
-            txb = np.kron(self.tR.reshape((mesh.nen,1)), eye)
-            txa = np.kron(self.tL.reshape((mesh.nen,1)), eye)
-            tyb = np.kron(eye, self.tR.reshape((mesh.nen,1)))
-            tya = np.kron(eye, self.tL.reshape((mesh.nen,1)))
-            
-            Ex = txb @ self.H @ txb.T - txa @ self.H @ txa.T
-            Ey = tyb @ self.H @ tyb.T - tya @ self.H @ tya.T
+            H = np.diag(self.H)
+            self.H_phys_unkronned = np.kron(H,H)[:,None] * mesh.det_jac
+            self.H_phys = fn.repeat_neq_gv(self.H_phys_unkronned,neq)
+            self.H_inv_phys = 1/self.H_phys
+            self.Hperp = fn.repeat_neq_lv(H,neq)
 
-            if form == 'skew_sym':
-                Dx_phys = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,0,:]) + fn.gdiag_lm(mesh.metrics[:,0,:],Dx) 
-                                                          + fn.lm_gdiag(Dy,mesh.metrics[:,2,:]) + fn.gdiag_lm(mesh.metrics[:,2,:],Dy)))
-                Dy_phys = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,1,:]) + fn.gdiag_lm(mesh.metrics[:,1,:],Dx) 
-                                                          + fn.lm_gdiag(Dy,mesh.metrics[:,3,:]) + fn.gdiag_lm(mesh.metrics[:,3,:],Dy)))
-                # the below are the actual multi-d physical operators
-                xm = 0 # l=x, m=x
-                ym = 2 # l=y, m=x
-                Ebx = fn.gm_lm(fn.lm_gdiag((txb @ self.H), mesh.bdy_metrics[:,1,xm,:]), txb.T) - fn.gm_lm(fn.lm_gdiag((txa @ self.H), mesh.bdy_metrics[:,0,xm,:]), txa.T) \
-                    + fn.gm_lm(fn.lm_gdiag((tyb @ self.H), mesh.bdy_metrics[:,3,ym,:]), tyb.T) - fn.gm_lm(fn.lm_gdiag((tya @ self.H), mesh.bdy_metrics[:,2,ym,:]), tya.T) 
-                Dx_phys_nd = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,0,:]) + fn.gdiag_lm(mesh.metrics[:,0,:],Dx) 
-                                                          + fn.lm_gdiag(Dy,mesh.metrics[:,2,:]) + fn.gdiag_lm(mesh.metrics[:,2,:],Dy))) \
-                            +0.5*fn.gdiag_gm( (1/H_phys), ( Ebx - fn.lm_gdiag(Ex, mesh.metrics[:,xm,:]) - fn.lm_gdiag(Ey, mesh.metrics[:,ym,:]) ))
-                xm = 1 # l=x, m=y
-                ym = 3 # l=y, m=y
-                Eby = fn.gm_lm(fn.lm_gdiag((txb @ self.H), mesh.bdy_metrics[:,1,xm,:]), txb.T) - fn.gm_lm(fn.lm_gdiag((txa @ self.H), mesh.bdy_metrics[:,0,xm,:]), txa.T) \
-                    + fn.gm_lm(fn.lm_gdiag((tyb @ self.H), mesh.bdy_metrics[:,3,ym,:]), tyb.T) - fn.gm_lm(fn.lm_gdiag((tya @ self.H), mesh.bdy_metrics[:,2,ym,:]), tya.T) 
-                Dy_phys_nd = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,1,:]) + fn.gdiag_lm(mesh.metrics[:,1,:],Dx) 
-                                                          + fn.lm_gdiag(Dy,mesh.metrics[:,3,:]) + fn.gdiag_lm(mesh.metrics[:,3,:],Dy))) \
-                            +0.5*fn.gdiag_gm( (1/H_phys), ( Eby - fn.lm_gdiag(Ex, mesh.metrics[:,xm,:]) - fn.lm_gdiag(Ey, mesh.metrics[:,ym,:]) ))
-            elif form == 'div': # not provably stable
-                Dx_phys = fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,0,:]) + fn.lm_gdiag(Dy,mesh.metrics[:,2,:])))
-                Dy_phys = fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,1,:]) + fn.lm_gdiag(Dy,mesh.metrics[:,3,:])))
-                Dy_phys_nd = None
-                Dy_phys_nd = None
+            if sat_sparse:
+                # using a sparse sat, so want to save certain SAT matrices
+                tR = sp.lm_to_sp(self.tR.reshape(self.nn,1))
+                tL = sp.lm_to_sp(self.tL.reshape(self.nn,1))
+                tRT = sp.lm_to_sp(self.tR.reshape(1,self.nn))
+                tLT = sp.lm_to_sp(self.tL.reshape(1,self.nn))
+                txb = sp.kron_lm_eye(tR, self.nn)
+                txa = sp.kron_lm_eye(tL, self.nn)
+                tyb = sp.kron_eye_lm(tR, self.nn, 1)
+                tya = sp.kron_eye_lm(tL, self.nn, 1)
+                txbT = sp.kron_lm_eye(tRT, self.nn)
+                txaT = sp.kron_lm_eye(tLT, self.nn)
+                tybT = sp.kron_eye_lm(tRT, self.nn, self.nn)
+                tyaT = sp.kron_eye_lm(tLT, self.nn, self.nn)
+                self.txb = sp.kron_neq_lm(txb, neq)
+                self.txa = sp.kron_neq_lm(txa, neq)
+                self.tyb = sp.kron_neq_lm(tyb, neq)
+                self.tya = sp.kron_neq_lm(tya, neq)
+                self.txbT = sp.kron_neq_lm(txbT, neq)
+                self.txaT = sp.kron_neq_lm(txaT, neq)
+                self.tybT = sp.kron_neq_lm(tybT, neq)
+                self.tyaT = sp.kron_neq_lm(tyaT, neq)
+                Exsurf = sp.add_lm_lm( sp.lm_lm(sp.lm_ldiag(txb, H), txbT), 
+                                       sp.lm_lm(sp.lm_ldiag(txa, -H), txaT))
+                Eysurf = sp.add_lm_lm( sp.lm_lm(sp.lm_ldiag(tyb, H), tybT), 
+                                       sp.lm_lm(sp.lm_ldiag(tya, -H), tyaT))
+                self.Exsurf = sp.kron_neq_lm(Exsurf, neq)
+                self.Eysurf = sp.kron_neq_lm(Eysurf, neq)
+
+            # calculate and save the important volume operators
+            if sparse:
+                D = sp.lm_to_sp(self.D)
+                Dx = sp.kron_lm_eye(D, self.nn)
+                Dy = sp.kron_eye_lm(D, self.nn, self.nn)
+
+                if form == 'skew_sym':
+                    xm = 0 # l=x, m=x
+                    ym = 2 # l=y, m=x
+                    tempx = sp.add_gm_gm( sp.lm_gdiag(Dx,mesh.metrics[:,xm,:]), sp.gdiag_lm(mesh.metrics[:,xm,:],Dx) )
+                    tempy = sp.add_gm_gm( sp.lm_gdiag(Dy,mesh.metrics[:,ym,:]), sp.gdiag_lm(mesh.metrics[:,ym,:],Dy) )
+                    Dx_phys = sp.gdiag_gm(0.5*mesh.det_jac_inv, sp.add_gm_gm(tempx, tempy))
+                    self.Dx = sp.kron_neq_gm(Dx_phys, neq)
+
+                    if calc_nd_ops:
+                        tempx = sp.add_lm_lm( sp.lm_lm(sp.lm_ldiag(txb, H * mesh.bdy_metrics[:,1,xm,:]), txbT), 
+                                            sp.lm_lm(sp.lm_ldiag(txa, -H * mesh.bdy_metrics[:,0,xm,:]), txaT))
+                        tempy = sp.add_lm_lm( sp.lm_lm(sp.lm_ldiag(tyb, H * mesh.bdy_metrics[:,3,ym,:]), tybT), 
+                                            sp.lm_lm(sp.lm_ldiag(tya, -H * mesh.bdy_metrics[:,2,ym,:]), tyaT))
+                        Ex_phys = sp.gdiag_gm(0.5/self.H_phys_unkronned, sp.add_gm_gm(tempx, tempy))
+                        tempx = sp.lm_gdiag(Exsurf, mesh.metrics[:,xm,:])
+                        tempy = sp.lm_gdiag(Eysurf, mesh.metrics[:,ym,:])
+                        self.Exsurf_phys = sp.gdiag_gm(-0.5/self.H_phys_unkronned, sp.add_gm_gm(tempx, tempy))
+                        # use unkronned for multi-dim Dx
+                        self.Dx_nd = sp.add_gm_gm(Dx_phys, sp.add_gm_gm(Ex_phys, self.Exsurf_phys))
+
+                    xm = 1 # l=x, m=y
+                    ym = 3 # l=y, m=y
+                    tempx = sp.add_gm_gm( sp.lm_gdiag(Dx,mesh.metrics[:,xm,:]), sp.gdiag_lm(mesh.metrics[:,xm,:],Dx) )
+                    tempy = sp.add_gm_gm( sp.lm_gdiag(Dy,mesh.metrics[:,ym,:]), sp.gdiag_lm(mesh.metrics[:,ym,:],Dy) )
+                    Dy_phys = sp.gdiag_gm(0.5*mesh.det_jac_inv, sp.add_gm_gm(tempx, tempy))
+                    self.Dy = sp.kron_neq_gm(Dy_phys, neq)
+
+                    if calc_nd_ops:
+                        tempx = sp.add_lm_lm( sp.lm_lm(sp.lm_ldiag(txb, H * mesh.bdy_metrics[:,1,xm,:]), txbT), 
+                                            sp.lm_lm(sp.lm_ldiag(txa, -H * mesh.bdy_metrics[:,0,xm,:]), txaT))
+                        tempy = sp.add_lm_lm( sp.lm_lm(sp.lm_ldiag(tyb, H * mesh.bdy_metrics[:,3,ym,:]), tybT), 
+                                            sp.lm_lm(sp.lm_ldiag(tya, -H * mesh.bdy_metrics[:,2,ym,:]), tyaT))
+                        Ey_phys = sp.gdiag_gm(0.5/self.H_phys_unkronned, sp.add_gm_gm(tempx, tempy))
+                        tempx = sp.lm_gdiag(Exsurf, mesh.metrics[:,xm,:])
+                        tempy = sp.lm_gdiag(Eysurf, mesh.metrics[:,ym,:])
+                        self.Eysurf_phys = sp.gdiag_gm(-0.5/self.H_phys_unkronned, sp.add_gm_gm(tempx, tempy))
+                        # use unkronned for multi-dim Dy
+                        self.Dy_nd = sp.add_gm_gm(Dy_phys, sp.add_gm_gm(Ey_phys, self.Eysurf_phys))
+                else:
+                    #TODO
+                    raise Exception('Not implemented in sparse yet')
+            
             else:
-                raise Exception('Physical operator form not understood.')
+                if (not sat_sparse) or (sat_sparse and calc_nd_ops):
+                    # may need to compute / recompute some things
+                    tR = self.tR.reshape(self.nn,1)
+                    tL = self.tL.reshape(self.nn,1)
+                    txb = fn.kron_neq_lm(tR, self.nn)
+                    txa = fn.kron_neq_lm(tL, self.nn)
+                    tyb = np.kron(np.eye(self.nn), tR)
+                    tya = np.kron(np.eye(self.nn), tL)
+                    Exsurf = fn.lm_ldiag(txb, H) @ txb.T - fn.lm_ldiag(txa, H) @ txa.T
+                    Eysurf = fn.lm_ldiag(tyb, H) @ tyb.T - fn.lm_ldiag(tya, H) @ tya.T
+                if (not sat_sparse):
+                    # save the dense SAT matrices
+                    self.txb = fn.kron_neq_lm(txb, neq)
+                    self.txa = fn.kron_neq_lm(txa, neq)
+                    self.tyb = fn.kron_neq_lm(tyb, neq)
+                    self.tya = fn.kron_neq_lm(tya, neq)
+                    self.txbT = self.txb.T
+                    self.txaT = self.txa.T
+                    self.tybT = self.tyb.T
+                    self.tyaT = self.tya.T
+                    self.Exsurf = fn.kron_neq_lm(Exsurf, neq)
+                    self.Eysurf = fn.kron_neq_lm(Eysurf, neq)
 
-            return H_phys, Dx_phys, Dy_phys, Dx_phys_nd, Dy_phys_nd#, Ebx, Eby
+                Dx = fn.kron_neq_lm(self.D, self.nn)
+                Dy = np.kron(np.eye(self.nn), self.D)
+
+                if form == 'skew_sym':
+                    xm = 0 # l=x, m=x
+                    ym = 2 # l=y, m=x
+                    Dx_phys = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,xm,:]) + fn.gdiag_lm(mesh.metrics[:,xm,:],Dx) 
+                                                               + fn.lm_gdiag(Dy,mesh.metrics[:,ym,:]) + fn.gdiag_lm(mesh.metrics[:,ym,:],Dy)))
+                    self.Dx = fn.kron_neq_gm(Dx_phys, neq)
+
+                    if calc_nd_ops:
+                        Ex_phys = fn.gm_lm(fn.lm_gdiag(fn.lm_ldiag(txb, H), mesh.bdy_metrics[:,1,xm,:]), txb.T) - fn.gm_lm(fn.lm_gdiag(fn.lm_ldiag(txa, H), mesh.bdy_metrics[:,0,xm,:]), txa.T) \
+                                + fn.gm_lm(fn.lm_gdiag(fn.lm_ldiag(txb, H), mesh.bdy_metrics[:,3,ym,:]), tyb.T) - fn.gm_lm(fn.lm_gdiag(fn.lm_ldiag(tya, H), mesh.bdy_metrics[:,2,ym,:]), tya.T) 
+                        self.Dx_nd = Dx_phys + 0.5*fn.gdiag_gm( (1/self.H_phys_unkronned), (Ex_phys - fn.lm_gdiag(Exsurf, mesh.metrics[:,xm,:]) - fn.lm_gdiag(Eysurf, mesh.metrics[:,ym,:]) ))
+                    
+                    xm = 1 # l=x, m=x
+                    ym = 3 # l=y, m=x
+                    Dy_phys = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,xm,:]) + fn.gdiag_lm(mesh.metrics[:,xm,:],Dx) 
+                                                               + fn.lm_gdiag(Dy,mesh.metrics[:,ym,:]) + fn.gdiag_lm(mesh.metrics[:,ym,:],Dy)))
+                    self.Dy = fn.kron_neq_gm(Dy_phys, neq)
+                    
+                    if calc_nd_ops:
+                        Ey_phys = fn.gm_lm(fn.lm_gdiag(fn.lm_ldiag(txb, H), mesh.bdy_metrics[:,1,xm,:]), txb.T) - fn.gm_lm(fn.lm_gdiag(fn.lm_ldiag(txa, H), mesh.bdy_metrics[:,0,xm,:]), txa.T) \
+                                + fn.gm_lm(fn.lm_gdiag(fn.lm_ldiag(txb, H), mesh.bdy_metrics[:,3,ym,:]), tyb.T) - fn.gm_lm(fn.lm_gdiag(fn.lm_ldiag(tya, H), mesh.bdy_metrics[:,2,ym,:]), tya.T) 
+                        self.Dy_nd = Dy_phys + 0.5*fn.gdiag_gm( (1/self.H_phys_unkronned), (Ey_phys - fn.lm_gdiag(Exsurf, mesh.metrics[:,xm,:]) - fn.lm_gdiag(Eysurf, mesh.metrics[:,ym,:]) ))
+                
+                elif form == 'div': # not provably stable
+                    self.Dx = fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,0,:]) + fn.lm_gdiag(Dy,mesh.metrics[:,2,:])))
+                    self.Dy = fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,1,:]) + fn.lm_gdiag(Dy,mesh.metrics[:,3,:])))
+                    self.Dx_nd = None
+                    self.Dy_nd = None
+                
+                else:
+                    raise Exception('Physical operator form not understood.')
+
         
         elif mesh.dim == 3:
+
+            raise Exception('TODO: Redo sbp.ref_2_phys up for 3D.')
             
-            eye = np.eye(mesh.nen)
+            eye = np.eye(self.nn)
             H_phys = np.diag(np.kron(np.kron(self.H,self.H),self.H))[:,None] * mesh.det_jac
             
             Dx = np.kron(np.kron(self.D, eye),eye) # shape (nen^3,nen^3)

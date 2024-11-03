@@ -26,6 +26,7 @@ class PdeSolver:
     keep_all_ts = True  # whether to keep all time steps on solve
     skip_ts = 0
     use_diffeq_dExdx = False
+    calc_nd_ops = False # Calulate the physical multi-dimensional operators (incorporates E matrices)
 
     def __init__(self, diffeq, settings,                            # Diffeq
                  tm_method, dt, t_final,                    # Time marching
@@ -457,11 +458,12 @@ class PdeSolver:
         return cons_obj
     
     
-    def norm(self, q):
+    def norm(self, q, nen=None):
         ''' calculate the energy norm q.T @ H @ q given a global q'''
-        return np.sqrt(float(self.energy(q)))
+        return np.sqrt(float(self.energy(q,nen)))
     
-    def calc_error(self, q=None, tf=None, method=None, use_all_t=False):
+    def calc_error(self, q=None, tf=None, method=None, use_all_t=False,
+                   var2plot_name=None):
         '''
         Purpose
         ----------
@@ -505,25 +507,36 @@ class PdeSolver:
             for i in range(steps):
                 errors[i] = self.calc_error(self.q_sol[:,:,i],times[i],method=method)
             return errors
+        
+        q_exa = self.diffeq.exact_sol(tf)
+        if var2plot_name is None:
+            var = q
+            var_exa = q_exa
+            neq = self.neq_node
+        else:
+            var = self.diffeq.var2plot(q,var2plot_name)
+            var_exa = self.diffeq.var2plot(q_exa,var2plot_name)
+            if var2plot_name == 'q':
+                neq = self.neq_node
+            else:
+                neq = 1
 
         # determine error to use
         if method == 'SBP' or method == 'Rms':
-            q_exa = self.diffeq.exact_sol(tf)
-            error = q - q_exa
+            error = var - var_exa
         elif method == 'max diff':
-            q_exa = self.diffeq.exact_sol(tf)
-            error = np.max(abs(q-q_exa))
+            error = np.max(abs(var-var_exa))
         elif method == 'Boundary':
-            error = abs(q[0]-q[-1])
+            error = abs(var[0]-var[-1])
         elif method == 'Truncation-SBP' or method == 'Truncation-Rms':
-            q_exa = self.diffeq.exact_sol(tf)
-            error = self.diffeq.dqdt(q - q_exa)
+            # I think this is wrong... not typical truncation error
+            error = self.diffeq.dqdt(var - var_exa)
         else:
             raise Exception('Unknown error method. Use one of: H-norm, Rms, Boundary, Truncation-SBP, Truncation-Rms')
 
         # if we still need to apply a norm, do it
         if method == 'SBP' or method == 'Truncation-SBP':
-            error = self.norm(error)
+            error = self.norm(error,neq)
         elif method == 'Rms' or method == 'Truncation-Rms':
             error = np.linalg.norm(error) / np.sqrt(self.nn)
         return error

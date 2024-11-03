@@ -448,7 +448,7 @@ def symbolic(A):
 def run_convergence(solver, schedule_in=None, error_type='SBP',
              scale_dt=True, return_conv=False, savefile=None, labels=None,
              title=None, ylabel=None, xlabel=None, grid=False, convunc=True, 
-             ylim=None, ignore_fail=False, plot=True):
+             ylim=None, ignore_fail=False, plot=True, vars2plot=None):
     '''
     Purpose
     ----------
@@ -555,7 +555,10 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
     n_runs = len(runs_nelem)
     n_tot = n_cases*n_runs
     n_attributes = len(attributes)
-    errors = np.zeros((n_cases,n_runs)) # store errors here
+    if vars2plot is None:
+        errors = np.zeros((n_cases,n_runs)) # store errors here
+    else:
+        errors = np.zeros((n_cases,n_runs,len(vars2plot)))
     dofs = np.zeros((n_cases,n_runs)) # store degrees of freedom here
     legend_strings = ['']*n_cases # store labels for cases here
     if labels is not None:
@@ -606,8 +609,17 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
                     new_dx = (xmax - xmin) / nn
                     new_dt = base_dt * new_dx / base_dx
                     solver.set_timestep(new_dt)
+                solver.keep_all_ts = False
                 solver.solve()
-                errors[casei,runi] = solver.calc_error(method=error_type)
+                if vars2plot is None:
+                    errors[casei,runi] = solver.calc_error(method=error_type)
+                else:
+                    for varidx, var in enumerate(vars2plot):
+                        try:
+                            errors[casei,runi,varidx] = solver.calc_error(method=error_type, var2plot_name=var)
+                        except Exception as e:
+                            print(f"ERROR: solver.calc_error(var2plot_name='{var}') returned errors. Skipping.")
+                            errors[casei,runi,varidx] = 0.
                 if solver.dim == 1:
                     nn = solver.nn
                     dofs[casei,runi] = nn
@@ -661,17 +673,27 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
     
     ''' Analyze convergence '''
     print('---------------------------------------------------------')
-    print(error_type + ' Error Convergence Rates:')
-    conv_vec, avg_conv = calc_conv_rate(dofs, errors, solver.dim,
-                                                    legend_strings=legend_strings)
+    if vars2plot is None:
+        print(error_type + ' Error Convergence Rates:')
+        conv_vec, avg_conv = calc_conv_rate(dofs, errors, solver.dim, legend_strings=legend_strings)
+    else:
+        for varidx, var in enumerate(vars2plot):
+            print(error_type + f' Error Convergence Rates for {var}:')
+            conv_vec, avg_conv = calc_conv_rate(dofs, errors[:,:,varidx], solver.dim, legend_strings=legend_strings)
 
     ''' Plot Results '''
-    # use diffeq.plot_obj?
     if plot:
-        if title == None:
-            title = r"Convergence of " + error_type + " Error"
-        plot_conv(dofs, errors, legend_strings, solver.dim, title, savefile,
-                    ylabel=ylabel,xlabel=xlabel,grid=grid,convunc=convunc,ylim=ylim)
+        if vars2plot is None:
+            if title == None:
+                title = r"Convergence of " + error_type + " Error"
+            plot_conv(dofs, errors, legend_strings, solver.dim, title, savefile,
+                        ylabel=ylabel,xlabel=xlabel,grid=grid,convunc=convunc,ylim=ylim)
+        else:
+            for varidx, var in enumerate(vars2plot):
+                if title == None:
+                    title = r"Convergence of " + error_type + ' ' + var + " Error"
+                plot_conv(dofs, errors[:,:,varidx], legend_strings, solver.dim, title, savefile,
+                            ylabel=ylabel,xlabel=xlabel,grid=grid,convunc=convunc,ylim=ylim)
     
     if return_conv:
         return dofs, errors, legend_strings

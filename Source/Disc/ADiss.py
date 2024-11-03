@@ -210,10 +210,16 @@ class ADiss():
                     if self.dim == 1: 
                         from Source.DiffEq.EulerFunctions import StegerWarming_diss_1D
                         self.stegerwarming = StegerWarming_diss_1D
-                    elif self.dim == 2: 
+                    elif self.dim == 2:
+                        print("WARNING: StegerWarming flux-vector splitting not yet debugged for 2D. Try DrikakisTsangaris instead.") 
                         from Source.DiffEq.EulerFunctions import StegerWarming_diss_2D
                         self.stegerwarming = StegerWarming_diss_2D
                     self.dissipation = self.dissipation_upwind_stegerwarming
+                elif self.fluxvec.lower() == 'drikakistsangaris' or self.fluxvec.lower()=='dt':
+                    if self.dim == 2: 
+                        from Source.DiffEq.EulerFunctions import DrikakisTsangaris_diss_2D
+                        self.DrikakisTsangaris = DrikakisTsangaris_diss_2D
+                    self.dissipation = self.dissipation_upwind_DrikakisTsangaris
                 else:
                     print("WARNING: fluxvec method not understood. Defaulting to fluxvec = 'lf'.")
                     self.fluxvec = 'lf'
@@ -310,10 +316,10 @@ class ADiss():
         xavg = (1.-0.)/(self.nen-1) # this is the reference spacing. Physical spacing is taken care of implicitly by metrics.
 
         if self.type == 'w' or self.type == 'entw':
-            #Ds = np.copy(self.solver.Dx_phys_nd)
+            #Ds = np.copy(self.solver.Dx_phys)
             Ds = np.copy(self.solver.sbp.D)
             for i in range(1,self.s):
-                #Ds = fn.gm_gm(self.solver.Dx_phys_nd,Ds)
+                #Ds = fn.gm_gm(self.solver.Dx_phys,Ds)
                 Ds = self.solver.sbp.D @ Ds
             #DsT = np.transpose(Ds,axes=(1,0,2))
             DsT = Ds.T
@@ -519,7 +525,7 @@ class ADiss():
             self.Dxidiss = fn.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), fn.kron_neq_lm(np.kron(Ddiss, eye),self.neq_node)) 
             self.Detadiss = fn.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), fn.kron_neq_lm(np.kron(eye, Ddiss),self.neq_node))
         else:
-            raise Exception(self.type + ' not set up yet')
+            raise Exception('ADiss: diss_type ' + self.type + ' not set up yet')
         
         if self.sparse:
             if self.type in ['w', 'entw', 'dcp', 'entdcp']:
@@ -573,6 +579,17 @@ class ADiss():
             diss += self.gm_gv(self.Detadiss, fdiss) # eta part
         elif self.dim == 3:
             diss = 0.
+        return self.coeff*diss
+    
+    def dissipation_upwind_DrikakisTsangaris(self, q):
+        ''' dissipation function for upwind steger warming flux-vector splitting'''
+        if self.dim == 2:
+            fdiss = self.DrikakisTsangaris(q,self.dxidx)
+            diss = self.gm_gv(self.Dxidiss, fdiss) # xi part
+            fdiss = self.DrikakisTsangaris(q,self.detadx)
+            diss += self.gm_gv(self.Detadiss, fdiss) # eta part
+        else:
+            raise Exception('TODO: DrikakisTsangaris dissipation only implemented for 2D.')
         return self.coeff*diss
 
     def dissipation_dcp_scalar(self, q):
@@ -679,11 +696,11 @@ class ADiss():
             AP = self.repeat_neq_gv(AP)
             diss = self.gm_gv(self.lhs_Dxi, AP * self.lm_gv(self.rhs_Dxi, w)) # xi part
             maxeig = self.maxeig_dEndq(q,self.detadx) 
-            AP = self.repeat_neq_gv(maxeig*rho_dqdw)
+            AP = maxeig*rho_dqdw
             if self.s % 2 == 1 and self.avg_half_nodes:
                 for xi_idx in range(self.nen):
                     AP[xi_idx*self.nen:(xi_idx+1)*self.nen-1] = 0.5*(AP[xi_idx*self.nen:(xi_idx+1)*self.nen-1] + AP[xi_idx*self.nen+1:(xi_idx+1)*self.nen])
-            AP = self.repeat_neq_gv(AP)        
+            AP = self.repeat_neq_gv(AP)  
             diss += self.gm_gv(self.lhs_Deta, AP * self.lm_gv(self.rhs_Deta, w)) # eta part
         elif self.dim == 3:
             raise Exception('TODO')
