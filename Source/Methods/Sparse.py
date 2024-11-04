@@ -1543,7 +1543,7 @@ def build_F_vol_sca_2d(q, flux, xsparsity, ysparsity):
 
     return Fx_vol, Fy_vol
     
-@njit 
+@njit
 def build_F_vol_sys_2d(neq, q, flux, xsparsity_unkronned, xsparsity,
                                      ysparsity_unkronned, ysparsity):
     ''' Builds a sparsified Flux differencing matrix (used for Hadamard form) given a 
@@ -1554,80 +1554,68 @@ def build_F_vol_sys_2d(neq, q, flux, xsparsity_unkronned, xsparsity,
     Fx_vol = List()
     Fy_vol = List()
     nen = nen_neq // neq
+    
     for e in range(nelem):
-        # Initialize lists to store CSR data
-        xindices = xsparsity_unkronned[e][0]
-        xindptr = xsparsity_unkronned[e][1]
-        xnew_indices = xsparsity[e][0]
-        xnew_indptr = xsparsity[e][1]
-        yindices = ysparsity_unkronned[e][0]
-        yindptr = ysparsity_unkronned[e][1]
-        ynew_indices = ysparsity[e][0]
-        ynew_indptr = ysparsity[e][1]
-        xnew_data = np.zeros((len(xnew_indices)), dtype=q.dtype)      
-        ynew_data = np.zeros((len(ynew_indices)), dtype=q.dtype)      
+        # Extract sparsity patterns for element `e`
+        xindices, xindptr = xsparsity_unkronned[e]
+        xnew_indices, xnew_indptr = xsparsity[e]
+        yindices, yindptr = ysparsity_unkronned[e]
+        ynew_indices, ynew_indptr = ysparsity[e]
+        
+        # Initialize sparse data arrays
+        xnew_data = np.zeros(len(xnew_indices), dtype=q.dtype)
+        ynew_data = np.zeros(len(ynew_indices), dtype=q.dtype)
         xcolptrs = np.zeros(nen, dtype=np.int64)
         ycolptrs = np.zeros(nen, dtype=np.int64)
-        
-        for i in range(nen): # loop over rows, NOT kroned with neq
-            idxi = i * neq # actual dense initial row index
-            idxi2 = (i + 1) * neq # actual dense final row index
 
-            xcol_start = xindptr[i]
-            xcol_end = xindptr[i + 1]
-            ycol_start = yindptr[i]
-            ycol_end = yindptr[i + 1]
+        for i in range(nen):
+            idxi = i * neq
+            idxi2 = (i + 1) * neq
+            xcol_start, xcol_end = xindptr[i], xindptr[i + 1]
+            ycol_start, ycol_end = yindptr[i], yindptr[i + 1]
 
-            for j in range(i,nen): # loop over columns, NOT kroned with neq
-
-                xcol_start_T = xindptr[j]
-                xcol_end_T = xindptr[j + 1]
-                ycol_start_T = yindptr[j]
-                ycol_end_T = yindptr[j + 1]
+            for j in range(i, nen):
+                idxj = j * neq
+                idxj2 = (j + 1) * neq
+                xcol_start_T, xcol_end_T = xindptr[j], xindptr[j + 1]
+                ycol_start_T, ycol_end_T = yindptr[j], yindptr[j + 1]
 
                 xadd_entry = (j in xindices[xcol_start:xcol_end])
                 xadd_entry_T = (i in xindices[xcol_start_T:xcol_end_T]) and (i != j)
                 yadd_entry = (j in yindices[ycol_start:ycol_end])
                 yadd_entry_T = (i in yindices[ycol_start_T:ycol_end_T]) and (i != j)
 
+                # Proceed only if any entry is required
                 if xadd_entry or xadd_entry_T or yadd_entry or yadd_entry_T:
-
-                    idxj = j * neq # actual dense initial column index
-                    idxj2 = (j + 1) * neq  # actual dense final colum index
                     xdiag, ydiag = flux(q[idxi:idxi2, e], q[idxj:idxj2, e])
 
                     for k in range(neq):
-                        new_row = i * neq + k # actual dense row index
-                        new_col = j * neq + k  # actual dense column index
-                        
+                        new_row = i * neq + k
+                        new_col = j * neq + k
+
                         if xadd_entry:
                             xnew_col_start = xnew_indptr[new_row]
-                            xnew_col_ptr = xnew_col_start + xcolptrs[i]
-                            xnew_data[xnew_col_ptr] = xdiag[k]
-
+                            xnew_data[xnew_col_start + xcolptrs[i]] = xdiag[k]
                         if xadd_entry_T:
                             xnew_col_start = xnew_indptr[new_col]
-                            xnew_col_ptr = xnew_col_start + xcolptrs[j]
-                            xnew_data[xnew_col_ptr] = xdiag[k]
-
+                            xnew_data[xnew_col_start + xcolptrs[j]] = xdiag[k]
                         if yadd_entry:
                             ynew_col_start = ynew_indptr[new_row]
-                            ynew_col_ptr = ynew_col_start + ycolptrs[i]
-                            ynew_data[ynew_col_ptr] = ydiag[k]
-
+                            ynew_data[ynew_col_start + ycolptrs[i]] = ydiag[k]
                         if yadd_entry_T:
                             ynew_col_start = ynew_indptr[new_col]
-                            ynew_col_ptr = ynew_col_start + ycolptrs[j]
-                            ynew_data[ynew_col_ptr] = ydiag[k]
+                            ynew_data[ynew_col_start + ycolptrs[j]] = ydiag[k]
 
+                    # Update column pointers after each assignment
                     if xadd_entry: xcolptrs[i] += 1
                     if xadd_entry_T: xcolptrs[j] += 1
                     if yadd_entry: ycolptrs[i] += 1
                     if yadd_entry_T: ycolptrs[j] += 1
 
-
+        # Append sparse matrix data for the element
         Fx_vol.append((xnew_data, xnew_indices, xnew_indptr))
         Fy_vol.append((ynew_data, ynew_indices, ynew_indptr))
+
     return Fx_vol, Fy_vol
 
 @njit 
