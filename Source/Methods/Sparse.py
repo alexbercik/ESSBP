@@ -207,7 +207,7 @@ def lm_lm(csr1, csr2):
 
     # Ensure matrices are compatible for multiplication
     if ncols_csr1 > nrows_csr2:
-        raise ValueError("Matrix dimension mismatch: csr1 has >= " + str(ncols_csr1) + " columns, csr2 has " + str(nrows_csr2) + " rows.")
+        raise ValueError("Matrix dimension mismatch.")
 
     # Initialize result arrays
     nrows = nrows_csr1
