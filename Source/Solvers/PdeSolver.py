@@ -368,6 +368,8 @@ class PdeSolver:
                 print('WARNING: Free Stream is not preserved. Check Metrics and/or SAT discretization.')
                 print('         Free Stream is violated by a maximum of {0:.2g}'.format(np.max(abs(test))))
 
+        print('---------- Solver succesfully initialized. ----------')
+
     def solve(self, q0_in=None, q0_idx=None):
 
         ''' Solve to calculate the solution and the objective '''

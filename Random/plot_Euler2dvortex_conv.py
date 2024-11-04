@@ -17,11 +17,11 @@ from Source.Methods.Analysis import run_convergence, plot_conv
 # Simultation parameters
 savefile = 'Euler2dVortex_CSBPp14eDiv' # will add extension + .png automatically
 tm_method = 'rk4'
-cfl = 0.05
+cfl = 0.1
 tf = 20. # final time. For vortex, one period is t=20
 op = 'csbp' # 'lg', 'lgl', 'csbp', 'hgtl', 'hgt', 'mattsson', 'upwind'
 nelem = 4 # number of elements
-nen = [20,40,80,160] # number of nodes per element in each direction, as a list
+nen = [20,40,60,80,100]#,160] # number of nodes per element in each direction, as a list
 p = 1 # polynomial degree
 s = p+1 # dissipation degree
 disc_type = 'div' # 'div' for divergence form, 'had' for entropy-stable form
