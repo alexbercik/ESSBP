@@ -28,7 +28,7 @@ class PdeSolverSbp(PdeSolver):
         self.entropy = self.sbp_entropy
         
         # Construct SBP operators
-        self.sbp = MakeSbpOp(self.p, self.disc_nodes, self.nen)
+        self.sbp = MakeSbpOp(self.p, self.disc_nodes, self.nen, self.print_progress)
         self.nen = self.sbp.nn
         self.p = self.sbp.p
         self.x_op = self.sbp.x
@@ -78,8 +78,8 @@ class PdeSolverSbp(PdeSolver):
         ''' Setup the mesh and apply required transformations to SBP operators '''
 
         self.mesh = MakeMesh(self.dim, self.xmin, self.xmax, self.nelem, self.x_op, 
-                             warp_factor=self.settings['warp_factor'],
-                             warp_type=self.settings['warp_type'])
+                             self.settings['warp_factor'], self.settings['warp_type'],
+                             self.print_progress)
 
         #TODO: Should probably sparsify this
         self.mesh.get_jac_metrics(self.sbp, self.periodic,

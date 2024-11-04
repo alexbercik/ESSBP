@@ -448,7 +448,8 @@ def symbolic(A):
 def run_convergence(solver, schedule_in=None, error_type='SBP',
              scale_dt=True, return_conv=False, savefile=None, labels=None,
              title=None, ylabel=None, xlabel=None, grid=False, convunc=True, 
-             ylim=None, ignore_fail=False, plot=True, vars2plot=None):
+             ylim=None, ignore_fail=False, plot=True, vars2plot=None,
+             nthreads=1):
     '''
     Purpose
     ----------
@@ -497,6 +498,10 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
             # only estimate new dt based on scaling of x coordinate
             xmin, xmax, nn = solver.xmin[0], solver.xmax[0], solver.nn[0]
         base_dx = (xmax - xmin) / nn
+
+    if nthreads > 1:
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+        import copy
 
     ''' Unpack Schedule '''
     # Check that we either use 'nen' or 'nelem'
@@ -567,95 +572,123 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
     if scale_dt: variables_base = [None]*(3+n_attributes) # initiate list to pass to reset()
     else: variables_base = [None]*(2+n_attributes)
 
+    def set_variables(casei,runi,variables_base):
+        variables = variables_base.copy() # for each run (refinement)
+        variables[0] = ('nelem',runs_nelem[runi])
+        if match_nen_to_nelem:
+            run_neni = runi
+        elif match_nen_to_p:
+            p = cases[casei][attributes.index('p')]
+            run_neni = runs_p.index(p)
+        else:
+            raise Exception('Something went wrong')
+        variables[1] = ('nen',runs_nen[run_neni])
+        if scale_dt:
+            variables[-1] = ('dt',None)
+            
+        # add a few default things to save time
+        variables.append(('print_sol_norm', False))
+        variables.append(('bool_plot_sol', False))
+        variables.append(('cons_obj_name', None))
+
+        # TODO : add flag to also calculate conservation objectives?
+        return variables
+
+
+    # set a couple base settings for solver
+    solver.keep_all_ts = False
+    if nthreads > 1: solver.print_progress = False
+
     n_toti = 1
-    for casei in range(n_cases): # for each case
-        for atti in range(n_attributes):
-            variables_base[atti+2] = (attributes[atti],cases[casei][atti]) # assign attributes
-            legend_strings[casei] += '{0}={1}, '.format(attributes[atti],cases[casei][atti])
-        legend_strings[casei] = legend_strings[casei].strip().strip(',') # formatting
-        
-        try:
-            for runi in range(n_runs):
-                variables = variables_base.copy() # for each run (refinement)
-                variables[0] = ('nelem',runs_nelem[runi])
-                if match_nen_to_nelem:
-                    run_neni = runi
-                elif match_nen_to_p:
-                    p = cases[casei][attributes.index('p')]
-                    run_neni = runs_p.index(p)
-                else:
-                    raise Exception('Something went wrong')
-                variables[1] = ('nen',runs_nen[run_neni])
-                if scale_dt:
-                    variables[-1] = ('dt',None)
+    if nthreads == 1:
+        # run in serial
+        for casei in range(n_cases): # for each case
+            for atti in range(n_attributes):
+                variables_base[atti+2] = (attributes[atti],cases[casei][atti]) # assign attributes
+                legend_strings[casei] += '{0}={1}, '.format(attributes[atti],cases[casei][atti])
+            legend_strings[casei] = legend_strings[casei].strip().strip(',') # formatting
+            
+            try:
+                for runi in range(n_runs):
+                    variables = set_variables(casei,runi,variables_base)
+
+                    ''' solve run for case, store results '''
+                    print('Running for:', variables)
+                    if labels is not None:
+                        print('label:', labels[casei])
+
+                    dofs[casei,runi], errors[casei,runi], nn = run_single_case(solver, variables, scale_dt, 
+                                                                        base_dt, base_dx, error_type, 
+                                                                        vars2plot)
                     
-                # add a few default things to save time
-                # TODO : add flag to also calculate conservation objectives
-                variables.append(('print_sol_norm', False))
-                variables.append(('bool_plot_sol', False))
-                variables.append(('cons_obj_name', None))
-
-                ''' solve run for case, store results '''
-                print('Running for:', variables)
-                if labels is not None:
-                    print('label:', labels[casei])
-                solver.reset(variables=variables)
-                if scale_dt:
-                    if solver.dim == 1:
-                        xmin, xmax, nn = solver.xmin, solver.xmax, solver.nn
-                    else:
-                        # only estimate new dt based on scaling of x coordinate
-                        xmin, xmax, nn = solver.xmin[0], solver.xmax[0], solver.nn[0]
-                    new_dx = (xmax - xmin) / nn
-                    new_dt = base_dt * new_dx / base_dx
-                    solver.set_timestep(new_dt)
-                solver.keep_all_ts = False
-                solver.solve()
-                if vars2plot is None:
-                    errors[casei,runi] = solver.calc_error(method=error_type)
+                    print('Convergence Progress: run {0} of {1} complete.'.format(n_toti,n_tot))
+                    print('Final Error: ', solver.calc_error())
+                    print('Total number of nodes: ', nn)
+                    print('---------------------------------------------------------')
+                    n_toti += 1
+            except Exception as e:
+                if ignore_fail:
+                    errors[casei,:] = None
+                    dofs[casei,:] = None
+                    print('---------------------------------------------------------')
+                    print('---------------------------------------------------------')
+                    print('---------------------------------------------------------')
+                    print('WARNING: run {0} of {1} encountered errors.'.format(n_toti,n_tot))
+                    print('         Ignoring this case (all runs) and moving on.')
+                    print('---------------------------------------------------------')
+                    print('WARNING: run {0} of {1} encountered errors.'.format(n_toti,n_tot))
+                    print('         Ignoring this case (all runs) and moving on.')
+                    print('---------------------------------------------------------')
+                    print('WARNING: run {0} of {1} encountered errors.'.format(n_toti,n_tot))
+                    print('         Ignoring this case (all runs) and moving on.')
+                    print('---------------------------------------------------------')
+                    print('---------------------------------------------------------')
+                    print('---------------------------------------------------------')
+                    n_toti += n_runs - runi
                 else:
-                    for varidx, var in enumerate(vars2plot):
-                        try:
-                            errors[casei,runi,varidx] = solver.calc_error(method=error_type, var2plot_name=var)
-                        except Exception as e:
-                            print(f"ERROR: solver.calc_error(var2plot_name='{var}') returned errors. Skipping.")
-                            errors[casei,runi,varidx] = 0.
-                if solver.dim == 1:
-                    nn = solver.nn
-                    dofs[casei,runi] = nn
-                elif solver.dim == 2:
-                    nn = solver.nn[0]*solver.nn[1]
-                    dofs[casei,runi] = np.sqrt(nn)
-                elif solver.dim == 3:
-                    nn = solver.nn[0]*solver.nn[1]*solver.nn[2]
-                    dofs[casei,runi] = np.cbrt(nn)
+                    raise Exception(e)
+    else:
+        # Run in parallel mode with ProcessPoolExecutor
+        with ProcessPoolExecutor(max_workers=nthreads) as executor:
+            futures = {}
+            for casei in range(n_cases):
+                for atti in range(n_attributes):
+                    variables_base[atti+2] = (attributes[atti],cases[casei][atti]) # assign attributes
+                    legend_strings[casei] += '{0}={1}, '.format(attributes[atti],cases[casei][atti])
+                legend_strings[casei] = legend_strings[casei].strip().strip(',') # formatting
 
+                for runi in range(n_runs):
+                    # Prepare a copy of solver and set up variables for this run
+                    solver_copy = copy.deepcopy(solver)
+                    variables = set_variables(casei,runi,variables_base)  # set up run-specific variables
+                    
+                    # Submit each run as a separate task and store with its indices
+                    future = executor.submit(
+                        run_single_case,
+                        solver_copy, variables, scale_dt, base_dt, base_dx, error_type, vars2plot
+                    )
+                    futures[future] = (casei, runi)
+            
+            # Gather results with preserved order
+            for future in as_completed(futures):
+                casei, runi = futures[future]  # Retrieve original indices
+                try:
+                    result_dofs, result_errors, nn = future.result()
+                    dofs[casei, runi] = result_dofs
+                    errors[casei, runi] = result_errors
+
+                except Exception as e:
+                    print(f"Error in parallel execution for case {casei}, run {runi}: {e}")
+                    dofs[casei, runi] = np.nan
+                    errors[casei, runi] = np.nan
+
+                # Progress update immediately after each task completes
+                n_toti += 1
                 print('Convergence Progress: run {0} of {1} complete.'.format(n_toti,n_tot))
-                print('Final Error: ', solver.calc_error())
+                print('Final Errors: ', errors[casei,runi])
                 print('Total number of nodes: ', nn)
                 print('---------------------------------------------------------')
-                n_toti += 1
-        except Exception as e:
-            if ignore_fail:
-                errors[casei,:] = None
-                dofs[casei,:] = None
-                print('---------------------------------------------------------')
-                print('---------------------------------------------------------')
-                print('---------------------------------------------------------')
-                print('WARNING: run {0} of {1} encountered errors.'.format(n_toti,n_tot))
-                print('         Ignoring this case (all runs) and moving on.')
-                print('---------------------------------------------------------')
-                print('WARNING: run {0} of {1} encountered errors.'.format(n_toti,n_tot))
-                print('         Ignoring this case (all runs) and moving on.')
-                print('---------------------------------------------------------')
-                print('WARNING: run {0} of {1} encountered errors.'.format(n_toti,n_tot))
-                print('         Ignoring this case (all runs) and moving on.')
-                print('---------------------------------------------------------')
-                print('---------------------------------------------------------')
-                print('---------------------------------------------------------')
-                n_toti += n_runs - runi
-            else:
-                raise Exception(e)
+                        
     if labels is not None:
         # overwrite legend_strings with labels
         legend_strings = labels
@@ -697,6 +730,51 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
     
     if return_conv:
         return dofs, errors, legend_strings
+    
+def run_single_case(solver, variables, scale_dt, base_dt, base_dx, error_type, vars2plot):
+    ''' runs a single case for convergence
+    NOTE: solver should be a copy, not the original object, if running in parallel '''
+
+    # Reset solver
+    solver.reset(variables=variables)
+    
+    # Scale time step if needed
+    if scale_dt:
+        if solver.dim == 1:
+            xmin, xmax, nn = solver.xmin, solver.xmax, solver.nn
+        else:
+            xmin, xmax, nn = solver.xmin[0], solver.xmax[0], solver.nn[0]
+        new_dx = (xmax - xmin) / nn
+        new_dt = base_dt * new_dx / base_dx
+        solver.set_timestep(new_dt)
+    
+    # Run the solver
+    solver.solve()
+
+    # Calculate errors
+    if vars2plot is None:
+        errors = solver.calc_error(method=error_type)
+    else:
+        errors = np.zeros(len(vars2plot))
+        for varidx, var in enumerate(vars2plot):
+            try:
+                errors[varidx] = solver.calc_error(method=error_type, var2plot_name=var)
+            except Exception as e:
+                print(f"ERROR: solver.calc_error(var2plot_name='{var}') returned errors. Skipping.")
+                errors[varidx] = 0.
+    
+    # Gather DOFs
+    if solver.dim == 1:
+        nn = solver.nn
+        dofs = nn
+    elif solver.dim == 2:
+        nn = solver.nn[0] * solver.nn[1]
+        dofs = np.sqrt(nn)
+    elif solver.dim == 3:
+        nn = solver.nn[0] * solver.nn[1] * solver.nn[2]
+        dofs = np.cbrt(nn)
+    
+    return dofs, errors, nn
     
     
 def calc_conv_rate(dof_vec, err_vec, dim, n_points=None,
