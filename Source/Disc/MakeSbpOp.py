@@ -37,7 +37,8 @@ class MakeSbpOp:
     tol = 1e-8
     # Note this only produces one dimensional operators for use in tensor-product
 
-    def __init__(self, p, sbp_type='lgl', nn=0, basis_type='legendre'):
+    def __init__(self, p, sbp_type='lgl', nn=0, basis_type='legendre',
+                 print_progress=True):
 
         '''
         Parameters
@@ -64,7 +65,7 @@ class MakeSbpOp:
         None.
 
         '''
-        print('... Building reference operators')
+        if print_progress: print('... Building reference operators')
         
         ''' Add inputs to the class '''
         self.sbp_type = sbp_type
@@ -73,6 +74,7 @@ class MakeSbpOp:
         assert isinstance(nn, int), 'nn must be an integer'
         self.p = p
         self.nn = nn
+        self.print_progress = print_progress
        
         if sbp_type.lower()=='csbp' or sbp_type.lower()=='optz':
             ''' Build Classical SBP Operators '''
@@ -240,12 +242,13 @@ class MakeSbpOp:
             self.D, self.Q, self.S = self.construct_op(self.p, self.nn, self.van, self.van_der, self.E, self.H)
 
         ''' Test the operators '''
-        self.check_diagH(self.x, self.H)
-        self.check_degree(self.D, self.x)
-        self.check_accuracy(self.D, self.x)
-        self.check_compatibility(self.x,self.H,self.E)
-        self.check_interpolation(self.tL, self.tR, self.x)
-        self.check_decomposition(self.E, self.S, self.Q, self.D, self.H)
+        if print_progress: 
+            self.check_diagH(self.x, self.H)
+            self.check_degree(self.D, self.x)
+            self.check_accuracy(self.D, self.x)
+            self.check_compatibility(self.x,self.H,self.E)
+            self.check_interpolation(self.tL, self.tR, self.x)
+            self.check_decomposition(self.E, self.S, self.Q, self.D, self.H)
 
 
     def construct_tL(self,nn,van,p):
@@ -394,7 +397,7 @@ class MakeSbpOp:
         D_phys : numpy array
             SBP physical derivative operator, size (nen,nen,nelem) or (nen^2,nen^2,nelem).
         '''
-        print('... Creating physical operators')
+        if self.print_progress: print('... Creating physical operators')
         
         assert fn.isDiag(self.H), 'H matrix is not diagonal!'
 

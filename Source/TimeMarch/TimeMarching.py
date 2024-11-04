@@ -81,6 +81,7 @@ class TimeMarching(TimeMarchingRk):
         self.check_resid_conv = check_resid_conv
         self.quitsim = False
         self.enforce_positivity = self.diffeq.enforce_positivity
+        self.print_progress = True
 
         ''' Extract other required parameters '''
 
@@ -185,25 +186,26 @@ class TimeMarching(TimeMarchingRk):
             resid = np.linalg.norm(dqdt)
             resid = resid*resid # I actually want the norm squared
         
-        if t_idx % (n_ts // 100) == 0:
-            if t_idx == 0:
-                print('--- Beginning Simulation ---')
-                self.start_time = tm.time()
-            elif t_idx == 10:
-                sim_time = tm.time() - self.start_time
-                rem_time = sim_time/10*(n_ts-10)
-                print('... Estimating {0}:{1:02d}:{2:02d} to run.'.format(int(rem_time//3600),
-                                                            int((rem_time//60)%60),int(rem_time%60)))
-            else:
-                if t_idx > 10:
+        if self.print_progress:
+            if t_idx % (n_ts // 100) == 0:
+                if t_idx == 0:
+                    print('--- Beginning Simulation ---')
+                    self.start_time = tm.time()
+                elif t_idx == 10:
                     sim_time = tm.time() - self.start_time
-                    rem_time = sim_time/t_idx*(n_ts-t_idx)
-                    h,m,s = int(rem_time//3600),int((rem_time//60)%60),int(rem_time%60)
-                    suf = 'Complete. Estimating {0}:{1:02d}:{2:02d} remaining.'.format(h,m,s)
-                    #print('... {0}% Done. Estimating {1}:{2:02d}:{3:02d} remaining.'.format(pct,h,m,s))
-                    if self.print_residual:
-                        suf += ' Resid = {0:.1E}'.format(resid)
-                    printProgressBar(t_idx, n_ts, prefix = 'Progress:', suffix = suf)
+                    rem_time = sim_time/10*(n_ts-10)
+                    print('... Estimating {0}:{1:02d}:{2:02d} to run.'.format(int(rem_time//3600),
+                                                                int((rem_time//60)%60),int(rem_time%60)))
+                else:
+                    if t_idx > 10:
+                        sim_time = tm.time() - self.start_time
+                        rem_time = sim_time/t_idx*(n_ts-t_idx)
+                        h,m,s = int(rem_time//3600),int((rem_time//60)%60),int(rem_time%60)
+                        suf = 'Complete. Estimating {0}:{1:02d}:{2:02d} remaining.'.format(h,m,s)
+                        #print('... {0}% Done. Estimating {1}:{2:02d}:{3:02d} remaining.'.format(pct,h,m,s))
+                        if self.print_residual:
+                            suf += ' Resid = {0:.1E}'.format(resid)
+                        printProgressBar(t_idx, n_ts, prefix = 'Progress:', suffix = suf)
 
         if self.check_resid_conv:
             if (resid < 1E-10): 
@@ -245,12 +247,13 @@ class TimeMarching(TimeMarchingRk):
             if self.check_resid_conv or self.print_residual:
                 resid = np.linalg.norm(dqdt)
                 resid = resid*resid # I actually want the norm squared
-        
-            sim_time = tm.time() - self.start_time
-            suf = 'Complete.'
-            h,m,s = int(sim_time//3600),int((sim_time//60)%60),int(sim_time%60)
-            printProgressBar(t_idx, n_ts, prefix = 'Progress:', suffix = suf)
-            print('... Took {0}:{1:02d}:{2:02d} to run.'.format(h,m,s))
+
+            if self.print_progress:
+                sim_time = tm.time() - self.start_time
+                suf = 'Complete.'
+                h,m,s = int(sim_time//3600),int((sim_time//60)%60),int(sim_time%60)
+                printProgressBar(t_idx, n_ts, prefix = 'Progress:', suffix = suf)
+                print('... Took {0}:{1:02d}:{2:02d} to run.'.format(h,m,s))
         
             if np.any(np.isnan(q)):
                 print('ERROR: there are undefined values for q at final t =',t_idx * dt,'t_idx =', t_idx)

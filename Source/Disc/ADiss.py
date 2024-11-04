@@ -40,7 +40,7 @@ class ADiss():
                 'SMSN': Constructed using the new framework to give the same coe cients as the MSN operators for the constant-coefficient case
         '''
         
-        print('... Setting up Artificial Dissipation')
+        if solver.print_progress: print('... Setting up Artificial Dissipation')
         
         self.solver = solver
         self.dim = self.solver.dim

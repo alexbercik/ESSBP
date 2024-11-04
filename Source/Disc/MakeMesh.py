@@ -16,7 +16,7 @@ class MakeMesh:
     
     def __init__(self, dim, xmin, xmax, 
                  nelem, x_op, warp_factor=0,
-                 warp_type='default'):
+                 warp_type='default', print_progress=True):
         '''
         Parameters
         ----------
@@ -58,10 +58,11 @@ class MakeMesh:
         else:
             raise Exception('warp_factor must be a float / int, or list / 1d array of len <= 3, not', warp_factor)
         self.warp_type = warp_type
+        self.print_progress = print_progress
 
         ''' Additional terms '''
         
-        print('... Building Mesh')
+        if self.print_progress: print('... Building Mesh')
         
         if self.dim == 1:
             self.dom_len = self.xmax - self.xmin
@@ -1346,7 +1347,7 @@ class MakeMesh:
             2 : first the left (a) side, then the right (b) side
             4 : [ det(J) * dxr_dxp , det(J) * dxr_dyp , det(J) * dyr_dxp , det(J) * dyr_dyp ]
         '''
-        print('... Computing Grid Metrics')
+        if self.print_progress: print('... Computing Grid Metrics')
         
         if metric_method=='exact': calc_exact_metrics = True
 
