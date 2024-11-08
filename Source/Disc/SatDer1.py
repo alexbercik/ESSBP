@@ -112,7 +112,7 @@ class SatDer1:
 # =============================================================================
         
         # Option 2: equivalent to above and below, but tested to be fastest of 3
-        sat = 0.5*( self.gm_gv(self.vol_x_mat[idx], Ex) + self.gm_gv(self.vol_y_mat[idx], Ey) 
+        sat = 0.5*( #self.gm_gv(self.vol_x_mat[idx], Ex) + self.gm_gv(self.vol_y_mat[idx], Ey) 
                   - self.gm_gv(self.tbphysx[idx], ExR) - self.gm_gv(self.tbphysy[idx], EyR)
                   + self.gm_gv(self.taphysx[idx], ExL) + self.gm_gv(self.taphysy[idx], EyL))
         
@@ -147,7 +147,7 @@ class SatDer1:
         
         diss = self.coeff*self.diss(qf_L,qf_R,idx)
         
-        sat = 0.5*( self.gm_gv(self.vol_x_mat[idx], Ex) + self.gm_gv(self.vol_y_mat[idx], Ey) 
+        sat = 0.5*( #self.gm_gv(self.vol_x_mat[idx], Ex) + self.gm_gv(self.vol_y_mat[idx], Ey) 
                   - self.gm_gv(self.tbphysx[idx], ExR) - self.gm_gv(self.tbphysy[idx], EyR)
                   + self.gm_gv(self.taphysx[idx], ExL) + self.gm_gv(self.taphysy[idx], EyL)) - diss
         """
@@ -245,11 +245,11 @@ class SatDer1:
         Ay_abs = self.dEydq_abs(qf_avg)
         
         # Upwinding flux
-        A_upwind = (Ax + self.coeff*Ax_abs)/2 * bdy_metricsx + (Ay + self.coeff*Ay_abs)/2 * bdy_metricsy
-        A_downwind = (Ax - self.coeff*Ax_abs)/2 * bdy_metricsx + (Ay - self.coeff*Ay_abs)/2 * bdy_metricsy
+        A_upwind = (Ax + self.coeff*Ax_abs)/2 * bdy_metricsx[:,None,None,:] + (Ay + self.coeff*Ay_abs)/2 * bdy_metricsy[:,None,None,:]
+        A_downwind = (Ax - self.coeff*Ax_abs)/2 * bdy_metricsx[:,None,None,:] + (Ay - self.coeff*Ay_abs)/2 * bdy_metricsy[:,None,None,:]
         
-        sat = self.lm_gv(self.tR, (self.Hperp * fn.gbdiag_gv(A_downwind, qf_jump)[:,1:])) \
-            + self.lm_gv(self.tL, (self.Hperp * fn.gbdiag_gv(A_upwind, qf_jump)[:,:-1]))
+        sat = self.lm_gv(self.tRHperp * fn.gbdiag_gv(A_downwind, qf_jump)[:,1:]) \
+            + self.lm_gv(self.tLHperp * fn.gbdiag_gv(A_upwind, qf_jump)[:,:-1])
         return sat
     
     def upwind_div_3d(self, q, Ex, Ey, Ez, idx, q_bdyL=None, q_bdyR=None):
@@ -289,8 +289,8 @@ class SatDer1:
                    + (Ay - self.coeff*Ay_abs)/2 * bdy_metricsy \
                    + (Az - self.coeff*Az_abs)/2 * bdy_metricsz
         
-        sat = self.lm_gv(self.tR, (self.Hperp * fn.gbdiag_gv(A_downwind, qf_jump)[:,1:])) \
-            + self.lm_gv(self.tL, (self.Hperp * fn.gbdiag_gv(A_upwind, qf_jump)[:,:-1]))
+        sat = self.lm_gv(self.tRHperp * fn.gbdiag_gv(A_downwind, qf_jump)[:,1:]) \
+            + self.lm_gv(self.tLHperp * fn.gbdiag_gv(A_upwind, qf_jump)[:,:-1])
         return sat
 
 
@@ -333,11 +333,11 @@ class SatDer1:
         sat = vol + surfa - surfb - diss 
         return sat
     
-    def base_had_2d(self, q, Fxvol, Fyvol, idx, q_bdyL=None, q_bdyR=None):
+    def base_had_2d(self, q, idx, q_bdyL=None, q_bdyR=None):
         '''
         The base conservative flux in Hadamard Form. Then add dissipative term.
         '''
-
+        """
         vol = self.gm_Fvol_had_diff(self.vol_x_mat[idx], Fxvol) \
             + self.gm_Fvol_had_diff(self.vol_y_mat[idx], Fyvol)
 
@@ -368,8 +368,16 @@ class SatDer1:
                     self.gm_gm_had_diff(self.tbphysy[idx],Fsurfy[:,:,1:])
         
         diss = self.coeff*self.diss(self.lm_gv(self.tRT,qL), self.lm_gv(self.tLT,qR), idx)
-        
-        sat = vol + surfa - surfb - diss
+        sat = surfa - surfb - diss + vol
+        """
+
+        assert ((q_bdyL is None) and (q_bdyR is None)), 'base_had_2d SAT: Only periodic boundary conditions are implemented.'
+        qa = self.lm_gv(self.tRT,q)
+        qb = self.lm_gv(self.tLT,q)
+        qL = fn.pad_1dL(qb, qb[:,-1])
+        qR = fn.pad_1dR(qa, qa[:,0])
+
+        sat = self.Fsat_diff_periodic(q,idx) - self.coeff*self.diss(qL, qR, idx)
         return sat
     
     def base_had_3d(self, q, Fxvol, Fyvol, Fzvol, idx, q_bdyL=None, q_bdyR=None):

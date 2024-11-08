@@ -7,7 +7,7 @@ module UpwindOperators
 # Check if virtual environment has already been set up & compiled. If not, activate.
 if !haskey(ENV, "JULIA_UPWIND_ENV_READY")
     using Pkg
-    Pkg.activate("//Users/alex/julia_environments/upwindOP")
+    Pkg.activate(joinpath(ENV["HOME"], "julia_environments", "upwindOP"))
 
     # Precompile packages
     Pkg.add("SummationByPartsOperators")
