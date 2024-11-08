@@ -404,7 +404,7 @@ class Euler(PdeBase):
                 else:
                     rho = 1 + 0.98*np.sin(2*np.pi*xy[:,0,:])
                 u = self.u0 * np.ones(rho.shape)
-                v = self.u0 * np.ones(rho.shape)
+                v = self.v0 * np.ones(rho.shape)
                 p = self.p0 * np.ones(rho.shape)
                 e = p/(self.g-1) + 0.5 * rho * (u*u + v*v)
                 q0 = self.prim2cons(rho, u, v, e)
