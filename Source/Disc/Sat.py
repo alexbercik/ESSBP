@@ -35,7 +35,8 @@ class Sat(SatDer1, SatDer2):
             metrics formulation. Either 'skew_sym' or 'div'
         '''
         
-        print('... Setting up SATs')
+        self.print_progress = solver.print_progress
+        if self.print_progress: print('... Setting up SATs')
         
         self.diss_type = solver.surf_diss['diss_type']
         self.disc_type = solver.disc_type
@@ -425,7 +426,7 @@ class Sat(SatDer1, SatDer2):
             # set base dissipation method
             if self.diss_type == 'nd' or self.diss_type == 'symmetric' or (self.diss_type == 'ec' and self.disc_type == 'had'):
                 if self.disc_type == 'div':
-                    print('... Using the central SAT with no dissipation.')
+                    if self.print_progress: print('... Using the central SAT with no dissipation.')
                     # just absorb this into the base function? (no, b/c this is slightly faster)
                     if self.dim == 1:
                         self.calc = self.central_div_1d
@@ -435,7 +436,7 @@ class Sat(SatDer1, SatDer2):
                     elif self.dim == 3:
                         self.calc = self.central_div_3d
                 elif self.disc_type == 'had':
-                    print(f'... Using the base Had SAT with {solver.had_flux} flux and no diss.')
+                    if self.print_progress: print(f'... Using the base Had SAT with {solver.had_flux} flux and no diss.')
                     if self.dim == 1:
                         self.calc = self.base_had_1d
                         self.diss = lambda *x: 0
@@ -449,7 +450,7 @@ class Sat(SatDer1, SatDer2):
             elif self.diss_type == 'upwind':
                 print('WARNING: upwind SATs are not provably stable because of metric terms.')
                 if self.disc_type == 'div':
-                    print('... Using the base upwind SAT.')
+                    if self.print_progress: print('... Using the base upwind SAT.')
                     if self.dim == 1:
                         self.calc = self.upwind_div_1d
                     elif self.dim == 2:
@@ -471,8 +472,8 @@ class Sat(SatDer1, SatDer2):
                     self.calc_absA_dq = self.calc_absA_dq_sca_nD
 
                 if self.disc_type == 'div':
-                    print('... Using the base cons SAT with sca lf diss on cons vars.')
-                    print(f'... average={self.average}, maxeig=lf, coeff={self.coeff}, entropy_fix={self.entropy_fix}')
+                    if self.print_progress: print('... Using the base cons SAT with sca lf diss on cons vars.')
+                    if self.print_progress: print(f'... average={self.average}, maxeig=lf, coeff={self.coeff}, entropy_fix={self.entropy_fix}')
                     if self.dim == 1:
                         self.calc = self.base_div_1d
                         self.diss = self.diss_cons_1d
@@ -483,8 +484,8 @@ class Sat(SatDer1, SatDer2):
                         self.calc = self.base_div_3d
                         self.diss = self.diss_cons_nd
                 elif self.disc_type == 'had':
-                    print(f'... Using the base Had SAT with {solver.had_flux} flux and sca lf diss on cons vars.')
-                    print(f'... average={self.average}, maxeig=lf, coeff={self.coeff}, entropy_fix={self.entropy_fix}')
+                    if self.print_progress: print(f'... Using the base Had SAT with {solver.had_flux} flux and sca lf diss on cons vars.')
+                    if self.print_progress: print(f'... average={self.average}, maxeig=lf, coeff={self.coeff}, entropy_fix={self.entropy_fix}')
                     if self.dim == 1:
                         self.calc = self.base_had_1d
                         self.diss = self.diss_cons_1d
@@ -520,26 +521,26 @@ class Sat(SatDer1, SatDer2):
                         self.diss = self.diss_cons_nd
 
                 if self.jac_type == 'sca':
-                    print(str_base + ' and sca diss on cons vars')
+                    if self.print_progress: print(str_base + ' and sca diss on cons vars')
                     # self.calc_absA is already set
                     if self.dim == 1: self.calc_absA_dq = self.calc_absA_dq_sca_1D
                     else: self.calc_absA_dq = self.calc_absA_dq_sca_nD
-                    print(f'average={self.average}, maxeig={self.maxeig_type}, coeff={self.coeff}')
+                    if self.print_progress: print(f'average={self.average}, maxeig={self.maxeig_type}, coeff={self.coeff}')
                 elif self.jac_type == 'mat':
-                    print(str_base + ' and mat diss on cons vars')
+                    if self.print_progress: print(str_base + ' and mat diss on cons vars')
                     if self.dim == 1: 
                         self.calc_absA = self.calc_absA_matdiffeq_1d
                         self.calc_absA_dq = self.calc_absA_dq_mat_1D
                     else: 
                         self.calc_absA = self.calc_absA_matdiffeq_nd
                         self.calc_absA_dq = self.calc_absA_dq_mat_nD
-                    print(f'... average={self.average}, entropy_fix={self.entropy_fix}, coeff={self.coeff}')
+                    if self.print_progress: print(f'... average={self.average}, entropy_fix={self.entropy_fix}, coeff={self.coeff}')
                 else:
                     raise Exception("SAT: jac_type must be one of 'sca' or 'mat' when diss_type == 'cons'. Given:", self.jac_type)
                 
                 if self.diffeq_name=='Quasi1dEuler' or self.diffeq_name=='Euler2d':
-                    print("SAT Reminder: you can bypass the default cons options using ")
-                    print("              diss_type == 'diablo1', 'diablo2', 'diablo3', or 'diablo4'.")
+                    if self.print_progress: print("SAT Reminder: you can bypass the default cons options using ")
+                    if self.print_progress: print("              diss_type == 'diablo1', 'diablo2', 'diablo3', or 'diablo4'.")
                 
             elif self.diss_type=='ent' or self.diss_type=='entropy':
 
@@ -568,7 +569,7 @@ class Sat(SatDer1, SatDer2):
                         self.diss = self.diss_ent_nd
 
                 if self.jac_type == 'scasca':
-                    print(str_base + ' and sca-sca diss on ent vars')
+                    if self.print_progress: print(str_base + ' and sca-sca diss on ent vars')
                     # self.calc_absA is already set
                     if self.dim == 1: self.calc_absAP_dw = self.calc_absAP_dw_scasca_1D
                     else: self.calc_absAP_dw = self.calc_absAP_dw_scasca_nD
@@ -577,9 +578,9 @@ class Sat(SatDer1, SatDer2):
                     else:
                         self.calc_P = self.calc_P_avg
                         self.diffeq_dqdw = solver.diffeq.dqdw
-                    print(f'... average={self.average}, maxeig={self.maxeig_type}, P_derigs={self.P_derigs}, coeff={self.coeff}')
+                    if self.print_progress: print(f'... average={self.average}, maxeig={self.maxeig_type}, P_derigs={self.P_derigs}, coeff={self.coeff}')
                 elif self.jac_type == 'scamat':
-                    print(str_base + ' and sca-mat diss on ent vars')
+                    if self.print_progress: print(str_base + ' and sca-mat diss on ent vars')
                     # self.calc_absA is already set
                     if self.dim == 1: self.calc_absAP_dw = self.calc_absAP_dw_scamat_1D
                     else: self.calc_absAP_dw = self.calc_absAP_dw_scamat_nD
@@ -588,9 +589,9 @@ class Sat(SatDer1, SatDer2):
                     else:
                         self.calc_P = self.calc_P_avg
                         self.diffeq_dqdw = solver.diffeq.dqdw
-                    print(f'... average={self.average}, maxeig={self.maxeig_type}, P_derigs={self.P_derigs}, coeff={self.coeff}')
+                    if self.print_progress: print(f'... average={self.average}, maxeig={self.maxeig_type}, P_derigs={self.P_derigs}, coeff={self.coeff}')
                 elif self.jac_type == 'matmat':
-                    print(str_base + ' and mat-mat diss on ent vars')
+                    if self.print_progress: print(str_base + ' and mat-mat diss on ent vars')
                     if self.dim == 1: 
                         self.calc_absAP_dw = self.calc_absAP_dw_matmat_1D
                         if self.P_derigs and self.A_derigs:
@@ -639,7 +640,7 @@ class Sat(SatDer1, SatDer2):
                                 self.calc_absA = self.calc_absA_matdiffeq_nd
                                 self.calc_P = self.calc_P_avg
                                 self.diffeq_dqdw = solver.diffeq.dqdw
-                    print(f'... average={self.average}, entropy_fix={self.entropy_fix}, A_derigs={self.P_derigs}, P_derigs={self.P_derigs}, coeff={self.coeff}')
+                    if self.print_progress: print(f'... average={self.average}, entropy_fix={self.entropy_fix}, A_derigs={self.P_derigs}, P_derigs={self.P_derigs}, coeff={self.coeff}')
 
                 else:
                     raise Exception("SAT: jac_type must be one of 'scasca', 'scamat' or 'matmat' when diss_type == 'ent'. Given:", self.jac_type)
@@ -669,29 +670,29 @@ class Sat(SatDer1, SatDer2):
                         self.diss = self.diss_cons_nd
                 
                 if self.diss_type=='diablo1':
-                    print(str_base + ' and mat diss on cons vars (diablo 1)')
-                    print(f'... average=roe, entropy_fix=hicken, coeff={self.coeff}')
+                    if self.print_progress: print(str_base + ' and mat diss on cons vars (diablo 1)')
+                    if self.print_progress: print(f'... average=roe, entropy_fix=hicken, coeff={self.coeff}')
                     if self.dim == 1: 
                         self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_abs_dq(qR,qL,1)
                     else: 
                         self.calc_absA_dq = lambda qL,qR,met : solver.diffeq.dEndq_abs_dq(met,qR,qL,1)
                 elif self.diss_type=='diablo2':
-                    print(str_base + ' and mat diss on cons vars (diablo 2)')
-                    print(f'... average=roe, entropy_fix=diablo, coeff={self.coeff}')
+                    if self.print_progress: print(str_base + ' and mat diss on cons vars (diablo 2)')
+                    if self.print_progress: print(f'... average=roe, entropy_fix=diablo, coeff={self.coeff}')
                     if self.dim == 1: 
                         self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_abs_dq(qR,qL,2)
                     else: 
                         self.calc_absA_dq = lambda qL,qR,met : solver.diffeq.dEndq_abs_dq(met,qR,qL,2)
                 elif self.diss_type=='diablo3':
-                    print(str_base + ' and sca diss on cons vars (diablo 3)')
-                    print(f'... average=roe, maxeig=lf, entropy_fix=hicken, coeff={self.coeff}')
+                    if self.print_progress: print(str_base + ' and sca diss on cons vars (diablo 3)')
+                    if self.print_progress: print(f'... average=roe, maxeig=lf, entropy_fix=hicken, coeff={self.coeff}')
                     if self.dim == 1: 
                         self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_abs_dq(qR,qL,3)
                     else: 
                         self.calc_absA_dq = lambda qL,qR,met : solver.diffeq.dEndq_abs_dq(met,qR,qL,3)
                 elif self.diss_type=='diablo4':
-                    print(str_base + ' and sca diss on cons vars (diablo 4)')
-                    print(f'... average=roe, maxeig=lf, entropy_fix=False, coeff={self.coeff}')
+                    if self.print_progress: print(str_base + ' and sca diss on cons vars (diablo 4)')
+                    if self.print_progress: print(f'... average=roe, maxeig=lf, entropy_fix=False, coeff={self.coeff}')
                     if self.dim == 1: 
                         self.calc_absA_dq = lambda qL,qR : solver.diffeq.dExdq_abs_dq(qR,qL,4)
                     else: 
@@ -706,30 +707,30 @@ class Sat(SatDer1, SatDer2):
                 else:
                     if self.diss_type=='split':
                         self.alpha = solver.diffeq.split_alpha
-                        print('... Using a split form SAT mimicking the variable coefficient advection formulation.')
-                        print(f'... average={self.average}, maxeig=lf, coeff={self.coeff}, alpha={self.alpha}')
-                        print('WARNING: The split form follows the Variable Coefficient formulation and is not entropy-stable.')
+                        if self.print_progress: print('... Using a split form SAT mimicking the variable coefficient advection formulation.')
+                        if self.print_progress: print(f'... average={self.average}, maxeig=lf, coeff={self.coeff}, alpha={self.alpha}')
+                        if self.print_progress: print('WARNING: The split form follows the Variable Coefficient formulation and is not entropy-stable.')
                         self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.div_1d_burgers_split(q, E, q_bdyL=q_bdyL, q_bdyR=q_bdyR,
                                                                  extrapolate_flux=True) # TODO: Add some solver setting for this
                     elif self.diss_type=='ec':
-                        print('... Using an entropy-conservative SAT found in the SBP book.')
-                        print("    (not the one recovered from the Hadamard form. For this use diss_type='ec_had').")
+                        if self.print_progress: print('... Using an entropy-conservative SAT found in the SBP book.')
+                        if self.print_progress: print("    (not the one recovered from the Hadamard form. For this use diss_type='ec_had').")
                         self.coeff = 0.
                         self.calc = self.div_1d_burgers_es
                     elif self.diss_type=='es' or self.diss_type=='ent':
                         assert(self.jac_type=='sca' or self.jac_type=='scasca'), 'Burgers es SATs require sca / scasca jac_type.'
-                        print('... Using an entropy-dissipative SAT found in the SBP book.')
-                        print("    (not the one recovered from the Hadamard form. For this use diss_type='es_had').")
-                        print(f'... average=simple, maxeig={self.maxeig_type}, coeff={self.coeff}')
+                        if self.print_progress: print('... Using an entropy-dissipative SAT found in the SBP book.')
+                        if self.print_progress: print("    (not the one recovered from the Hadamard form. For this use diss_type='es_had').")
+                        if self.print_progress: print(f'... average=simple, maxeig={self.maxeig_type}, coeff={self.coeff}')
                         self.calc = self.div_1d_burgers_es
                     elif self.diss_type=='ec_had':
-                        print('... Using the entropy-conservative SAT recovered from the Hadamard form.')
+                        if self.print_progress: print('... Using the entropy-conservative SAT recovered from the Hadamard form.')
                         self.coeff = 0.
                         self.calc = self.div_1d_burgers_had
                     elif self.diss_type=='es_had':
                         assert(self.jac_type=='sca' or self.jac_type=='scasca'), 'Burgers es_had SATs require sca / scasca jac_type.'
-                        print('... Using the entropy-dissipative SAT recovered from the Hadamard form.')
-                        print(f'... average=simple, maxeig={self.maxeig_type}, coeff={self.coeff}')
+                        if self.print_progress: print('... Using the entropy-dissipative SAT recovered from the Hadamard form.')
+                        if self.print_progress: print(f'... average=simple, maxeig={self.maxeig_type}, coeff={self.coeff}')
                         self.calc = self.div_1d_burgers_had
                     else:
                         raise Exception("SAT type not understood. Try 'ec', 'es', 'ec_had', 'es_had', 'split', or 'split_diss'.")

@@ -28,6 +28,7 @@ disc_type = 'div' # 'div' for divergence form, 'had' for entropy-stable form
 had_flux = 'ranocha' # 2-point numerical flux used in hadamard form
 vars2plot = ['rho','entropy','q','p'] # must be the same as loaded data
 
+nthreads = 10
 include_upwind = True # include upwind operators as a reference
 include_bothdiss = True # include both cons. and ent. volume dissipation
 savedata = True
@@ -126,15 +127,15 @@ else:
                         bc='periodic', xmin=xmin, xmax=xmax)
 
     if len(schedule1) > 0: 
-        dofs1, errors1, outlabels1 = run_convergence(solver,schedule_in=schedule1,return_conv=True,plot=False,vars2plot=vars2plot)
+        dofs1, errors1, outlabels1 = run_convergence(solver,schedule_in=schedule1,return_conv=True,plot=False,vars2plot=vars2plot,nthreads=nthreads)
     else:
         dofs1, errors1, outlabels1 = None, None, []
     if len(schedule2) > 0: 
-        dofs2, errors2, outlabels2 = run_convergence(solver,schedule_in=schedule2,return_conv=True,plot=False,vars2plot=vars2plot)
+        dofs2, errors2, outlabels2 = run_convergence(solver,schedule_in=schedule2,return_conv=True,plot=False,vars2plot=vars2plot,nthreads=nthreads)
     else:
         dofs2, errors2, outlabels2 = None, None, []
     if len(schedule3) > 0: 
-        dofs3, errors3, outlabels3 = run_convergence(solver,schedule_in=schedule3,return_conv=True,plot=False,vars2plot=vars2plot)
+        dofs3, errors3, outlabels3 = run_convergence(solver,schedule_in=schedule3,return_conv=True,plot=False,vars2plot=vars2plot,nthreads=nthreads)
     else:
         dofs3, errors3, outlabels3 = None, None, []
 
