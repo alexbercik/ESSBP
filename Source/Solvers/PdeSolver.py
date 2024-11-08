@@ -27,6 +27,7 @@ class PdeSolver:
     skip_ts = 0
     use_diffeq_dExdx = False
     calc_nd_ops = False # Calulate the physical multi-dimensional operators (incorporates E matrices)
+    print_progress = True
 
     def __init__(self, diffeq, settings,                            # Diffeq
                  tm_method, dt, t_final,                    # Time marching
@@ -368,7 +369,7 @@ class PdeSolver:
                 print('WARNING: Free Stream is not preserved. Check Metrics and/or SAT discretization.')
                 print('         Free Stream is violated by a maximum of {0:.2g}'.format(np.max(abs(test))))
 
-        print('---------- Solver succesfully initialized. ----------')
+        if self.print_progress: print('---------- Solver succesfully initialized. ----------')
 
     def solve(self, q0_in=None, q0_idx=None):
 
@@ -393,6 +394,7 @@ class PdeSolver:
                         check_resid_conv = self.check_resid_conv,
                         dqdt=self.dqdt, dfdq=self.dfdq)
         
+        tm_class.print_progress = self.print_progress
         self.q_sol =  tm_class.solve(q0, self.dt, self.n_ts)
         self.cons_obj = tm_class.cons_obj
         self.t_final = tm_class.t_final
