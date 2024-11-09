@@ -1,6 +1,7 @@
 # Ignore Python bytecode files
 __pycache__/
 *.py[cod]
+*.npz
 
 # Ignore mesh files
 *.msh
