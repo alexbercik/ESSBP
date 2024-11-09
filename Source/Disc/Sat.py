@@ -295,6 +295,8 @@ class Sat(SatDer1, SatDer2):
                                                                                             q, self.calc_had_flux, self.neq_node)
                     
                 else:
+                    self.taphysx = taphysx
+                    self.taphysy = taphysy
                     self.Fsat_diff_periodic = lambda q, idx: fn.Sat2d_had_Fsat_diff_periodic(self.taphysx[idx],self.taphysy[idx],
                                                                                             self.tbphysx[idx],self.tbphysy[idx],
                                                                                             q, self.calc_had_flux, self.neq_node)
