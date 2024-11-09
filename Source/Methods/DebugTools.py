@@ -32,6 +32,8 @@ def profiler(command, filename="profile.stats", n_stats=50, verbose=False,
         How to sort the data
     """
     import cProfile, pstats
+    from numba import config
+    config.PROFILING_MODE = True
 
     cProfile.run(command, filename)
     

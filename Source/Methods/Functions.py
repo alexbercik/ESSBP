@@ -1632,6 +1632,181 @@ def assemble_saty_2d(mat_list,nelemx,nelemy):
             mat_glob[:,:,idx] = mat_list[ex][:,:,ex]
     return mat_glob
 
+@njit
+def VolxVoly_had_Fvol_diff(Volx,Voly,q,flux,neq):
+    '''
+    A specialized function to compute the hadamard product between the Volx and Voly
+    matrices and the Fvol matrices, then sum the rows. Made for 2d.
+
+    Parameters
+    ----------
+    Volx, Voly : global matrices
+        The matrices that represent the volume operators in the x and y directions
+    q : numpy array of shape (nen_neq, nelem)
+        The global vector for multiplication
+    flux : function
+        Function to compute the flux between two states
+    neq : int
+        Number of equations in the system
+
+    Returns
+    -------
+    c : numpy array of shape (nen1, nelem)
+        Result of the volume flux differencing
+        note the -ve so that it corresponds to dExdx + dEydy on the Right Hand Side
+    '''
+    nen_neq, nelem = q.shape
+    nen = nen_neq // neq
+    tol = 1e-13
+
+    # Sanity checks on sizes of arrays - can comment this out later
+    nenb, nenb2, nelemb = Volx.shape
+    nenc, nenc2, nelemc = Voly.shape
+    if nelemb != nelem or nelemc != nelem or nenb != nen or nenc != nen or nenb2 != nen or nenc2 != nen:
+        raise ValueError('Dimensions do not match', nelemb, nelemc, nenb, nenc, nelem, nen)
+
+    # Initialize result array
+    c = np.zeros((nen_neq, nelem), dtype=q.dtype)
+    
+    # loop for each element
+    for e in range(nelem):
+        for row in range(nen):
+            qidx = row*neq
+            for col in range(row+1,nen):
+                Volx_val = Volx[row, col, e]
+                Voly_val = Voly[row, col, e]
+
+                if abs(Volx_val) > tol:
+
+                    qidxT = col*neq
+                    fx, fy = flux(q[qidxT:qidxT+neq, e], q[qidx:qidx+neq, e])
+
+                    # add the result of the hadamard product
+                    c[qidx:qidx+neq, e] -= fx * Volx_val
+
+                    # Volx is skew-symmetric with respect to H, so reuse the flux calculation
+                    c[qidxT:qidxT+neq, e] -= fx * Volx[col, row, e]
+
+                    # maybe reuse for Voly as well
+                    if abs(Voly_val) > tol:
+
+                            # add the result of the hadamard product
+                            c[qidx:qidx+neq, e] -= fy * Voly_val
+
+                            # add the result of the hadamard product to the transpose
+                            c[qidxT:qidxT+neq, e] -= fy * Voly[col, row, e]
+                
+                elif abs(Voly_val) > tol:
+
+                    qidxT = col*neq
+                    _, fy = flux(q[qidxT:qidxT+neq, e], q[qidx:qidx+neq, e])
+
+                    # add the result of the hadamard product
+                    c[qidx:qidx+neq, e] -= fy * Voly_val
+
+                    # Voly is skew-symmetric with respect to H, so reuse the flux calculation
+                    c[qidxT:qidxT+neq, e] -= fy * Voly[col, row, e]
+    
+    return c
+
+@njit
+def Sat2d_had_Fsat_diff_periodic(tax,tay,tbx,tby,q,flux,neq):
+    '''
+    A specialized function to compute the hadamard product between the Volx and Voly
+    matrices and the Fvol matrices, then sum the rows. Made for 2d.
+
+    Parameters
+    ----------
+    taTx, taTy, tbx, tby : global matrices
+        The matrices that represent the boundary operators in the x and y directions
+    q : numpy array of shape (nen_neq, nelem)
+        The global vector for multiplication
+    flux : function
+        Function to compute the flux between two states
+    neq : int
+        Number of equations in the system
+
+    Returns
+    -------
+    c : numpy array of shape (nen1, nelem)
+        Result of the volume flux differencing
+        note the -ve so that it corresponds to dExdx + dEydy on the Right Hand Side
+    '''
+    nen_neq, nelem = q.shape
+    nen = nen_neq // neq
+    tol = 1e-13
+
+    # Sanity checks on sizes of arrays - can comment this out later
+    nenb, nenb2, nelemb = tax.shape
+    nenc, nenc2, nelemc = tay.shape
+    nend, nend2, nelemd = tbx.shape
+    nene, nene2, neleme = tby.shape
+    if nelemb != nelem or nelemc != nelem or nelemd != nelem or neleme != nelem:
+        raise ValueError('Number of elements do not match', nelemb, nelemc, nelemd, neleme, nelem)
+    if nenb != nen or nenc != nen or nend != nen or nene != nen:
+        raise ValueError('Number of nodes do not match', nenb, nenc, nend, nene, nen)
+    if nenb2 != nen or nenc2 != nen or nend2 != nen or nene2 != nen:
+        raise ValueError('Number of nodes do not match', nenb2, nenc2, nend2, nene2, nen)
+    
+
+    # Initialize result array
+    c = np.zeros((nen_neq, nelem), dtype=q.dtype)
+    
+    # loop for each element
+    for e in range(nelem): # will ignore right-most interface by periodic BC (same as leftmost)
+        # here think of e as either the looping over elements and considering the left interface,
+        # or looping over each interface e and stopping before hitting the rightmost 
+        if e == 0:
+            # periodic BC: leftmost interface is the same as rightmost
+            qL = q[:,-1]
+            qR = q[:,0]
+            eb = -1
+        else:
+            qL = q[:,e-1]
+            qR = q[:,e]
+            eb = e-1
+
+        for row in range(nen):
+            qidx = row*neq
+
+            for col in range(nen):
+                tax_val = tax[col, row, e]
+                tay_val = tay[col, row, e]
+                tbx_val = tbx[row, col, e]
+                tby_val = tby[row, col, e]
+                flux_used = False
+
+                if abs(tax_val) > tol:
+                    flux_used = True
+                    qidxT = col*neq
+                    
+                    fx, fy = flux(qL[qidx:qidx+neq], qR[qidxT:qidxT+neq])
+                    c[qidxT:qidxT+neq, e] += fx * tax_val
+
+                if abs(tay_val) > tol:
+                    if not flux_used:
+                        flux_used = True
+                        qidxT = col*neq
+                        fx, fy = flux(qL[qidx:qidx+neq], qR[qidxT:qidxT+neq])
+                    
+                    c[qidxT:qidxT+neq, e] += fy * tay_val
+                
+                if abs(tbx_val) > tol:
+                    if not flux_used:
+                        flux_used = True
+                        qidxT = col*neq
+                        fx, fy = flux(qL[qidx:qidx+neq], qR[qidxT:qidxT+neq])
+
+                    c[qidx:qidx+neq, eb] -= fx * tbx_val
+
+                if abs(tby_val) > tol:
+                    if not flux_used:
+                        qidxT = col*neq
+                        _, fy = flux(qL[qidx:qidx+neq], qR[qidxT:qidxT+neq])
+
+                    c[qidx:qidx+neq, eb] -= fy * tby_val
+    
+    return c
 
 """ Old functions (no longer useful)
 
