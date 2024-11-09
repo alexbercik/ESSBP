@@ -1,17 +1,27 @@
 import numpy as np
+from julia.api import Julia
 from julia import Main
+from os import system
+
+hostname = system('hostname')
+if 'nia' in hostname and 'scinet' in hostname:
+     jl = Julia(runtime="/scinet/niagara/software/2022a/opt/base/julia/1.10.4/bin/julia")
 
 julia_code = """
 module UpwindOperators
 
-# Check if virtual environment has already been set up & compiled. If not, activate.
-if !haskey(ENV, "JULIA_UPWIND_ENV_READY")
-    using Pkg
-    Pkg.activate(joinpath(ENV["HOME"], "julia_environments", "upwindOP"))
+using Pkg
+Pkg.activate(joinpath(ENV["HOME"], "julia_environments", "upwindOP"))
 
-    # Precompile packages
+# Check if virtual environment has already been set up & compiled. If not, activate.
+# (set this in the environment, or when calling python, i.e. JULIA_UPWIND_ENV_READY=true)
+if !haskey(ENV, "JULIA_UPWIND_ENV_READY")
+
+    # Ensure necessary packages are added and precompiled
     Pkg.add("SummationByPartsOperators")
     Pkg.precompile()
+
+    # Set environment variable to indicate setup is complete
     ENV["JULIA_UPWIND_READY"] = "true"
 end
 
