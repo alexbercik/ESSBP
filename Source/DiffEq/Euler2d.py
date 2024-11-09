@@ -35,8 +35,7 @@ class Euler(PdeBase):
     # Plotting constants
     var2plot_name = r'$\rho$' # rho, u, e, p, a, mach    
 
-    def __init__(self, para, q0_type=None, test_case='subsonic_nozzle',
-                 nozzle_shape='book', bc='periodic'):
+    def __init__(self, para, q0_type=None, test_case='subsonic_nozzle',bc='periodic'):
 
         ''' Add inputs to the class '''
 
@@ -44,6 +43,7 @@ class Euler(PdeBase):
         self.R = para[0]
         self.g = para[1]
         self.test_case = test_case
+        self.bc = bc
         
         if self.q0_type == None:
             self.q0_type = 'exact' # can be exact, ?

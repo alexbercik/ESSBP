@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 from matplotlib import rc
 rc('text', usetex=True)
 from os import path
+from socket import gethostname
 
 
 from Source.TimeMarch.TimeMarching import TimeMarching
@@ -28,6 +29,7 @@ class PdeSolver:
     use_diffeq_dExdx = False
     calc_nd_ops = False # Calulate the physical multi-dimensional operators (incorporates E matrices)
     print_progress = True
+    had_flux = None
 
     def __init__(self, diffeq, settings,                            # Diffeq
                  tm_method, dt, t_final,                    # Time marching
@@ -205,7 +207,7 @@ class PdeSolver:
             
         else: raise Exception('Discretization type not understood. Try div or had.')
         if surf_diss == None or surf_diss == 'ND' or surf_diss == 'nd' or surf_diss == 'central':
-            self.surf_diss = {'diss_type':'ND'}
+            self.surf_diss = {'diss_type':'nd'}
         elif surf_diss == 'lf':
             self.surf_diss = {'diss_type':'lf'}
         elif surf_diss == 'upwind':
@@ -545,7 +547,7 @@ class PdeSolver:
             error = np.linalg.norm(error) / np.sqrt(self.nn)
         return error
 
-    def reset(self,variables=[]):
+    def reset(self,variables=[],copy_diffeq=False):
         """
         Purpose
         ----------
@@ -564,16 +566,26 @@ class PdeSolver:
                 setattr(self, attribute, value)
             else:
                 print("ERROR: solver has no attribute '{0}'. Ignoring.".format(attribute))
-
-        self.__init__(self.diffeq, self.settings, 
+        
+        if copy_diffeq:
+            from copy import copy
+            new_diffeq = copy(self.diffeq)
+            # Note: this is a shallow copy, i.e. the references point to the same original objects
+            # HOWEVER, if you overwrite attributes, you will not change the original objects. 
+            # Instead, you will create new objects and change the references, as we want.
+        else:
+            new_diffeq = self.diffeq
+        
+        self.__init__(new_diffeq, self.settings, 
                       self.tm_method, self.dt, self.t_final, 
                       q0=self.q0, 
-                      p=self.p, disc_type=self.disc_type,
+                      p=self.p, disc_type=self.disc_type, had_flux=self.had_flux,
                       surf_diss=self.surf_diss, vol_diss=self.vol_diss,
                       nelem=self.nelem, nen=self.nen, disc_nodes=self.disc_nodes,
                       bc=self.bc, xmin=self.xmin, xmax=self.xmax,
                       cons_obj_name=self.cons_obj_name,
-                      bool_plot_sol=self.bool_plot_sol, print_sol_norm=self.print_sol_norm)
+                      bool_plot_sol=self.bool_plot_sol, print_sol_norm=self.print_sol_norm,
+                      print_residual=self.print_residual, check_resid_conv=self.check_resid_conv)
         
     def set_timestep(self, dt):
         """
@@ -893,8 +905,9 @@ class PdeSolver:
                 ax = plt.gca()
                 ax.text(0.03, 0.88, f'$\\max \\Re(\\lambda) = {np.max(eigs.real):.2g}$', transform=ax.transAxes, 
                         fontsize=14, verticalalignment='top') 
-              
-            plt.tight_layout()        
+
+            if 'scinet' not in gethostname():
+                plt.tight_layout()   # for some reason doesn't work on cluster     
             if savefile is not None:
                 filename = savefile+'.'+save_format
                 if path.exists(filename) and not overwrite:

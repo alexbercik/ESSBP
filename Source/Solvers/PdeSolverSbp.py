@@ -28,7 +28,7 @@ class PdeSolverSbp(PdeSolver):
         self.entropy = self.sbp_entropy
         
         # Construct SBP operators
-        self.sbp = MakeSbpOp(self.p, self.disc_nodes, self.nen, self.print_progress)
+        self.sbp = MakeSbpOp(self.p, self.disc_nodes, self.nen, print_progress=self.print_progress)
         self.nen = self.sbp.nn
         self.p = self.sbp.p
         self.x_op = self.sbp.x
