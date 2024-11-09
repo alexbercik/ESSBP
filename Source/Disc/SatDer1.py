@@ -372,12 +372,15 @@ class SatDer1:
         """
 
         assert ((q_bdyL is None) and (q_bdyR is None)), 'base_had_2d SAT: Only periodic boundary conditions are implemented.'
-        qa = self.lm_gv(self.tRT,q)
-        qb = self.lm_gv(self.tLT,q)
+        qa = self.lm_gv(self.tLT,q)
+        qb = self.lm_gv(self.tRT,q)
         qL = fn.pad_1dL(qb, qb[:,-1])
         qR = fn.pad_1dR(qa, qa[:,0])
 
         sat = self.Fsat_diff_periodic(q,idx) - self.coeff*self.diss(qL, qR, idx)
+        print(self.Fsat_diff_periodic(q,idx))
+        print(self.coeff*self.diss(qL, qR, idx))
+        print(sat)
         return sat
     
     def base_had_3d(self, q, Fxvol, Fyvol, Fzvol, idx, q_bdyL=None, q_bdyR=None):
