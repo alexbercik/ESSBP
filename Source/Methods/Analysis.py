@@ -645,7 +645,7 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
                     raise Exception(e)
     else:
         # Run in parallel mode with ProcessPoolExecutor
-        print('temp: begin parallel call')
+        #print('temp: begin parallel call')
         with ProcessPoolExecutor(max_workers=nthreads) as executor:
             futures = {}
             for casei in range(n_cases):
@@ -660,7 +660,7 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
                     solver_kwargs, diffeq_args = prep_new_solver_instance(solver, variables)
                     diffeq_class = type(solver.diffeq)
                     solver_class = type(solver)
-                    print('temp: ready for parallel call')
+                    #print('temp: ready for parallel call')
                     
                     # Submit each run as a separate task and store with its indices
                     future = executor.submit(
@@ -669,7 +669,7 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
                         scale_dt, base_dt, base_dx, error_type, vars2plot
                     )
                     futures[future] = (casei, runi)
-                    print('temp: finished parallel call')
+                    #print('temp: finished parallel call')
             
             # Gather results with preserved order
             for future in as_completed(futures):
@@ -737,7 +737,7 @@ def run_single_case(solver, variables, scale_dt, base_dt, base_dx,
                     error_type, vars2plot, reset=True):
     ''' runs a single case for convergence
     NOTE: solver should be a new object, not the original object, if running in parallel '''
-    print('temp: inside run_single_case')
+    #print('temp: inside run_single_case')
     # Reset solver if needed (i.e. unless solver is a completely new object)
     if reset: solver.reset(variables)
     
@@ -752,7 +752,7 @@ def run_single_case(solver, variables, scale_dt, base_dt, base_dx,
         solver.set_timestep(new_dt)
     
     # Run the solver
-    print('temp: running solver.solve()')
+    #print('temp: running solver.solve()')
     solver.solve()
 
     # Calculate errors
@@ -813,14 +813,14 @@ def prep_new_solver_instance(base_solver, variables):
 def run_parallel_case(solver_class, diffeq_class, solver_kwargs, diffeq_args,
                        scale_dt, base_dt, base_dx, error_type, vars2plot):
     ''' Create a new solver & diffeq instance with the given variables '''
-    print('temp: inside parallel call')
+    #print('temp: inside parallel call')
     diffeq = diffeq_class(*diffeq_args)
     solver = solver_class(diffeq, **solver_kwargs)
     
     # set a couple useful time-saving settings
     solver.print_progress = False
     solver.keep_all_ts = False
-    print('temp: calling run_single_case')
+    #print('temp: calling run_single_case')
     #dofs, errors, nn = run_single_case(solver, None, 
     #                                   scale_dt, base_dt, base_dx, 
     #                                   error_type, vars2plot, reset=False)
