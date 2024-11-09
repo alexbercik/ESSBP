@@ -187,7 +187,7 @@ class TimeMarching(TimeMarchingRk):
             resid = resid*resid # I actually want the norm squared
         
         if self.print_progress:
-            if t_idx % (n_ts // 100) == 0:
+            if t_idx % max(1, n_ts // 100) == 0:
                 if t_idx == 0:
                     print('--- Beginning Simulation ---')
                     self.start_time = tm.time()
