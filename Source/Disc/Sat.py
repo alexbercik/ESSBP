@@ -57,7 +57,11 @@ class Sat(SatDer1, SatDer2):
         self.ysparsity, self.ysparsity_unkronned = None, None
         self.zsparsity, self.zsparsity_unkronned = None, None
 
+        assert isinstance(self.diss_type,str), 'SAT: diss_type must be a str, {0}'.format(self.diss_type)
+        self.diss_type = self.diss_type.lower()
+
         if self.diss_type not in ['nd','symmetric','upwind','lf','llf','lax_friedrichs','ec']:
+
             if 'jac_type' in solver.surf_diss.keys():
                 assert isinstance(solver.surf_diss['jac_type'], str), 'SAT: jac_type must be a str, {0}'.format(solver.surf_diss['jac_type'])
                 self.jac_type = solver.surf_diss['jac_type'].lower()

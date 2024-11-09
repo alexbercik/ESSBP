@@ -17,6 +17,7 @@ from os import path
 import itertools
 from tabulate import tabulate
 import scipy.optimize as sc
+import copy
 
 def animate(solver, file_name='animation', make_video=True, make_gif=False,
                plotfunc='plot_sol',plotargs={}, skipsteps=0,fps=24,
@@ -501,7 +502,6 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
 
     if nthreads > 1:
         from concurrent.futures import ProcessPoolExecutor, as_completed
-        import copy
 
     ''' Unpack Schedule '''
     # Check that we either use 'nen' or 'nelem'
@@ -594,14 +594,11 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
         # TODO : add flag to also calculate conservation objectives?
         return variables
 
-
-    # set a couple base settings for solver
-    solver.keep_all_ts = False
-    if nthreads > 1: solver.print_progress = False
-
     n_toti = 1
-    if nthreads == 1:
-        # run in serial
+    if nthreads == 1: # run in serial
+        # set a couple useful time-saving settings
+        solver.keep_all_ts = False
+        #solver.print_progress = False
         for casei in range(n_cases): # for each case
             for atti in range(n_attributes):
                 variables_base[atti+2] = (attributes[atti],cases[casei][atti]) # assign attributes
@@ -618,8 +615,7 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
                         print('label:', labels[casei])
 
                     dofs[casei,runi], errors[casei,runi], nn = run_single_case(solver, variables, scale_dt, 
-                                                                        base_dt, base_dx, error_type, 
-                                                                        vars2plot)
+                                                                    base_dt, base_dx, error_type, vars2plot)
                     
                     print('Convergence Progress: run {0} of {1} complete.'.format(n_toti,n_tot))
                     print('Final Error: ', solver.calc_error())
@@ -649,6 +645,7 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
                     raise Exception(e)
     else:
         # Run in parallel mode with ProcessPoolExecutor
+        print('temp: begin parallel call')
         with ProcessPoolExecutor(max_workers=nthreads) as executor:
             futures = {}
             for casei in range(n_cases):
@@ -659,35 +656,40 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
 
                 for runi in range(n_runs):
                     # Prepare a copy of solver and set up variables for this run
-                    solver_copy = copy.deepcopy(solver)
                     variables = set_variables(casei,runi,variables_base)  # set up run-specific variables
+                    solver_kwargs, diffeq_args = prep_new_solver_instance(solver, variables)
+                    diffeq_class = type(solver.diffeq)
+                    solver_class = type(solver)
+                    print('temp: ready for parallel call')
                     
                     # Submit each run as a separate task and store with its indices
                     future = executor.submit(
-                        run_single_case,
-                        solver_copy, variables, scale_dt, base_dt, base_dx, error_type, vars2plot
+                        run_parallel_case,
+                        solver_class, diffeq_class, solver_kwargs, diffeq_args,
+                        scale_dt, base_dt, base_dx, error_type, vars2plot
                     )
                     futures[future] = (casei, runi)
+                    print('temp: finished parallel call')
             
             # Gather results with preserved order
             for future in as_completed(futures):
                 casei, runi = futures[future]  # Retrieve original indices
-                try:
-                    result_dofs, result_errors, nn = future.result()
-                    dofs[casei, runi] = result_dofs
-                    errors[casei, runi] = result_errors
+                #try:
+                result_dofs, result_errors, nn = future.result()
+                dofs[casei, runi] = result_dofs
+                errors[casei, runi] = result_errors
 
-                except Exception as e:
-                    print(f"Error in parallel execution for case {casei}, run {runi}: {e}")
-                    dofs[casei, runi] = np.nan
-                    errors[casei, runi] = np.nan
+                #except Exception as e:
+                #    print(f"Error in parallel execution for case {casei}, run {runi}: {e}")
+                #    dofs[casei, runi] = np.nan
+                #    errors[casei, runi] = np.nan
 
                 # Progress update immediately after each task completes
-                n_toti += 1
                 print('Convergence Progress: run {0} of {1} complete.'.format(n_toti,n_tot))
-                print('Final Errors: ', errors[casei,runi])
+                print('Final Errors for casei={}, runi={}:'.format(casei,runi), errors[casei,runi])
                 print('Total number of nodes: ', nn)
                 print('---------------------------------------------------------')
+                n_toti += 1
                         
     if labels is not None:
         # overwrite legend_strings with labels
@@ -731,12 +733,13 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
     if return_conv:
         return dofs, errors, legend_strings
     
-def run_single_case(solver, variables, scale_dt, base_dt, base_dx, error_type, vars2plot):
+def run_single_case(solver, variables, scale_dt, base_dt, base_dx, 
+                    error_type, vars2plot, reset=True):
     ''' runs a single case for convergence
-    NOTE: solver should be a copy, not the original object, if running in parallel '''
-
-    # Reset solver
-    solver.reset(variables=variables)
+    NOTE: solver should be a new object, not the original object, if running in parallel '''
+    print('temp: inside run_single_case')
+    # Reset solver if needed (i.e. unless solver is a completely new object)
+    if reset: solver.reset(variables)
     
     # Scale time step if needed
     if scale_dt:
@@ -749,6 +752,7 @@ def run_single_case(solver, variables, scale_dt, base_dt, base_dx, error_type, v
         solver.set_timestep(new_dt)
     
     # Run the solver
+    print('temp: running solver.solve()')
     solver.solve()
 
     # Calculate errors
@@ -775,6 +779,54 @@ def run_single_case(solver, variables, scale_dt, base_dt, base_dx, error_type, v
         dofs = np.cbrt(nn)
     
     return dofs, errors, nn
+
+def prep_new_solver_instance(base_solver, variables):
+    ''' prepare arguments for a new solver and diffeq instance '''
+    solver_copy = copy.copy(base_solver)
+    for i in range(len(variables)):
+        attribute , value = variables[i]
+        if hasattr(solver_copy, attribute):
+            setattr(solver_copy, attribute, value)
+        else:
+            print("ERROR: solver has no attribute '{0}'. Ignoring.".format(attribute))
+    
+    if solver_copy.diffeq.diffeq_name == 'Euler2d':
+        diffeq_args = [[solver_copy.diffeq.R,solver_copy.diffeq.g],
+                solver_copy.diffeq.q0_type,
+                solver_copy.diffeq.test_case,
+                solver_copy.diffeq.bc]
+    else:
+        raise Exception('TODO: must manually code up this Diffeq.')
+    
+    solver_kwargs = {'settings':solver_copy.settings, 
+                'tm_method':solver_copy.tm_method, 'dt':solver_copy.dt, 't_final':solver_copy.t_final, 
+                'q0':solver_copy.q0, 
+                'p':solver_copy.p, 'disc_type':solver_copy.disc_type,
+                'surf_diss':solver_copy.surf_diss, 'vol_diss':solver_copy.vol_diss, 'had_flux':solver_copy.vol_diss,
+                'nelem':solver_copy.nelem, 'nen':solver_copy.nen, 'disc_nodes':solver_copy.disc_nodes,
+                'bc':solver_copy.bc, 'xmin':solver_copy.xmin, 'xmax':solver_copy.xmax,
+                'cons_obj_name':solver_copy.cons_obj_name,
+                'bool_plot_sol':solver_copy.bool_plot_sol, 'print_sol_norm':solver_copy.print_sol_norm,
+                'print_residual':solver_copy.print_residual, 'check_resid_conv':solver_copy.check_resid_conv}
+    return solver_kwargs, diffeq_args
+
+def run_parallel_case(solver_class, diffeq_class, solver_kwargs, diffeq_args,
+                       scale_dt, base_dt, base_dx, error_type, vars2plot):
+    ''' Create a new solver & diffeq instance with the given variables '''
+    print('temp: inside parallel call')
+    diffeq = diffeq_class(*diffeq_args)
+    solver = solver_class(diffeq, **solver_kwargs)
+    
+    # set a couple useful time-saving settings
+    solver.print_progress = False
+    solver.keep_all_ts = False
+    print('temp: calling run_single_case')
+    #dofs, errors, nn = run_single_case(solver, None, 
+    #                                   scale_dt, base_dt, base_dx, 
+    #                                   error_type, vars2plot, reset=False)
+    dofs, errors, nn = 1,2,3
+    return dofs, errors, nn
+    
     
     
 def calc_conv_rate(dof_vec, err_vec, dim, n_points=None,
