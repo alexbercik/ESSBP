@@ -1,0 +1,53 @@
+# Ignore Python bytecode files
+__pycache__/
+*.py[cod]
+
+# Ignore mesh files
+*.msh
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore any figures and plot images
+*.png
+*.jpg
+*.jpeg
+*.svg
+*.pdf
+figures/
+plots/
+images/
+
+# Ignore virtual environments
+venv/
+.env/
+.venv/
+
+# Ignore output logs and temporary files
+*.log
+*.out
+*.err
+*.tmp
+*.temp
+
+# Ignore environment and package configuration files
+*.env
+*.DS_Store
+*.pkl
+*.h5
+*.sqlite3
+*.db
+
+# Ignore built distributions and compiled C extensions
+build/
+dist/
+*.egg-info/
+*.egg
+*.so
+*.dylib
+
+# Ignore IDE and editor-specific files
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
