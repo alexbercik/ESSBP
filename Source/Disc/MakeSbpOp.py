@@ -404,9 +404,11 @@ class MakeSbpOp:
         if mesh.dim == 1:
 
             self.H_phys_unkronned = np.diag(self.H)[:,None] * mesh.det_jac
+            self.H_inv_phys_unkronned = 1/self.H_phys_unkronned
             self.H_phys = fn.repeat_neq_gv(self.H_phys_unkronned,neq)
             self.H_inv_phys = 1/self.H_phys
             
+            self.Volx = None # TODO: Copy the volume implementation from 2D
             # remember in 1D metrics = 1
             if sparse:
                 D = sp.lm_to_sp(self.D)
@@ -525,16 +527,15 @@ class MakeSbpOp:
                     raise Exception('Not implemented in sparse yet')
             
             else:
-                if (not sat_sparse) or (sat_sparse and calc_nd_ops):
-                    # may need to compute / recompute some things
-                    tR = self.tR.reshape(self.nn,1)
-                    tL = self.tL.reshape(self.nn,1)
-                    txb = fn.kron_neq_lm(tR, self.nn)
-                    txa = fn.kron_neq_lm(tL, self.nn)
-                    tyb = np.kron(np.eye(self.nn), tR)
-                    tya = np.kron(np.eye(self.nn), tL)
-                    Exsurf = fn.lm_ldiag(txb, self.Hperp) @ txb.T - fn.lm_ldiag(txa, self.Hperp) @ txa.T
-                    Eysurf = fn.lm_ldiag(tyb, self.Hperp) @ tyb.T - fn.lm_ldiag(tya, self.Hperp) @ tya.T
+                # need to compute / recompute some things first
+                tR = self.tR.reshape(self.nn,1)
+                tL = self.tL.reshape(self.nn,1)
+                txb = fn.kron_neq_lm(tR, self.nn)
+                txa = fn.kron_neq_lm(tL, self.nn)
+                tyb = np.kron(np.eye(self.nn), tR)
+                tya = np.kron(np.eye(self.nn), tL)
+                Exsurf = fn.lm_ldiag(txb, self.Hperp) @ txb.T - fn.lm_ldiag(txa, self.Hperp) @ txa.T
+                Eysurf = fn.lm_ldiag(tyb, self.Hperp) @ tyb.T - fn.lm_ldiag(tya, self.Hperp) @ tya.T
                 if (not sat_sparse):
                     # save the dense SAT matrices
                     self.txb_unkronned = txb

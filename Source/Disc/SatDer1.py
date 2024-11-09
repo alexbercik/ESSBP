@@ -372,8 +372,8 @@ class SatDer1:
         """
 
         assert ((q_bdyL is None) and (q_bdyR is None)), 'base_had_2d SAT: Only periodic boundary conditions are implemented.'
-        qa = self.lm_gv(self.tRT,q)
-        qb = self.lm_gv(self.tLT,q)
+        qa = self.lm_gv(self.tLT,q)
+        qb = self.lm_gv(self.tRT,q)
         qL = fn.pad_1dL(qb, qb[:,-1])
         qR = fn.pad_1dR(qa, qa[:,0])
 
