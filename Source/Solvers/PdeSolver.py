@@ -29,7 +29,7 @@ class PdeSolver:
     use_diffeq_dExdx = False
     calc_nd_ops = False # Calulate the physical multi-dimensional operators (incorporates E matrices)
     print_progress = True
-    had_flux = None
+    had_flux = 'none'
 
     def __init__(self, diffeq, settings,                            # Diffeq
                  tm_method, dt, t_final,                    # Time marching

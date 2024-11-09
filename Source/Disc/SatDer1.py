@@ -378,9 +378,6 @@ class SatDer1:
         qR = fn.pad_1dR(qa, qa[:,0])
 
         sat = self.Fsat_diff_periodic(q,idx) - self.coeff*self.diss(qL, qR, idx)
-        print(self.Fsat_diff_periodic(q,idx))
-        print(self.coeff*self.diss(qL, qR, idx))
-        print(sat)
         return sat
     
     def base_had_3d(self, q, Fxvol, Fyvol, Fzvol, idx, q_bdyL=None, q_bdyR=None):
