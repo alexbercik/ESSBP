@@ -1135,7 +1135,7 @@ class PdeSolver:
         else:
             return result
     
-    def check_conservation(self, print_result=True, q=None):
+    def check_conservation(self, q=None, print_result=True):
         ''' check conservation '''
         if q is None:
             q = self.diffeq.set_q0()
@@ -1143,6 +1143,17 @@ class PdeSolver:
         result = self.conservation_der(dqdt)
         if print_result:
             print('Derivative of conservation is {0:.5g}'.format(result))
+        else:
+            return result
+        
+    def check_stability(self, q=None, print_result=True):
+        ''' check stability '''
+        if q is None:
+            q = self.diffeq.set_q0()
+        dqdt = self.dqdt(q,0.)
+        result = self.energy_der(q,dqdt)
+        if print_result:
+            print('Derivative of stability is {0:.5g}'.format(result))
         else:
             return result
         

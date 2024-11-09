@@ -336,13 +336,11 @@ class ADiss():
 
         if self.type == 'w' or self.type == 'entw':
             Ds1 = self.solver.sbp.D
-            if self.sparse: 
-                Ds1 = sp.lm_to_sp(Ds1)
-                Ds = (np.copy(Ds1[0]), np.copy(Ds1[1]), np.copy(Ds1[2]))
-            else:
-                Ds = np.copy(Ds1)
+            if self.sparse: Ds1 = sp.lm_to_sp(Ds1)
+            Ds = Ds1.copy()
             for i in range(1,self.s):
                 Ds = self.lm_lm(Ds1, Ds)
+            if self.sparse: Ds.prune()
             DsT = self.lm_to_lmT(Ds,self.nen,self.nen)
             
             self.rhs_D = self.kron_neq_lm(Ds,self.neq_node) 
@@ -496,13 +494,11 @@ class ADiss():
 
         if self.type == 'W' or self.type == 'entW':
             Ds1 = self.solver.sbp.D
-            if self.sparse: 
-                Ds1 = sp.lm_to_sp(Ds1)
-                Ds = (np.copy(Ds1[0]), np.copy(Ds1[1]), np.copy(Ds1[2]))
-            else:
-                Ds = np.copy(Ds1)
+            if self.sparse: Ds1 = sp.lm_to_sp(Ds1)
+            Ds = Ds1.copy()
             for i in range(1,self.s):
                 Ds = self.lm_lm(Ds1, Ds)
+            if self.sparse: Ds.prune()
             DsT = self.lm_to_lmT(Ds,self.nen,self.nen)
             H = np.diag(self.solver.sbp.H)
 
@@ -515,6 +511,7 @@ class ADiss():
         elif self.type == 'dcp' or self.type == 'entdcp':                
             Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen, self.bdy_fix)
             if self.sparse: Ds = sp.lm_to_sp(Ds)
+
             DsT = self.lm_to_lmT(Ds,self.nen,self.nen)
             self.rhs_Dxi = self.kron_neq_lm(self.kron_lm_eye(Ds, self.nen),self.neq_node) 
             self.rhs_Deta = self.kron_neq_lm(self.kron_eye_lm(Ds,self.nen,self.nen),self.neq_node) 

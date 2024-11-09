@@ -965,16 +965,27 @@ def logmean_vec(p,pg):
     return p_ln
 
 @njit
-def logmean_sca(p,pg):
+def logmean_sca_old(p,pg):
+    # algorithm by Ismail and Roe
     xi = p/pg
     zeta = (1-xi)/(1+xi)
     zeta2 = zeta**2
-    if np.real(zeta2) < 0.01:
+    if np.real(zeta2) < 0.001:
         F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
     else:
         F = - np.log(xi)/zeta
     p_ln = (p+pg)/F
     return p_ln
+
+@njit
+def logmean_sca(am,ap):
+    # algorithm by Ranocha et al "efficient implementation of modern..."
+    u = (am * (am - 2*ap) + ap*ap) / (am * (am + 2*ap) + ap*ap)
+    if np.real(u) < 0.001:
+        F = (am + ap) / (2 + u * (2./3. + u * (2./5. + u * 2./7.)))
+    else:
+        F = (ap - am) / np.log(ap/am)
+    return F
 
 
 @njit    
