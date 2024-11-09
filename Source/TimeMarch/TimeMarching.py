@@ -186,16 +186,7 @@ class TimeMarching(TimeMarchingRk):
             resid = np.linalg.norm(dqdt)
             resid = resid*resid # I actually want the norm squared
 
-        if t_idx == 0:
-            print('--- Beginning Simulation ---')
-        elif t_idx == 1:
-            self.start_time = tm.time()
-        elif t_idx == 10:
-            sim_time = tm.time() - self.start_time
-            rem_time = sim_time/9*(n_ts-9)
-            print('... Estimating {0}:{1:02d}:{2:02d} to run.'.format(int(rem_time//3600),
-                                                                int((rem_time//60)%60),int(rem_time%60)))
-        elif self.print_progress:
+        if t_idx > 10 and self.print_progress:
             if t_idx % max(1,(n_ts // 100)) == 0:
                 sim_time = tm.time() - self.start_time
                 rem_time = sim_time/(t_idx-1)*(n_ts-t_idx-1)
@@ -205,6 +196,16 @@ class TimeMarching(TimeMarchingRk):
                 if self.print_residual:
                     suf += ' Resid = {0:.1E}'.format(resid)
                 printProgressBar(t_idx, n_ts, prefix = 'Progress:', suffix = suf)
+                
+        elif t_idx == 0:
+            print('--- Beginning Simulation ---')
+        elif t_idx == 1:
+            self.start_time = tm.time()
+        elif t_idx == 10:
+            sim_time = tm.time() - self.start_time
+            rem_time = sim_time/9*(n_ts-9)
+            print('... Estimating {0}:{1:02d}:{2:02d} to run.'.format(int(rem_time//3600),
+                                                                int((rem_time//60)%60),int(rem_time%60)))
 
         if self.check_resid_conv:
             if (resid < 1E-10): 
