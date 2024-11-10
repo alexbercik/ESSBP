@@ -1,9 +1,9 @@
 import numpy as np
 from julia.api import Julia
 from julia import Main
-from os import system
+from socket import gethostname
 
-hostname = system('hostname')
+hostname = gethostname()
 if 'nia' in hostname and 'scinet' in hostname:
      jl = Julia(runtime="/scinet/niagara/software/2022a/opt/base/julia/1.10.4/bin/julia")
 

@@ -35,7 +35,7 @@ class PdeSolver:
                  tm_method, dt, t_final,                    # Time marching
                  q0=None,                                   # Initial solution
                  p=2, disc_type='div',                      # Discretization
-                 surf_diss=None, vol_diss=None, had_flux='central',
+                 surf_diss=None, vol_diss=None, had_flux='none',
                  nelem=0, nen=0,  disc_nodes='lgl',
                  bc=None, xmin=0, xmax=1,     # Domain
                  cons_obj_name=None,         # Other
@@ -175,7 +175,7 @@ class PdeSolver:
                 self.use_diffeq_dExdx = False
         elif disc_type.lower() == 'had' or disc_type.lower() == 'hadamard':
             assert self.settings['skew_sym'],"If hadamard scheme must also use skew-sym metrics. Set settings['skew_sym']=True"
-            self.disc_type = 'had'       
+            self.disc_type = 'had'  
             if hasattr(self.diffeq, had_flux.lower()+"_flux") or hasattr(self.diffeq, had_flux.lower()+"_fluxes"):
                 self.had_flux = had_flux.lower()
             else:
@@ -404,7 +404,7 @@ class PdeSolver:
         end_time = time.time()
         self.simulation_time = end_time - stat_time
     
-    def calc_cons_obj(self, q, t):
+    def calc_cons_obj(self, q, dqdt, t):
         '''
         Purpose
         ----------
@@ -423,9 +423,6 @@ class PdeSolver:
         '''
 
         cons_obj = np.zeros(self.n_cons_obj)
-        
-        if any('der' in name.lower() for name in self.cons_obj_name):
-            dqdt = self.dqdt(q, t) #TODO: Wildly inneficient. Can i get this from tm class?
 
         if any('max_eig'==name.lower() or 'spec_rad'==name.lower() for name in self.cons_obj_name):
             eigs = self.check_eigs(q, plot_eigs=False, returneigs=True, print_nothing=True)
