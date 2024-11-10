@@ -2,37 +2,38 @@ import os
 from sys import path
 import numpy as np
 
-n_nested_folder = 1
-folder_path, _ = os.path.split(__file__)
+# Define the base path to ESSBP (assuming it’s always under the home directory)
+base_dir = os.path.join(os.path.expanduser("~"), "ESSBP")
 
-for i in range(n_nested_folder):
-    folder_path, _ = os.path.split(folder_path)
-
-path.append(folder_path)
+# Add the base directory to sys.path if it’s not already there
+if base_dir not in path:
+    path.append(base_dir)
 
 from Source.DiffEq.Euler2d import Euler
 from Source.Solvers.PdeSolverSbp import PdeSolverSbp
 from Source.Methods.Analysis import run_convergence, plot_conv
 
 # Simultation parameters
-savefile = 'Euler2dVortex_CSBPp33eDiv' # will add extension + .png automatically
+savefile = 'Euler2dVortex_CSBPp33eHad' # will add extension + .png automatically
 tm_method = 'rk4'
 cfl = 0.1
-tf = 20. # final time. For vortex, one period is t=20
+tf = 20.0 # final time. For vortex, one period is t=20
 op = 'csbp' # 'lg', 'lgl', 'csbp', 'hgtl', 'hgt', 'mattsson', 'upwind'
 nelem = 3 # number of elements
 nen = [20,40,80,160] # number of nodes per element in each direction, as a list
-p = 3 # polynomial degree
+p = 4 # polynomial degree
 s = p+1 # dissipation degree
-disc_type = 'div' # 'div' for divergence form, 'had' for entropy-stable form
+disc_type = 'had' # 'div' for divergence form, 'had' for entropy-stable form
 had_flux = 'ranocha' # 2-point numerical flux used in hadamard form
 vars2plot = ['rho','entropy','q','p'] # must be the same as loaded data
 
-nthreads = 10
-include_upwind = True # include upwind operators as a reference
+nthreads = 1 # number of threads for batch runs
+include_upwind = False # include upwind operators as a reference
 include_bothdiss = True # include both cons. and ent. volume dissipation
 savedata = True
 loaddata = False # skip the actual simulation and just try to load and plot the data
+plot = True
+verbose_output = True
 
 # Problem parameters
 para = [287,1.4] # [R, gamma]
@@ -70,8 +71,8 @@ if disc_type == 'div':
                             {'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*3.125/5**s},
                             {'diss_type':'dcp', 'jac_type':'matrix', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':3.125/5**s},
                             {'diss_type':'dcp', 'jac_type':'matrix', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*3.125/5**s}]]
-    labels3 = [f'$\\sigma=0$', f'Cons. Sca. $\\sigma={0.625/5**p:g}$', f'Cons. Sca. $\\sigma={0.2*0.625/5**p:g}$',
-                               f'Cons. Mat. $\\sigma={0.625/5**p:g}$', f'Cons. Mat. $\\sigma={0.2*0.625/5**p:g}$']
+    labels3 = [f'$\\sigma=0$', f'Cons. Sca. $\\sigma={3.125/5**s:g}$', f'Cons. Sca. $\\sigma={0.2*3.125/5**s:g}$',
+                               f'Cons. Mat. $\\sigma={3.125/5**s:g}$', f'Cons. Mat. $\\sigma={0.2*3.125/5**s:g}$']
     
 
 elif disc_type == 'had':
@@ -99,8 +100,8 @@ elif disc_type == 'had':
                             {'diss_type':'entdcp', 'jac_type':'scamat', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*3.125/5**s},
                             {'diss_type':'entdcp', 'jac_type':'matmat', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':3.125/5**s},
                             {'diss_type':'entdcp', 'jac_type':'matmat', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*3.125/5**s}]]
-    labels3 = [f'$\\sigma=0$', f'Ent. Sca.-Mat. $\\sigma={0.625/5**p:g}$', f'Ent. Sca.-Mat. $\\sigma={0.2*0.625/5**p:g}$',
-                               f'Ent. Mat.-Mat. $\\sigma={0.625/5**p:g}$', f'Ent. Mat.-Mat. $\\sigma={0.2*0.625/5**p:g}$']
+    labels3 = [f'$\\sigma=0$', f'Ent. Sca.-Mat. $\\sigma={3.125/5**s:g}$', f'Ent. Sca.-Mat. $\\sigma={0.2*3.125/5**s:g}$',
+                               f'Ent. Mat.-Mat. $\\sigma={3.125/5**s:g}$', f'Ent. Mat.-Mat. $\\sigma={0.2*3.125/5**s:g}$']
 
 
 if loaddata:
@@ -116,15 +117,18 @@ else:
     if savedata:
         datafile = savefile + '_data.npz'
         if os.path.exists(datafile):
-            print(f"Warning: The file '{datafile}' already exists and will be overwritten.")
+            for i in range(20):
+                print(f"Warning: The file '{datafile}' already exists and will be overwritten.")
 
     # initialize solver with some default values
     dx = 10./((nen[0]-1)*nelem)
     dt = cfl * dx / (1.56) # using a wavespeed of 1.56 from initial condition
     solver = PdeSolverSbp(diffeq, settings, tm_method, dt, tf,
-                        p=p, surf_diss=surf_diss, vol_diss=None,
+                        p=p, disc_type=disc_type,   
+                        surf_diss=surf_diss, vol_diss=None, had_flux=had_flux,
                         nelem=nelem, nen=nen[0], disc_nodes='csbp',
                         bc='periodic', xmin=xmin, xmax=xmax)
+    solver.print_progress = verbose_output
 
     if len(schedule1) > 0: 
         dofs1, errors1, outlabels1 = run_convergence(solver,schedule_in=schedule1,return_conv=True,plot=False,vars2plot=vars2plot,nthreads=nthreads)
@@ -163,45 +167,46 @@ else:
         print('Saving simulation results to data file...')
         np.savez(datafile, dofs1=dofs1, errors1=errors1, dofs2=dofs2, errors2=errors2, dofs3=dofs3, errors3=errors3, allow_pickle=True)
 
-# plot results
-arrays = [dofs for dofs in (dofs1, dofs2, dofs3) if dofs is not None and \
-          not (isinstance(dofs, np.ndarray) and dofs.size == 1 and dofs[()] is None)]
-dofs = np.vstack(arrays)
-arrays = [errors for errors in (errors1, errors2, errors3) if errors is not None and \
-          not (isinstance(errors, np.ndarray) and errors.size == 1 and errors[()] is None)]
-errors = np.vstack(arrays)
-labels = labels1 + labels2 + labels3
+if plot:
+    # plot results
+    arrays = [dofs for dofs in (dofs1, dofs2, dofs3) if dofs is not None and \
+            not (isinstance(dofs, np.ndarray) and dofs.size == 1 and dofs[()] is None)]
+    dofs = np.vstack(arrays)
+    arrays = [errors for errors in (errors1, errors2, errors3) if errors is not None and \
+            not (isinstance(errors, np.ndarray) and errors.size == 1 and errors[()] is None)]
+    errors = np.vstack(arrays)
+    labels = labels1 + labels2 + labels3
 
-title = None
-xlabel = r'$\surd$ Degrees of Freedom'
-colors = ['tab:blue', 'tab:orange', 'tab:green', 'k', 'm', 'tab:red', 'tab:brown']
-markers = ['o', '^', 's', 'd','x', '+', 'v']
+    title = None
+    xlabel = r'$\surd$ Degrees of Freedom'
+    colors = ['tab:blue', 'tab:orange', 'tab:green', 'k', 'm', 'tab:red', 'tab:brown']
+    markers = ['o', '^', 's', 'd','x', '+', 'v']
 
-for varidx, var in enumerate(vars2plot):
+    for varidx, var in enumerate(vars2plot):
 
-    if p==1 or p==2 or p==3: loc = 'lower left'
-    elif p==4: loc = 'upper right'
-    else: loc = 'best'
+        if p==1 or p==2 or p==3: loc = 'lower left'
+        elif p==4: loc = 'upper right'
+        else: loc = 'best'
 
-    if var == 'rho':
-        ylabel = r'Density Error $\Vert \rho - \rho_{\mathrm{ex}} \Vert_\mathsf{H}$'
-        ylim = (4e-11,9.5e-2)
-    elif var == 'q': 
-        ylabel = r'Solution Error $\Vert \bm{u} - \bm{u}_{\mathrm{ex}} \Vert_\mathsf{H}$'
-        ylim = (4e-11,9.5e-2)
-    elif var == 'e':
-        ylabel = r'Internal Energy Error $\Vert e - e_{\mathrm{ex}} \Vert_\mathsf{H}$'
-        ylim = (4e-11,9.5e-2)
-    elif var == 'p':
-        ylabel = r'Pressure Error $\Vert p - p_{\mathrm{ex}} \Vert_\mathsf{H}$'
-        ylim = (4e-11,9.5e-2)
-    elif var == 'entropy':
-        ylabel = r'Entropy Error $\Vert \mathcal{S} - \mathcal{S}_{\mathrm{ex}} \Vert_\mathsf{H}$'
-        ylim = (4e-11,9.5e-2)
+        if var == 'rho':
+            ylabel = r'Density Error $\Vert \rho - \rho_{\mathrm{ex}} \Vert_\mathsf{H}$'
+            ylim = (4e-11,9.5e-2)
+        elif var == 'q': 
+            ylabel = r'Solution Error $\Vert \bm{u} - \bm{u}_{\mathrm{ex}} \Vert_\mathsf{H}$'
+            ylim = (4e-11,9.5e-2)
+        elif var == 'e':
+            ylabel = r'Internal Energy Error $\Vert e - e_{\mathrm{ex}} \Vert_\mathsf{H}$'
+            ylim = (4e-11,9.5e-2)
+        elif var == 'p':
+            ylabel = r'Pressure Error $\Vert p - p_{\mathrm{ex}} \Vert_\mathsf{H}$'
+            ylim = (4e-11,9.5e-2)
+        elif var == 'entropy':
+            ylabel = r'Entropy Error $\Vert \mathcal{S} - \mathcal{S}_{\mathrm{ex}} \Vert_\mathsf{H}$'
+            ylim = (4e-11,9.5e-2)
 
-    savefile_var = savefile + '_' + var + '.png'
-    plot_conv(dofs, errors[:,:,varidx], labels, 2, 
-            title=title, savefile=savefile_var, xlabel=xlabel, ylabel=ylabel, 
-            ylim=ylim,xlim=(68,760), grid=True, legendloc=loc,
-            figsize=(6,4), convunc=False, extra_xticks=True, scalar_xlabel=False,
-            serif=True, colors=colors, markers=markers)
+        savefile_var = savefile + '_' + var + '.png'
+        plot_conv(dofs, errors[:,:,varidx], labels, 2, 
+                title=title, savefile=savefile_var, xlabel=xlabel, ylabel=ylabel, 
+                ylim=ylim,xlim=(68,760), grid=True, legendloc=loc,
+                figsize=(6,4), convunc=False, extra_xticks=True, scalar_xlabel=False,
+                serif=True, colors=colors, markers=markers)

@@ -171,7 +171,7 @@ class TimeMarching(TimeMarchingRk):
                 if self.keep_all_ts:
                     q_sol[:, :, mod_t_idx] = q
                 if self.bool_calc_cons_obj:
-                    self.cons_obj[:, mod_t_idx] = self.fun_calc_cons_obj(q,t_idx * dt)
+                    self.cons_obj[:, mod_t_idx] = self.fun_calc_cons_obj(q,dqdt,t_idx * dt)
 
         if self.bool_plot_sol:
             tf = t_idx * dt
@@ -232,7 +232,7 @@ class TimeMarching(TimeMarchingRk):
                     if self.keep_all_ts:
                         q_sol[:, :, int(mod_t_idx)] = q
                     if self.bool_calc_cons_obj:
-                        self.cons_obj[:, int(mod_t_idx)] = self.fun_calc_cons_obj(q,t_idx * dt)
+                        self.cons_obj[:, int(mod_t_idx)] = self.fun_calc_cons_obj(q,dqdt,t_idx * dt)
 
             if self.bool_plot_sol:
                 tf = t_idx * dt
@@ -287,7 +287,7 @@ class TimeMarching(TimeMarchingRk):
         else:
             return None
         
-    def return_q_sol(self,q,q_sol,t_idx,dt):
+    def return_q_sol(self,q,q_sol,t_idx,dt,dqdt):
         ''' prepare q or q_sol to be returned by the main function '''
         if self.quitsim:
             # NOTE: t_idx = i+1 from where the method determined q was bad
@@ -343,7 +343,7 @@ class TimeMarching(TimeMarchingRk):
                 # might need to append the final solution value.
                 if self.append_qsol:
                     if self.bool_calc_cons_obj:
-                        self.cons_obj[:, -1] = self.fun_calc_cons_obj(q,t_idx * dt)
+                        self.cons_obj[:, -1] = self.fun_calc_cons_obj(q,dqdt,t_idx * dt)
                     q_sol[:,:,-1] = q
                 return q_sol
             else:
