@@ -4,7 +4,7 @@ import numpy as np
 
 if __name__ == '__main__':
     # Define the base path to ESSBP (assuming it’s always under the home directory)
-    base_dir = os.path.join(os.path.expanduser("~"), "OneDrive - University of Toronto/UTIAS/ESSBP")
+    base_dir = os.path.join(os.path.expanduser("~"), "/ESSBP")
 
     # Add the base directory to sys.path if it’s not already there
     if base_dir not in path:
@@ -68,10 +68,10 @@ if __name__ == '__main__':
 
         schedule3 = [['disc_nodes','csbp'],['nen',*nen],['p',p],['disc_type','div'],
                     ['vol_diss',{'diss_type':'nd'},
-                                {'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':3.125/5**s},
-                                {'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*3.125/5**s},
-                                {'diss_type':'dcp', 'jac_type':'matrix', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':3.125/5**s},
-                                {'diss_type':'dcp', 'jac_type':'matrix', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*3.125/5**s}]]
+                                {'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':3.125/5**s, 'entropy_fix':True, 'avg_half_nodes':True},
+                                {'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*3.125/5**s, 'entropy_fix':True, 'avg_half_nodes':True},
+                                {'diss_type':'dcp', 'jac_type':'matrix', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':3.125/5**s, 'entropy_fix':True, 'avg_half_nodes':True},
+                                {'diss_type':'dcp', 'jac_type':'matrix', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*3.125/5**s, 'entropy_fix':True, 'avg_half_nodes':True}]]
         labels3 = [f'$\\sigma=0$', f'Cons. Sca. $\\sigma={3.125/5**s:g}$', f'Cons. Sca. $\\sigma={0.2*3.125/5**s:g}$',
                                 f'Cons. Mat. $\\sigma={3.125/5**s:g}$', f'Cons. Mat. $\\sigma={0.2*3.125/5**s:g}$']
         
@@ -91,16 +91,16 @@ if __name__ == '__main__':
 
         if include_bothdiss:
             schedule2 = [['disc_nodes','csbp'],['nen',*nen],['p',p],['disc_type','had'],
-                        ['vol_diss',{'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*3.125/5**s},
-                                    {'diss_type':'dcp', 'jac_type':'matrix', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*3.125/5**s}]]
+                        ['vol_diss',{'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*3.125/5**s, 'entropy_fix':True, 'avg_half_nodes':True},
+                                    {'diss_type':'dcp', 'jac_type':'matrix', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*3.125/5**s, 'entropy_fix':True, 'avg_half_nodes':True}]]
             labels2 = [f'Cons. Sca. $\\sigma={0.2*0.625/5**p:g}$', f'Cons. Mat. $\\sigma={0.2*0.625/5**p:g}$']
 
         schedule3 = [['disc_nodes','csbp'],['nen',*nen],['p',p],['disc_type','had'],
                     ['vol_diss',{'diss_type':'nd'},
-                                {'diss_type':'entdcp', 'jac_type':'scamat', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':3.125/5**s},
-                                {'diss_type':'entdcp', 'jac_type':'scamat', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*3.125/5**s},
-                                {'diss_type':'entdcp', 'jac_type':'matmat', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':3.125/5**s},
-                                {'diss_type':'entdcp', 'jac_type':'matmat', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*3.125/5**s}]]
+                                {'diss_type':'entdcp', 'jac_type':'scamat', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':3.125/5**s, 'entropy_fix':True, 'avg_half_nodes':True},
+                                {'diss_type':'entdcp', 'jac_type':'scamat', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*3.125/5**s, 'entropy_fix':True, 'avg_half_nodes':True},
+                                {'diss_type':'entdcp', 'jac_type':'matmat', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':3.125/5**s, 'entropy_fix':True, 'avg_half_nodes':True},
+                                {'diss_type':'entdcp', 'jac_type':'matmat', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*3.125/5**s, 'entropy_fix':True, 'avg_half_nodes':True}]]
         labels3 = [f'$\\sigma=0$', f'Ent. Sca.-Mat. $\\sigma={3.125/5**s:g}$', f'Ent. Sca.-Mat. $\\sigma={0.2*3.125/5**s:g}$',
                                 f'Ent. Mat.-Mat. $\\sigma={3.125/5**s:g}$', f'Ent. Mat.-Mat. $\\sigma={0.2*3.125/5**s:g}$']
 
