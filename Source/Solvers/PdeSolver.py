@@ -404,7 +404,7 @@ class PdeSolver:
         end_time = time.time()
         self.simulation_time = end_time - stat_time
     
-    def calc_cons_obj(self, q, t):
+    def calc_cons_obj(self, q, t, dqdt, cons_obj_name=None):
         '''
         Purpose
         ----------
@@ -422,16 +422,28 @@ class PdeSolver:
         A vector of size n_cons_obj with the desired conservation objectives
         '''
 
-        cons_obj = np.zeros(self.n_cons_obj)
+        if q is None:
+            q = self.q_sol
         
-        if any('der' in name.lower() for name in self.cons_obj_name):
-            dqdt = self.dqdt(q, t) #TODO: Wildly inneficient. Can i get this from tm class?
+        if cons_obj_name is None:
+            cons_obj_name = self.cons_obj_name
+            n_cons_obj = self.n_cons_obj
+        else:
+            n_cons_obj = len(cons_obj_name)
+        
+        if q.ndim == 2:
+            cons_obj = np.zeros(n_cons_obj)
+            if any('max_eig'==name.lower() or 'spec_rad'==name.lower() for name in cons_obj_name):
+                eigs = self.check_eigs(q, plot_eigs=False, returneigs=True, print_nothing=True)
+        elif q.ndim == 3:
+            cons_obj = np.zeros((n_cons_obj,q.shape[2]))
+            if any('der' in name.lower() for name in self.cons_obj_name):
+                raise Exception('ERROR: Cannot calculate conservation objectives with derivatives since dqdt was not stored.')
+            if any('max_eig'==name.lower() or 'spec_rad'==name.lower() for name in cons_obj_name):
+                raise Exception('TODO: Need to loop over time steps to calculate eigenvalues')
 
-        if any('max_eig'==name.lower() or 'spec_rad'==name.lower() for name in self.cons_obj_name):
-            eigs = self.check_eigs(q, plot_eigs=False, returneigs=True, print_nothing=True)
-
-        for i in range(self.n_cons_obj):
-            cons_obj_name_i = self.cons_obj_name[i].lower()
+        for i in range(n_cons_obj):
+            cons_obj_name_i = cons_obj_name[i].lower()
 
             if cons_obj_name_i == 'energy':
                 cons_obj[i] = self.energy(q)
@@ -443,6 +455,12 @@ class PdeSolver:
                 cons_obj[i] = self.energy_der(q,dqdt)
             elif cons_obj_name_i == 'conservation_der':
                 cons_obj[i] = self.conservation_der(dqdt)
+            elif cons_obj_name_i == 'kinetic_energy':
+                assert ('Euler' in self.diffeq.diffeq_name), 'Kinetic Energy only defined for Euler Equations'
+                cons_obj[i] = self.kinetic_energy(q)
+            elif cons_obj_name_i == 'enstrophy':
+                assert ('Euler' in self.diffeq.diffeq_name), 'Enstrophy only defined for Euler Equations'
+                cons_obj[i] = self.enstrophy(q)
             elif cons_obj_name_i == 'a_energy':
                 assert (self.diffeq.diffeq_name == 'VariableCoefficientLinearConvection' or self.diffeq.diffeq_name == 'Burgers'), 'A_Energy only defined for Variable Coefficient Problems'
                 cons_obj[i] = self.diffeq.a_energy(q)
@@ -657,7 +675,7 @@ class PdeSolver:
             dt = cfl*dx/const
             if self.dt > dt:
                 print('WARNING: time step dt={0:.2g} may not be small enough to remain stable.'.format(self.dt))
-                print('Assuming CFL = {2:g} and max wave speed = ({0:.2g}, {1:.2g}), try dt < {2:.2g}'.format(LFconstx, LFconsty, dt, cfl))
+                print('Assuming CFL = {3:g} and max wave speed = ({0:.2g}, {1:.2g}), try dt < {2:.2g}'.format(LFconstx, LFconsty, dt, cfl))
         elif self.dim==3:
             LFconstx = np.max(self.diffeq.maxeig_dExdq(q))
             LFconsty = np.max(self.diffeq.maxeig_dEydq(q))
@@ -966,11 +984,12 @@ class PdeSolver:
         '''
         for i in range(self.n_cons_obj):
             cons_obj_name_i = self.cons_obj_name[i].lower()
+            if cons_obj_name_i == 'time': continue
             norm = self.cons_obj[i,0]
             plt.figure(figsize=(6,4))
             plt.xlabel(r'Time $t$',fontsize=16)
             if 'time' in [name.lower() for name in self.cons_obj_name]:
-                time = self.cons_obj[np.where('test' == np.array([name.lower() for name in self.cons_obj_name]))[0][0]]
+                time = self.cons_obj[np.where('time' == np.array([name.lower() for name in self.cons_obj_name]))[0][0]]
             else:
                 time = np.linspace(0,self.t_final,len(self.cons_obj[i]))
 
@@ -1022,9 +1041,6 @@ class PdeSolver:
                 plt.title(r'Spectral Radius of LHS',fontsize=18)
                 plt.ylabel(r'$\rho = \max \ \vert \lambda \vert$',fontsize=16)
                 plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]) 
-
-            elif cons_obj_name_i == 'time':
-                continue
                 
             else:
                 print('WARNING: No default plotting set up for '+cons_obj_name_i)
@@ -1169,7 +1185,78 @@ class PdeSolver:
             print('Derivative of stability is {0:.5g}'.format(result))
         else:
             return result
+    
+    def calc_cons_obj_rate(self, q=None, t=None, cons_obj_name=None, order=2):
+        ''' calculate the rate of change (in time) of the conservation objectives '''
+        if q is None:
+            q = self.q_sol
+        assert q.ndim == 3, 'ERROR: Need solutions in time to calculate rate of change of conservation objectives.' 
         
+        if t is None:
+            approx_time = False
+            if self.cons_obj_name is None:
+                approx_time = True
+            elif 'time' in self.cons_obj_name:
+                idx = np.where('time' == np.array([name.lower() for name in self.cons_obj_name]))[0][0]
+                t = self.cons_obj[idx]
+            else:
+                approx_time = True
+            if approx_time:
+                print(f'WARNING: No time data in cons_obj_name. Using estimation based on tf={self.t_final}.')
+                t = np.linspace(0,self.t_final,np.shape(q)[2])
+        
+        if cons_obj_name is None:
+            cons_obj_name = self.cons_obj_name
+            cons_obj = self.cons_obj 
+            n_cons_obj = len(cons_obj_name)   
+        else:
+            n_cons_obj = len(cons_obj_name)
+            cons_obj = np.zeros((n_cons_obj,q.shape[2]))
+
+            if self.cons_obj_name is None:
+                if any('der' in name.lower() for name in cons_obj_name):
+                    raise Exception('ERROR: Cannot calculate conservation objectives with derivatives since dqdt was not stored.')
+                dqdt = 0.
+                cons_obj = np.zeros((n_cons_obj,q.shape[2]))
+            else:
+                # note: some cons_obj may have already been calculated
+                remaining_cons_obj_name = [name for name in cons_obj_name if name not in self.cons_obj_name]
+                if any('der' in name.lower() for name in remaining_cons_obj_name):
+                    raise Exception('ERROR: Cannot calculate conservation objectives with derivatives since dqdt was not stored.')
+                dqdt = 0.
+                if len(remaining_cons_obj_name) == n_cons_obj:
+                    cons_obj = self.calc_cons_obj(q, t, dqdt, cons_obj_name)
+                elif len(remaining_cons_obj_name) == 0:
+                    cons_obj = self.cons_obj
+                else:
+                    remaining_cons_obj = self.calc_cons_obj(q, t, dqdt, remaining_cons_obj_name)
+                    cons_obj = np.zeros((n_cons_obj,q.shape[2]))
+                    for i, name in enumerate(cons_obj_name):
+                        if name in self.cons_obj_name:
+                            idx = self.cons_obj_name.index(name)
+                            cons_obj[i, :] = self.cons_obj[idx, :]
+                        else:
+                            idx = remaining_cons_obj_name.index(name)
+                            cons_obj[i, :] = remaining_cons_obj[idx, :]
+
+        cons_obj_rate = np.zeros((n_cons_obj,q.shape[2]))
+        for i in range(n_cons_obj):
+            if order == 2:
+                # second order central difference (+ forward/backward at ends)
+                cons_obj_rate[i,0] = (cons_obj[i,1]-cons_obj[i,0])/(t[1]-t[0])
+                cons_obj_rate[i,-1] = (cons_obj[i,-1]-cons_obj[i,-2])/(t[-1]-t[-2])
+                cons_obj_rate[i,1:-1] = (cons_obj[i,2:]-cons_obj[i,:-2])/(t[2:]-t[:-2])
+            elif order == 4:
+                # fourth order central difference (+ forward/backward at ends)
+                cons_obj_rate[i,0] = (-25*cons_obj[i,0]+48*cons_obj[i,1]-36*cons_obj[i,2]+16*cons_obj[i,3]-3*cons_obj[i,4])/(12*(t[1]-t[0]))
+                cons_obj_rate[i,1] = (-3*cons_obj[i,0]-10*cons_obj[i,1]+18*cons_obj[i,2]-6*cons_obj[i,3]+cons_obj[i,4])/(12*(t[2]-t[1]))
+                cons_obj_rate[i,-1] = (25*cons_obj[i,-1]-48*cons_obj[i,-2]+36*cons_obj[i,-3]-16*cons_obj[i,-4]+3*cons_obj[i,-5])/(12*(t[-1]-t[-2]))
+                cons_obj_rate[i,-2] = (3*cons_obj[i,-1]+10*cons_obj[i,-2]-18*cons_obj[i,-3]+6*cons_obj[i,-4]-cons_obj[i,-5])/(12*(t[-2]-t[-3]))
+                cons_obj_rate[i,2:-2] = (-cons_obj[i,0:-4]+8*cons_obj[i,1:-3]-8*cons_obj[i,3:-1]+cons_obj[i,4:])/(12*(t[2:-2]-t[1:-3]))
+        return cons_obj_rate
+        
+
+            
         
         
         

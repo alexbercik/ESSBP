@@ -31,10 +31,9 @@ def gm_gv(A,b):
     '''
     nen1,nen2,nelem = np.shape(A)
     nen2b,nelemb = np.shape(b)
-    if nen2!=nen2b:
-        raise Exception('array shapes do not match')    
-    if nelem!=nelemb:
-        raise Exception('element shapes do not match')   
+    assert nen2==nen2b, f'array shapes do not match, {nen2} != {nen2b}' 
+    assert nelem==nelemb, f'element shapes do not match, {nelem} != {nelemb}'
+
     c = np.zeros((nen1,nelem),dtype=b.dtype)
     for i in range(nen1):
         for j in range(nen2):
@@ -60,10 +59,9 @@ def gm_gm(A,B):
     '''
     nen1,nen2,nelem = np.shape(A)
     nen2b,nen3,nelemb = np.shape(B)
-    if nen2!=nen2b:
-        raise Exception('array shapes do not match')    
-    if nelem!=nelemb:
-        raise Exception('element shapes do not match')   
+    assert nen2==nen2b, f'array shapes do not match, {nen2} != {nen2b}' 
+    assert nelem==nelemb, f'element shapes do not match, {nelem} != {nelemb}'
+
     c = np.zeros((nen1,nen3,nelem),dtype=B.dtype)
     for i in range(nen1):
         for j in range(nen2):
@@ -90,8 +88,8 @@ def gm_lm(A,B):
     '''
     nen1,nen2,nelem = np.shape(A)
     nen2b,nen3 = np.shape(B)
-    if nen2!=nen2b:
-        raise Exception('shapes do not match')
+    assert nen2==nen2b, f'array shapes do not match, {nen2} != {nen2b}' 
+
     c = np.zeros((nen1,nen3,nelem),dtype=B.dtype)
     for i in range(nen1):
         for j in range(nen2):
@@ -119,8 +117,8 @@ def gm_lv(A,b):
     nen1,nen2,nelem = np.shape(A)
     #nen2b = np.shape(b) # throws an error for some reason
     nen2b = len(b)
-    if nen2!=nen2b:
-        raise Exception('shapes do not match')
+    assert nen2==nen2b, f'array shapes do not match, {nen2} != {nen2b}' 
+
     c = np.zeros((nen1,nelem),dtype=b.dtype)
     for e in range(nelem):
         for j in range(nen2):
@@ -148,8 +146,8 @@ def lm_gm(A,B):
     '''
     nen1,nen2 = np.shape(A)
     nen2b,nen3,nelem = np.shape(B)
-    if nen2!=nen2b:
-        raise Exception('shapes do not match')
+    assert nen2==nen2b, f'array shapes do not match, {nen2} != {nen2b}' 
+
     c = np.zeros((nen1,nen3,nelem),dtype=B.dtype)
     for i in range(nen1):
         for j in range(nen2):
@@ -256,8 +254,7 @@ def gdiag_lm(H, D):
     ''' 
     nen1, nelem = H.shape
     nen1b, nen2 = D.shape
-    if nen1 != nen1b:
-        raise Exception('shapes do not match')
+    assert nen1==nen1b, f'array shapes do not match, {nen1} != {nen1b}' 
     
     c = np.zeros((nen1, nen2, nelem), dtype=D.dtype)
     
@@ -287,8 +284,7 @@ def lm_gdiag(D, H):
     ''' 
     nen2, nelem = H.shape
     nen1, nen2b = D.shape
-    if nen2!=nen2b:
-        raise Exception('shapes do not match')
+    assert nen2==nen2b, f'array shapes do not match, {nen2} != {nen2b}' 
     
     c = np.zeros((nen1, nen2, nelem), dtype=H.dtype)
     for e in range(nelem):
@@ -316,10 +312,8 @@ def gdiag_gm(H,D):
     ''' 
     nen1,nelem = np.shape(H)
     nen1b,nen2,nelemb = np.shape(D)
-    if nen1!=nen1b:
-        raise Exception('array shapes do not match')    
-    if nelem!=nelemb:
-        raise Exception('element shapes do not match')   
+    assert nen1==nen1b, f'array shapes do not match, {nen1} != {nen1b}' 
+    assert nelem==nelemb, f'element shapes do not match, {nelem} != {nelemb}'
     
     c = np.zeros((nen1, nen2, nelem), dtype=D.dtype)
     for e in range(nelem):
@@ -350,10 +344,9 @@ def gm_gdiag(D,H):
     ''' 
     nen1,nen2,nelem = np.shape(D)
     nen2b,nelemb = np.shape(H)
-    if nen2!=nen2b:
-        raise Exception('array shapes do not match')    
-    if nelem!=nelemb:
-        raise Exception('element shapes do not match')   
+    assert nen2==nen2b, f'array shapes do not match, {nen2} != {nen2b}' 
+    assert nelem==nelemb, f'element shapes do not match, {nelem} != {nelemb}'
+
     c = np.zeros((nen1,nen2,nelem),dtype=H.dtype)
     for e in range(nelem):
         c[:,:,e] = D[:,:,e] * H[:,e]
@@ -379,10 +372,9 @@ def gdiag_gv(H,q):
     ''' 
     nen,nelem = np.shape(H)
     nenb,nelemb = np.shape(q)
-    if nen!=nenb:
-        raise Exception('array shapes do not match')    
-    if nelem!=nelemb:
-        raise Exception('element shapes do not match')   
+    assert nen==nenb, f'array shapes do not match, {nen} != {nenb}' 
+    assert nelem==nelemb, f'element shapes do not match, {nelem} != {nelemb}'
+
     c = H * q
     return c
 
@@ -404,8 +396,8 @@ def ldiag_gv(H,q):
     ''' 
     nen = len(H)
     nenb,nelemb = np.shape(q)
-    if nen!=nenb:
-        raise Exception('array shapes do not match')   
+    assert nen==nenb, f'array shapes do not match, {nen} != {nenb}' 
+
     c = np.zeros((nen,nelemb),dtype=q.dtype) 
     for e in range(nelemb):
         c[:,e] = H * q[:,e]  
@@ -476,10 +468,8 @@ def gbdiag_gbdiag(A,B):
     '''
     nen,neq,neq2,nelem = np.shape(A)
     nenb,neqb,neqb2,nelemb = np.shape(B)
-    if nen!=nenb or neq!=neqb or neq2!=neqb2 or nelem!=nelemb:
-        raise Exception('array shapes do not match')
-    if neq!=neq2:
-        raise Exception('array shapes are not block diagonal')
+    assert nen==nenb and neq==neqb and neq2==neqb2 and nelem==nelemb, f'array shapes do not match, {nen} != {nenb}, {neq} != {neqb}, {neq2} != {neqb2}, {nelem} != {nelemb}'
+    assert neq==neq2, f'array shapes are not block diagonal, {neq} != {neq2}'
     
     c = np.zeros((nen,neq,neq,nelem),dtype=B.dtype)
     for e in range(nelem):
@@ -509,10 +499,8 @@ def gbdiag_gv(A,b):
     '''
     nen,neq,neq2,nelem = np.shape(A)
     nen_neq,nelemb = np.shape(b)
-    if nen*neq!=nen_neq or nelem!=nelemb:
-        raise Exception('array shapes do not match')
-    if neq!=neq2:
-        raise Exception('array is not block diagonal')
+    assert nen*neq==nen_neq and nelem==nelemb, f'array shapes do not match, {nen*neq} != {nen_neq}, {nelem} != {nelemb}'
+    assert neq==neq2, f'array is not block diagonal ({neq} != {neq2})'
     
     c = np.zeros((nen_neq,nelem),dtype=b.dtype)
     for e in range(nelem):
@@ -542,10 +530,8 @@ def gdiag_gbdiag(A,B):
     '''
     nen_neq,nelem = np.shape(A)
     nen,neq,neqb,nelemb = np.shape(B)
-    if nen*neq!=nen_neq or nelem!=nelemb:
-        raise Exception('array shapes do not match')
-    if neq!=neqb:
-        raise Exception('array is not block diagonal')
+    assert nen*neq==nen_neq and nelem==nelemb, f'array shapes do not match, {nen*neq} != {nen_neq}, {nelem} != {nelemb}'
+    assert neq==neqb, f'array is not block diagonal ({neq} != {neqb})'
     
     c = np.zeros((nen,neq,neq,nelem),dtype=B.dtype)
     for e in range(nelem):
@@ -573,10 +559,8 @@ def gbdiag_gdiag(A,B):
     '''
     nen_neq,nelem = np.shape(B)
     nen,neq,neqb,nelemb = np.shape(A)
-    if nen*neq!=nen_neq or nelem!=nelemb:
-        raise Exception('array shapes do not match')
-    if neq!=neqb:
-        raise Exception('array is not block diagonal')
+    assert nen*neq==nen_neq and nelem==nelemb, f'array shapes do not match, {nen*neq} != {nen_neq}, {nelem} != {nelemb}'
+    assert neq==neqb, f'array is not block diagonal ({neq} != {neqb})'
     
     c = np.zeros((nen,neq,neq,nelem),dtype=B.dtype)
     for e in range(nelem):
@@ -605,10 +589,8 @@ def gm_gv_colmultiply(A,q):
     ''' 
     nen1,nen2,nelem = np.shape(A)
     nen2b,nelemb = np.shape(q)
-    if nen2!=nen2b:
-        raise Exception('array shapes do not match')    
-    if nelem!=nelemb:
-        raise Exception('element shapes do not match')   
+    assert nen2==nen2b, f'array shapes do not match, {nen2} != {nen2b}' 
+    assert nelem==nelemb, f'element shapes do not match, {nelem} != {nelemb}'
     c = np.zeros((nen1,nen2,nelem),dtype=q.dtype)
     for e in range(nelem):
         c[:,:,e] = A[:,:,e] * q[:,e]
@@ -651,8 +633,8 @@ def gm_to_gdiag(A):
     c : numpy array of shape (nen,nelem)
     '''
     i,j,k = np.shape(A)
-    if i!=j:
-        raise Exception('input array is not diagonal') 
+    assert i==j, f'input array is not square, {i} != {j}'
+
     c=np.zeros((i,k),dtype=A.dtype)
     for e in range(k):
         c[:,e] = np.diag(A[:,:,e])
@@ -733,8 +715,7 @@ def abs_eig_mat(mat):
     c : numpy array of shape (nen*neq_node,nen*neq_node)
     '''
     nen,neq,neqb,nelem = mat.shape
-    if neq!=neqb:
-        raise Exception('array shapes are not block diagonal')
+    assert neq==neqb, f'array shapes are not block diagonal ({neq} != {neqb})'
     mattype=mat.dtype
     mat_abs = np.zeros((nen,neq,neq,nelem),dtype=mattype)
     for e in range(nelem):
@@ -769,8 +750,7 @@ def spec_rad(mat,neq):
     c : numpy array of shape (nen*neq_node,nen*neq_node)
     '''
     nen, neq, neq2, nelem = mat.shape
-    if neq!=neq2:
-        raise Exception('array shapes are not block diagonal')
+    assert neq==neq2, f'array shapes are not block diagonal ({neq} != {neq2})'
     rho = np.zeros((nen,nelem),dtype=mat.dtype)
     for e in range(nelem):
         for i in range(nen):
@@ -796,10 +776,8 @@ def gm_triblock_flat(blockL,blockM,blockR):
     nen,nenb,nelem = blockM.shape
     nenc,nend,nelemb = blockL.shape
     nene,nenf,nelemc = blockR.shape
-    if (nenb!=nen or nenc!=nen or nend!=nen or nene!=nen or nenf!=nen):
-        raise Exception('block shapes do not match')    
-    if (nelemb!=nelem-1 or nelemc!=nelem-1):
-        raise Exception('number of blocks do not match')    
+    assert (nenb==nen and nenc==nen and nend==nen and nene==nen and nenf==nen), f'block shapes do not match {nenb} != {nen}, {nenc} != {nen}, {nend} != {nen}, {nene} != {nen}, {nenf} != {nen}'
+    assert (nelemb==nelem-1 and nelemc==nelem-1), f'number of blocks do not match {nelemb} != {nelem-1}, {nelemc} != {nelem-1}'
         
     mat = np.zeros((nen*nelem,nen*nelem),dtype=blockL.dtype)
     for e in range(nelem-1):
@@ -832,10 +810,8 @@ def gm_triblock_flat_periodic(blockL,blockM,blockR):
     nen,nenb,nelem = blockM.shape
     nenc,nend,nelemb = blockL.shape
     nene,nenf,nelemc = blockR.shape
-    if (nenb!=nen or nenc!=nen or nend!=nen or nene!=nen or nenf!=nen):
-        raise Exception('block shapes do not match')    
-    if (nelemb!=nelem or nelemc!=nelem):
-        raise Exception('number of blocks do not match')  
+    assert (nenb==nen or nenc==nen or nend==nen or nene==nen or nenf==nen), f'block shapes do not match {nenb} != {nen}, {nenc} != {nen}, {nend} != {nen}, {nene} != {nen}, {nenf} != {nen}'  
+    assert (nelemb==nelem or nelemc==nelem), f'number of blocks do not match {nelemb} != {nelem}, {nelemc} != {nelem}'
     
     mat = np.zeros((nen*nelem,nen*nelem),dtype=blockL.dtype)        
     for e in range(nelem-1):
@@ -875,10 +851,9 @@ def gm_triblock_2D_flat_periodic(blockL,blockM,blockR,blockD,blockU,nelemy):
     nene,nenf,nelemc = blockR.shape
     neng,nenh,nelemd = blockD.shape
     neni,nenj,neleme = blockU.shape
-    if (nenb!=nen or nenc!=nen or nend!=nen or nene!=nen or nenf!=nen or neng!=nen or nenh!=nen or neni!=nen or nenj!=nen):
-        raise Exception('block shapes do not match')    
-    if (nelemb!=nelem or nelemc!=nelem or nelemd!=nelem or neleme!=nelem):
-        raise Exception('number of blocks do not match')  
+    assert (nenb==nen and nenc==nen and nend==nen and nene==nen and nenf==nen and neng==nen and nenh==nen and neni==nen and nenj==nen), \
+        f'block shapes do not match {nenb} != {nen}, {nenc} != {nen}, {nend} != {nen}, {nene} != {nen}, {nenf} != {nen}, {neng} != {nen}, {nenh} != {nen}, {neni} != {nen}, {nenj} != {nen}'  
+    assert (nelemb==nelem and nelemc==nelem and nelemd==nelem and neleme==nelem), f'number of blocks do not match {nelemb} != {nelem}, {nelemc} != {nelem}, {nelemd} != {nelem}, {neleme} != {nelem}'
     
     mat = np.zeros((nen*nelem,nen*nelem),dtype=blockL.dtype)        
     for e in range(nelem-1):
@@ -964,8 +939,7 @@ def gm_gm_had_diff(A,B):
     '''
     nen,nen2,nelem = A.shape
     nenb,nen2b,nelemb = B.shape
-    if nen!=nenb or nen2!=nen2b or nelem!=nelemb:
-        raise Exception(f'array shapes do not match, ({nen},{nen2},{nelem}) != ({nenb},{nen2b},{nelemb})')
+    assert nen==nenb and nen2==nen2b and nelem==nelemb, f'array shapes do not match, {nen} != {nenb}, {nen2} != {nen2b}, {nelem} != {nelemb}'
     c = np.zeros((nen,nelem),dtype=B.dtype)
     for e in range(nelem):
         for j in range(nen2):
@@ -1018,8 +992,7 @@ def pad_1d(q,qL,qR):
     qpad : numpy array of shape (nen,nelem+2)
     '''
     nen,nelem = q.shape
-    if qL.shape!=(nen,) or qR.shape!=(nen,):
-        raise Exception('shapes do not match') 
+    assert qL.shape==(nen,) and qR.shape==(nen,), f'shapes do not match {qL.shape} != {nen}, {qR.shape} != {nen}'
     qpad = np.zeros((nen,nelem+2),dtype=q.dtype)
     qpad[:,1:-1] = q
     qpad[:,0] = qL
@@ -1037,8 +1010,7 @@ def pad_1dL(q,qL):
     qpad : numpy array of shape (nen,nelem+1)
     '''
     nen,nelem = q.shape
-    if qL.shape!=(nen,):
-        raise Exception('shapes do not match') 
+    assert qL.shape==(nen,), f'shapes do not match {qL.shape} != {nen}'
     qpad = np.zeros((nen,nelem+1),dtype=q.dtype)
     qpad[:,1:] = q
     qpad[:,0] = qL         
@@ -1055,8 +1027,7 @@ def pad_1dR(q,qR):
     qpad : numpy array of shape (nen,nelem+1)
     '''
     nen,nelem = q.shape
-    if qR.shape!=(nen,):
-        raise Exception('shapes do not match') 
+    assert qR.shape==(nen,), f'shapes do not match {qR.shape} != {nen}'
     qpad = np.zeros((nen,nelem+1),dtype=q.dtype)
     qpad[:,:-1] = q
     qpad[:,-1] = qR          
@@ -1073,8 +1044,7 @@ def pad_ndR(q,qR):
     qpad : numpy array of shape (nen,nelem+1)
     '''
     nen,dim,nelem = q.shape
-    if qR.shape!=(nen,dim):
-        raise Exception('shapes do not match') 
+    assert qR.shape==(nen,dim), f'shapes do not match {qR.shape} != {nen,dim}'
     qpad = np.zeros((nen,dim,nelem+1),dtype=q.dtype)
     qpad[:,:,:-1] = q
     qpad[:,:,-1] = qR          
@@ -1091,8 +1061,7 @@ def pad_gm_1dL(q,qL):
     qpad : numpy array of shape (nen,nelem+1)
     '''
     nen,nen2,nelem = q.shape
-    if qL.shape!=(nen,nen2):
-        raise Exception('shapes do not match') 
+    assert qL.shape==(nen,nen2), f'shapes do not match {qL.shape} != {nen,nen2}'
     qpad = np.zeros((nen,nen2,nelem+1),dtype=q.dtype)
     qpad[:,:,1:] = q
     qpad[:,:,0] = qL         
@@ -1109,8 +1078,7 @@ def pad_gm_1dR(q,qR):
     qpad : numpy array of shape (nen,nelem+1)
     '''
     nen,nen2,nelem = q.shape
-    if qR.shape!=(nen,nen2):
-        raise Exception('shapes do not match') 
+    assert qR.shape==(nen,nen2), f'shapes do not match {qR.shape} != {nen,nen2}'
     qpad = np.zeros((nen,nen2,nelem+1),dtype=q.dtype)
     qpad[:,:,:-1] = q
     qpad[:,:,-1] = qR          
@@ -1203,8 +1171,7 @@ def reshape_to_meshgrid_2D(q,nen,nelemx,nelemy):
     to a 2D mesh in the shape (nen*nelem, nen*nelemy) as would be created
     by meshgrid. Can think of this array ordering being the actual bird's 
     eye view of the mesh. '''
-    if q.shape != (nen**2,nelemx*nelemy):
-        raise Exception('Shape does not match.')  
+    assert q.shape == (nen**2,nelemx*nelemy), f'array shape does not match {q.shape} != {(nen**2,nelemx*nelemy)}'
         
     Q = np.zeros((nen*nelemx, nen*nelemy),dtype=q.dtype)
     for ex in range(nelemx):
@@ -1599,11 +1566,9 @@ def assemble_satx_2d(mat_list,nelemx,nelemy):
     where each entry is a list of matrices that would be selected
      by e.g. satx.vol_x_mat[idx], where idx is one row in x '''''
     nelemy2 = len(mat_list)
-    if nelemy2 != nelemy:
-        raise Exception('nelemy does not match',nelemy2,nelemy)
+    assert nelemy2 == nelemy, f'nelemy does not match {nelemy2} != {nelemy}'
     nen1,nen2,nelemx2 = mat_list[0].shape
-    if nelemx2 != nelemx:
-        raise Exception('nelemx does not match',nelemx2,nelemx)
+    assert nelemx2 == nelemx, f'nelemx does not match {nelemx2} != {nelemx}'
     
     mat_glob = np.zeros((nen1, nen2, nelemx*nelemy),dtype=mat_list[0].dtype)
     for ey in range(nelemy):
@@ -1619,11 +1584,9 @@ def assemble_saty_2d(mat_list,nelemx,nelemy):
     where each entry is a list of matrices that would be selected
      by e.g. satx.vol_y_mat[idx], where idx is one row in y '''
     nelemx2 = len(mat_list)
-    if nelemx2 != nelemx:
-        raise Exception('nelemy does not match',nelemx2,nelemx)
+    assert nelemx2 == nelemx, f'nelemx does not match {nelemx2} != {nelemx}'
     nen1,nen2,nelemy2 = mat_list[0].shape
-    if nelemy2 != nelemy:
-        raise Exception('nelemx does not match',nelemy2,nelemy)
+    assert nelemy2 != nelemy, f'nelemy does not match {nelemy2} != {nelemy}'
     
     mat_glob = np.zeros((nen1, nen2, nelemx*nelemy),dtype=mat_list[0].dtype)
     for ex in range(nelemx):
@@ -1662,8 +1625,8 @@ def VolxVoly_had_Fvol_diff(Volx,Voly,q,flux,neq):
     # Sanity checks on sizes of arrays - can comment this out later
     nenb, nenb2, nelemb = Volx.shape
     nenc, nenc2, nelemc = Voly.shape
-    if nelemb != nelem or nelemc != nelem or nenb != nen or nenc != nen or nenb2 != nen or nenc2 != nen:
-        raise ValueError('Dimensions do not match', nelemb, nelemc, nenb, nenc, nelem, nen)
+    assert nelemb == nelem and nelemc == nelem and nenb == nen and nenc == nen and nenb2 == nen and nenc2 == nen, \
+        f'Number of elements do not match {nelemb} != {nelem} or {nelemc} or {nelem} or {nenb} or {nen} or {nenc} or {nen}'
 
     # Initialize result array
     c = np.zeros((nen_neq, nelem), dtype=q.dtype)
@@ -1741,12 +1704,12 @@ def Sat2d_had_Fsat_diff_periodic(tax,tay,tbx,tby,q,flux,neq):
     nenc, nenc2, nelemc = tay.shape
     nend, nend2, nelemd = tbx.shape
     nene, nene2, neleme = tby.shape
-    if nelemb != nelem or nelemc != nelem or nelemd != nelem or neleme != nelem:
-        raise ValueError('Number of elements do not match', nelemb, nelemc, nelemd, neleme, nelem)
-    if nenb != nen or nenc != nen or nend != nen or nene != nen:
-        raise ValueError('Number of nodes do not match', nenb, nenc, nend, nene, nen)
-    if nenb2 != nen or nenc2 != nen or nend2 != nen or nene2 != nen:
-        raise ValueError('Number of nodes do not match', nenb2, nenc2, nend2, nene2, nen)
+    assert nelemb == nelem and nelemc == nelem and nelemd == nelem and neleme == nelem,\
+        f'Number of elements do not match {nelemb} != {nelem} or {nelemc} or {nelem} or {nelemd} or {nelem} or {neleme} or {nelem}'
+    assert nenb == nen and nenc == nen and nend == nen and nene == nen,\
+        f'Number of nodes do not match {nenb} != {nen} or {nenc} or {nen} or {nend} or {nen} or {nene} or {nen}'
+    assert nenb2 == nen and nenc2 == nen and nend2 == nen and nene2 == nen, \
+        f'Number of nodes do not match {nenb2} != {nen} or {nenc2} or {nen} or {nend2} or {nen} or {nene2} or {nen}'
     
 
     # Initialize result array

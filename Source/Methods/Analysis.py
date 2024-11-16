@@ -645,7 +645,6 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
                     raise Exception(e)
     else:
         # Run in parallel mode with ProcessPoolExecutor
-        #print('temp: begin parallel call')
         with ProcessPoolExecutor(max_workers=nthreads) as executor:
             futures = {}
             for casei in range(n_cases):
@@ -660,7 +659,6 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
                     solver_kwargs, diffeq_args = prep_new_solver_instance(solver, variables)
                     diffeq_class = type(solver.diffeq)
                     solver_class = type(solver)
-                    #print('temp: ready for parallel call')
                     
                     # Submit each run as a separate task and store with its indices
                     future = executor.submit(
@@ -669,7 +667,6 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
                         scale_dt, base_dt, base_dx, error_type, vars2plot
                     )
                     futures[future] = (casei, runi)
-                    #print('temp: finished parallel call')
             
             # Gather results with preserved order
             for future in as_completed(futures):
@@ -737,7 +734,6 @@ def run_single_case(solver, variables, scale_dt, base_dt, base_dx,
                     error_type, vars2plot, reset=True):
     ''' runs a single case for convergence
     NOTE: solver should be a new object, not the original object, if running in parallel '''
-    #print('temp: inside run_single_case')
     # Reset solver if needed (i.e. unless solver is a completely new object)
     if reset: solver.reset(variables)
     
@@ -752,7 +748,6 @@ def run_single_case(solver, variables, scale_dt, base_dt, base_dx,
         solver.set_timestep(new_dt)
     
     # Run the solver
-    #print('temp: running solver.solve()')
     solver.solve()
 
     # Calculate errors
@@ -813,17 +808,15 @@ def prep_new_solver_instance(base_solver, variables):
 def run_parallel_case(solver_class, diffeq_class, solver_kwargs, diffeq_args,
                        scale_dt, base_dt, base_dx, error_type, vars2plot):
     ''' Create a new solver & diffeq instance with the given variables '''
-    #print('temp: inside parallel call')
     diffeq = diffeq_class(*diffeq_args)
     solver = solver_class(diffeq, **solver_kwargs)
     
     # set a couple useful time-saving settings
     solver.print_progress = False
     solver.keep_all_ts = False
-    #print('temp: calling run_single_case')
-    #dofs, errors, nn = run_single_case(solver, None, 
-    #                                   scale_dt, base_dt, base_dx, 
-    #                                   error_type, vars2plot, reset=False)
+    dofs, errors, nn = run_single_case(solver, None, 
+                                       scale_dt, base_dt, base_dx, 
+                                       error_type, vars2plot, reset=False)
     dofs, errors, nn = 1,2,3
     return dofs, errors, nn
     
@@ -896,7 +889,7 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
               extra_marker=None, skipfit=None, skip=None, ylabel=None, xlabel=None,
               ylim=(None,None),xlim=(None,None),grid=False,legendloc=None,convunc=True,
               figsize=(6,4), extra_xticks=False, scalar_xlabel=False, serif=False,
-              colors=None, markers=None, linestyles=None):
+              colors=None, markers=None, linestyles=None, legendsize=12, legendreorder=None):
     '''
     Parameters
     ----------
@@ -1028,7 +1021,20 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
                     plt.plot(dof_vec[i][j],err_vec[i][j],'x',color='black',markersize=12,linewidth=2)
     if legendloc == None:
         legendloc = 'best'
-    plt.legend(loc=legendloc, fontsize=12)
+    if legendreorder != None:
+        legend = plt.legend()
+        handles, labels = plt.gca().get_legend_handles_labels()
+        if isinstance(legendreorder, list):
+            if len(legendreorder) == n_cases:
+                handles = [handles[i] for i in legendreorder]
+                labels = [labels[i] for i in legendreorder]
+            else:
+                print('WARNING: legendreorder must be a list of length n_cases. Ignoring.', len(legendreorder))
+        else:
+            print('WARNING: legendreorder must be a list. Ignoring.')
+        plt.legend(handles, labels, loc=legendloc, fontsize=legendsize)
+    else:
+        plt.legend(loc=legendloc, fontsize=legendsize)
     if grid:
         plt.grid(which='major',axis='y',linestyle='--',color='gray',linewidth='1')
     plt.ylim(ylim)
