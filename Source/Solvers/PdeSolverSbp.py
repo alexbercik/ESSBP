@@ -22,10 +22,12 @@ class PdeSolverSbp(PdeSolver):
     def init_disc_specific(self):
         
         self.energy = self.sbp_energy
+        self.kinetic_energy = self.sbp_kinetic_energy
         self.conservation = self.sbp_conservation
         self.energy_der = self.sbp_energy_der
         self.conservation_der = self.sbp_conservation_der
         self.entropy = self.sbp_entropy
+        self.enstrophy = self.sbp_enstrophy
         
         # Construct SBP operators
         self.sbp = MakeSbpOp(self.p, self.disc_nodes, self.nen, print_progress=self.print_progress)
@@ -64,7 +66,7 @@ class PdeSolverSbp(PdeSolver):
                     self.sparse = False
                     self.satsparse = False
             elif self.dim == 3:
-                self.sparse = False # TODO: Not set up yet
+                self.sparse = True
 
         if self.sparse and not self.sat_sparse:
             print('NOTE: Overriding sat_sparse=False to sat_sparse=True since sparse=True')
@@ -113,6 +115,7 @@ class PdeSolverSbp(PdeSolver):
             self.Dz, self.Volz = self.sbp.Dz, self.sbp.Volz
             if self.calc_nd_ops: self.Dz_nd = self.sbp.Dz_nd
 
+        self.volume = np.sum(self.H_phys_unkronned)
         # no need to save tL, tR, Dx_unkronned, etc.
         # but if there is, we can access them from self.sat
 
@@ -412,28 +415,57 @@ class PdeSolverSbp(PdeSolver):
             H_phys = self.H_phys_unkronned
         else:
             raise Exception('Something went wrong, nen = ',nen)
-        return np.tensordot(q, H_phys * q)
+        if q.ndim == 2: energy = np.tensordot(q, H_phys * q)
+        elif q.ndim == 3: energy = np.sum(q * H_phys[:,:,np.newaxis] * q, axis=(0, 1))  
+        else: raise Exception('Something went wrong, q.ndim = ',q.ndim)
+        return energy
 
     def sbp_conservation(self,q):
         ''' compute the global SBP conservation of global solution vector q '''
-        return np.sum(self.H_phys * q)
+        if q.ndim == 2: cons = np.sum(self.H_phys * q)
+        elif q.ndim == 3: cons = np.sum(self.H_phys[:,:,np.newaxis] * q, axis=(0,1))
+        else: raise Exception('Something went wrong, q.ndim = ',q.ndim)
+        return cons
     
     def sbp_conservation_der(self,dqdt):
-        ''' compute the derivative of the global SBP conservation . Note 
-        that this is wildly inefficient as it calculates dqdt all over again. '''
-        # TODO: Update the cons_obj functions to take dqdt as a function
-        return np.sum(self.H_phys * dqdt)
+        ''' compute the derivative of the global SBP conservation. '''
+        if dqdt.ndim == 2: cons = np.sum(self.H_phys * dqdt)
+        elif dqdt.ndim == 3: cons = np.sum(self.H_phys[:,:,np.newaxis] * dqdt, axis=(0,1))
+        else: raise Exception('Something went wrong, dqdt.ndim = ',dqdt.ndim)
+        return cons
     
-    def sbp_energy_der(self,q,dqdt):
-        ''' compute the derivative of the global SBP energy . Note 
-        that this is wildly inefficient as it calculates dqdt all over again. '''
-        # TODO: Update the cons_obj functions to take dqdt as a function
-        return 2 * np.tensordot(q, self.H_phys * dqdt)
+    def sbp_energy_der(self,q,dqdt,nen=None):
+        ''' compute the derivative of the global SBP energy . '''
+        if q.ndim == 2: energy = np.tensordot(q, self.H_phys * dqdt)
+        elif q.ndim == 3: energy = np.sum(q * self.H_phys[:,:,np.newaxis] * dqdt, axis=(0,1))
+        else: raise Exception('Something went wrong, q.ndim = ',q.ndim)
+        return 2 * energy
     
     def sbp_entropy(self,q):
         ''' compute the global SBP entropy of global solution vector q '''
         s = self.diffeq.entropy(q)
-        return np.sum(self.H_phys_unkronned * s)
+        if q.ndim == 2: ent = np.sum(self.H_phys_unkronned * s)
+        elif q.ndim == 3: ent = np.sum(self.H_phys_unkronned[:,:,np.newaxis] * s, axis=(0,1))
+        else: raise Exception('Something went wrong, q.ndim = ',q.ndim)
+        return ent
+    
+    def sbp_kinetic_energy(self,q):
+        ''' compute the global SBP kinetic energy of global solution vector q '''
+        # NOTE: Need to think hard for the case where H is not diagonal
+        k = self.diffeq.kinetic_energy(q)
+        if q.ndim == 2: energy = np.sum(self.H_phys_unkronned * k) / self.volume
+        elif q.ndim == 3: energy = np.sum(self.H_phys_unkronned[:,:,np.newaxis] * k, axis=(0,1)) / self.volume
+        else: raise Exception('Something went wrong, q.ndim = ',q.ndim)
+        return energy
+    
+    def sbp_enstrophy(self,q):
+        ''' compute the global SBP enstrophy of global solution vector q '''
+        # NOTE: Need to think hard for the case where H is not diagonal
+        s = self.diffeq.enstropy(q)
+        if q.ndim == 2: ent = np.sum(self.H_phys_unkronned * s)
+        elif q.ndim == 3: ent = np.sum(self.H_phys_unkronned[:,:,np.newaxis] * s, axis=(0,1))
+        else: raise Exception('Something went wrong, q.ndim = ',q.ndim)
+        return ent
 
 
     ''' temporary functions '''

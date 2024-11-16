@@ -310,6 +310,10 @@ class PdeBase:
             var2plot_name = self.var2plot_name
         if legendloc is None:
             legendloc = 'best'
+
+        if plot_exa and not self.has_exa_sol:
+            print('WARNING: Exact solution not available, so ignoring plot_exa=True')
+            plot_exa = False
         
         if self.dim == 1:
             num_sol = self.var2plot(q,var2plot_name).flatten('F')

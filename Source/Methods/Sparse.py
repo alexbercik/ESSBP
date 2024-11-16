@@ -140,8 +140,7 @@ class lmCSR:
     def premult_gdiag(self, H):
         # perform global diagonal - local matrix multiplication in CSR format
         nrows, nelem = np.shape(H)  # Number of elements
-        if self.nrows != nrows:
-            raise ValueError('Dimensions do not match', self.nrows, nrows)
+        assert self.nrows == nrows, f'Dimensions do not match {self.nrows}, {nrows}'
         gm_list = [] # numba can not pickle jitclass objects
         
         for e in range(nelem):
@@ -462,8 +461,7 @@ def lm_lm(csr1, csr2):
         CSR representation of the result of the matrix-matrix multiplication.
     '''
     # Ensure matrices are compatible for multiplication
-    if csr1.ncols > csr2.nrows:
-        raise ValueError(f"Matrix dimension mismatch: csr1 has >={csr1.ncols} columns, csr2 has {csr2.nrows} rows.")
+    assert csr1.ncols <= csr2.nrows, f"Matrix dimension mismatch: csr1 has {csr1.ncols} columns, csr2 has {csr2.nrows} rows."
 
     # Initialize result arrays
     indptr = np.zeros(csr1.nrows + 1, dtype=np.int64)
@@ -658,8 +656,7 @@ def gdiag_gm(H, csr_list):
     '''
     _, nelem = H.shape
     # Check if the number of CSR matrices matches the number of elements in H
-    if len(csr_list) != nelem:
-        raise ValueError('Dimensions do not match: number of CSR matrices must equal columns in H', len(csr_list), nelem)
+    assert len(csr_list) == nelem, f"Dimensions do not match: number of CSR matrices must equal columns in H {len(csr_list)} != {nelem}"
 
     # Initialize result list
     gm_list = [] # numba can not pickle jitclass objects
@@ -690,8 +687,7 @@ def add_lm_lm(csr1, csr2):
     '''
 
     # Ensure both CSR matrices have the same number of rows
-    if csr1.nrows != csr2.nrows:
-        raise ValueError("CSR matrices must have the same number of rows.", csr1.nrows, csr2.nrows)
+    assert csr1.nrows == csr2.nrows, f"CSR matrices must have the same number of rows {csr1.nrows} != {csr2.nrows}"
     
     indptr = np.zeros(csr1.nrows + 1, dtype=np.int64)
     data = []
@@ -761,8 +757,7 @@ def add_gm_gm(csr_list1, csr_list2):
     nelem = len(csr_list1)  # Number of elements (same as the third dimension of the original tensor)
     nelem2 = len(csr_list1) 
 
-    if csr_list1[0].nrows != csr_list2[0].nrows or nelem != nelem2:
-        raise ValueError('Dimensions do not match', csr_list1[0].nrows, csr_list2[0].nrows, nelem, nelem2)
+    assert csr_list1[0].nrows == csr_list2[0].nrows and nelem == nelem2, f"Dimensions do not match {csr_list1[0].nrows} != {csr_list2[0].nrows}, {nelem} != {nelem2}"
     
     # Initialize result array
     c = [] # numba can not pickle jitclass objects
@@ -785,8 +780,7 @@ def subtract_gm_gm(csr_list1, csr_list2):
     nelem = len(csr_list1)  # Number of elements (same as the third dimension of the original tensor)
     nelem2 = len(csr_list1) 
 
-    if csr_list1[0].nrows != csr_list2[0].nrows or nelem != nelem2:
-        raise ValueError('Dimensions do not match', csr_list1[0].nrows, csr_list2[0].nrows, nelem, nelem2)
+    assert csr_list1[0].nrows == csr_list2[0].nrows and nelem == nelem2, f"Dimensions do not match {csr_list1[0].nrows} != {csr_list2[0].nrows}, {nelem} != {nelem2}"
     
     # Initialize result array
     c = [] # numba can not pickle jitclass objects
@@ -1066,8 +1060,7 @@ def set_gm_union_sparsity(gm_list):
     nrows, ncols, nelem = gm_list[0].shape
 
     for gm in gm_list:
-        if gm.shape != (nrows, ncols, nelem):
-            raise ValueError('Dimensions do not match', gm.shape, (nrows, ncols, nelem))
+        assert gm.shape == (nrows, ncols, nelem), f"Dimensions do not match {gm.shape} != {(nrows, ncols, nelem)}"
         
     sp_gm_list = List()
 
@@ -1117,8 +1110,7 @@ def set_spgm_union_sparsity(csr_list):
 
     # Validate that all matrices have the same number of elements
     for csr in csr_list:
-        if len(csr) != nelem:
-            raise ValueError('Number of elements do not match')
+        assert len(csr) == nelem, f"Number of elements do not match {len(csr)} != {nelem}"
 
     sparsity_list = []
 
@@ -1126,8 +1118,7 @@ def set_spgm_union_sparsity(csr_list):
         # Ensure all matrices have the same number of rows
         n_rows = csr_list[0][e].nrows
         for csr in csr_list:
-            if csr[e].nrows != n_rows:
-                raise ValueError('Number of rows do not match', n_rows, csr[e].nrows)
+            assert csr[e].nrows == n_rows, f"Number of rows do not match {csr[e].nrows} != {n_rows}"
 
         indices_glob = []
         indptr_glob = [0]
@@ -2025,11 +2016,9 @@ def assemble_satx_2d(csr_list,nelemx,nelemy):
         A list where each entry is a tuple (data, indices, indptr) representing the global CSR matrix.
     '''
     nelemy2 = len(csr_list)
-    if nelemy2 != nelemy:
-        raise ValueError('nelemy does not match', nelemy2, nelemy)
+    assert nelemy2 == nelemy, f'nelemy does not match, {nelemy2} != {nelemy}'
     nelemx2 = len(csr_list[0])
-    if nelemx2 != nelemx:
-        raise ValueError('nelemx does not match', nelemx2, nelemx)
+    assert nelemx2 == nelemx, f'nelemx does not match, {nelemx2} != {nelemx}'
 
     mat_glob = [(np.zeros(0, dtype=csr_list[0][0][0].dtype), np.zeros(0, dtype=np.int64), np.zeros(0, dtype=np.int64))] * (nelemx * nelemy)
     for ey in range(nelemy):
@@ -2062,11 +2051,9 @@ def assemble_saty_2d(csr_list,nelemx,nelemy):
         A list where each entry is a tuple (data, indices, indptr) representing the global CSR matrix.
     '''
     nelemx2 = len(csr_list)
-    if nelemx2 != nelemx:
-        raise ValueError('nelemx does not match', nelemx2, nelemx)
+    assert nelemx2 == nelemx, f'nelemx does not match, {nelemx2} != {nelemx}'
     nelemy2 = len(csr_list[0])
-    if nelemy2 != nelemy:
-        raise ValueError('nelemy does not match', nelemy2, nelemy)
+    assert nelemy2 == nelemy, f'nelemy does not match, {nelemy2} != {nelemy}'
 
     mat_glob = [(np.zeros(0, dtype=csr_list[0][0][0].dtype), np.zeros(0, dtype=np.int64), np.zeros(0, dtype=np.int64))] * (nelemx * nelemy)
     for ex in range(nelemx):

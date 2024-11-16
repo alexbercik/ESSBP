@@ -106,7 +106,7 @@ class Euler(PdeBase):
                 print("WARNING: Overwriting inputted q0_type to 'vortex'.")
                 self.q0_type = 'vortex'
             assert (bc == 'periodic'),\
-                "density_wave must use bc='periodic'."
+                "vortex must use bc='periodic'."
             self.steady = False
 
             if self.nondimensionalize:
@@ -114,6 +114,46 @@ class Euler(PdeBase):
                 self.e_inf = self.rho_inf * self.a_inf * self.a_inf 
                 self.rhou_inf = self.rho_inf * self.a_inf
                 self.t_scale = self.a_inf
+
+        elif self.test_case == 'kelvin-helmholtz' or self.test_case == 'kelvin-helmholtz_asym':
+            self.has_exa_sol = False
+            self.xmin_fix = (-1.,-1.)  # should be the same as self.x_min
+            self.xmax_fix = (1.,1.) # should be the same as self.x_max
+            if self.q0_type != 'kelvin-helmholtz':
+                print("WARNING: Overwriting inputted q0_type to 'kelvin-helmholtz'.")
+                self.q0_type = 'kelvin-helmholtz'
+            assert (bc == 'periodic'),\
+                "kelvin-helmholtz must use bc='periodic'."
+            self.steady = False
+            
+            if self.nondimensionalize:
+                self.rho_inf = 0.5
+                p_inf = 1.
+                a_inf = np.sqrt(self.g*p_inf/self.rho_inf)
+                self.rhou_inf = self.rho_inf*a_inf
+                self.e_inf = self.rho_inf*a_inf*a_inf
+                self.t_scale = a_inf
+
+        elif self.test_case == 'taylor-green':
+            self.has_exa_sol = False
+            self.xmin_fix = (-np.pi,-np.pi)  # should be the same as self.x_min
+            self.xmax_fix = (np.pi,np.pi) # should be the same as self.x_max
+            if self.q0_type != 'taylor-green':
+                print("WARNING: Overwriting inputted q0_type to 'taylor-green'.")
+                self.q0_type = 'taylor-green'
+            assert (bc == 'periodic'),\
+                "taylor-green must use bc='periodic'."
+            self.steady = False
+            self.mach0 = 0.1
+            
+            if self.nondimensionalize:
+                self.rho_inf = 1.0
+                p_inf = self.rho_inf/(self.mach0*self.mach0*self.g) + self.rho_inf*(3./16.)
+                a_inf = np.sqrt(self.g*p_inf/self.rho_inf)
+                self.rhou_inf = self.rho_inf*a_inf
+                self.e_inf = self.rho_inf*a_inf*a_inf
+                self.t_scale = a_inf
+
 
         elif self.test_case == 'manufactured_soln':
 
@@ -283,6 +323,21 @@ class Euler(PdeBase):
         s = np.log(p/(rho**self.g))
         w = self.assemble_vec(((self.g-s)/(self.g-1) - 0.5*rho*(u*u+v*v)/p, rho*u/p, rho*v/p, -rho/p))
         return w
+    
+    def kinetic_energy(self, q):
+        ''' return the kinetic energy at each node. '''
+        rho, q_1, q_2, _ = self.decompose_q(q)
+        u = q_1 / rho
+        v = q_2 / rho
+        return 0.5*rho*(u*u + v*v)
+    
+    def enstrophy(self, q):
+        ''' return the enstrophy at each node. '''
+        rho, q_1, q_2, _ = self.decompose_q(q)
+        u = q_1 / rho
+        v = q_2 / rho
+        w = self.gm_gv(self.Dx,v) - self.gm_gv(self.Dy,u)
+        return 0.5*rho*(w*w)
 
     def exact_sol(self, time=0, xy=None, extra_vars=False, nondimensionalize=None):
         ''' Returns the exact solution at given time. Use default time=0 for
@@ -429,6 +484,28 @@ class Euler(PdeBase):
             e = p/(self.g-1) + 0.5 * rho * (u*u + v*v)
             q0 = self.prim2cons(rho, u, v, e)
 
+        elif self.test_case == 'kelvin-helmholtz' or self.test_case == 'kelvin-helmholtz_asym':
+            if q0_type != 'kelvin-helmholtz':
+                print('WARNING: Ignoring q0_type and setting initial conditions to kelvin-helmholtz.')
+            B = np.tanh( 15 * xy[:,1,:] + 7.5 ) - np.tanh( 15 * xy[:,1,:] - 7.5 )
+            rho = 0.5 + 0.75 * B
+            u = 0.5 * ( B - 1 )
+            if self.test_case == 'kelvin-helmholtz_asym':
+                v = 0.1 * np.sin( 2 * np.pi * xy[:,0,:] ) * ( 1. + 0.01 * np.sin( np.pi * xy[:,0,:] ) * np.sin( np.pi * xy[:,1,:] ) )
+            else:
+                v = 0.1 * np.sin( 2 * np.pi * xy[:,0,:] )
+            e = 1 / ( self.g - 1 ) + 0.5 * rho * (u*u + v*v)
+            q0 = self.prim2cons(rho, u, v, e)
+
+        elif self.test_case == 'taylor-green':
+            if q0_type != 'taylor-green':
+                print('WARNING: Ignoring q0_type and setting initial conditions to taylor-green.')
+            rho = np.ones_like(xy[:,0,:])
+            u = np.sin(xy[:,0,:]) * np.cos(xy[:,1,:])
+            v = -np.cos(xy[:,0,:]) * np.sin(xy[:,1,:])
+            p = rho/(self.mach0*self.mach0*self.g) + rho*(np.cos(2*xy[:,0,:]) + np.cos(2*xy[:,1,:]))*(3./16.)
+            e = p/(self.g-1) + 0.5 * rho * (u*u + v*v)
+            q0 = self.prim2cons(rho, u, v, e)
             
         else: 
             print("WARNING: Instead of using q0_type = '"+q0_type+"', you should probably use q0_type = "+self.test_case+".")
