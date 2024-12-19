@@ -52,7 +52,7 @@ class TimeMarchingRk:
         # Congrats you reached the end
         i += 1
         self.final_common(q, q_sol, i, n_ts, dt, k1)
-        return self.return_q_sol(q,q_sol,i,dt)
+        return self.return_q_sol(q,q_sol,i,dt,k1)
 
     def explicit_euler(self, q, dt, n_ts):
 
@@ -72,7 +72,7 @@ class TimeMarchingRk:
         # Congrats you reached the end
         i += 1
         self.final_common(q, q_sol, i, n_ts, dt, dqdt)
-        return self.return_q_sol(q,q_sol,i,dt)
+        return self.return_q_sol(q,q_sol,i,dt,dqdt)
     
     # TODO: Do I want to put back any of the implicit methods? 
     # THis would include implicit Euler, Trapezoidal, etc

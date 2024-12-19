@@ -235,7 +235,7 @@ class PdeSolver:
         if nen == None:
             self.nen = 0
         else:
-            assert isinstance(nen, int), 'nen must be an integer'
+            assert isinstance(nen, int), f'nen must be an integer, {nen}'
             self.nen = nen
         
         if self.dim == 1:
@@ -252,7 +252,7 @@ class PdeSolver:
             elif (isinstance(nelem, tuple) and len(nelem)==2):
                 self.nelem = nelem
             else: 
-                'nelem must be an integer or tuple of integers. Inputted: ', nelem
+                raise Exception('nelem must be an integer or tuple of integers. Inputted: ', nelem)
             if isinstance(xmin, float) or isinstance(xmin, int):
                 self.xmin = (xmin, xmin)
             elif (isinstance(xmin, tuple) and len(xmin)==2):
