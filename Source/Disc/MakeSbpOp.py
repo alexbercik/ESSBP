@@ -609,36 +609,110 @@ class MakeSbpOp:
         
         elif mesh.dim == 3:
 
-            raise Exception('TODO: Redo sbp.ref_2_phys up for 3D.')
-            
-            eye = np.eye(self.nn)
-            H_phys = np.diag(np.kron(np.kron(self.H,self.H),self.H))[:,None] * mesh.det_jac
-            
-            Dx = np.kron(np.kron(self.D, eye),eye) # shape (nen^3,nen^3)
-            Dy = np.kron(np.kron(eye, self.D), eye)
-            Dz = np.kron(np.kron(eye, eye), self.D)
+            if not sparse and not sat_sparse:
+                raise Exception('3D operators not implemented for dense matrices.')
+
+            H = np.diag(self.H)
+            self.Hperp = np.kron(H,H)
+            self.H_phys_unkronned = np.kron(H,self.Hperp)[:,None] * mesh.det_jac
+            self.H_inv_phys_unkronned = 1/self.H_phys_unkronned
+            self.H_phys = fn.repeat_neq_gv(self.H_phys_unkronned,neq)
+            self.H_inv_phys = 1/self.H_phys
+
+            # using a sparse sat, so want to save certain SAT matrices
+            tR = sp.lm_to_sp(self.tR.reshape(self.nn,1))
+            tL = sp.lm_to_sp(self.tL.reshape(self.nn,1))
+            tRT = sp.lm_to_sp(self.tR.reshape(1,self.nn))
+            tLT = sp.lm_to_sp(self.tL.reshape(1,self.nn))
+            self.txb_unkronned = sp.kron_lm_eye(sp.kron_lm_eye(tR, self.nn), self.nn)
+            self.txa_unkronned = sp.kron_lm_eye(sp.kron_lm_eye(tL, self.nn), self.nn)
+            self.tyb_unkronned = sp.kron_lm_eye(sp.kron_eye_lm(tR, self.nn, 1), self.nn)
+            self.tya_unkronned = sp.kron_lm_eye(sp.kron_eye_lm(tL, self.nn, 1), self.nn)
+            self.tzb_unkronned = sp.kron_eye_lm(sp.kron_eye_lm(tR, self.nn, 1), self.nn, self.nn)
+            self.tza_unkronned = sp.kron_eye_lm(sp.kron_eye_lm(tL, self.nn, 1), self.nn, self.nn)
+            self.txbT_unkronned = sp.kron_lm_eye(sp.kron_lm_eye(tRT, self.nn), self.nn)
+            self.txaT_unkronned = sp.kron_lm_eye(sp.kron_lm_eye(tLT, self.nn), self.nn)
+            self.tybT_unkronned = sp.kron_lm_eye(sp.kron_eye_lm(tRT, self.nn, self.nn), self.nn)
+            self.tyaT_unkronned = sp.kron_lm_eye(sp.kron_eye_lm(tLT, self.nn, self.nn), self.nn)
+            self.tzbT_unkronned = sp.kron_eye_lm(sp.kron_eye_lm(tRT, self.nn, self.nn), self.nn, self.nn**2)
+            self.tzaT_unkronned = sp.kron_eye_lm(sp.kron_eye_lm(tLT, self.nn, self.nn), self.nn, self.nn**2)
+            self.txb = sp.kron_neq_lm(self.txb_unkronned, neq)
+            self.txa = sp.kron_neq_lm(self.txa_unkronned, neq)
+            self.tyb = sp.kron_neq_lm(self.tyb_unkronned, neq)
+            self.tya = sp.kron_neq_lm(self.tya_unkronned, neq)
+            self.tzb = sp.kron_neq_lm(self.tzb_unkronned, neq)
+            self.tza = sp.kron_neq_lm(self.tza_unkronned, neq)
+            self.txbT = sp.kron_neq_lm(self.txbT_unkronned, neq)
+            self.txaT = sp.kron_neq_lm(self.txaT_unkronned, neq)
+            self.tybT = sp.kron_neq_lm(self.tybT_unkronned, neq)
+            self.tyaT = sp.kron_neq_lm(self.tyaT_unkronned, neq)
+            self.tzbT = sp.kron_neq_lm(self.tzbT_unkronned, neq)
+            self.tzaT = sp.kron_neq_lm(self.tzaT_unkronned, neq)
+            Exsurf = sp.add_lm_lm( sp.lm_lm(sp.lm_ldiag(self.txb_unkronned,  self.Hperp), self.txbT_unkronned), 
+                                    sp.lm_lm(sp.lm_ldiag(self.txa_unkronned, -self.Hperp), self.txaT_unkronned))
+            Eysurf = sp.add_lm_lm( sp.lm_lm(sp.lm_ldiag(self.tyb_unkronned,  self.Hperp), self.tybT_unkronned), 
+                                    sp.lm_lm(sp.lm_ldiag(self.tya_unkronned, -self.Hperp), self.tyaT_unkronned))
+            Ezsurf = sp.add_lm_lm( sp.lm_lm(sp.lm_ldiag(self.tzb_unkronned,  self.Hperp), self.tzbT_unkronned),
+                                    sp.lm_lm(sp.lm_ldiag(self.tza_unkronned, -self.Hperp), self.tzaT_unkronned))
+            self.Exsurf = sp.kron_neq_lm(Exsurf, neq)
+            self.Eysurf = sp.kron_neq_lm(Eysurf, neq)
+            self.Ezsurf = sp.kron_neq_lm(Ezsurf, neq)
+
+            # calculate and save the important volume operators
+            D = sp.lm_to_sp(self.D)
+            Dx = sp.kron_lm_eye(sp.kron_lm_eye(D, self.nn), self.nn)
+            Dy = sp.kron_lm_eye(sp.kron_eye_lm(D, self.nn, self.nn), self.nn)
+            Dz = sp.kron_eye_lm(sp.kron_eye_lm(D, self.nn, self.nn), self.nn, self.nn**2)
 
             if form == 'skew_sym':
-                Dx_phys = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,0,:]) + fn.gdiag_lm(mesh.metrics[:,0,:],Dx) 
-                                                          + fn.lm_gdiag(Dy,mesh.metrics[:,3,:]) + fn.gdiag_lm(mesh.metrics[:,3,:],Dy)
-                                                          + fn.lm_gdiag(Dz,mesh.metrics[:,6,:]) + fn.gdiag_lm(mesh.metrics[:,6,:],Dz)))
-                Dy_phys = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,1,:]) + fn.gdiag_lm(mesh.metrics[:,1,:],Dx) 
-                                                          + fn.lm_gdiag(Dy,mesh.metrics[:,4,:]) + fn.gdiag_lm(mesh.metrics[:,4,:],Dy)
-                                                          + fn.lm_gdiag(Dz,mesh.metrics[:,7,:]) + fn.gdiag_lm(mesh.metrics[:,7,:],Dz)))
-                Dz_phys = 0.5*fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,2,:]) + fn.gdiag_lm(mesh.metrics[:,2,:],Dx) 
-                                                          + fn.lm_gdiag(Dy,mesh.metrics[:,5,:]) + fn.gdiag_lm(mesh.metrics[:,5,:],Dy)
-                                                          + fn.lm_gdiag(Dz,mesh.metrics[:,8,:]) + fn.gdiag_lm(mesh.metrics[:,8,:],Dz)))
-            elif form == 'div': # not provably stable
-                Dx_phys = fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,0,:]) + fn.lm_gdiag(Dy,mesh.metrics[:,3,:])
-                                                         + fn.lm_gdiag(Dz,mesh.metrics[:,6,:])))
-                Dy_phys = fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,1,:]) + fn.lm_gdiag(Dy,mesh.metrics[:,4,:])
-                                                         + fn.lm_gdiag(Dz,mesh.metrics[:,7,:])))
-                Dz_phys = fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,2,:]) + fn.lm_gdiag(Dy,mesh.metrics[:,5,:])
-                                                         + fn.lm_gdiag(Dz,mesh.metrics[:,8,:])))
-            else:
-                raise Exception('Physical operator form not understood.')
+                # TODO Here
+                raise Exception('3D Not completed yet')
+                xm = 0 # l=x, m=x
+                ym = 2 # l=y, m=x
+                tempx = sp.add_gm_gm( sp.lm_gdiag(Dx,mesh.metrics[:,xm,:]), sp.gdiag_lm(mesh.metrics[:,xm,:],Dx) )
+                tempy = sp.add_gm_gm( sp.lm_gdiag(Dy,mesh.metrics[:,ym,:]), sp.gdiag_lm(mesh.metrics[:,ym,:],Dy) )
+                Dx_phys = sp.gdiag_gm(0.5/mesh.det_jac, sp.add_gm_gm(tempx, tempy))
+                Ex_phys1 = sp.add_gm_gm(sp.lm_gdiag(Exsurf,mesh.metrics[:,xm,:]), sp.lm_gdiag(Eysurf,mesh.metrics[:,ym,:]))
+                if disc_type == 'div':
+                    Volx = sp.prune_gm(sp.subtract_gm_gm(Dx_phys, sp.gdiag_gm(0.5*self.H_inv_phys_unkronned, Ex_phys1)))
+                    self.Volx = sp.kron_neq_gm(Volx, neq)
+                elif disc_type == 'had':
+                    self.Volx = sp.prune_gm(sp.subtract_gm_gm(sp.scalar_gm(2.,Dx_phys), sp.gdiag_gm(self.H_inv_phys_unkronned, Ex_phys1))) # NOT Kronned
+                self.Dx = sp.kron_neq_gm(Dx_phys, neq)
 
-            return H_phys, Dx_phys, Dy_phys, Dz_phys
+                if calc_nd_ops:
+                    tempx = sp.add_lm_lm( sp.lm_lm(sp.lm_ldiag(self.txb_unkronned, self.Hperp * mesh.bdy_metrics[:,1,xm,:]), self.txbT_unkronned), 
+                                            sp.lm_lm(sp.lm_ldiag(self.txa_unkronned,-self.Hperp * mesh.bdy_metrics[:,0,xm,:]), self.txaT_unkronned))
+                    tempy = sp.add_lm_lm( sp.lm_lm(sp.lm_ldiag(self.tyb_unkronned, self.Hperp * mesh.bdy_metrics[:,3,ym,:]), self.tybT_unkronned), 
+                                            sp.lm_lm(sp.lm_ldiag(self.tya_unkronned,-self.Hperp * mesh.bdy_metrics[:,2,ym,:]), self.tyaT_unkronned))
+                    Ex_phys_diff = sp.subtract_gm_gm(Ex_phys1, sp.add_gm_gm(tempx, tempy))
+                    # use unkronned for multi-dim Dx
+                    self.Dx_nd = sp.prune_gm(sp.subtract_gm_gm(Dx_phys, sp.gdiag_gm(0.5*self.H_inv_phys_unkronned, Ex_phys_diff)))
+
+                xm = 1 # l=x, m=y
+                ym = 3 # l=y, m=y
+                tempx = sp.add_gm_gm( sp.lm_gdiag(Dx,mesh.metrics[:,xm,:]), sp.gdiag_lm(mesh.metrics[:,xm,:],Dx) )
+                tempy = sp.add_gm_gm( sp.lm_gdiag(Dy,mesh.metrics[:,ym,:]), sp.gdiag_lm(mesh.metrics[:,ym,:],Dy) )
+                Dy_phys = sp.gdiag_gm(0.5/mesh.det_jac, sp.add_gm_gm(tempx, tempy))
+                Ey_phys1 = sp.add_gm_gm(sp.lm_gdiag(Exsurf,mesh.metrics[:,xm,:]), sp.lm_gdiag(Eysurf,mesh.metrics[:,ym,:]))
+                if disc_type == 'div':
+                    Voly = sp.prune_gm(sp.subtract_gm_gm(Dy_phys, sp.gdiag_gm(0.5*self.H_inv_phys_unkronned, Ey_phys1)))
+                    self.Voly = sp.kron_neq_gm(Voly, neq)
+                elif disc_type == 'had':
+                    self.Voly = sp.prune_gm(sp.subtract_gm_gm(sp.scalar_gm(2.,Dy_phys), sp.gdiag_gm(self.H_inv_phys_unkronned, Ey_phys1))) # NOT Kronned
+                self.Dy = sp.kron_neq_gm(Dy_phys, neq)
+
+                if calc_nd_ops:
+                    tempx = sp.add_lm_lm( sp.lm_lm(sp.lm_ldiag(self.txb_unkronned, self.Hperp * mesh.bdy_metrics[:,1,xm,:]), self.txbT_unkronned), 
+                                            sp.lm_lm(sp.lm_ldiag(self.txa_unkronned,-self.Hperp * mesh.bdy_metrics[:,0,xm,:]), self.txaT_unkronned))
+                    tempy = sp.add_lm_lm( sp.lm_lm(sp.lm_ldiag(self.tyb_unkronned, self.Hperp * mesh.bdy_metrics[:,3,ym,:]), self.tybT_unkronned), 
+                                            sp.lm_lm(sp.lm_ldiag(self.tya_unkronned,-self.Hperp * mesh.bdy_metrics[:,2,ym,:]), self.tyaT_unkronned))
+                    Ey_phys_diff = sp.subtract_gm_gm(Ey_phys1, sp.add_gm_gm(tempx, tempy))
+                    # use unkronned for multi-dim Dy
+                    self.Dx_nd = sp.prune_gm(sp.subtract_gm_gm(Dy_phys, sp.gdiag_gm(0.5*self.H_inv_phys_unkronned, Ey_phys_diff)))
+            else:
+                #TODO
+                raise Exception('Not implemented yet')
 
     @staticmethod
     def check_diagH(x,H,tol=1e-10,returndegree=False):

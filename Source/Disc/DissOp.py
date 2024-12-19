@@ -10,7 +10,7 @@ def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
         if s==1:
             if nen < 3:
                 raise ValueError(f"Invalid number of nodes. nen = {nen}")
-            if nen < 5:
+            if nen < 7:
                 print('WARNING: Not enough nodes for volume dissipation interior to be 3rd order. Try nen>=5')
 
             print('WARNING: I am not sure that s=1 CSBP dissipation operator is correct')
@@ -34,7 +34,7 @@ def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
         elif s==2:
             if nen < 3:
                 raise ValueError(f"Invalid number of nodes. nen = {nen}")
-            if nen < 5:
+            if nen < 9:
                 print('WARNING: Not enough nodes for volume dissipation interior to be 3rd order. Try nen>=5')
 
             # Row 1
@@ -93,7 +93,7 @@ def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
         elif s==4:
             if nen < 13:
                 raise ValueError(f"Invalid number of nodes. nen = {nen}")
-            if nen < 15:
+            if nen < 13:
                 print('WARNING: Not enough nodes for volume dissipation interior to be 7th order. Try nen>=15')
 
             # First node
@@ -142,7 +142,7 @@ def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
         elif s==5:
             if nen < 17:
                 raise ValueError(f"Invalid number of nodes. nen = {nen}")
-            if nen < 19:
+            if nen < 15:
                 print('WARNING: Not enough nodes for volume dissipation interior to be 9th order. Try nen>=19')
 
             # First half-node
@@ -940,7 +940,7 @@ def make_dcp_diss_op2(sbp_type, s, nen, boundary_fix=True):
         if s==1:
             if nen < 3:
                 raise ValueError(f"Invalid number of nodes. nen = {nen}")
-            if nen < 5:
+            if nen < 3:
                 print('WARNING: Not enough nodes for volume dissipation interior to be 3rd order. Try nen>=5')
 
             # Row 1
@@ -983,7 +983,7 @@ def make_dcp_diss_op2(sbp_type, s, nen, boundary_fix=True):
         elif s==3:
             if nen < 9:
                 raise ValueError(f"Invalid number of nodes. nen = {nen}")
-            if nen < 11:
+            if nen < 7:
                 print('WARNING: Not enough nodes for volume dissipation interior to be 5th order. Try nen>=11')
             
             Ds[0, 0] = -1.0
@@ -1019,7 +1019,7 @@ def make_dcp_diss_op2(sbp_type, s, nen, boundary_fix=True):
         elif s==4:
             if nen < 13:
                 raise ValueError(f"Invalid number of nodes. nen = {nen}")
-            if nen < 15:
+            if nen < 9:
                 print('WARNING: Not enough nodes for volume dissipation interior to be 7th order. Try nen>=15')
 
             # First node
@@ -1068,7 +1068,7 @@ def make_dcp_diss_op2(sbp_type, s, nen, boundary_fix=True):
         elif s==5:
             if nen < 17:
                 raise ValueError(f"Invalid number of nodes. nen = {nen}")
-            if nen < 19:
+            if nen < 11:
                 print('WARNING: Not enough nodes for volume dissipation interior to be 9th order. Try nen>=19')
 
             Ds[0, 0] = -1.0

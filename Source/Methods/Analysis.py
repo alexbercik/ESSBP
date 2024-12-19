@@ -18,6 +18,7 @@ import itertools
 from tabulate import tabulate
 import scipy.optimize as sc
 import copy
+import traceback
 
 def animate(solver, file_name='animation', make_video=True, make_gif=False,
                plotfunc='plot_sol',plotargs={}, skipsteps=0,fps=24,
@@ -508,11 +509,22 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
     # to refine. We can't use both.
     runs_nen = []
     if any(i[0]=='nen' for i in schedule) and any(i[0]=='nelem' for i in schedule):
-        print('WARNING: Can not do a refinement specifying both nen and nelem.')
-        print('     ... Using only nelem values, and atempting to taking nen for each run or for each p.')
-        runs_nen = [x[1:] for x in schedule if x[0] == 'nen'][0]
-        # remove 'nelem' and 'nen' lists
-        schedule = [x for x in schedule if not ('nen' in x)]
+        nens = next((x for x in schedule if x[0] == 'nen'), None)
+        nelems = next((x for x in schedule if x[0] == 'nelem'), None)
+        if len(nens) == 2:
+            # was specifying a specific nens, but wanted to do element refinement
+            solver.nen = nens[1]
+            schedule = [x for x in schedule if not ('nen' in x)]
+        elif len(nelems) == 2:
+            # was specifying a specific nelems, but wanted to do node refinement
+            solver.nelem = nelems[1]
+            schedule = [x for x in schedule if not ('nelem' in x)]
+        else:
+            print('WARNING: Can not do a refinement specifying both nen and nelem.')
+            print('     ... Using only nelem values, and atempting to taking nen for each run or for each p.')
+            runs_nen = [x[1:] for x in schedule if x[0] == 'nen'][0]
+            # remove 'nelem' and 'nen' lists
+            schedule = [x for x in schedule if not ('nen' in x)]
 
     # Otherwise, we now have combinations of attributes to run, and we
     # calculate convergence according to either nn or nelem refinement.
@@ -642,7 +654,8 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
                     print('---------------------------------------------------------')
                     n_toti += n_runs - runi
                 else:
-                    raise Exception(e)
+                    traceback.print_exc()  # Print the traceback
+                    raise  # Re-raise the original exception
     else:
         # Run in parallel mode with ProcessPoolExecutor
         with ProcessPoolExecutor(max_workers=nthreads) as executor:
@@ -797,7 +810,7 @@ def prep_new_solver_instance(base_solver, variables):
                 'tm_method':solver_copy.tm_method, 'dt':solver_copy.dt, 't_final':solver_copy.t_final, 
                 'q0':solver_copy.q0, 
                 'p':solver_copy.p, 'disc_type':solver_copy.disc_type,
-                'surf_diss':solver_copy.surf_diss, 'vol_diss':solver_copy.vol_diss, 'had_flux':solver_copy.vol_diss,
+                'surf_diss':solver_copy.surf_diss, 'vol_diss':solver_copy.vol_diss, 'had_flux':solver_copy.had_flux,
                 'nelem':solver_copy.nelem, 'nen':solver_copy.nen, 'disc_nodes':solver_copy.disc_nodes,
                 'bc':solver_copy.bc, 'xmin':solver_copy.xmin, 'xmax':solver_copy.xmax,
                 'cons_obj_name':solver_copy.cons_obj_name,
@@ -817,7 +830,6 @@ def run_parallel_case(solver_class, diffeq_class, solver_kwargs, diffeq_args,
     dofs, errors, nn = run_single_case(solver, None, 
                                        scale_dt, base_dt, base_dx, 
                                        error_type, vars2plot, reset=False)
-    dofs, errors, nn = 1,2,3
     return dofs, errors, nn
     
     
