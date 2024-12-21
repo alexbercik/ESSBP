@@ -106,6 +106,7 @@ class ADiss():
                     self.use_H = self.solver.vol_diss['use_H']
                     if self.use_H == 'True':
                         self.use_H = True
+                        self.use_noH = False
                     elif self.use_H == 'False':
                         self.use_H = False
                         self.use_noH = False
@@ -114,6 +115,7 @@ class ADiss():
                         self.use_noH = True
             else:
                 self.use_H = True
+                self.use_noH = False
 
             if self.type == 'upwind' or self.type == 'upwindlgl':
                 if 'fluxvec' in self.solver.vol_diss.keys():
