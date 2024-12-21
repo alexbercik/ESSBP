@@ -80,7 +80,7 @@ class ADiss():
                         self.s = 2*self.solver.p + 1
                     assert isinstance(self.s, int), 'Artificial Dissipation: s must be an integer, {0}'.format(self.s)
                 else:
-                    print('WARNING: No s provided to artificial dissipation. Defaulting to s=p')
+                    print('WARNING: No s provided to artificial dissipation. Defaulting to s=p, but you probably want s=p+1.')
                     self.s = self.solver.p
 
             if 'coeff' in self.solver.vol_diss.keys():
@@ -115,13 +115,13 @@ class ADiss():
             else:
                 self.use_H = True
 
-            if self.type == 'upwind':
+            if self.type == 'upwind' or self.type == 'upwindlgl':
                 if 'fluxvec' in self.solver.vol_diss.keys():
                     self.fluxvec = self.solver.vol_diss['fluxvec']
                 else:
                     print('WARNING: No fluxvec provided to artificial dissipation. Defaulting to fluxvec=lf')
                     self.fluxvec = 'lf'
-                if self.coeff != 1.:
+                if self.coeff != 1. and self.type == 'upwind':
                     print(f'WARNING: coeff = {self.coeff} != 1. Make sure this is intentional as it is not a typical flux-vector splitting.')
 
             if 'avg_half_nodes' in self.solver.vol_diss.keys():
@@ -191,7 +191,7 @@ class ADiss():
                     self.jac_type = 'scalarscalar'
                     self.dissipation = self.dissipation_entdcp_scalarscalar
 
-            elif self.type == 'upwind':
+            elif self.type == 'upwind' or self.type == 'upwindlgl':
                 if self.fluxvec.lower() == 'lf':
                     self.dissipation = self.dissipation_upwind_lf
                 elif self.fluxvec.lower() == 'sw' or self.fluxvec.lower()=='stegerwarming':
@@ -219,7 +219,8 @@ class ADiss():
             if self.jac_type == 'scalarscalar' or self.jac_type == 'scasca' \
             or self.jac_type == 'scalarmatrix' or self.jac_type == 'scamat' \
             or self.jac_type == 'scalar' or self.jac_type == 'sca' \
-            or (self.type == 'upwind' and self.fluxvec.lower() == 'lf'):
+            or (self.type == 'upwind' and self.fluxvec.lower() == 'lf') \
+            or (self.type == 'upwindlgl' and self.fluxvec.lower() == 'lf'):
                 if self.dim == 1:
                     self.maxeig_dExdq = self.solver.diffeq.maxeig_dExdq
                 else:
@@ -364,16 +365,48 @@ class ADiss():
                 self.lhs_D = self.gdiag_lm(-self.solver.H_inv_phys,self.kron_neq_lm(self.lm_ldiag(DsT, B), self.neq_node))
         elif self.type == 'upwind':
             if self.solver.disc_nodes.lower() == 'upwind':
+                ### OPTION 1: USE UPWIND DISSIPATION OPERATOR FROM CENTRAL SBP OPERATOR
                 Ddiss = self.solver.sbp.Ddiss
+                if self.sparse: Ddiss = sp.lm_to_sp(Ddiss)
+                self.Ddiss = self.gdiag_lm( self.repeat_neq_gv(-self.solver.mesh.det_jac_inv), self.kron_neq_lm(Ddiss,self.neq_node))
             else:
-                from Source.Disc.UpwindOp import UpwindOp
-                _,_,_,_,H,_,_,_,_,x,Ddiss = UpwindOp(self.s,self.nen)
-                if np.any(abs(x - self.solver.sbp.x) > 1e-14):
-                    print('WARNING: x of sbp operator does not match x of dissipation operator!')
-                    print(self.solver.sbp.x)
-                    print(x)
-                if np.any(abs(H - self.solver.sbp.H) > 1e-14):
-                    print('WARNING: H of sbp operator does not match H of dissipation operator! Not provably stable.')
+                if self.solver.disc_nodes.lower() == 'lgl' or self.solver.disc_nodes.lower() == 'lg':
+                    ### OPTION 2: USE UPWIND DISSIPATION DEFINED BY ELEMENT-TYPE
+                    if self.bdy_fix: 
+                        print('WARNING: ignoring bdy_fix and setting bdy_fix=False for element volume-dissipation.')
+                        self.bdy_fix = False
+                    if self.use_H: 
+                        print('WARNING: ignoring use_H and setting use_H=False for element volume-dissipation.')
+                        self.use_H = False
+                    Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen, False)
+                    DsTDs = Ds.T @ Ds
+                    if self.sparse: Ds = sp.lm_to_sp(DsTDs)
+                    self.Ddiss = self.gdiag_lm(-self.solver.H_inv_phys,self.kron_neq_lm(DsTDs,self.neq_node))
+                else:
+                    ### OPTION 3: USE UPWIND DISSIPATION OPERATOR FOR CLASSICAL SBP (MATTSSON)
+                    from Source.Disc.UpwindOp import UpwindOp
+                    _,_,_,_,H,_,_,_,_,x,Ddiss = UpwindOp(self.s,self.nen)
+                    if np.any(abs(x - self.solver.sbp.x) > 1e-14):
+                        print('WARNING: x of sbp operator does not match x of dissipation operator!')
+                        print(self.solver.sbp.x)
+                        print(x)
+                    if np.any(abs(H - self.solver.sbp.H) > 1e-14):
+                        print('WARNING: H of sbp operator does not match H of dissipation operator! Not provably stable.')
+                    if self.sparse: Ddiss = sp.lm_to_sp(Ddiss)
+                    self.Ddiss = self.gdiag_lm( self.repeat_neq_gv(-self.solver.mesh.det_jac_inv), self.kron_neq_lm(Ddiss,self.neq_node))
+        elif self.type == 'upwindlgl':
+            assert (self.solver.disc_nodes.lower() == 'lgl'), 'upwindLGL dissipation only implemented for LGL.'
+            assert (self.s == self.solver.p), 'upwindLGL dissipation only implemented for s=p.'
+            from Source.Disc.UpwindOp import UpwindLGL
+            _,_,_,_,H,_,_,_,_,x,Ddiss = UpwindLGL(self.s,self.coeff)
+            # reset coeff since it is contained in Ddiss
+            self.coeff = 1.
+            if np.any(abs(x - self.solver.sbp.x) > 1e-14):
+                print('WARNING: x of sbp operator does not match x of dissipation operator!')
+                print(self.solver.sbp.x)
+                print(x)
+            if np.any(abs(H - self.solver.sbp.H) > 1e-14):
+                print('WARNING: H of sbp operator does not match H of dissipation operator! Not provably stable.')
             if self.sparse: Ddiss = sp.lm_to_sp(Ddiss)
             self.Ddiss = self.gdiag_lm( self.repeat_neq_gv(-self.solver.mesh.det_jac_inv), self.kron_neq_lm(Ddiss,self.neq_node))
         elif self.type == 'b' or self.type == 'entb':
@@ -537,16 +570,56 @@ class ADiss():
             self.lhs_Deta = self.gdiag_lm(-self.solver.H_inv_phys,self.kron_neq_lm(DsTeta,self.neq_node))
         elif self.type == 'upwind':
             if self.solver.disc_nodes.lower() == 'upwind':
+                ### OPTION 1: USE UPWIND DISSIPATION DEFINED BY CENTRAL OPERATOR
                 Ddiss = self.solver.sbp.Ddiss
+                if self.sparse: Ddiss = sp.lm_to_sp(Ddiss)
+                self.Dxidiss = self.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), self.kron_neq_lm(self.kron_lm_eye(Ddiss, self.nen),self.neq_node)) 
+                self.Detadiss = self.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), self.kron_neq_lm(self.kron_eye_lm(Ddiss, self.nen, self.nen),self.neq_node))
             else:
-                from Source.Disc.UpwindOp import UpwindOp
-                _,_,_,_,H,_,_,_,_,x,Ddiss = UpwindOp(self.s,self.nen)
-                if np.any(abs(x - self.solver.sbp.x) > 1e-14):
-                    print('WARNING: x of sbp operator does not match x of dissipation operator!')
-                    print(self.solver.sbp.x)
-                    print(x)
-                if np.any(abs(np.diag(H) - np.diag(self.solver.sbp.H)) > 1e-14):
-                    print('WARNING: H of sbp operator does not match H of dissipation operator! Not provably stable.')
+                if self.solver.disc_nodes.lower() == 'lgl' or self.solver.disc_nodes.lower() == 'lg':
+                    ### OPTION 2: USE UPWIND DISSIPATION DEFINED BY ELEMENT-TYPE
+                    if self.bdy_fix: 
+                        print('WARNING: ignoring bdy_fix and setting bdy_fix=False for element volume-dissipation.')
+                        self.bdy_fix = False
+                    if self.use_H: 
+                        print('WARNING: ignoring use_H and setting use_H=False for element volume-dissipation.')
+                        self.use_H = False
+                    if self.use_noH: 
+                        print('WARNING: ignoring use_noH and setting use_noH=False for element volume-dissipation.')
+                        self.use_noH = False
+                    Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen, False)
+                    DsTDs = Ds.T @ Ds
+                    if self.sparse: DsTDs = sp.lm_to_sp(DsTDs)
+                    H = np.diag(self.solver.sbp.H)
+                    self.Dxidiss = self.gdiag_lm(-self.solver.H_inv_phys,self.kron_neq_lm(self.kron_lm_ldiag(DsTDs, H),self.neq_node))
+                    self.Detadiss = self.gdiag_lm(-self.solver.H_inv_phys,self.kron_neq_lm(self.kron_ldiag_lm(H, DsTDs, self.nen),self.neq_node))
+                else:
+                    ### OPTION 3: USE UPWIND DISSIPATION DEFINED BY CLASSICAL NODES (MATTSSON)
+                    from Source.Disc.UpwindOp import UpwindOp
+                    _,_,_,_,H,_,_,_,_,x,Ddiss = UpwindOp(self.s,self.nen)
+                    if np.any(abs(x - self.solver.sbp.x) > 1e-14):
+                        print('WARNING: x of sbp operator does not match x of dissipation operator!')
+                        print(self.solver.sbp.x)
+                        print(x)
+                    if np.any(abs(np.diag(H) - np.diag(self.solver.sbp.H)) > 1e-14):
+                        print('WARNING: H of sbp operator does not match H of dissipation operator! Not provably stable.')
+                    if self.sparse: Ddiss = sp.lm_to_sp(Ddiss)
+                    self.Dxidiss = self.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), self.kron_neq_lm(self.kron_lm_eye(Ddiss, self.nen),self.neq_node)) 
+                    self.Detadiss = self.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), self.kron_neq_lm(self.kron_eye_lm(Ddiss, self.nen, self.nen),self.neq_node))
+        elif self.type == 'upwindlgl':
+            # takes from the upwind sbp paper (same as above, just different coefficient)
+            assert (self.solver.disc_nodes.lower() == 'lgl'), 'upwindLGL dissipation only implemented for LGL.'
+            assert (self.s == self.solver.p), 'upwindLGL dissipation only implemented for s=p.'
+            from Source.Disc.UpwindOp import UpwindLGL
+            _,_,_,_,H,_,_,_,_,x,Ddiss = UpwindLGL(self.s,self.coeff)
+            # reset coeff since it is contained in Ddiss
+            self.coeff = 1.
+            if np.any(abs(x - self.solver.sbp.x) > 1e-14):
+                print('WARNING: x of sbp operator does not match x of dissipation operator!')
+                print(self.solver.sbp.x)
+                print(x)
+            if np.any(abs(H - self.solver.sbp.H) > 1e-14):
+                print('WARNING: H of sbp operator does not match H of dissipation operator! Not provably stable.')
             if self.sparse: Ddiss = sp.lm_to_sp(Ddiss)
             self.Dxidiss = self.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), self.kron_neq_lm(self.kron_lm_eye(Ddiss, self.nen),self.neq_node)) 
             self.Detadiss = self.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), self.kron_neq_lm(self.kron_eye_lm(Ddiss, self.nen, self.nen),self.neq_node))
