@@ -29,13 +29,13 @@ class PdeSolver:
     use_diffeq_dExdx = False
     calc_nd_ops = False # Calulate the physical multi-dimensional operators (incorporates E matrices)
     print_progress = True
-    had_flux = None
+    had_flux = 'none'
 
     def __init__(self, diffeq, settings,                            # Diffeq
                  tm_method, dt, t_final,                    # Time marching
                  q0=None,                                   # Initial solution
                  p=2, disc_type='div',                      # Discretization
-                 surf_diss=None, vol_diss=None, had_flux='central',
+                 surf_diss=None, vol_diss=None, had_flux='none',
                  nelem=0, nen=0,  disc_nodes='lgl',
                  bc=None, xmin=0, xmax=1,     # Domain
                  cons_obj_name=None,         # Other
@@ -175,7 +175,7 @@ class PdeSolver:
                 self.use_diffeq_dExdx = False
         elif disc_type.lower() == 'had' or disc_type.lower() == 'hadamard':
             assert self.settings['skew_sym'],"If hadamard scheme must also use skew-sym metrics. Set settings['skew_sym']=True"
-            self.disc_type = 'had'       
+            self.disc_type = 'had'  
             if hasattr(self.diffeq, had_flux.lower()+"_flux") or hasattr(self.diffeq, had_flux.lower()+"_fluxes"):
                 self.had_flux = had_flux.lower()
             else:
