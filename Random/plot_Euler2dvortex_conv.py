@@ -15,20 +15,20 @@ from Source.Solvers.PdeSolverSbp import PdeSolverSbp
 from Source.Methods.Analysis import run_convergence, plot_conv
 
 # Simultation parameters
-savefile = 'Euler2dVortex_CSBPp14eDiv' # will add extension + .png automatically
+savefile = 'Euler2dVortex_Mattp43eHad' # will add extension + .png automatically
 tm_method = 'rk4'
 cfl = 0.1
 tf = 20. # final time. For vortex, one period is t=20
-op = 'csbp' # 'lg', 'lgl', 'csbp', 'hgtl', 'hgt', 'mattsson', 'upwind'
-nelem = 4 # number of elements
-nen = [20,40,60,80,100]#,160] # number of nodes per element in each direction, as a list
-p = 1 # polynomial degree
+op = 'mattsson' # 'lg', 'lgl', 'csbp', 'hgtl', 'hgt', 'mattsson', 'upwind'
+nelem = 3 # number of elements
+nen = [20,40,80,160] # number of nodes per element in each direction, as a list
+p = 4 # polynomial degree
 s = p+1 # dissipation degree
 disc_type = 'div' # 'div' for divergence form, 'had' for entropy-stable form
 had_flux = 'ranocha' # 2-point numerical flux used in hadamard form
 vars2plot = ['rho','entropy','q','p'] # must be the same as loaded data
 
-include_upwind = True # include upwind operators as a reference
+include_upwind = False # include upwind operators as a reference
 include_bothdiss = True # include both cons. and ent. volume dissipation
 savedata = True
 loaddata = False # skip the actual simulation and just try to load and plot the data
@@ -45,6 +45,17 @@ settings = {'metric_method':'exact',
 
 # set up the differential equation
 diffeq = Euler(para, q0_type, test_case, bc)
+
+if op == 'csbp' or op == 'hgtl':
+    sig = 3.125/5**s
+elif op == 'hgt':
+    sig = 0.6*3.125/5**s
+elif op == 'mattsson':
+    if p == 2: sig = 0.02
+    elif p == 3: sig = 0.001
+    else: raise Exception('No Mattsson dissipation for this p')
+else:
+    raise Exception('No dissipation for this operator')
 
 # set schedules for convergence tests and set dissipations
 if disc_type == 'div':
@@ -65,12 +76,12 @@ if disc_type == 'div':
 
     schedule3 = [['disc_nodes','csbp'],['nen',*nen],['p',p],['disc_type','div'],
                 ['vol_diss',{'diss_type':'nd'},
-                            {'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':3.125/5**s},
-                            {'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*3.125/5**s},
-                            {'diss_type':'dcp', 'jac_type':'matrix', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':3.125/5**s},
-                            {'diss_type':'dcp', 'jac_type':'matrix', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*3.125/5**s}]]
-    labels3 = [f'$\\sigma=0$', f'Cons. Sca. $\\sigma={0.625/5**p:g}$', f'Cons. Sca. $\\sigma={0.2*0.625/5**p:g}$',
-                               f'Cons. Mat. $\\sigma={0.625/5**p:g}$', f'Cons. Mat. $\\sigma={0.2*0.625/5**p:g}$']
+                            {'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':sig},
+                            {'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*sig},
+                            {'diss_type':'dcp', 'jac_type':'matrix', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':sig},
+                            {'diss_type':'dcp', 'jac_type':'matrix', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*sig}]]
+    labels3 = [f'$\\sigma=0$', f'Cons. Sca. $\\sigma={sig:g}$', f'Cons. Sca. $\\sigma={0.2*sig:g}$',
+                               f'Cons. Mat. $\\sigma={sig:g}$', f'Cons. Mat. $\\sigma={0.2*sig:g}$']
     
 
 elif disc_type == 'had':
@@ -88,18 +99,18 @@ elif disc_type == 'had':
 
     if include_bothdiss:
         schedule2 = [['disc_nodes','csbp'],['nen',*nen],['p',p],['disc_type','had'],
-                    ['vol_diss',{'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*3.125/5**s},
-                                {'diss_type':'dcp', 'jac_type':'matrix', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*3.125/5**s}]]
-        labels2 = [f'Cons. Sca. $\\sigma={0.2*0.625/5**p:g}$', f'Cons. Mat. $\\sigma={0.2*0.625/5**p:g}$']
+                    ['vol_diss',{'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':sig},
+                                {'diss_type':'dcp', 'jac_type':'matrix', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':sig}]]
+        labels2 = [f'Cons. Sca. $\\sigma={sig:g}$', f'Cons. Mat. $\\sigma={sig:g}$']
 
     schedule3 = [['disc_nodes','csbp'],['nen',*nen],['p',p],['disc_type','had'],
                 ['vol_diss',{'diss_type':'nd'},
-                            {'diss_type':'entdcp', 'jac_type':'scamat', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':3.125/5**s},
-                            {'diss_type':'entdcp', 'jac_type':'scamat', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*3.125/5**s},
-                            {'diss_type':'entdcp', 'jac_type':'matmat', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':3.125/5**s},
-                            {'diss_type':'entdcp', 'jac_type':'matmat', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*3.125/5**s}]]
-    labels3 = [f'$\\sigma=0$', f'Ent. Sca.-Mat. $\\sigma={0.625/5**p:g}$', f'Ent. Sca.-Mat. $\\sigma={0.2*0.625/5**p:g}$',
-                               f'Ent. Mat.-Mat. $\\sigma={0.625/5**p:g}$', f'Ent. Mat.-Mat. $\\sigma={0.2*0.625/5**p:g}$']
+                            {'diss_type':'entdcp', 'jac_type':'scamat', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':sig},
+                            {'diss_type':'entdcp', 'jac_type':'scamat', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*sig},
+                            {'diss_type':'entdcp', 'jac_type':'matmat', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':sig},
+                            {'diss_type':'entdcp', 'jac_type':'matmat', 's':s, 'bdy_fix':True, 'use_H':True, 'coeff':0.2*sig}]]
+    labels3 = [f'$\\sigma=0$', f'Ent. Sca.-Mat. $\\sigma={sig:g}$', f'Ent. Sca.-Mat. $\\sigma={0.2*sig:g}$',
+                               f'Ent. Mat.-Mat. $\\sigma={sig:g}$', f'Ent. Mat.-Mat. $\\sigma={0.2*sig:g}$']
 
 
 if loaddata:
@@ -115,13 +126,15 @@ else:
     if savedata:
         datafile = savefile + '_data.npz'
         if os.path.exists(datafile):
-            print(f"Warning: The file '{datafile}' already exists and will be overwritten.")
+            for i in range(20):
+                print(f"WARNING: The file '{datafile}' already exists and will be overwritten.")
 
     # initialize solver with some default values
     dx = 10./((nen[0]-1)*nelem)
     dt = cfl * dx / (1.56) # using a wavespeed of 1.56 from initial condition
     solver = PdeSolverSbp(diffeq, settings, tm_method, dt, tf,
-                        p=p, surf_diss=surf_diss, vol_diss=None,
+                        p=p, disc_type=disc_type,   
+                        surf_diss=surf_diss, vol_diss=None, had_flux=had_flux,
                         nelem=nelem, nen=nen[0], disc_nodes='csbp',
                         bc='periodic', xmin=xmin, xmax=xmax)
 
@@ -175,32 +188,36 @@ title = None
 xlabel = r'$\surd$ Degrees of Freedom'
 colors = ['tab:blue', 'tab:orange', 'tab:green', 'k', 'm', 'tab:red', 'tab:brown']
 markers = ['o', '^', 's', 'd','x', '+', 'v']
+if disc_type == 'had':
+    reorder = [2,0,1,3,4,5,6]
+else:
+    reorder = None
 
 for varidx, var in enumerate(vars2plot):
 
     if p==1 or p==2 or p==3: loc = 'lower left'
-    elif p==4: loc = 'upper right'
+    elif p==4: loc = 'lower left'
     else: loc = 'best'
 
     if var == 'rho':
         ylabel = r'Density Error $\Vert \rho - \rho_{\mathrm{ex}} \Vert_\mathsf{H}$'
-        ylim = (4e-11,9.5e-2)
+        ylim = (1e-10,5e-3)
     elif var == 'q': 
         ylabel = r'Solution Error $\Vert \bm{u} - \bm{u}_{\mathrm{ex}} \Vert_\mathsf{H}$'
-        ylim = (4e-11,9.5e-2)
+        ylim = (1e-9,5e-3)
     elif var == 'e':
         ylabel = r'Internal Energy Error $\Vert e - e_{\mathrm{ex}} \Vert_\mathsf{H}$'
-        ylim = (4e-11,9.5e-2)
+        ylim = (4e-11,5e-3)
     elif var == 'p':
         ylabel = r'Pressure Error $\Vert p - p_{\mathrm{ex}} \Vert_\mathsf{H}$'
-        ylim = (4e-11,9.5e-2)
+        ylim = (1e-10,5e-3)
     elif var == 'entropy':
         ylabel = r'Entropy Error $\Vert \mathcal{S} - \mathcal{S}_{\mathrm{ex}} \Vert_\mathsf{H}$'
-        ylim = (4e-11,9.5e-2)
+        ylim = (1e-10,5e-3)
 
     savefile_var = savefile + '_' + var + '.png'
     plot_conv(dofs, errors[:,:,varidx], labels, 2, 
             title=title, savefile=savefile_var, xlabel=xlabel, ylabel=ylabel, 
-            ylim=ylim,xlim=(68,760), grid=True, legendloc=loc,
+            ylim=ylim,xlim=(50,600), grid=True, legendloc=loc,
             figsize=(6,4), convunc=False, extra_xticks=True, scalar_xlabel=False,
-            serif=True, colors=colors, markers=markers)
+            serif=True, colors=colors, markers=markers, legendsize=11, legendreorder=reorder)
