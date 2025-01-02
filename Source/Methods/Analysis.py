@@ -684,15 +684,17 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
             # Gather results with preserved order
             for future in as_completed(futures):
                 casei, runi = futures[future]  # Retrieve original indices
-                #try:
-                result_dofs, result_errors, nn = future.result()
-                dofs[casei, runi] = result_dofs
-                errors[casei, runi] = result_errors
+                try:
+                    result_dofs, result_errors, nn = future.result()
+                    dofs[casei, runi] = result_dofs
+                    errors[casei, runi] = result_errors
 
-                #except Exception as e:
-                #    print(f"Error in parallel execution for case {casei}, run {runi}: {e}")
-                #    dofs[casei, runi] = np.nan
-                #    errors[casei, runi] = np.nan
+                except Exception as e:
+                    print(f"Error in parallel execution for case {casei}, run {runi}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    dofs[casei, runi] = np.nan
+                    errors[casei, runi] = np.nan
 
                 # Progress update immediately after each task completes
                 print('Convergence Progress: run {0} of {1} complete.'.format(n_toti,n_tot))
