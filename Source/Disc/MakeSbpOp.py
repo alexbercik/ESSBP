@@ -407,33 +407,52 @@ class MakeSbpOp:
             self.H_inv_phys_unkronned = 1/self.H_phys_unkronned
             self.H_phys = fn.repeat_neq_gv(self.H_phys_unkronned,neq)
             self.H_inv_phys = 1/self.H_phys
+
+            if sat_sparse:
+                self.tb_unkronned = sp.lm_to_sp(self.tR.reshape(self.nn,1))
+                self.ta_unkronned = sp.lm_to_sp(self.tL.reshape(self.nn,1))
+                self.tbT_unkronned = sp.lm_to_sp(self.tR.reshape(1,self.nn))
+                self.taT_unkronned = sp.lm_to_sp(self.tL.reshape(1,self.nn))
+                self.tb = sp.kron_neq_lm(self.tb_unkronned, neq)
+                self.ta = sp.kron_neq_lm(self.ta_unkronned, neq)
+                self.tbT = sp.kron_neq_lm(self.tbT_unkronned, neq)
+                self.taT = sp.kron_neq_lm(self.taT_unkronned, neq)
+                E_unkron = sp.lm_to_sp(self.E)
+                self.Esurf = sp.kron_neq_lm(E_unkron, neq)
+            else:
+                self.tb_unkronned = self.tR.reshape(self.nn,1)
+                self.ta_unkronned = self.tL.reshape(self.nn,1)
+                self.tbT_unkronned = self.tb_unkronned.T
+                self.taT_unkronned = self.ta_unkronned.T
+                self.tb = fn.kron_neq_lm(self.tb_unkronned, neq)
+                self.ta = fn.kron_neq_lm(self.ta_unkronned, neq)
+                self.tbT = self.tb.T
+                self.taT = self.ta.T
+                self.Esurf = fn.kron_neq_lm(self.E, neq)
             
-            self.Volx = None # TODO: Copy the volume implementation from 2D
             # remember in 1D metrics = 1
             if sparse:
                 D = sp.lm_to_sp(self.D)
                 Dx = sp.gdiag_lm(mesh.det_jac_inv, D)
                 self.Dx = sp.kron_gm_eye(Dx, neq)
+                if disc_type == 'div':
+                    Volx = sp.prune_gm(sp.subtract_gm_gm(Dx, sp.gdiag_lm(0.5*self.H_inv_phys_unkronned, E_unkron)))
+                    self.Volx = sp.kron_neq_gm(Volx, neq)
+                elif disc_type == 'had':
+                    self.Volx = sp.prune_gm(sp.subtract_gm_gm(sp.scalar_gm(2.,Dx), sp.gdiag_lm(self.H_inv_phys_unkronned, E_unkron))) # NOT Kronned
             else:
                 Dx = fn.gdiag_lm(mesh.det_jac_inv, self.D)
                 self.Dx = fn.kron_neq_gm(Dx, neq)
+                if disc_type == 'div':
+                    Volx = Dx - fn.gdiag_lm(0.5*self.H_inv_phys_unkronned, self.E)
+                    self.Volx = fn.kron_neq_gm(Volx, neq)
+                elif disc_type == 'had':
+                    self.Volx = 2.*Dx - fn.gdiag_lm(self.H_inv_phys_unkronned, self.E) # NOT kronned
             
             if calc_nd_ops:
                 # use unkronned for multi-dim Dx
                 self.Dx_nd = Dx
-            
-            if sat_sparse:
-                self.tb = sp.kron_neq_lm(sp.lm_to_sp(self.tR.reshape(self.nn,1)), neq)
-                self.ta = sp.kron_neq_lm(sp.lm_to_sp(self.tL.reshape(self.nn,1)), neq)
-                self.tbT = sp.kron_neq_lm(sp.lm_to_sp(self.tR.reshape(1,self.nn)), neq)
-                self.taT = sp.kron_neq_lm(sp.lm_to_sp(self.tL.reshape(1,self.nn)), neq)
-                self.Esurf = sp.kron_neq_lm(sp.lm_to_sp(self.E), neq)
-            else:
-                self.tb = fn.kron_neq_lm(self.tR.reshape((self.nn,1)), neq)
-                self.ta = fn.kron_neq_lm(self.tL.reshape((self.nn,1)), neq)
-                self.tbT = self.tb.T
-                self.taT = self.ta.T
-                self.Esurf = fn.kron_neq_lm(self.E, neq)
+
         
         elif mesh.dim == 2:
             

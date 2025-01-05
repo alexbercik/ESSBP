@@ -1596,6 +1596,123 @@ def assemble_saty_2d(mat_list,nelemx,nelemy):
     return mat_glob
 
 @njit
+def Vol_had_Fvol_diff(Vol,q,flux,neq):
+    '''
+    A specialized function to compute the hadamard product between the Vol
+    matrix and the Fvol matrix, then sum the rows. Made for 1d.
+
+    Parameters
+    ----------
+    Vol : global matrix
+        The matrix that represents the volume operator
+    q : numpy array of shape (nen_neq, nelem)
+        The global vector for multiplication
+    flux : function
+        Function to compute the flux between two states
+    neq : int
+        Number of equations in the system
+
+    Returns
+    -------
+    c : numpy array of shape (nen1, nelem)
+        Result of the volume flux differencing
+        note the -ve so that it corresponds to dExdx on the Right Hand Side
+    '''
+    nen_neq, nelem = q.shape
+    nen = nen_neq // neq
+    tol = 1e-13
+
+    # Sanity checks on sizes of arrays - can comment this out later
+    nenb, nenb2, nelemb = Vol.shape
+    assert nelemb == nelem and nenb == nen and nenb2 == nen, \
+        f'Number of elements do not match {nelemb} != {nelem} or {nenb} != {nen} or {nenb2}'
+
+    # Initialize result array
+    c = np.zeros((nen_neq, nelem), dtype=q.dtype)
+    
+    # loop for each element
+    for e in range(nelem):
+        for row in range(nen):
+            qidx = row*neq
+            for col in range(row+1,nen):
+                Vol_val = Vol[row, col, e]
+
+                if abs(Vol_val) > tol:
+
+                    qidxT = col*neq
+                    f = flux(q[qidxT:qidxT+neq, e], q[qidx:qidx+neq, e])
+
+                    # add the result of the hadamard product
+                    c[qidx:qidx+neq, e] -= f * Vol_val
+
+                    # Volx is skew-symmetric with respect to H, so reuse the flux calculation
+                    c[qidxT:qidxT+neq, e] -= f * Vol[col, row, e]
+    
+    return c
+
+@njit
+def Sat1d_had_Fsat_diff_periodic(ta,tb,q,flux,neq):
+    '''
+    A specialized function to compute the hadamard product between the Vol
+    matrix and the Fvol matrix, then sum the rows. Made for 1d.
+
+    Parameters
+    ----------
+    ta, tb : local matrices
+        The matrices that represent the boundary operators
+    q : numpy array of shape (nen_neq, nelem)
+        The global vector for multiplication
+    flux : function
+        Function to compute the flux between two states
+    neq : int
+        Number of equations in the system
+
+    Returns
+    -------
+    c : numpy array of shape (nen1, nelem)
+        Result of the volume flux differencing
+        note the -ve so that it corresponds to dExdx + dEydy on the Right Hand Side
+    '''
+    nen_neq, nelem = q.shape
+    nen = nen_neq // neq
+    tol = 1e-13
+
+    # Initialize result array
+    c = np.zeros((nen_neq, nelem), dtype=q.dtype)
+    
+    # loop for each element
+    for e in range(nelem): # will ignore right-most interface by periodic BC (same as leftmost)
+        # here think of e as either the looping over elements and considering the left interface,
+        # or looping over each interface e and stopping before hitting the rightmost 
+        qL = q[:,e-1]
+        qR = q[:,e]
+        eb = e-1
+
+        for row in range(nen):
+            qidx = row*neq
+
+            for col in range(nen):
+                ta_val = ta[col, row]
+                tb_val = tb[row, col]
+                flux_used = False
+
+                if abs(ta_val) > tol:
+                    flux_used = True
+                    qidxT = col*neq
+                    
+                    f = flux(qL[qidx:qidx+neq], qR[qidxT:qidxT+neq])
+                    c[qidxT:qidxT+neq, e] += f * ta_val
+                
+                if abs(tb_val) > tol:
+                    if not flux_used:
+                        qidxT = col*neq
+                        f = flux(qL[qidx:qidx+neq], qR[qidxT:qidxT+neq])
+
+                    c[qidx:qidx+neq, eb] -= f * tb_val
+    
+    return c
+
+@njit
 def VolxVoly_had_Fvol_diff(Volx,Voly,q,flux,neq):
     '''
     A specialized function to compute the hadamard product between the Volx and Voly
@@ -1699,19 +1816,6 @@ def Sat2d_had_Fsat_diff_periodic(tax,tay,tbx,tby,q,flux,neq):
     nen = nen_neq // neq
     tol = 1e-13
 
-    # Sanity checks on sizes of arrays - can comment this out later
-    nenb, nenb2, nelemb = tax.shape
-    nenc, nenc2, nelemc = tay.shape
-    nend, nend2, nelemd = tbx.shape
-    nene, nene2, neleme = tby.shape
-    assert nelemb == nelem and nelemc == nelem and nelemd == nelem and neleme == nelem,\
-        f'Number of elements do not match {nelemb} != {nelem} or {nelemc} or {nelem} or {nelemd} or {nelem} or {neleme} or {nelem}'
-    assert nenb == nen and nenc == nen and nend == nen and nene == nen,\
-        f'Number of nodes do not match {nenb} != {nen} or {nenc} or {nen} or {nend} or {nen} or {nene} or {nen}'
-    assert nenb2 == nen and nenc2 == nen and nend2 == nen and nene2 == nen, \
-        f'Number of nodes do not match {nenb2} != {nen} or {nenc2} or {nen} or {nend2} or {nen} or {nene2} or {nen}'
-    
-
     # Initialize result array
     c = np.zeros((nen_neq, nelem), dtype=q.dtype)
     
@@ -1719,15 +1823,9 @@ def Sat2d_had_Fsat_diff_periodic(tax,tay,tbx,tby,q,flux,neq):
     for e in range(nelem): # will ignore right-most interface by periodic BC (same as leftmost)
         # here think of e as either the looping over elements and considering the left interface,
         # or looping over each interface e and stopping before hitting the rightmost 
-        if e == 0:
-            # periodic BC: leftmost interface is the same as rightmost
-            qL = q[:,-1]
-            qR = q[:,0]
-            eb = -1
-        else:
-            qL = q[:,e-1]
-            qR = q[:,e]
-            eb = e-1
+        qL = q[:,e-1]
+        qR = q[:,e]
+        eb = e-1
 
         for row in range(nen):
             qidx = row*neq

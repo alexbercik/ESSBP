@@ -298,10 +298,12 @@ class SatDer1:
     ''' Hadamard Fluxes ''' 
     ##########################################################################
     
-    def base_had_1d(self, q, Fvol, q_bdyL=None, q_bdyR=None):
+    #def base_had_1d(self, q, Fvol, q_bdyL=None, q_bdyR=None):
+    def base_had_1d(self, q, q_bdyL=None, q_bdyR=None):
         '''
         The base conservative flux in Hadamard Form. Then add dissipative term.
         '''
+        """
         # Here we work in terms of facets, starting from the left-most facet.
         # This is NOT the same as elements. i.e. qR is to the right of the
         # facet and qL is to the left of the facet, opposite of element-wise.
@@ -329,8 +331,15 @@ class SatDer1:
             surfb = self.lm_gm_had_diff(self.tb,Fsurf[:,:,1:])
         
         diss = self.coeff*self.diss(self.lm_gv(self.tRT,qL), self.lm_gv(self.tLT,qR))
-        
         sat = vol + surfa - surfb - diss 
+        """
+        assert ((q_bdyL is None) and (q_bdyR is None)), 'base_had_1d SAT: Only periodic boundary conditions are implemented.'
+        qa = self.lm_gv(self.tLT,q)
+        qb = self.lm_gv(self.tRT,q)
+        qL = fn.pad_1dL(qb, qb[:,-1])
+        qR = fn.pad_1dR(qa, qa[:,0])
+
+        sat = self.Fsat_diff_periodic(q) - self.coeff*self.diss(qL, qR)
         return sat
     
     def base_had_2d(self, q, idx, q_bdyL=None, q_bdyR=None):

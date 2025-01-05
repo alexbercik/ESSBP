@@ -691,7 +691,7 @@ class PdeSolver:
         
         
     def calc_LHS(self, q=None, t=0., exact_dfdq=True, step=1.0e-4, istep=1.0e-15, 
-                 finite_diff=False, print_nothing=False):
+                 finite_diff=False, print_nothing=False, print_error=False):
         '''
         Either get the exact LHS operator on q if the problem is linear, or the
         linearization (LHS) of it at a particular state q. Either done exactly with
@@ -750,8 +750,9 @@ class PdeSolver:
                             qi = self.dqdt(np.complex128(q)+ei, t).flatten('F')
                             idx = np.where(np.imag(ei.flatten('F'))>istep/10)[0][0]
                             A[:,idx] = np.imag(qi)/istep
-                except:  
+                except Exception as e:  
                     if not print_nothing: print('WARNING: complex step returned errors. Using finite difference.') 
+                    if print_error: print(e)
                     finite_diff = True
             if finite_diff:        
                 for i in range(nen):
@@ -771,7 +772,7 @@ class PdeSolver:
     def check_eigs(self, q=None, plot_eigs=True, returnA=False, returneigs=False, plot_maxvec=False, 
                    exact_dfdq=False, finite_diff=False, step=5.0e-6, istep=1e-15, tol=1.0e-10, 
                    savefile=None, print_nothing=False, colour_by_k=False,
-                   ymin=None, ymax=None, xmin=None, xmax=None, 
+                   ymin=None, ymax=None, xmin=None, xmax=None, print_error=False,
                    time=None, display_time=False, display_maxreal=False,
                    title=None, save_format='png', dpi=600, overwrite=False, **kargs):
         '''
@@ -810,7 +811,8 @@ class PdeSolver:
         '''
         if not print_nothing: print('Checking Eigenvalues of System LHS Operator')
         A = self.calc_LHS(q=q, exact_dfdq=exact_dfdq, step=step, istep=istep, 
-                          finite_diff=finite_diff, print_nothing=print_nothing)
+                          finite_diff=finite_diff, print_nothing=print_nothing,
+                          print_error=print_error)
         nen1, nen2 = A.shape
         if not print_nothing: 
             if nen1 >= 5000:
