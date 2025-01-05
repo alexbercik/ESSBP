@@ -900,9 +900,9 @@ def calc_conv_rate(dof_vec, err_vec, dim, n_points=None,
     return conv_vec, avg_conv
 
 def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
-              extra_marker=None, skipfit=None, skip=None, ylabel=None, xlabel=None,
+              extra_marker=None, skipfit=None, skip=None, ylabel=None, xlabel=None, title_size=16,
               ylim=(None,None),xlim=(None,None),grid=False,legendloc=None,convunc=True,
-              figsize=(6,4), extra_xticks=False, scalar_xlabel=False, serif=False,
+              figsize=(6,4), tick_size=12, extra_xticks=False, scalar_xlabel=False, serif=False,
               colors=None, markers=None, linestyles=None, legendsize=12, legendreorder=None):
     '''
     Parameters
@@ -967,8 +967,8 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
         if dim == 1: xlabel = r"Degrees of Freedom"
         elif dim == 2: xlabel = r"$\sqrt{} $ Degrees of Freedom"
         elif dim == 3: xlabel = r"$\sqrt[3]{}$ Degrees of Freedom"      
-    plt.ylabel(ylabel,fontsize=16)
-    plt.xlabel(xlabel,fontsize=16)
+    plt.ylabel(ylabel,fontsize=title_size)
+    plt.xlabel(xlabel,fontsize=title_size)
     
     # Do a curve fit to find the slope on log-log plot (order of convergence)
     def fit_func(x, a, b): 
@@ -1093,6 +1093,7 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
             if label < xmax and label > xmin:
                  ax.text(label, label_ypos, extra_labels[label], va='bottom', ha='center')
 
+    ax.tick_params(axis='both', labelsize=tick_size) 
     plt.tight_layout()
     if savefile is not None:
         plt.savefig(savefile,dpi=600)
@@ -1712,7 +1713,9 @@ def read_from_diablo(filename=None):
 def plot_eigs(A, plot_hull=True, plot_individual_eigs=False, labels=None, savefile=None,
               save_format='png', dpi=600, line_width=1.5, equal_axes=False, 
               title_size=12, legend_size=12, markersize=16, markeredge=2,
-              colors=None, markers=None, linestyles=None):
+              tick_size=12,
+              colors=None, markers=None, linestyles=None, legend_loc='best', 
+              legend_anchor=None, legend_anchor_type=None, legend_alpha=None):
     if plot_hull:
         from scipy.spatial import ConvexHull
 
@@ -1809,6 +1812,7 @@ def plot_eigs(A, plot_hull=True, plot_individual_eigs=False, labels=None, savefi
     plt.axvline(0, color='black', linewidth=0.5)
     plt.xlabel('Real Part', fontsize=title_size)
     plt.ylabel('Imaginary Part', fontsize=title_size)
+    plt.gca().tick_params(axis='both', labelsize=tick_size) 
     plt.grid(True)
     
     # Fix axes ratio if equal_axes is True
@@ -1818,11 +1822,31 @@ def plot_eigs(A, plot_hull=True, plot_individual_eigs=False, labels=None, savefi
 
     # Show legend only if A is a list
     if isinstance(A, list):
-        plt.legend(fontsize=legend_size,loc='upper left')
+        # Create a blended transform
+        from matplotlib.transforms import blended_transform_factory
+        if legend_anchor_type == 'data' or legend_anchor_type == ('data','data'):
+            bbox_transform = plt.gca().transData
+        elif legend_anchor_type == 'fig' or legend_anchor_type == ('fig','fig'):
+            bbox_transform = plt.gcf().transFigure
+        elif legend_anchor_type == ('data','fig'):
+            bbox_transform = blended_transform_factory(plt.gca().transData, plt.gcf().transFigure)
+        elif legend_anchor_type == ('fig','data'):
+            bbox_transform = blended_transform_factory(plt.gcf().transFigure, plt.gca().transData)
+        elif legend_anchor_type == None:
+            bbox_transform = plt.gca().transData
+        else:
+            print("Invalid legend_anchor_type. Try of the format ('data','fig'). Using default 'data' type.")
+            bbox_transform = plt.gca().transData
+
+        legend = plt.legend(fontsize=legend_size,loc=legend_loc, 
+                   bbox_to_anchor=legend_anchor, bbox_transform=bbox_transform)
+        
+        if legend_alpha is not None:
+            legend.get_frame().set_alpha(legend_alpha)
 
     # Save the plot if a savefile is provided
     if savefile is not None:
-        plt.savefig(savefile, format=save_format, dpi=dpi)
+        plt.savefig(savefile, format=save_format, dpi=dpi, bbox_inches="tight")
         print(f"Plot saved to {savefile}")
     else:
         plt.show()

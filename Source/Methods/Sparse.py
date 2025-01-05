@@ -790,6 +790,29 @@ def subtract_gm_gm(csr_list1, csr_list2):
     return c
 
 @njit
+def subtract_gm_lm(csr_list1, csr):
+    '''
+    Perform global-local matrix subtraction using a list of CSR matrices.
+
+    Parameters
+    ----------
+    csr_list : List of CSR matrices
+        Each element in the list is a tuple (data, indices, indptr) representing a sparse matrix in CSR format
+    csr : CSR matrix
+
+    '''
+    nelem = len(csr_list1)  # Number of elements (same as the third dimension of the original tensor)
+
+    assert csr_list1[0].nrows == csr.nrows, f"Dimensions do not match {csr_list1[0].nrows} != {csr.nrows}"
+    
+    # Initialize result array
+    c = [] # numba can not pickle jitclass objects
+    # Perform sparse matrix-vector multiplication for each element
+    for e in range(nelem):
+        c.append(subtract_lm_lm(csr_list1[e], csr))
+    return c
+
+@njit
 def scalar_gm(val, csr_list):
     '''
     Multiply a global matrix by a scalar.
@@ -807,6 +830,132 @@ def scalar_gm(val, csr_list):
         gm_list.append(lmCSR(val*csr.data, csr.indices, csr.indptr))
     
     return gm_list
+
+@njit
+def Vol_had_Fvol_diff(Vol_list,q,flux,neq):
+    '''
+    A specialized function to compute the hadamard product between the sparse Vol
+    matrix and the Fvol matrix, then sum the rows. Made for 1d.
+
+    Parameters
+    ----------
+    Vol_list : List of CSR matrices
+        Represents the volume operators for each element
+    q : numpy array of shape (nen_neq, nelem)
+        The global vector for multiplication
+    flux : function
+        Function to compute the flux between two states
+    neq : int
+        Number of equations in the system
+
+    Returns
+    -------
+    c : numpy array of shape (nrows, nelem)
+        Result of the volume flux differencing
+        note the -ve so that it corresponds to dExdx on the Right Hand Side
+    '''
+    nen_neq, nelem = q.shape
+    nen = nen_neq // neq
+
+    # Initialize result array
+    c = np.zeros((nen_neq, nelem), dtype=q.dtype)
+    
+    # loop for each element
+    for e in range(nelem):
+        Vol = Vol_list[e]
+        
+        for row in range(nen):
+            qidx = row*neq
+            
+            for volidx in range(Vol.indptr[row], Vol.indptr[row + 1]):
+                col = Vol.indices[volidx]
+                if col <= row: continue  # Skip lower triangle and diagonal
+
+                qidxT = col*neq
+                f = flux(q[qidxT:qidxT+neq, e], q[qidx:qidx+neq, e])
+
+                # add the result of the hadamard product
+                c[qidx:qidx+neq, e] -= f * Vol.data[volidx]
+
+                # Vol is skew-symmetric with respect to H, so reuse the flux calculation
+                for volidxT in range(Vol.indptr[col], Vol.indptr[col + 1]):
+                    if Vol.indices[volidxT] == row:
+                        # add the result of the hadamard product to the transpose
+                        c[qidxT:qidxT+neq, e] -= f * Vol.data[volidxT]
+                        break
+
+    return c
+
+@njit
+def Sat1d_had_Fsat_diff_periodic(taT,tb,q,flux,neq):
+    '''
+    A specialized function to compute the hadamard product between the sparse Vol
+    matrix and the Fvol matrix, then sum the rows. Made for 1d, periodic bc.
+
+    Parameters
+    ----------
+    taT, tb : CSR matrices
+        Boundary operator for a SAT interface (since 1D, the same in each element)
+    q : numpy array of shape (nen_neq, nelem)
+        The global vector for multiplication, should be along a single row or column of elements
+    flux : function
+        Function to compute the flux between two states
+    neq : int
+        Number of equations in the system
+
+    Returns
+    -------
+    c : numpy array of shape (nrows, nelem)
+        Result of the volume flux differencing
+        note the -ve so that it corresponds to dExdx on the Right Hand Side
+    '''
+    nen_neq, nelem = q.shape
+    nen = nen_neq // neq
+
+    # Initialize result array
+    c = np.zeros((nen_neq, nelem), dtype=q.dtype)
+    maxcols = max(taT.ncols, tb.ncols)
+    
+    # loop for each element
+    for e in range(nelem): # will ignore right-most interface by periodic BC (same as leftmost)
+        # here think of e as either the looping over elements and considering the left interface,
+        # or looping over each interface e and stopping before hitting the rightmost 
+        qL = q[:,e-1]
+        qR = q[:,e]
+        eb = e-1
+
+        for row in range(nen):
+            qidx = row*neq
+            usedcols = np.zeros(maxcols, dtype=np.bool_)
+            
+            for taTidx in range(taT.indptr[row], taT.indptr[row + 1]):
+                col = taT.indices[taTidx]
+                usedcols[col] = True
+                qidxT = col*neq
+
+                f = flux(qL[qidx:qidx+neq], qR[qidxT:qidxT+neq])
+
+                # taT_data: add the result of the hadamard product
+                c[qidxT:qidxT+neq, e] += f * taT.data[taTidx]
+
+                # tbx_data: reuse the flux calculation if possible
+                for tbidx in range(tb.indptr[row], tb.indptr[row + 1]):
+                    if tb.indices[tbidx] == col:
+                        c[qidx:qidx+neq, eb] -= f * tb.data[tbidx]
+                        break
+
+            for tbidx in range(tb.indptr[row], tb.indptr[row + 1]):
+                col = tb.indices[tbidx]
+                if usedcols[col]: continue # Skip if this column was already done
+                usedcols[col] = True
+                qidxT = col*neq
+
+                f = flux(qL[qidx:qidx+neq], qR[qidxT:qidxT+neq])
+
+                # tbx_data: add the result of the hadamard product
+                c[qidx:qidx+neq, eb] -= f * tb.data[tbidx]
+            
+    return c
 
 @njit
 def VolxVoly_had_Fvol_diff(Volx_list,Voly_list,q,flux,neq):
@@ -943,15 +1092,9 @@ def Sat2d_had_Fsat_diff_periodic(taTx_list,taTy_list,tbx_list,tby_list,q,flux,ne
     for e in range(nelem): # will ignore right-most interface by periodic BC (same as leftmost)
         # here think of e as either the looping over elements and considering the left interface,
         # or looping over each interface e and stopping before hitting the rightmost 
-        if e == 0:
-            # periodic BC: leftmost interface is the same as rightmost
-            qL = q[:,-1]
-            qR = q[:,0]
-            eb = -1
-        else:
-            qL = q[:,e-1]
-            qR = q[:,e]
-            eb = e-1
+        qL = q[:,e-1]
+        qR = q[:,e]
+        eb = e-1
         taTx, taTy = taTx_list[e], taTy_list[e]
         tbx, tby = tbx_list[eb], tby_list[eb]
         maxcols = max(taTx.ncols, taTy.ncols, tbx.ncols, tby.ncols)
@@ -1562,7 +1705,7 @@ def build_F_sca(q1, q2, flux, sparsity):
         F.append(lmCSR(new_data, indices, indptr))
     return F
 
-@njit 
+#@njit 
 def build_F_vol_sys(neq, q, flux, sparsity_unkronned, sparsity):
     ''' Builds a sparsified Flux differencing matrix (used for Hadamard form) given a 
     solution vector q, the number of equations per node, a 2-point flux function, and 

@@ -136,17 +136,17 @@ class Sat(SatDer1, SatDer2):
             self.lm_ldiag = sp.lm_ldiag
             self.gdiag_gm = sp.gdiag_gm
             self.prune_gm = sp.prune_gm
-            if self.dim != 2: # not needed for 2D, removed this
-                self.lm_gm_had_diff = sp.lm_gm_had_diff
-                self.lmT_gm_had_diff = sp.lmT_gm_had_diff
-                self.gm_gm_had_diff = sp.gm_gm_had_diff
-                self.gmT_gm_had_diff = sp.gmT_gm_had_diff
-                if self.solver_sparse:
-                    self.lm_Fvol_had_diff = sp.lm_gm_had_diff
-                    self.gm_Fvol_had_diff = sp.gm_gm_had_diff
-                else:  
-                    self.lm_Fvol_had_diff = sp.lm_dgm_had_diff
-                    self.gm_Fvol_had_diff = sp.gm_dgm_had_diff
+            #if self.dim != 2: # not needed for 2D, removed this
+            #    self.lm_gm_had_diff = sp.lm_gm_had_diff
+            #    self.lmT_gm_had_diff = sp.lmT_gm_had_diff
+            #    self.gm_gm_had_diff = sp.gm_gm_had_diff
+            #    self.gmT_gm_had_diff = sp.gmT_gm_had_diff
+            #    if self.solver_sparse:
+            #        self.lm_Fvol_had_diff = sp.lm_gm_had_diff
+            #        self.gm_Fvol_had_diff = sp.gm_gm_had_diff
+            #    else:  
+            #        self.lm_Fvol_had_diff = sp.lm_dgm_had_diff
+            #        self.gm_Fvol_had_diff = sp.gm_dgm_had_diff
             #self.lm_dgm = sp.lm_dgm
         else:
             self.lm_lv = fn.lm_lv
@@ -159,13 +159,13 @@ class Sat(SatDer1, SatDer2):
             self.lm_ldiag = fn.lm_ldiag
             self.gdiag_gm = fn.gdiag_gm
             self.prune_gm = lambda gm: gm
-            if self.dim != 2: # not needed for 2D, removed this
-                self.lm_gm_had_diff = fn.lm_gm_had_diff
-                self.lm_gmT_had_diff = staticmethod(lambda lm,gm: fn.lm_gm_had_diff(lm,np.transpose(gm,(1,0,2))))
-                self.gm_gm_had_diff = fn.gm_gm_had_diff
-                self.gm_gmT_had_diff = staticmethod(lambda gm,gm2: fn.gm_gm_had_diff(gm,np.transpose(gm2,(1,0,2))))
-                self.lm_Fvol_had_diff = fn.lm_gm_had_diff
-                self.gm_Fvol_had_diff = fn.gm_gm_had_diff
+            #if self.dim != 2: # not needed for 2D, removed this
+            #    self.lm_gm_had_diff = fn.lm_gm_had_diff
+            #    self.lm_gmT_had_diff = staticmethod(lambda lm,gm: fn.lm_gm_had_diff(lm,np.transpose(gm,(1,0,2))))
+            #    self.gm_gm_had_diff = fn.gm_gm_had_diff
+            #    self.gm_gmT_had_diff = staticmethod(lambda gm,gm2: fn.gm_gm_had_diff(gm,np.transpose(gm2,(1,0,2))))
+            #    self.lm_Fvol_had_diff = fn.lm_gm_had_diff
+            #    self.gm_Fvol_had_diff = fn.gm_gm_had_diff
             #self.lm_dgm = fn.lm_gm
         
         if self.dim == 1:
@@ -184,35 +184,45 @@ class Sat(SatDer1, SatDer2):
             # NOTE: metrics and bdy_metrics = 1 for 1D
             self.calc_had_flux = solver.calc_had_flux
 
-            if self.disc_type == 'had':
-                if self.neq_node == 1:
-                    if self.sparse:
-                        self.build_F = staticmethod(lambda q1, q2: sp.build_F_sca(q1, q2, self.calc_had_flux, self.sparsity))
-                    else:
-                        self.build_F = staticmethod(lambda q1, q2: fn.build_F_sca(q1, q2, self.calc_had_flux))
-                else:
-                    if self.sparse:
-                        self.build_F = staticmethod(lambda q1, q2: sp.build_F_sys(self.neq_node, q1, q2, self.calc_had_flux, 
-                                                                                    self.sparsity_unkronned, self.sparsity))
-                    else:
-                        self.build_F = staticmethod(lambda q1, q2: fn.build_F_sys(self.neq_node, q1, q2, self.calc_had_flux))
-                    
+            #if self.disc_type == 'had':
+            #    if self.neq_node == 1:
+            #        if self.sparse:
+            #            self.build_F = staticmethod(lambda q1, q2: sp.build_F_sca(q1, q2, self.calc_had_flux, self.sparsity))
+            #        else:
+            #            self.build_F = staticmethod(lambda q1, q2: fn.build_F_sca(q1, q2, self.calc_had_flux))
+            #    else:
+            #        if self.sparse:
+            #            self.build_F = staticmethod(lambda q1, q2: sp.build_F_sys(self.neq_node, q1, q2, self.calc_had_flux, 
+            #                                                                        self.sparsity_unkronned, self.sparsity))
+            #        else:
+            #            self.build_F = staticmethod(lambda q1, q2: fn.build_F_sys(self.neq_node, q1, q2, self.calc_had_flux))
+            
             ''' save useful matrices so as not to calculate on each loop '''
             self.Esurf = solver.sbp.Esurf
-            self.ta = self.lm_lm(self.tL, self.tRT)
-            self.tb = self.lm_lm(self.tR, self.tLT)
+            if self.disc_type == 'div':
+                self.ta = self.lm_lm(self.tL, self.tRT)
+                self.tb = self.lm_lm(self.tR, self.tLT)
+            elif self.disc_type == 'had':
+                self.ta = self.lm_lm(solver.sbp.ta_unkronned, solver.sbp.tbT_unkronned)
+                self.tb = self.lm_lm(solver.sbp.tb_unkronned, solver.sbp.taT_unkronned)
             # NOTE: metrics and bdy_metrics = 1 for 1D
 
             if self.sparse and (self.disc_type == 'had'):
-                nrows = self.nen*self.neq_node
-                self.taT = sp.lm_to_lmT(self.ta,nrows,nrows)
-                taphysT_pad = [self.taT]*self.nelem
-                taphysT_pad.append(sp.lm_to_lmT(self.tb,nrows,nrows))
-                tbphys_pad = [self.tb]*self.nelem
-                tbphys_pad.insert(0,self.ta)
-                self.sparsity = sp.set_spgm_union_sparsity([taphysT_pad,tbphys_pad])
-                if self.neq_node > 1:
-                    self.sparsity_unkronned = sp.unkron_neq_sparsity(self.sparsity, self.neq_node)
+                self.taT = sp.lm_to_lmT(self.ta,self.nen,self.nen)
+                self.Fsat_diff_periodic = lambda q: sp.Sat1d_had_Fsat_diff_periodic(self.taT, self.tb, 
+                                                                                    q, self.calc_had_flux, self.neq_node)
+            elif self.disc_type == 'had':
+                self.Fsat_diff_periodic = lambda q: fn.Sat1d_had_Fsat_diff_periodic(self.ta, self.tb,
+                                                                                    q, self.calc_had_flux, self.neq_node)
+
+
+                #taphysT_pad = [self.taT]*self.nelem
+                #taphysT_pad.append(sp.lm_to_lmT(self.tb,nrows,nrows))
+                #tbphys_pad = [self.tb]*self.nelem
+                #tbphys_pad.insert(0,self.ta)
+                #self.sparsity = sp.set_spgm_union_sparsity([taphysT_pad,tbphys_pad])
+                #if self.neq_node > 1:
+                #    self.sparsity_unkronned = sp.unkron_neq_sparsity(self.sparsity, self.neq_node)
             
         elif self.dim == 2:
             
