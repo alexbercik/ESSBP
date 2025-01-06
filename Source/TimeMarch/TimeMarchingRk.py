@@ -51,6 +51,7 @@ class TimeMarchingRk:
         
         # Congrats you reached the end
         i += 1
+        k1 = self.dqdt(q, t)
         self.final_common(q, q_sol, i, n_ts, dt, k1)
         return self.return_q_sol(q,q_sol,i,dt,k1)
 
@@ -71,6 +72,7 @@ class TimeMarchingRk:
 
         # Congrats you reached the end
         i += 1
+        k1 = self.dqdt(q, t)
         self.final_common(q, q_sol, i, n_ts, dt, dqdt)
         return self.return_q_sol(q,q_sol,i,dt,dqdt)
     

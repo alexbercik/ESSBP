@@ -167,9 +167,9 @@ class ADiss():
                 elif self.jac_type == 'matrixmatrix' or self.jac_type == 'matmat':
                     self.dissipation = self.dissipation_entB_matrixmatrix
                 else:
-                    print("WARNING: jac method not understood for type='entB' dissipation. Defaulting to jac_type = 'scalarscalar'.")
+                    print("WARNING: jac method not understood for type='entB' dissipation. Defaulting to jac_type = 'scalarmatrix'.")
                     self.jac_type = 'scalarscalar'
-                    self.dissipation = self.dissipation_entB_scalarscalar
+                    self.dissipation = self.dissipation_entB_scalarmatrix
             
             elif self.type == 'dcp' or self.type == 'w' or self.type == 'dcp2':
                 if self.jac_type == 'scalar' or self.jac_type == 'sca':
@@ -189,9 +189,9 @@ class ADiss():
                 elif self.jac_type == 'matrixmatrix' or self.jac_type == 'matmat':
                     self.dissipation = self.dissipation_entdcp_matrixmatrix
                 else:
-                    print("WARNING: jac method not understood for type='entDCP' or type='entW' dissipation. Defaulting to jac_type = 'scalarscalar'.")
+                    print("WARNING: jac method not understood for type='entDCP' or type='entW' dissipation. Defaulting to jac_type = 'scalarmatrix'.")
                     self.jac_type = 'scalarscalar'
-                    self.dissipation = self.dissipation_entdcp_scalarscalar
+                    self.dissipation = self.dissipation_entdcp_scalarmatrix
 
             elif self.type == 'upwind' or self.type == 'upwindlgl':
                 if self.fluxvec.lower() == 'lf':
