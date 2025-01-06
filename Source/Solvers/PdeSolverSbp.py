@@ -27,6 +27,7 @@ class PdeSolverSbp(PdeSolver):
         self.energy_der = self.sbp_energy_der
         self.conservation_der = self.sbp_conservation_der
         self.entropy = self.sbp_entropy
+        self.entropy_der = self.sbp_entropy_der
         self.enstrophy = self.sbp_enstrophy
         
         # Construct SBP operators
@@ -161,36 +162,6 @@ class PdeSolverSbp(PdeSolver):
         else:
             self.gm_gv = staticmethod(fn.gm_gv)
             self.gm_gm_had_diff = staticmethod(fn.gm_gm_had_diff)
-
-        # TODO: Clean these up by repeating for 1D what I did for 2D
-        if self.sparse and (self.disc_type == 'had'):
-            assert self.sat_sparse, 'sat_sparse=True must be True if sparse=True and disc_type=had, at least for now.'
-            if self.dim == 1:
-                self.vol_sparsity = sp.set_spgm_union_sparsity([self.Dx, [self.sat.Esurf]*self.nelem])
-                if self.neq_node == 1:
-                    self.build_F_vol = staticmethod(lambda q: sp.build_F_vol_sca(q, self.calc_had_flux, self.vol_sparsity))
-                else:
-                    self.vol_sparsity_unkronned = sp.unkron_neq_sparsity(self.vol_sparsity, self.neq_node) 
-                    self.build_F_vol = staticmethod(lambda q: sp.build_F_vol_sys(self.neq_node, q, self.calc_had_flux,
-                                                                                 self.vol_sparsity_unkronned, self.vol_sparsity))
-            elif self.dim == 2:
-                pass
-
-            elif self.dim == 3:
-                raise Exception('Not coded up yet')
-            
-        if (not self.sparse) and (self.disc_type == 'had'):
-            if self.dim == 1:
-                if self.neq_node == 1:
-                    self.build_F_vol = staticmethod(lambda q: fn.build_F_vol_sca(q, self.calc_had_flux))
-                else:
-                    self.build_F_vol = staticmethod(lambda q: fn.build_F_vol_sys(self.neq_node, q, self.calc_had_flux))
-            
-            elif self.dim ==2:
-                pass
-            
-            elif self.dim ==3:
-                raise Exception('Not coded up yet')
             
         # originally was just using this for if diffeq.use_diffeq_dExdx, 
         # but it is also useful for diffeq.calc_breaking_times
@@ -282,15 +253,22 @@ class PdeSolverSbp(PdeSolver):
         
     def dqdt_1d_had(self, q, t):
         ''' the main dqdt function for hadamard form in 1D '''
-        Fvol = self.build_F_vol(q)
-        dExdx = 2*self.gm_gm_had_diff(self.Dx, Fvol)
+        #Fvol = self.build_F_vol(q)
+        #dExdx = 2*self.gm_gm_had_diff(self.Dx, Fvol)
+        #dqdt = - dExdx
+        if self.sparse:
+            dqdt = sp.Vol_had_Fvol_diff(self.Volx,q,self.calc_had_flux,self.neq_node)
+        else:
+            dqdt = fn.Vol_had_Fvol_diff(self.Volx,q,self.calc_had_flux,self.neq_node)
+            #dqdt = - dExdx
         
         if self.periodic:
-            sat = self.sat.calc(q,Fvol)
+            sat = self.sat.calc(q)
+            #sat = self.sat.calc(q,Fvol)
         else:
             raise Exception('Not coded up yet')
         
-        dqdt = - dExdx + (self.H_inv_phys * sat) + self.diffeq.calcG(q,t) + self.dissipation(q)
+        dqdt += (self.H_inv_phys * sat) + self.diffeq.calcG(q,t) + self.dissipation(q)
         return dqdt
         
     def dqdt_2d_had(self, q, t):
@@ -434,7 +412,7 @@ class PdeSolverSbp(PdeSolver):
         else: raise Exception('Something went wrong, dqdt.ndim = ',dqdt.ndim)
         return cons
     
-    def sbp_energy_der(self,q,dqdt,nen=None):
+    def sbp_energy_der(self,q,dqdt):
         ''' compute the derivative of the global SBP energy . '''
         if q.ndim == 2: energy = np.tensordot(q, self.H_phys * dqdt)
         elif q.ndim == 3: energy = np.sum(q * self.H_phys[:,:,np.newaxis] * dqdt, axis=(0,1))
@@ -448,6 +426,14 @@ class PdeSolverSbp(PdeSolver):
         elif q.ndim == 3: ent = np.sum(self.H_phys_unkronned[:,:,np.newaxis] * s, axis=(0,1))
         else: raise Exception('Something went wrong, q.ndim = ',q.ndim)
         return ent
+    
+    def sbp_entropy_der(self,q,dqdt):
+        ''' compute the derivative of the global SBP entropy . '''
+        w = self.diffeq.entropy_var(q)
+        if q.ndim == 2: entropy = np.tensordot(w, self.H_phys * dqdt)
+        elif q.ndim == 3: entropy = np.sum(w * self.H_phys[:,:,np.newaxis] * dqdt, axis=(0,1))
+        else: raise Exception('Something went wrong, q.ndim = ',q.ndim)
+        return entropy
     
     def sbp_kinetic_energy(self,q):
         ''' compute the global SBP kinetic energy of global solution vector q '''

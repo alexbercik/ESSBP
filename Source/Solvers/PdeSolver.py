@@ -453,6 +453,8 @@ class PdeSolver:
                 cons_obj[i] = self.conservation(q)
             elif cons_obj_name_i == 'energy_der':
                 cons_obj[i] = self.energy_der(q,dqdt)
+            elif cons_obj_name_i == 'entropy_der':
+                cons_obj[i] = self.entropy_der(q,dqdt)
             elif cons_obj_name_i == 'conservation_der':
                 cons_obj[i] = self.conservation_der(dqdt)
             elif cons_obj_name_i == 'kinetic_energy':
@@ -974,6 +976,102 @@ class PdeSolver:
             return A
         elif returneigs:
             return eigs
+        
+    # Define a function to compute eigenvalues and eigenvectors, and plot the results
+    def plot_pos_eigvecs(self, matrix=None, plot_type="real", threshold=1e-5, include_pairs=True):
+        assert self.dim==1, 'ERROR: Only implemented for 1D problems'        
+        
+        if matrix is None:
+            matrix = self.calc_LHS()
+            
+        # Compute eigenvalues and eigenvectors
+        eigenvalues, eigenvectors = np.linalg.eig(matrix)
+
+        # Organize eigenvalues and eigenvectors by descending real part of eigenvalues
+        sorted_indices = np.argsort(-np.real(eigenvalues))
+        eigenvalues = eigenvalues[sorted_indices]
+        eigenvectors = eigenvectors[:, sorted_indices]
+
+        # Track paired eigenvalues
+        processed_indices = set()
+
+        # Iterate over eigenvalues and eigenvectors
+        for idx, eigenvalue in enumerate(eigenvalues):
+            if idx in processed_indices:
+                continue
+
+            if np.real(eigenvalue) > threshold:  # Check for positive real part above threshold
+                # Normalize the eigenvector
+                eigenvector = eigenvectors[:, idx]
+                eigenvector = eigenvector / np.linalg.norm(eigenvector)
+
+                # Separate components of the eigenvector based on plot type
+                if plot_type == "real":
+                    var1 = eigenvector[::3].real
+                    var2 = eigenvector[1::3].real
+                    var3 = eigenvector[2::3].real
+                    ylabel = "Real Part"
+                elif plot_type == "imaginary":
+                    var1 = eigenvector[::3].imag
+                    var2 = eigenvector[1::3].imag
+                    var3 = eigenvector[2::3].imag
+                    ylabel = "Imaginary Part"
+                elif plot_type == "power":
+                    var1 = np.abs(eigenvector[::3])**2
+                    var2 = np.abs(eigenvector[1::3])**2
+                    var3 = np.abs(eigenvector[2::3])**2
+                    ylabel = "Power Spectrum"
+                else:
+                    raise ValueError("Invalid plot_type. Choose 'real', 'imaginary', or 'power'.")
+
+                var1 = var1 / np.linalg.norm(var1)
+                var2 = var2 / np.linalg.norm(var2)
+                var3 = var3 / np.linalg.norm(var3)
+                x = self.mesh.x
+
+                # Initialize figure
+                plt.figure()
+                plt.plot(x, var1, label='Variable 1', linestyle='solid', color='#1f77b4')
+                plt.plot(x, var2, label='Variable 2', linestyle='solid', color='#ff7f0e')
+                plt.plot(x, var3, label='Variable 3', linestyle='solid', color='#2ca02c')
+
+                # Check for and include the complex pair if applicable
+                if include_pairs and np.iscomplex(eigenvalue):
+                    for jdx, other_eigenvalue in enumerate(eigenvalues):
+                        if jdx != idx and np.isclose(eigenvalue.conj(), other_eigenvalue):
+                            processed_indices.add(jdx)
+                            paired_eigenvector = eigenvectors[:, jdx]
+                            paired_eigenvector = paired_eigenvector / np.linalg.norm(paired_eigenvector)
+
+                            if plot_type == "real":
+                                paired_var1 = paired_eigenvector[::3].real
+                                paired_var2 = paired_eigenvector[1::3].real
+                                paired_var3 = paired_eigenvector[2::3].real
+                            elif plot_type == "imaginary":
+                                paired_var1 = paired_eigenvector[::3].imag
+                                paired_var2 = paired_eigenvector[1::3].imag
+                                paired_var3 = paired_eigenvector[2::3].imag
+                            elif plot_type == "power":
+                                paired_var1 = np.abs(paired_eigenvector[::3])**2
+                                paired_var2 = np.abs(paired_eigenvector[1::3])**2
+                                paired_var3 = np.abs(paired_eigenvector[2::3])**2
+
+                            paired_var1 = paired_var1 / np.linalg.norm(paired_var1)
+                            paired_var2 = paired_var2 / np.linalg.norm(paired_var2)
+                            paired_var3 = paired_var3 / np.linalg.norm(paired_var3)
+
+                            plt.plot(x, paired_var1, label='Variable 1 (Pair)', linestyle='dotted', color='#1f77b4')
+                            plt.plot(x, paired_var2, label='Variable 2 (Pair)', linestyle='dotted', color='#ff7f0e')
+                            plt.plot(x, paired_var3, label='Variable 3 (Pair)', linestyle='dotted', color='#2ca02c')
+
+                            break
+
+                plt.title(f"Eigenvectors for Eigenvalue: {eigenvalue:g}")
+                plt.xlabel("x")
+                plt.ylabel(ylabel)
+                plt.legend()
+                plt.grid()
+                plt.show()
 
     def plot_cons_obj(self,savefile=None,final_idx=-1):
         '''
@@ -1184,7 +1282,7 @@ class PdeSolver:
         dqdt = self.dqdt(q,0.)
         result = self.energy_der(q,dqdt)
         if print_result:
-            print('Derivative of stability is {0:.5g}'.format(result))
+            print('Derivative of energy stability is {0:.5g}'.format(result))
         else:
             return result
     

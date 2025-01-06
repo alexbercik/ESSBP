@@ -1707,14 +1707,14 @@ def entropy_var_1D(q):
     rho = q[0::3,:] # = rho * S if quasi1D Euler
     u = q[1::3,:]/rho
     e = q[2::3,:] # = e * S if quasi1D Euler
-    k = rho*u*u # = rho * u^2 * S if quasi1D Euler
-    p = (g-1)*(e - 0.5*k) # = p * S if quasi1D Euler
+    u2_2 = 0.5*u*u 
+    p = (g-1)*(e - rho*u2_2) # = p * S if quasi1D Euler
     s = np.log(p/(rho**g)) # specific entropy (not quite physical entropy if quasi1D Euler)
     fac = rho/p 
 
     # assemble_vec 
     w = np.zeros_like(q)
-    w[::3,:] = (g-s)/(g-1) - 0.5*fac*k
+    w[::3,:] = (g-s)/(g-1) - fac*u2_2
     w[1::3,:] = fac*u
     w[2::3,:] = -fac
     return w
@@ -1739,15 +1739,15 @@ def entropy_var_2D(q):
     rho = q[0::4] 
     u = q[1::4,:]/rho
     v = q[2::4,:]/rho
-    e = q[3::4] 
-    k = rho*(u*u + v*v)
-    p = (g-1)*(e - 0.5*k) 
+    e = q[3::4]
+    u2_2 = 0.5*(u*u + v*v)
+    p = (g-1)*(e - rho*u2_2) 
     s = np.log(p/(rho**g)) 
     fac = rho/p 
 
     # assemble_vec 
     w = np.zeros_like(q)
-    w[::4,:] = (g-s)/(g-1) - 0.5*fac*k
+    w[::4,:] = (g-s)/(g-1) - fac*u2_2
     w[1::4,:] = fac*u
     w[2::4,:] = fac*v
     w[3::4,:] = -fac
@@ -1776,14 +1776,14 @@ def entropy_var_3D(q):
     v = q[2::5,:]/rho
     w = q[3::5,:]/rho
     e = q[3::4] 
-    k = rho*(u*u + v*v + w*w)
-    p = (g-1)*(e - 0.5*k) 
+    u2_2 = 0.5*(u*u + v*v + w*w)
+    p = (g-1)*(e - rho*u2_2) 
     s = np.log(p/(rho**g)) 
     fac = rho/p 
 
     # assemble_vec 
     w = np.zeros_like(q)
-    w[::4,:] = (g-s)/(g-1) - 0.5*fac*k
+    w[::4,:] = (g-s)/(g-1) - fac*u2_2
     w[1::4,:] = fac*u
     w[2::4,:] = fac*v
     w[3::4,:] = -fac
