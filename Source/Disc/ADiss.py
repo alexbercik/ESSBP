@@ -412,7 +412,7 @@ class ADiss():
             if self.sparse: Ddiss = sp.lm_to_sp(Ddiss)
             self.Ddiss = self.gdiag_lm( self.repeat_neq_gv(-self.solver.mesh.det_jac_inv), self.kron_neq_lm(Ddiss,self.neq_node))
         elif self.type == 'b' or self.type == 'entb':
-            assert(self.disc_nodes.lower() == 'csbp'), 'Baseline dissipation only implemented for csbp.'
+            assert(self.solver.disc_nodes.lower() == 'csbp'), 'Baseline dissipation only implemented for csbp.'
             D = BaselineDiss(self.s, self.nen)
             if self.use_H:
                 Hundvd = self.solver.sbp.H / self.solver.sbp.dx

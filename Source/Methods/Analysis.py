@@ -1713,11 +1713,16 @@ def read_from_diablo(filename=None):
 def plot_eigs(A, plot_hull=True, plot_individual_eigs=False, labels=None, savefile=None,
               save_format='png', dpi=600, line_width=1.5, equal_axes=False, 
               title_size=12, legend_size=12, markersize=16, markeredge=2,
-              tick_size=12,
+              tick_size=12, serif=True,
               colors=None, markers=None, linestyles=None, legend_loc='best', 
               legend_anchor=None, legend_anchor_type=None, legend_alpha=None):
     if plot_hull:
         from scipy.spatial import ConvexHull
+
+    if serif:
+        plt.rcParams['font.family'] = 'serif'
+    else:
+        plt.rcParams['font.family'] = 'sans-serif'
 
     # Define colors and linestyles for the hulls
     if colors is None:
