@@ -706,7 +706,11 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
     if labels is not None:
         # overwrite legend_strings with labels
         legend_strings = labels
-    
+
+    if return_conv:
+        # keep the original arrays so that we can return arrays including NaNs
+        dofs_ret, errors_ret, legend_strings_ret = np.copy(dofs), np.copy(errors), np.copy(legend_strings)
+        
     if np.any(np.isnan(errors)) or np.any(np.equal(errors, None)):
         errors_to_keep = []
         dofs_to_keep = []
@@ -743,7 +747,7 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
                             ylabel=ylabel,xlabel=xlabel,grid=grid,convunc=convunc,ylim=ylim)
     
     if return_conv:
-        return dofs, errors, legend_strings
+        return dofs_ret, errors_ret, legend_strings_ret
     
 def run_single_case(solver, variables, scale_dt, base_dt, base_dx, 
                     error_type, vars2plot, reset=True):
