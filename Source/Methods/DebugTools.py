@@ -63,7 +63,7 @@ class TaylorSeries1D:
             terms += sp.Rational(1, sp.factorial(i))*self.df[i]*h**i
         return terms
     
-def Check_Taylor_Series_1D(Mat,x,num_terms=4,lim_terms=2,notebook=True,decimals=10):
+def Check_Taylor_Series_1D(Mat,x,num_terms=4,lim_terms=2,notebook=True,decimals=10,delta_x=None):
     ''' Check the taylor expansion of the rows of a 1D matrix given x'''
     if notebook:
         from IPython.display import display, Math
@@ -73,7 +73,10 @@ def Check_Taylor_Series_1D(Mat,x,num_terms=4,lim_terms=2,notebook=True,decimals=
     h = sp.Symbol(r'(\Delta x)')
     u_Taylor = TaylorSeries1D(u,num_terms)
     Dxs = []
-    h_avg = np.mean(x[1:] - x[:-1])
+    if delta_x is None:
+        h_avg = np.mean(x[1:] - x[:-1])
+    else:
+        h_avg = delta_x
 
     def round_to_nearest_simple_decimal(expr, threshold=1e-9):
         """Round numbers in expr close to simple decimals to those simple decimals."""
