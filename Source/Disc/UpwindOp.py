@@ -3,55 +3,19 @@ from julia.api import Julia
 from julia import Main
 from socket import gethostname
 from Source.Disc.MakeSbpOp import MakeSbpOp
+import os
 
 hostname = gethostname()
 if 'nia' in hostname and 'scinet' in hostname:
      jl = Julia(runtime="/scinet/niagara/software/2022a/opt/base/julia/1.10.4/bin/julia")
 
-julia_code = """
-module UpwindOperators
+# Include the Julia file
+folder_path, _ = os.path.split(__file__)
+#Main.eval(f'include("{folder_path}/MattssonUpwind.jl")')
+Main.include(folder_path + "/MattssonUpwind.jl")
 
-using Pkg
-Pkg.activate(joinpath(ENV["HOME"], "julia_environments", "upwindOP"))
-
-# Check if virtual environment has already been set up & compiled. If not, activate.
-# (set this in the environment, or when calling python, i.e. JULIA_UPWIND_ENV_READY=true)
-if !haskey(ENV, "JULIA_UPWIND_ENV_READY")
-
-    # Ensure necessary packages are added and precompiled
-    Pkg.add("SummationByPartsOperators")
-    Pkg.precompile()
-
-    # Set environment variable to indicate setup is complete
-    ENV["JULIA_UPWIND_READY"] = "true"
-end
-
-using SummationByPartsOperators
-using LinearAlgebra
-
-function getOps(p,n)
-    Dup = upwind_operators(Mattsson2017, derivative_order=1, accuracy_order=p,
-                            xmin=0.0, xmax=1.0, N=n)
-    H = mass_matrix(Dup)
-    D = 0.5 * (Matrix(Dup.plus) + Matrix(Dup.minus))
-    diss = - 0.5 * (Matrix(Dup.plus) - Matrix(Dup.minus))
-    Q = 0.5 * H * (Matrix(Dup.plus) + Matrix(Dup.minus))
-    x = SummationByPartsOperators.grid(Dup)
-
-    return Matrix(D), Matrix(Dup.plus), Matrix(Dup.minus), Matrix(Q), Matrix(diss), Matrix(H), x 
-end
-
-end # module UpwindOperators
-"""
-
-# Evaluate the Julia code
-Main.eval(julia_code)
-
-# Import the function from the module
-Main.eval("using .UpwindOperators: getOps")
-
-# Access the function
-getOps = Main.getOps
+# Access the function from the module
+getOps = Main.GetUpwindOperators.getOps
 
 def UpwindOp(p,nn):
     print("NOTE: p no longer defines the order of the operator, but rather the order of the interior stencil.")
