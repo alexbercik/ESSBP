@@ -450,8 +450,10 @@ def symbolic(A):
 def run_convergence(solver, schedule_in=None, error_type='SBP',
              scale_dt=True, return_conv=False, savefile=None, labels=None,
              title=None, ylabel=None, xlabel=None, grid=False, convunc=True, 
-             ylim=None, ignore_fail=False, plot=True, vars2plot=None,
-             nthreads=1):
+             ylim=None, xlim=(None,None), ignore_fail=False, plot=True, vars2plot=None,
+             nthreads=1, extra_marker=None, skipfit=None, skip=None, title_size=16,
+             legendloc=None, figsize=(6,4), tick_size=12, extra_xticks=False, scalar_xlabel=False, 
+             serif=False, colors=None, markers=None, linestyles=None, legendsize=12, legendreorder=None):
     '''
     Purpose
     ----------
@@ -737,14 +739,22 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
         if vars2plot is None:
             if title == None:
                 title = r"Convergence of " + error_type + " Error"
-            plot_conv(dofs, errors, legend_strings, solver.dim, title, savefile,
-                        ylabel=ylabel,xlabel=xlabel,grid=grid,convunc=convunc,ylim=ylim)
+            plot_conv(dofs, errors, legend_strings, solver.dim, title=title, savefile=savefile,
+                        ylabel=ylabel,xlabel=xlabel,grid=grid,convunc=convunc,ylim=ylim,xlim=xlim,
+                    extra_marker=extra_marker, skipfit=skipfit, skip=skip, title_size=title_size,
+                    legendloc=legendloc, figsize=figsize, tick_size=tick_size, 
+                    extra_xticks=extra_xticks, scalar_xlabel=scalar_xlabel, serif=serif, colors=colors, 
+                    markers=markers, linestyles=linestyles, legendsize=legendsize, legendreorder=legendreorder)
         else:
             for varidx, var in enumerate(vars2plot):
                 if title == None:
                     title = r"Convergence of " + error_type + ' ' + var + " Error"
                 plot_conv(dofs, errors[:,:,varidx], legend_strings, solver.dim, title, savefile,
-                            ylabel=ylabel,xlabel=xlabel,grid=grid,convunc=convunc,ylim=ylim)
+                            ylabel=ylabel,xlabel=xlabel,grid=grid,convunc=convunc,ylim=ylim,xlim=xlim,
+                            extra_marker=extra_marker, skipfit=skipfit, skip=skip, title_size=title_size,
+                            legendloc=legendloc, figsize=figsize, tick_size=tick_size, 
+                            extra_xticks=extra_xticks, scalar_xlabel=scalar_xlabel, serif=serif, colors=colors, 
+                            markers=markers, linestyles=linestyles, legendsize=legendsize, legendreorder=legendreorder)
     
     if return_conv:
         return dofs_ret, errors_ret, legend_strings_ret
@@ -765,6 +775,7 @@ def run_single_case(solver, variables, scale_dt, base_dt, base_dx,
         new_dx = (xmax - xmin) / nn
         new_dt = base_dt * new_dx / base_dx
         solver.set_timestep(new_dt)
+        print('set timestep to dt =', new_dt)
     
     # Run the solver
     solver.solve()

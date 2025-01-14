@@ -446,7 +446,7 @@ def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
                 else:
                     raise Exception('Invalid choice of s. Only coded up s=1,2,3,4.')
                 
-    elif sbp_type.lower() == 'hgtl':
+    elif sbp_type.lower() == 'hgtl' or sbp_type.lower() == 'hgtl_ddrf' or sbp_type.lower() == 'hgtl_ddrf2':
         # Initialize the matrix as a dense NumPy array
         Ds = np.zeros((nen, nen))
         B = np.ones(nen)
@@ -925,6 +925,8 @@ def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
 
         else:
             raise Exception('Invalid choice of s. Only coded up s=4,5.')
+    else:
+        raise Exception(f'Invalid choice of sbp_type {sbp_type}')
 
     return Ds,B
 
