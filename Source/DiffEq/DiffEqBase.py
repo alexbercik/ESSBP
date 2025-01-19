@@ -235,7 +235,14 @@ class PdeBase:
             mid_pointx = 0.5*(self.xmax[xyz] + self.xmin[xyz]) # mean
             stdev2 = abs(self.dom_len[xyz]**2/k) # standard deviation squared
             exp = -0.5*((xy[:,xyz,:]-mid_pointx)**2/stdev2)
-            q0 = self.q0_max_q * np.exp(exp)    
+            q0 = self.q0_max_q * np.exp(exp)  
+        elif q0_type == 'squarewave': 
+            assert self.dim == 1,'square wave only works for dim = 1.' 
+            dom_len = self.xmax - self.xmin
+            x_scaled = (xy + self.xmin) / dom_len
+            q0 = np.ones_like(xy)
+            q0[x_scaled <= 0.25] = 0.
+            q0[x_scaled >= 0.75] = 0.
         elif ('sinwave' in q0_type) and not ('gassner' in q0_type):
             if self.dim == 1:
                 x_scaled = (xy + self.xmin) / self.dom_len
@@ -295,7 +302,7 @@ class PdeBase:
     
 
     # TODO: Make a separate function for interactive plots? is this even possible using free packages?
-    def plot_sol(self, q, time=0., plot_exa=True, savefile=None,
+    def plot_sol(self, q, x=None, time=0., plot_exa=True, savefile=None,
                  show_fig=True, ymin=None, ymax=None, display_time=False, 
                  title=None, plot_mesh=False, save_format='png', dpi=600,
                  plot_only_exa=False, var2plot_name=None, legendloc=None, legend=True):
@@ -316,16 +323,25 @@ class PdeBase:
             plot_exa = False
         
         if self.dim == 1:
-            num_sol = self.var2plot(q,var2plot_name).flatten('F')
+            if x is None: 
+                x = self.x_elem
+            else:
+                assert np.ndim(x) == 2, 'x must be a 2D array.'
+
+            num_sol = self.var2plot(q,var2plot_name)
             
             fig = plt.figure(figsize=self.plt_fig_size)
             ax = plt.axes() 
 
             if plot_exa and self.has_exa_sol:
-                exa_sol = self.var2plot(self.exact_sol(time),var2plot_name).flatten('F')
-                ax.plot(self.x, exa_sol, **self.plt_style_exa_sol, label='Exact')
+                exa_sol = self.var2plot(self.exact_sol(time,x=x),var2plot_name)
+                ax.plot(x[:, 0], exa_sol[:, 0], **self.plt_style_exa_sol,label='Exact')
+                for elem in range(1,x.shape[1]):
+                    ax.plot(x[:, elem], exa_sol[:, elem], **self.plt_style_exa_sol)
                 
-            ax.plot(self.x, num_sol, **self.plt_style_sol[0], label='Numerical')
+            ax.plot(x[:, 0], num_sol[:, 0], **self.plt_style_sol[0], label='Numerical')
+            for elem in range(1,x.shape[1]):
+                ax.plot(x[:, elem], num_sol[:, elem], **self.plt_style_sol[0])
         
             ax.set_ylim(ymin,ymax)
             plt.xlabel(r'$x$',fontsize=self.plt_label_font_size)
@@ -335,7 +351,9 @@ class PdeBase:
                 plt.ylabel(var2plot_name,fontsize=self.plt_label_font_size,rotation=0,labelpad=15)
         
         
-        elif self.dim == 2:            
+        elif self.dim == 2:
+            if x is None: raise Exception('x must be provided for 2D plots.')
+
             fig = plt.figure(figsize=(6,5.5*self.dom_len[1]/self.dom_len[0])) # scale figure properly
             ax = plt.axes()
             

@@ -605,7 +605,8 @@ class PdeSolver:
                       bc=self.bc, xmin=self.xmin, xmax=self.xmax,
                       cons_obj_name=self.cons_obj_name,
                       bool_plot_sol=self.bool_plot_sol, print_sol_norm=self.print_sol_norm,
-                      print_residual=self.print_residual, check_resid_conv=self.check_resid_conv)
+                      print_residual=self.print_residual, check_resid_conv=self.check_resid_conv,
+                      sparse=self.sparse, sat_sparse=self.sat_sparse)
         
     def set_timestep(self, dt):
         """
@@ -1354,9 +1355,154 @@ class PdeSolver:
                 cons_obj_rate[i,-2] = (3*cons_obj[i,-1]+10*cons_obj[i,-2]-18*cons_obj[i,-3]+6*cons_obj[i,-4]-cons_obj[i,-5])/(12*(t[-2]-t[-3]))
                 cons_obj_rate[i,2:-2] = (-cons_obj[i,0:-4]+8*cons_obj[i,1:-3]-8*cons_obj[i,3:-1]+cons_obj[i,4:])/(12*(t[2:-2]-t[1:-3]))
         return cons_obj_rate
-        
-
             
+    def interpolate(self, u_old=None, x_new=None, x_old=None, 
+                    return_mesh=False, num_nodes=11):
+        """
+        Interpolates the values from x_old to x_new using barycentric lagrange interpolation.
         
+        Parameters:
+        x_old (array): The original x values (reference element).
+        u_old (array): The original function values at x_old.
+        x_new (array): The new x values to interpolate to (reference element).
         
+        Returns:
+        u_new (array): The interpolated function values at x_new.
+        """
+        assert self.disc_nodes in ['lgl','lg','nc'], 'ERROR: Interpolation only implemented for element-type.'
+
+        from Source.Disc.MakeDgOp import MakeDgOp
+        from Source.Methods.Functions import lm_gv
+
+        if u_old is None:
+            u_old = self.q_sol[:,:,-1]
+
+        if x_new is None:
+            x_new = np.linspace(0,1,num_nodes,endpoint=True)
+
+        if x_old is None:
+            x_old = self.mesh.x_op
+
+        assert x_old.ndim == 1 and len(x_old) == self.nen, 'ERROR: x_old must be 1-dimensional and of length self.nen.'
+        x_old = np.reshape(x_old, (self.nen,1))
+
+        # Calculate barycentric weights based on x_old
+        w = MakeDgOp.BaryWeights(x_old)
         
+        # Build the Vandermonde matrix for x_new
+        V = MakeDgOp.VandermondeLagrange1D(x_new, w, x_old)
+
+        if u_old.ndim == 2:
+            from Source.Methods.Functions import lm_gv
+            u_new = lm_gv(V, u_old)
+            if return_mesh:
+                new_mesh = lm_gv(V, self.mesh.x_elem)
+        else:
+            u_new = V @ u_old
+            if return_mesh:
+                new_mesh = V @ self.mesh.x
+
+        if return_mesh:
+            return u_new, new_mesh
+        else:
+            return u_new
+        
+    def dispersion_analysis(self, plot=True, num_k=10, all_modes=True,
+                            return_omegas=False):
+        ''' Perform a dispersion analysis following
+          COMPARISON OF GAUSS AND GAUSS–LOBATTO INTEGRATION, Gassner & Kopriva 2011  '''
+        assert self.diffeq.diffeq_name == 'LinearConvection'
+        assert self.dim == 1
+        assert self.bc == 'periodic'
+        assert self.mesh.warp_factor == 0.0
+        assert self.sparse == False
+        assert self.sat.sparse == False
+        #a = self.diffeq.para[0]
+        dx = (self.mesh.xmax - self.mesh.xmin)/self.nelem
+        Hinv = np.linalg.inv(self.sbp.H)
+        tLtLT = np.complex128(Hinv @ self.sbp.ta @ self.sbp.ta.T)
+        tLtRT = np.complex128(Hinv @ self.sbp.ta @ self.sbp.tb.T)
+        D = np.complex128(self.sbp.D)
+        diss = np.complex128(Hinv @ self.adiss.dispersion_analysis())
+
+        ks = np.linspace(0, self.nen*np.pi/dx, num_k, endpoint=True)
+        Ks = np.linspace(0, np.pi, num_k, endpoint=True)
+        if all_modes:
+            Omegas = np.zeros((self.nen,num_k),dtype=complex)
+        else:
+            Omegas = np.zeros(num_k,dtype=complex)
+
+        for i, k in enumerate(ks):
+            K = k*dx
+            if self.sat.diss_type == 'lf':
+                A = (D + tLtLT - np.exp(-1j*K)*tLtRT + diss)/1j
+            else:
+                raise Exception('dispersion analysis only implemented for LF Sats')
+            
+            eigvals = np.linalg.eigvals(A)
+            if all_modes:
+                # organize the modes in the same order each time
+                if k==0: 
+                    reorder = eigvals
+                else:
+                    reorder = np.zeros(self.nen,dtype=complex)
+                    if self.nen < 10:
+                        for j in range(self.nen):
+                            reorder[j] = min(eigvals, key=lambda z: abs(z-Omegas[j,i-1]))
+                    else: reorder = eigvals
+                Omegas[:,i] = reorder
+            else:
+                # select only physical mode
+                if i == 0:
+                    Omegas[i] = min(eigvals, key=lambda z: abs(z))
+                elif i < 1:
+                    # can't match with derivative yet
+                    Omegas[i] = min(eigvals, key=lambda z: abs(z-Omegas[i-1]))
+                elif i < 3:
+                    Omegas[i] = min(eigvals, key=lambda z: (
+                        0.5 * abs(z-Omegas[i-1]) +
+                        0.5 * abs(z.real - 2*Omegas[i-1].real + Omegas[i - 2].real) +
+                        0.5 * abs(z.imag - 2*Omegas[i-1].imag + Omegas[i - 2].imag) ))
+                else:
+                    Omegas[i] = min(eigvals, key=lambda z: (
+                        0.5 * abs(z-Omegas[i-1]) +
+                        0.5 * abs(2*z.real - 5*Omegas[i-1].real + 4*Omegas[i - 2].real - Omegas[i-3].real) +
+                        0.5 * abs(2*z.imag - 5*Omegas[i-1].imag + 4*Omegas[i - 2].imag- Omegas[i-3].imag) ))
+
+        Omegas = Omegas/self.nen
+
+        if plot:
+            plt.figure()
+            plt.plot(Ks,Ks,'--',color='black')
+            if all_modes:
+                for i in range(self.nen):
+                    if self.nen < 10:
+                        plt.plot(Ks,np.real(Omegas[i,:]))
+                    else:
+                        plt.plot(Ks,np.real(Omegas[i,:]),linestyle='',
+                                 marker='.',color='tab:blue',markersize=1)
+            else:
+                plt.plot(Ks,np.real(Omegas))
+            plt.xlabel(r'$K$',fontsize=16)
+            plt.ylabel(r'$\Re(\Omega)$',fontsize=16)
+            plt.title('Dispersion Relation',fontsize=18)
+            plt.show()
+
+            plt.figure()
+            plt.plot(Ks,np.zeros_like(Ks),'--',color='black')
+            if all_modes:
+                for i in range(self.nen):
+                    if self.nen < 10:
+                        plt.plot(Ks,np.imag(Omegas[i,:]))
+                    else:
+                        plt.plot(Ks,np.imag(Omegas[i,:]),linestyle='',
+                                 marker='.',color='tab:blue',markersize=1)
+            else:
+                plt.plot(Ks,np.imag(Omegas))
+            plt.xlabel(r'$K$',fontsize=16)
+            plt.ylabel(r'$\Im(\Omega)$',fontsize=16)
+            plt.title('Dissipation Relation',fontsize=18)
+            plt.show()
+
+        if return_omegas:
+            return Omegas

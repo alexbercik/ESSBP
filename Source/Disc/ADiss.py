@@ -956,6 +956,8 @@ class ADiss():
     def calc_LHS(self, q=None, step=1.0e-4):
         ''' could form explicitly... but for simplicity just do finite difference. 
         Note: this does not include the coefficient '''
+        if self.type == 'nd':
+            return 0.0
         if q is None:
             q = self.solver.diffeq.set_q0()
         nen = self.nen*self.neq_node  
@@ -972,6 +974,29 @@ class ADiss():
                 idx = np.where(ei.flatten('F')>step/10)[0][0]
                 A[:,idx] = (q_r - q_l)/(2*step)
         return A
+    
+    def dispersion_analysis(self):
+        ''' return the contribution to the dispersion analysis 
+        aka just the dissipation operator on the reference element, without Hinv'''
+        if self.type == 'dcp' or self.type == 'dcp2':
+            if self.type == 'dcp2':
+                Ds, B = make_dcp_diss_op2(self.solver.disc_nodes, self.s, self.nen, self.bdy_fix)
+            else:
+                Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen, self.bdy_fix)
+            if self.use_H:
+                Hundvd = np.diag(self.solver.sbp.H) / self.solver.sbp.dx
+                A = self.coeff * (Ds.T * B * Hundvd) @ Ds 
+            else:
+                A = self.coeff * (Ds.T * B) @ Ds 
+            return A
+            # note lack of negative, which is intentional since we use the negative in the main function
+            # well, actually negative is missing there because we then take the negative of the whole thing
+
+        elif self.type == 'nd':
+            return np.zeros((self.nen,self.nen))
+
+        else:
+            raise Exception('dispersion_analysis not implemented for diss_type ' + self.type)
 
 
 
