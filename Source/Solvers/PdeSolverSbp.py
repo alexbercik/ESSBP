@@ -68,10 +68,13 @@ class PdeSolverSbp(PdeSolver):
                     self.satsparse = False
             elif self.dim == 3:
                 self.sparse = True
+        elif not self.sparse and self.sat_sparse is None:
+            self.sat_sparse = False
 
         if self.sparse and not self.sat_sparse:
             print('NOTE: Overriding sat_sparse=False to sat_sparse=True since sparse=True')
             self.sat_sparse = True
+        
         elif self.sat_sparse is None:
             self.sat_sparse = False
             if self.disc_nodes in ['csbp', 'upwind', 'hgtl', 'mattsson']:
