@@ -992,6 +992,11 @@ class ADiss():
             # note lack of negative, which is intentional since we use the negative in the main function
             # well, actually negative is missing there because we then take the negative of the whole thing
 
+        elif self.type == 'upwind':
+            Ddiss = self.solver.sbp.Ddiss
+            A = self.coeff * Ddiss
+            return A
+
         elif self.type == 'nd':
             return np.zeros((self.nen,self.nen))
 
