@@ -43,6 +43,7 @@ class Burgers(PdeBase):
         reshape = False
         if x.ndim >1: 
             reshape=True
+            orig_shape = x.shape
             x = x.flatten('F')
 
         #u0 = self.set_q0(xy=x)
@@ -64,7 +65,7 @@ class Burgers(PdeBase):
             u[i] = u0(x0)
         
         if reshape:
-            u = np.reshape(u,(self.nen,self.nelem),'F')
+            u = np.reshape(u,orig_shape,'F')
 
         return u
 
