@@ -918,7 +918,8 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
               extra_marker=None, skipfit=None, skip=None, ylabel=None, xlabel=None, title_size=16,
               ylim=(None,None),xlim=(None,None),grid=False,legendloc=None,convunc=True,
               figsize=(6,4), tick_size=12, extra_xticks=False, scalar_xlabel=False, serif=False,
-              colors=None, markers=None, linestyles=None, legendsize=12, legendreorder=None):
+              colors=None, markers=None, linestyles=None, legendsize=12, legendreorder=None,
+              remove_outliers=False, legend_anchor=None):
     '''
     Parameters
     ----------
@@ -1016,8 +1017,19 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
         ######################################################################
         string = legend_strings[i].replace("disc_nodes=","")
         if len(dof_mod) > 2:
-            p_opt, p_cov = sc.curve_fit(fit_func, np.log(dof_mod[skipfit[i]:]),
-                                        np.log(err_mod[skipfit[i]:]),(2,1)) # fit
+            x_data = np.log(dof_mod[skipfit[i]:])
+            y_data = np.log(err_mod[skipfit[i]:])
+            if remove_outliers:
+                from sklearn.linear_model import RANSACRegressor
+                # Reshape x for sklearn
+                x_data_reshaped = x_data.reshape(-1, 1)
+                # Fit using RANSAC to remove outliers
+                ransac = RANSACRegressor()
+                ransac.fit(x_data_reshaped, y_data)
+                inlier_mask = ransac.inlier_mask_
+                x_data = x_data[inlier_mask]
+                y_data = y_data[inlier_mask]
+            p_opt, p_cov = sc.curve_fit(fit_func, x_data, y_data,(2,1)) # fit
             if convunc:
                 acc = int(np.floor(np.log10(np.sqrt(p_cov[0,0]))))
                 unc = np.round(np.sqrt(p_cov[0,0]),abs(acc))
@@ -1050,6 +1062,7 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
                     plt.plot(dof_vec[i][j],err_vec[i][j],'x',color='black',markersize=12,linewidth=2)
     if legendloc == None:
         legendloc = 'best'
+    bbox_transform = plt.gca().transAxes
     if legendreorder != None:
         legend = plt.legend()
         handles, labels = plt.gca().get_legend_handles_labels()
@@ -1061,9 +1074,11 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
                 print('WARNING: legendreorder must be a list of length n_cases. Ignoring.', len(legendreorder))
         else:
             print('WARNING: legendreorder must be a list. Ignoring.')
-        plt.legend(handles, labels, loc=legendloc, fontsize=legendsize)
+        plt.legend(handles, labels, loc=legendloc, fontsize=legendsize,
+                   bbox_to_anchor=legend_anchor, bbox_transform=bbox_transform)
     else:
-        plt.legend(loc=legendloc, fontsize=legendsize)
+        plt.legend(loc=legendloc, fontsize=legendsize,
+                   bbox_to_anchor=legend_anchor, bbox_transform=bbox_transform)
     if grid:
         plt.grid(which='major',axis='y',linestyle='--',color='gray',linewidth='1')
     plt.ylim(ylim)
@@ -1110,6 +1125,7 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
 
     ax.tick_params(axis='both', labelsize=tick_size) 
     plt.tight_layout()
+    #fig.subplots_adjust(bottom=0.2)
     if savefile is not None:
         plt.savefig(savefile,dpi=600)
         
@@ -1857,7 +1873,7 @@ def plot_eigs(A, plot_hull=True, plot_individual_eigs=False, labels=None, savefi
         else:
             print("Invalid legend_anchor_type. Try of the format ('data','fig'). Using default 'data' type.")
             bbox_transform = plt.gca().transData
-
+        
         legend = plt.legend(fontsize=legend_size,loc=legend_loc, 
                    bbox_to_anchor=legend_anchor, bbox_transform=bbox_transform)
         

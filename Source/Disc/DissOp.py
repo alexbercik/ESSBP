@@ -320,8 +320,74 @@ def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
                         B[-1] = 0.
                         B[-2] = 0.
 
+                elif s==5:
+                    if nen != 6:
+                        raise ValueError(f"Invalid number of nodes. nen = {nen}")
+
+                    for i in range(nen):
+                        Ds[i, 0] = -1.612800000000000000
+                        Ds[i, 1] = 3.842772888818609173
+                        Ds[i, 2] = -4.652830352050317467
+                        Ds[i, 3] = 4.652830352050317467
+                        Ds[i, 4] = -3.842772888818609173
+                        Ds[i, 5] = 1.612800000000000000
+
+                    if boundary_fix:
+                        print('WARNING: Ignoring boundary_fix = True in dissipation.')
+
+                elif s==6:
+                    if nen != 7:
+                        raise ValueError(f"Invalid number of nodes. nen = {nen}")
+
+                    for i in range(nen):
+                        Ds[i, 0] = 2.037037037037037037
+                        Ds[i, 1] = -4.911476252925390744
+                        Ds[i, 2] = 6.133698475147612966
+                        Ds[i, 3] = -6.518518518518518519
+                        Ds[i, 4] = 6.133698475147612966
+                        Ds[i, 5] = -4.911476252925390744
+                        Ds[i, 6] = 2.037037037037037037
+
+                    if boundary_fix:
+                        print('WARNING: Ignoring boundary_fix = True in dissipation.')
+
+                elif s==7:
+                    if nen != 8:
+                        raise ValueError(f"Invalid number of nodes. nen = {nen}")
+
+                    for i in range(nen):
+                        Ds[i, 0] = -2.625436680294775136
+                        Ds[i, 1] = 6.377011327884438733
+                        Ds[i, 2] = -8.114016185059577698
+                        Ds[i, 3] = 8.922177282089304897
+                        Ds[i, 4] = -8.922177282089304897
+                        Ds[i, 5] = 8.114016185059577698
+                        Ds[i, 6] = -6.377011327884438733
+                        Ds[i, 7] = 2.625436680294775136
+
+                    if boundary_fix:
+                        print('WARNING: Ignoring boundary_fix = True in dissipation.')
+
+                elif s==8:
+                    if nen != 9:
+                        raise ValueError(f"Invalid number of nodes. nen = {nen}")
+
+                    for i in range(nen):
+                        Ds[i, 0] = 3.436660766601562500
+                        Ds[i, 1] = -8.388432773739035540
+                        Ds[i, 2] = 10.804127773638506199
+                        Ds[i, 3] = -12.136535454001033159
+                        Ds[i, 4] = 12.568359375000000000
+                        Ds[i, 5] = -12.136535454001033159
+                        Ds[i, 6] = 10.804127773638506199
+                        Ds[i, 7] = -8.388432773739035540
+                        Ds[i, 8] = 3.436660766601562500
+
+                    if boundary_fix:
+                        print('WARNING: Ignoring boundary_fix = True in dissipation.')
+
                 else:
-                    raise Exception('Invalid choice of s. Only coded up s=1,2,3,4.')
+                    raise Exception('Invalid choice of s. Only coded up s=1-8.')
                 
     elif sbp_type.lower() == 'lg':
                 # Initialize the matrix as a dense NumPy array
@@ -442,9 +508,75 @@ def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
                         B[1] = 0.
                         B[-1] = 0.
                         B[-2] = 0.
+                
+                elif s==5:
+                    if nen != 6:
+                        raise ValueError(f"Invalid number of nodes. nen = {nen}")
+
+                    for i in range(nen):
+                        Ds[i, 0] = -1.875746702363598862
+                        Ds[i, 1] = 5.652573405856250471
+                        Ds[i, 2] = -8.333185650156772618
+                        Ds[i, 3] = 8.333185650156772618
+                        Ds[i, 4] = -5.652573405856250471
+                        Ds[i, 5] = 1.875746702363598862
+
+                    if boundary_fix:
+                        print('WARNING: Ignoring boundary_fix = True in dissipation.')
+
+                elif s==6:
+                    if nen != 7:
+                        raise ValueError(f"Invalid number of nodes. nen = {nen}")
+
+                    for i in range(nen):
+                        Ds[i, 0] = 2.122169307613919466
+                        Ds[i, 1] = -6.644271982309704027
+                        Ds[i, 2] = 10.575012727605837471
+                        Ds[i, 3] = -12.105820105820105820
+                        Ds[i, 4] = 10.575012727605837471
+                        Ds[i, 5] = -6.644271982309704027
+                        Ds[i, 6] = 2.122169307613919466
+
+                    if boundary_fix:
+                        print('WARNING: Ignoring boundary_fix = True in dissipation.')
+
+                elif s==7:
+                    if nen != 8:
+                        raise ValueError(f"Invalid number of nodes. nen = {nen}")
+
+                    for i in range(nen):
+                        Ds[i, 0] = -2.471952737214579953
+                        Ds[i, 1] = 7.937155839943480417
+                        Ds[i, 2] = -13.269472683483800396
+                        Ds[i, 3] = 16.4857797421747503227
+                        Ds[i, 4] = -16.485779742174750322
+                        Ds[i, 5] = 13.269472683483800396
+                        Ds[i, 6] = -7.937155839943480417
+                        Ds[i, 7] = 2.471952737214579953
+
+                    if boundary_fix:
+                        print('WARNING: Ignoring boundary_fix = True in dissipation.')
+
+                elif s==8:
+                    if nen != 9:
+                        raise ValueError(f"Invalid number of nodes. nen = {nen}")
+
+                    for i in range(nen):
+                        Ds[i, 0] = 2.948238183299019362
+                        Ds[i, 1] = -9.634032564396281060
+                        Ds[i, 2] = 16.656389129737205324
+                        Ds[i, 3] = -21.840711936139943626
+                        Ds[i, 4] = 23.740234375000000000
+                        Ds[i, 5] = -21.840711936139943626
+                        Ds[i, 6] = 16.656389129737205324
+                        Ds[i, 7] = -9.634032564396281060
+                        Ds[i, 8] = 2.948238183299019362
+
+                    if boundary_fix:
+                        print('WARNING: Ignoring boundary_fix = True in dissipation.')
 
                 else:
-                    raise Exception('Invalid choice of s. Only coded up s=1,2,3,4.')
+                    raise Exception('Invalid choice of s. Only coded up s=1-8.')
                 
     elif sbp_type.lower() == 'hgtl' or sbp_type.lower() == 'hgtl_ddrf' or sbp_type.lower() == 'hgtl_ddrf2':
         # Initialize the matrix as a dense NumPy array
