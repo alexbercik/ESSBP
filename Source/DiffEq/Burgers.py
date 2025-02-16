@@ -11,7 +11,7 @@ import numpy as np
 from Source.DiffEq.DiffEqBase import PdeBase
 import Source.Methods.Functions as fn
 from numba import njit
-from scipy.optimize import root_scalar
+from scipy.optimize import root_scalar, bisect
 
 class Burgers(PdeBase):
     '''
@@ -46,24 +46,100 @@ class Burgers(PdeBase):
             orig_shape = x.shape
             x = x.flatten('F')
 
-        #u0 = self.set_q0(xy=x)
-        #a,b = np.min(u0), np.max(u0) # u(x,t) must be some u0(x), so bounded by min & max
-        #a,b = a-(b-a)/20 , b+(b-a)/20 # expand the boundaries slightly just in case
         u = np.empty_like(x) # initiate u
-        for i in range(len(x)):
-            # the below is more efficient, but I couldn't figure out periodic boundaries
-            #f = lambda z : self.set_q0(xy=z) # f(x) = u0(x+u0*t0) = u0(x)
-            #eq = lambda z : f(x[i]-z*time) - z  # find roots u of 0 = f(x-ut) - u
-            #u[i] = bisect(eq,a,b,xtol=1e-12,maxiter=1000)
 
-            u0 = lambda x0 : self.set_q0(xy=x0)
-            eq = lambda x0 : np.mod((x[i] - self.xmin) - u0(x0)*time, self.dom_len) + self.xmin - x0
-            #eq = lambda x0 : x[i] - u0(x0)*time - x0
-            res = root_scalar(eq,bracket=[self.xmin-0.01,self.xmax+0.01],method='secant',
-                             x0=x[i]-u0(x[i])*time,xtol=1e-12,maxiter=1000)
-            x0 = res.root
-            u[i] = u0(x0)
-        
+        if self.q0_type.lower() == 'sinwave':
+            # manually set solution for initial condition u_0 = sin(2*pi*x)
+            Tb = 1/(2*np.pi)
+            u0 = lambda x0: np.sin(2*np.pi*x0)  # initial condition
+            shock = 0.5  # by symmetry, the shock is at x=0.5 for t>= t_break
+            eps = 1e-8 # A small step to define the second guess for the secant method.
+
+            if time < Tb:
+                # --- Pre-shock: single-valued solution ---
+                for i, xi in enumerate(x):
+                    # Solve f(x0) = x0 + sin(2*pi*x0)*t - xi = 0
+                    f = lambda x0: x0 + u0(x0)*time - xi
+                    # Choose initial guesses; one natural guess is
+                    #guess0 = xi - u0(xi)*time
+                    #guess1 = guess0 + eps  # a second, nearby guess
+                    #sol = root_scalar(f, method='secant', x0=guess0, x1=guess1, xtol=1e-12, maxiter=1000)
+                    if xi == 0: u[i] = 0
+                    elif xi == 1: u[i] = 0
+                    else:
+                        sol = root_scalar(f, method='brentq', bracket=[eps, 1-eps], xtol=1e-12, maxiter=1000)
+                        u[i] = u0(sol.root)
+            else:
+                # Post–shock: a shock forms at x=0.5.
+                # First compute the nontrivial left state u_L from u - sin(2*pi*t*u)= 0.
+                # We exclude the trivial solution u = 0 by choosing a bracket that does not include 0.
+                g = lambda u_val: u_val - np.sin(2*np.pi*time*u_val)
+                # For a typical t > t_break, g(1e-4) is negative and g(1) is positive.
+                sol_u = root_scalar(g, method='brentq', bracket=[1e-4, 1], xtol=1e-12, maxiter=1000)
+                u_L = sol_u.root
+                u_R = -u_L  # by symmetry
+                
+                # Now, for each spatial point x, invert the characteristic relation using the correct branch.
+                for i, xi in enumerate(x):
+                    if xi == 0: u[i] = 0
+                    elif xi == 1: u[i] = 0
+                    else:
+                        if np.isclose(xi, shock, atol=1e-12):
+                            # At the shock, assign the Rankine–Hugoniot value.
+                            u[i] = 0.5*(u_L + u_R)  # which here is 0.
+                        elif xi < shock:
+                            # For x to the left of the shock, invert f(x0)= x0 + sin(2*pi*x0)*t - xi on x0 in [0, shock].
+                            f = lambda x0: x0 + u0(x0)*time - xi
+                            # f(0)= -xi (negative) and f(shock)= shock + sin(pi)*t - xi = 0.5 - xi (positive for xi<0.5)
+                            #if f(eps)*f(shock-eps) > 0:
+                            #    # If the function has the same sign at both endpoints, we need to use a different bracket.
+                            #    print('WARNING: The function has the same sign at both endpoints.')
+                            #    print(f(eps), f(shock-eps), xi, time)
+                            sol = root_scalar(f, method='brentq', bracket=[eps, shock-eps], xtol=1e-12, maxiter=1000)
+                            u[i] = u0(sol.root)
+                        else:
+                            # For x to the right of the shock, invert on x0 in [shock, 1].
+                            f = lambda x0: x0 + u0(x0)*time - xi
+                            # f(shock)= 0.5 - xi (negative for xi>0.5) and f(1)= 1 - xi (positive for xi<1)
+                            #if f(eps)*f(shock-eps) > 0:
+                            #    # If the function has the same sign at both endpoints, we need to use a different bracket.
+                            #    print('WARNING: The function has the same sign at both endpoints.')
+                            #    print(f(eps), f(shock-eps), xi, time)
+                            sol = root_scalar(f, method='brentq', bracket=[shock+eps, 1-eps], xtol=1e-12, maxiter=1000)
+                            u[i] = u0(sol.root)
+
+        else:
+
+            Tb = self.calc_breaking_time(print_res=False)
+            if time > Tb:
+                print(f'WARNING: Time {time:.3g} is greater than the breaking time {Tb:.3g}.')
+                print('          Ignoring analytical solution because jump conditions are not yet implemented.')
+                u = np.zeros_like(x)
+            
+            else:
+
+                #u0 = self.set_q0(xy=x)
+                #a,b = np.min(u0), np.max(u0) # u(x,t) must be some u0(x), so bounded by min & max
+                #a,b = a-(b-a)/20 , b+(b-a)/20 # expand the boundaries slightly just in case
+                for i in range(len(x)):
+                    # the below is more efficient, but it sometimes fails with periodic boundaries
+                    # because the endpoints do not have opposite signs (they are equal)
+                    # Define the periodic version of the initial condition
+                    #f = lambda z: self.set_q0(xy=(np.mod(z - self.xmin, self.dom_len) + self.xmin))
+                    # Define the equation whose root we are seeking.
+                    # Here, we also ensure that the argument (x[i] - z*time) is wrapped into the periodic domain.
+                    #eq = lambda z: f(np.mod(x[i] - z*time - self.xmin, self.dom_len) + self.xmin) - z
+                    # Now use a root-finding method (like bisection) on eq.
+                    #u[i] = bisect(eq, self.xmin - 0.01, self.xmax + 0.01, xtol=1e-12, maxiter=1000)
+                    
+                    u0 = lambda x0 : self.set_q0(xy=x0)
+                    eq = lambda x0 : np.mod((x[i] - self.xmin) - u0(x0)*time, self.dom_len) + self.xmin - x0
+                    #eq = lambda x0 : x[i] - u0(x0)*time - x0
+                    res = root_scalar(eq,bracket=[self.xmin-0.01,self.xmax+0.01],method='secant',
+                                    x0=x[i]-u0(x[i])*time,xtol=1e-12,maxiter=1000)
+                    x0 = res.root
+                    u[i] = u0(x0)
+            
         if reshape:
             u = np.reshape(u,orig_shape,'F')
 
@@ -155,12 +231,15 @@ class Burgers(PdeBase):
         ''' compute the global A-conservation SBP of global solution vector q, equal to entropy/energy '''
         return np.sum(q * self.H * q)
     
-    def calc_breaking_time(self,sig_fig=3):
+    def calc_breaking_time(self,sig_fig=3,print_res=True):
         ''' estimate the time at which the solution breaks '''
         q0 = self.set_q0()
         dqdx = self.gm_gv(self.Dx, q0)
         Tb = -1/np.min(dqdx)
-        print(f'The breaking time is approximately T = {Tb:.{sig_fig}g}')
+        if print_res:
+            print(f'The breaking time is approximately T = {Tb:.{sig_fig}g}')
+        else:
+            return Tb
     
     @njit
     def ec_flux(qL,qR):

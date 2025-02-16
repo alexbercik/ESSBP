@@ -245,8 +245,14 @@ class PdeBase:
             q0[x_scaled >= 0.75] = 0.
         elif ('sinwave' in q0_type) and not ('gassner' in q0_type):
             if self.dim == 1:
+                if '4pi' in q0_type:
+                    w = 4*np.pi
+                elif '8pi' in q0_type:
+                    w = 8*np.pi
+                else:
+                    w = 2*np.pi
                 x_scaled = (xy + self.xmin) / self.dom_len
-                q0 = np.sin(2*np.pi * x_scaled) * self.q0_max_q
+                q0 = np.sin(w * x_scaled) * self.q0_max_q
                 if 'shift' in q0_type:
                     q0 = q0+2
             elif self.dim == 2:

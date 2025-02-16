@@ -25,7 +25,8 @@ class TimeMarching(TimeMarchingRk):
                  bool_calc_cons_obj=False, fun_calc_cons_obj=None,
                  print_sol_norm=False, print_residual=False,
                  check_resid_conv=False,
-                 dqdt=None, dfdq=None):
+                 dqdt=None, dfdq=None,
+                 rtol=None, atol=None):
         '''
         Parameters
         ----------
@@ -114,6 +115,18 @@ class TimeMarching(TimeMarchingRk):
             self.tm_solver = getattr(self, self.tm_method)
         else:
             raise Exception('The requested time marching method is not available')
+        
+        if self.tm_method == 'rk8':
+            if rtol is not None:
+                self.rtol = rtol
+            else:
+                print('WARNING: rtol not set for rk8. Setting to 1e-3.')
+                self.rtol = 1e-3
+            if atol is not None:
+                self.atol = atol
+            else:
+                print('WARNING: atol not set for rk8. Setting to 1e-6.')
+                self.atol = 1e-6
 
     def solve(self, q0, dt, n_ts):
         '''
@@ -221,11 +234,6 @@ class TimeMarching(TimeMarchingRk):
             if t_idx != n_ts:
                 print('ERROR: final_common is being called before the final iteration even though quitsim = False.')
                 print('       ... continuing for now, but this is almost certainly a bug.')
-
-            if self.keep_all_ts:
-                mod_t_idx = t_idx/(self.skip_ts+1)
-                if abs(mod_t_idx - round(mod_t_idx)) < 1e-9:
-                    q_sol[:, :, int(mod_t_idx)] = q
 
             if self.keep_all_ts or self.bool_calc_cons_obj:
                 mod_t_idx = t_idx/(self.skip_ts+1)

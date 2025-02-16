@@ -30,6 +30,8 @@ class PdeSolver:
     calc_nd_ops = False # Calulate the physical multi-dimensional operators (incorporates E matrices)
     print_progress = True
     had_flux = 'none'
+    tm_atol = None
+    tm_rtol = None
 
     def __init__(self, diffeq, settings,                            # Diffeq
                  tm_method, dt, t_final,                    # Time marching
@@ -394,7 +396,8 @@ class PdeSolver:
                         print_sol_norm = self.print_sol_norm,
                         print_residual = self.print_residual,
                         check_resid_conv = self.check_resid_conv,
-                        dqdt=self.dqdt, dfdq=self.dfdq)
+                        dqdt=self.dqdt, dfdq=self.dfdq,
+                        rtol=self.tm_rtol, atol=self.tm_atol)
         
         tm_class.print_progress = self.print_progress
         self.q_sol =  tm_class.solve(q0, self.dt, self.n_ts)
@@ -1083,6 +1086,9 @@ class PdeSolver:
         savefile : string, optional
             File name under which to save plots. The default is None.
         '''
+        if self.cons_obj is None:
+            print('WARNING: No conservation objectives to plot.')
+            return
         for i in range(self.n_cons_obj):
             cons_obj_name_i = self.cons_obj_name[i].lower()
             if cons_obj_name_i == 'time': continue

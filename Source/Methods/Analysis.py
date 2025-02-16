@@ -919,7 +919,7 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
               ylim=(None,None),xlim=(None,None),grid=False,legendloc=None,convunc=True,
               figsize=(6,4), tick_size=12, extra_xticks=False, scalar_xlabel=False, serif=False,
               colors=None, markers=None, linestyles=None, legendsize=12, legendreorder=None,
-              remove_outliers=False, legend_anchor=None):
+              remove_outliers=False, legend_anchor=None, put_legend_behind=False):
     '''
     Parameters
     ----------
@@ -973,6 +973,11 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
     
     if extra_marker != None:
         assert np.shape(extra_marker)==(n_cases,n_runs),"ERROR: extra_marker shape should match dof_vec and err_vec"
+
+    if put_legend_behind:
+        zorder = 3
+    else:
+        zorder = 2
 
     fig = plt.figure(figsize=figsize)
     if title != None:
@@ -1047,19 +1052,19 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
             else:
                 slope = r" $({0:9.2f})$".format(p_opt[0])
             plt.loglog(dof_mod,err_mod,markers[i%len(markers)],markersize=8, color=colors[i%len(colors)],
-                       markerfacecolor = 'none', markeredgewidth=2, label=string+slope)
+                       markerfacecolor = 'none', markeredgewidth=2, label=string+slope, zorder=zorder)
             plt.loglog(np.linspace(dof_mod[skipfit[i]],dof_mod[-1]), # plot
                        np.exp(fit_func(np.log(np.linspace(dof_mod[skipfit[i]],dof_mod[-1])), *p_opt)), 
-                       linewidth=1, linestyle = linestyles[i%len(linestyles)], color=colors[i%len(colors)])
+                       linewidth=1, linestyle = linestyles[i%len(linestyles)], color=colors[i%len(colors)], zorder=zorder)
         elif len(dof_mod) == 2:
             slope = r" $({0:9.3})$".format(-(np.log(err_mod[1])-np.log(err_mod[0]))/(np.log(dof_mod[1])-np.log(dof_mod[0])))
             plt.loglog(dof_mod,err_mod,markers[i%len(markers)],markersize=8, color=colors[i%len(colors)],
-                       markerfacecolor = 'none', markeredgewidth=2, label=string+slope)
-            plt.loglog(dof_mod, err_mod, linewidth=1, linestyle = linestyles[i%len(linestyles)], color=colors[i%len(colors)])
+                       markerfacecolor = 'none', markeredgewidth=2, label=string+slope, zorder=zorder)
+            plt.loglog(dof_mod, err_mod, linewidth=1, linestyle = linestyles[i%len(linestyles)], color=colors[i%len(colors)], zorder=zorder)
         if extra_marker != None:
             for j in range(n_runs):
                 if extra_marker[i][j] == True:
-                    plt.plot(dof_vec[i][j],err_vec[i][j],'x',color='black',markersize=12,linewidth=2)
+                    plt.plot(dof_vec[i][j],err_vec[i][j],'x',color='black',markersize=12,linewidth=2, zorder=zorder)
     if legendloc == None:
         legendloc = 'best'
     bbox_transform = plt.gca().transAxes
@@ -1074,11 +1079,12 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
                 print('WARNING: legendreorder must be a list of length n_cases. Ignoring.', len(legendreorder))
         else:
             print('WARNING: legendreorder must be a list. Ignoring.')
-        plt.legend(handles, labels, loc=legendloc, fontsize=legendsize,
+        legend = plt.legend(handles, labels, loc=legendloc, fontsize=legendsize,
                    bbox_to_anchor=legend_anchor, bbox_transform=bbox_transform)
     else:
-        plt.legend(loc=legendloc, fontsize=legendsize,
+        legend = plt.legend(loc=legendloc, fontsize=legendsize,
                    bbox_to_anchor=legend_anchor, bbox_transform=bbox_transform)
+    if put_legend_behind: legend.set_zorder(2)
     if grid:
         plt.grid(which='major',axis='y',linestyle='--',color='gray',linewidth='1')
     plt.ylim(ylim)
@@ -1744,7 +1750,7 @@ def read_from_diablo(filename=None):
 def plot_eigs(A, plot_hull=True, plot_individual_eigs=False, labels=None, savefile=None,
               save_format='png', dpi=600, line_width=1.5, equal_axes=False, 
               title_size=12, legend_size=12, markersize=16, markeredge=2,
-              tick_size=12, serif=True,
+              tick_size=12, serif=True, left_space_pct=None,
               colors=None, markers=None, linestyles=None, legend_loc='best', 
               legend_anchor=None, legend_anchor_type=None, legend_alpha=None):
     if plot_hull:
@@ -1848,31 +1854,49 @@ def plot_eigs(A, plot_hull=True, plot_individual_eigs=False, labels=None, savefi
     plt.axvline(0, color='black', linewidth=0.5)
     plt.xlabel('Real Part', fontsize=title_size)
     plt.ylabel('Imaginary Part', fontsize=title_size)
-    plt.gca().tick_params(axis='both', labelsize=tick_size) 
+    ax = plt.gca()
+    ax.tick_params(axis='both', labelsize=tick_size) 
     plt.grid(True)
+
+    if left_space_pct is not None:
+        ax_min,ax_max = ax.get_xlim()
+        ay_min,ay_max = ax.get_ylim()
+        all_reals = np.concatenate([np.real(eig_values) for eig_values in eig_values_list])
+        xmin = np.min(all_reals)
+        if xmin < 0:
+            ax_min = xmin - left_space_pct * abs(xmin)
+        ax.set_xlim(ax_min, ax_max)
     
     # Fix axes ratio if equal_axes is True
     if equal_axes:
-        #plt.gca().set_aspect('equal', adjustable='box')
-        plt.gca().set_aspect('equal', adjustable='datalim')
+        if left_space_pct is not None:
+            side = max(ax_max-ax_min, ay_max-ay_min)
+            # For x, we want to keep the left side fixed:
+            ax.set_xlim(ax_min, ax_min + side)
+            # For y, we can center the data vertically:
+            y_center = (ay_min + ay_max) / 2. # Should be zero anyway...
+            ax.set_ylim(y_center - side/2, y_center + side/2)
+        else:
+            #ax.set_aspect('equal', adjustable='box') # This will change the shape of the plot
+            ax.set_aspect('equal', adjustable='datalim') # This will keep the shape of the plot
 
     # Show legend only if A is a list
     if isinstance(A, list):
         # Create a blended transform
         from matplotlib.transforms import blended_transform_factory
         if legend_anchor_type == 'data' or legend_anchor_type == ('data','data'):
-            bbox_transform = plt.gca().transData
+            bbox_transform = ax.transData
         elif legend_anchor_type == 'fig' or legend_anchor_type == ('fig','fig'):
             bbox_transform = plt.gcf().transFigure
         elif legend_anchor_type == ('data','fig'):
-            bbox_transform = blended_transform_factory(plt.gca().transData, plt.gcf().transFigure)
+            bbox_transform = blended_transform_factory(ax.transData, plt.gcf().transFigure)
         elif legend_anchor_type == ('fig','data'):
-            bbox_transform = blended_transform_factory(plt.gcf().transFigure, plt.gca().transData)
+            bbox_transform = blended_transform_factory(plt.gcf().transFigure, ax.transData)
         elif legend_anchor_type == None:
-            bbox_transform = plt.gca().transData
+            bbox_transform = ax.transData
         else:
             print("Invalid legend_anchor_type. Try of the format ('data','fig'). Using default 'data' type.")
-            bbox_transform = plt.gca().transData
+            bbox_transform = ax.transData
         
         legend = plt.legend(fontsize=legend_size,loc=legend_loc, 
                    bbox_to_anchor=legend_anchor, bbox_transform=bbox_transform)
