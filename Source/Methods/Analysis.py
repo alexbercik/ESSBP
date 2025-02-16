@@ -585,6 +585,8 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
 
     if scale_dt: variables_base = [None]*(3+n_attributes) # initiate list to pass to reset()
     else: variables_base = [None]*(2+n_attributes)
+    tm_rtol = solver.tol
+    tm_atol = solver.atol
 
     def set_variables(casei,runi,variables_base):
         variables = variables_base.copy() # for each run (refinement)
@@ -629,7 +631,8 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
                         print('label:', labels[casei])
 
                     dofs[casei,runi], errors[casei,runi], nn = run_single_case(solver, variables, scale_dt, 
-                                                                    base_dt, base_dx, error_type, vars2plot)
+                                                                    base_dt, base_dx, tm_rtol, tm_atol, 
+                                                                    error_type, vars2plot)
                     
                     print('Convergence Progress: run {0} of {1} complete.'.format(n_toti,n_tot))
                     print('Final Error: ', solver.calc_error())
@@ -679,7 +682,7 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
                     future = executor.submit(
                         run_parallel_case,
                         solver_class, diffeq_class, solver_kwargs, diffeq_args,
-                        scale_dt, base_dt, base_dx, error_type, vars2plot
+                        scale_dt, base_dt, base_dx, tm_rtol, tm_atol, error_type, vars2plot
                     )
                     futures[future] = (casei, runi)
             
@@ -760,6 +763,7 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
         return dofs_ret, errors_ret, legend_strings_ret
     
 def run_single_case(solver, variables, scale_dt, base_dt, base_dx, 
+                    tm_rtol, tm_atol,
                     error_type, vars2plot, reset=True):
     ''' runs a single case for convergence
     NOTE: solver should be a new object, not the original object, if running in parallel '''
@@ -778,6 +782,8 @@ def run_single_case(solver, variables, scale_dt, base_dt, base_dx,
         print('set timestep to dt =', new_dt)
     
     # Run the solver
+    solver.tm_atol = tm_atol
+    solver.tm_rtol = tm_rtol
     solver.solve()
 
     # Calculate errors
@@ -836,7 +842,8 @@ def prep_new_solver_instance(base_solver, variables):
     return solver_kwargs, diffeq_args
 
 def run_parallel_case(solver_class, diffeq_class, solver_kwargs, diffeq_args,
-                       scale_dt, base_dt, base_dx, error_type, vars2plot):
+                       scale_dt, base_dt, base_dx, tm_rtol, tm_atol, 
+                       error_type, vars2plot):
     ''' Create a new solver & diffeq instance with the given variables '''
     diffeq = diffeq_class(*diffeq_args)
     solver = solver_class(diffeq, **solver_kwargs)
@@ -845,7 +852,8 @@ def run_parallel_case(solver_class, diffeq_class, solver_kwargs, diffeq_args,
     solver.print_progress = False
     solver.keep_all_ts = False
     dofs, errors, nn = run_single_case(solver, None, 
-                                       scale_dt, base_dt, base_dx, 
+                                       scale_dt, base_dt, base_dx,
+                                       tm_rtol, tm_atol, 
                                        error_type, vars2plot, reset=False)
     return dofs, errors, nn
     
