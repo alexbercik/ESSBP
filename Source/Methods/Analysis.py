@@ -585,8 +585,8 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
 
     if scale_dt: variables_base = [None]*(3+n_attributes) # initiate list to pass to reset()
     else: variables_base = [None]*(2+n_attributes)
-    tm_rtol = solver.rtol
-    tm_atol = solver.atol
+    tm_rtol = solver.tm_rtol
+    tm_atol = solver.tm_atol
 
     def set_variables(casei,runi,variables_base):
         variables = variables_base.copy() # for each run (refinement)
