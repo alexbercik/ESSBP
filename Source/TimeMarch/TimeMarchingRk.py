@@ -7,6 +7,7 @@ Created on Fri Oct 23 17:28:45 2020
 """
 
 import numpy as np
+from scipy.integrate import DOP853
 # import scipy.sparse as sp
 # from scipy.sparse.linalg import spsolve
 
@@ -76,8 +77,52 @@ class TimeMarchingRk:
         self.final_common(q, q_sol, i, n_ts, dt, dqdt)
         return self.return_q_sol(q,q_sol,i,dt,dqdt)
     
+    def rk8(self, q, dt, n_ts):
+        ''' uses the Explicit Runge-Kutta method of order 8.
+        Calls the Scipy Implementation of “DOP853” algorithm.
+        
+        E. Hairer, S. P. Norsett G. Wanner, 
+        “Solving Ordinary Differential Equations I: Nonstiff Problems”, Sec. II.'''
+
+        def f(t, y):
+            return self.dqdt(y.reshape(self.shape_q,order='F'), t).flatten('F')
+
+        tm_solver = DOP853(f, 0.0, q.flatten('F'), t_bound=self.t_final, 
+                           max_step=dt, rtol=self.rtol, atol=self.atol)
+        q_sol = None
+        if self.keep_all_ts:
+            print("WARNING: keep_all_ts not implemented for rk8. Ignoring.")
+            self.keep_all_ts = False
+        if self.bool_calc_cons_obj:
+            print("WARNING: bool_calc_cons_obj not implemented for rk8. Ignoring.")
+            self.bool_calc_cons_obj = False
+        # we don't have access to the internal steps, so we can't get dqdt without doing exrtra work
+        dqdt = np.zeros_like(q)
+        #n_ts = int(self.t_final/dt)
+
+        i = 0
+        while tm_solver.status == 'running':
+            tm_solver.step()  # Advance one internal step
+            t_current = tm_solver.t
+            y_current = tm_solver.y
+            # we need some estimate of i in relation to n_ts
+            n_ts = int(i*self.t_final/t_current)+1
+
+            self.common(y_current.reshape(self.shape_q,order='F'), q_sol,
+                        i, n_ts, dt, dqdt)
+            i += 1
+        
+        t_current = tm_solver.t
+        y_current = tm_solver.y
+        q = y_current.reshape(self.shape_q,order='F')
+        self.final_common(q, q_sol, i, i, dt, dqdt)
+        print("RK8: used %d steps" % i)
+        return self.return_q_sol(q,q_sol,i,dt,dqdt)
+
+    
     # TODO: Do I want to put back any of the implicit methods? 
     # THis would include implicit Euler, Trapezoidal, etc
+
 
 
 
