@@ -1760,7 +1760,8 @@ def plot_eigs(A, plot_hull=True, plot_individual_eigs=False, labels=None, savefi
               title_size=12, legend_size=12, markersize=16, markeredge=2,
               tick_size=12, serif=True, left_space_pct=None,
               colors=None, markers=None, linestyles=None, legend_loc='best', 
-              legend_anchor=None, legend_anchor_type=None, legend_alpha=None):
+              legend_anchor=None, legend_anchor_type=None, legend_alpha=None,
+              xlabel=None, ylabel=None, xlim=None, ylim=None):
     if plot_hull:
         from scipy.spatial import ConvexHull
 
@@ -1860,33 +1861,67 @@ def plot_eigs(A, plot_hull=True, plot_individual_eigs=False, labels=None, savefi
     # Add grid and labels
     plt.axhline(0, color='black', linewidth=0.5)
     plt.axvline(0, color='black', linewidth=0.5)
-    plt.xlabel('Real Part', fontsize=title_size)
-    plt.ylabel('Imaginary Part', fontsize=title_size)
+    if xlabel is not None:
+        plt.xlabel(xlabel, fontsize=title_size)
+    else:
+        plt.xlabel('Real Part', fontsize=title_size)
+    if ylabel is not None:
+        plt.ylabel(ylabel, fontsize=title_size)
+    else:
+        plt.ylabel('Imaginary Part', fontsize=title_size)
     ax = plt.gca()
     ax.tick_params(axis='both', labelsize=tick_size) 
     plt.grid(True)
 
-    if left_space_pct is not None:
-        ax_min,ax_max = ax.get_xlim()
-        ay_min,ay_max = ax.get_ylim()
-        all_reals = np.concatenate([np.real(eig_values) for eig_values in eig_values_list])
-        xmin = np.min(all_reals)
-        if xmin < 0:
-            ax_min = xmin - left_space_pct * abs(xmin)
-        ax.set_xlim(ax_min, ax_max)
-    
-    # Fix axes ratio if equal_axes is True
-    if equal_axes:
-        if left_space_pct is not None:
-            side = max(ax_max-ax_min, ay_max-ay_min)
-            # For x, we want to keep the left side fixed:
-            ax.set_xlim(ax_min, ax_min + side)
-            # For y, we can center the data vertically:
-            y_center = (ay_min + ay_max) / 2. # Should be zero anyway...
-            ax.set_ylim(y_center - side/2, y_center + side/2)
+    if (xlim is not None) or (ylim is not None):
+        if xlim is not None:
+            assert(len(xlim) == 2), "xlim must be a list or tuple of length 2."
+            ax.set_xlim(xlim)
+
+            if equal_axes and (ylim is None):
+                ylim = 0.5*(xlim[1] - xlim[0])
+                ax.set_ylim((-ylim,ylim))
+            elif equal_axes and (ylim is not None):
+                print('WARNING: Cannot set equal axes when setting xlim and ylim. Ignoring.')
+                ax.set_ylim(ylim)
+            elif (ylim is not None):
+                ax.set_ylim(ylim)
+
         else:
-            #ax.set_aspect('equal', adjustable='box') # This will change the shape of the plot
-            ax.set_aspect('equal', adjustable='datalim') # This will keep the shape of the plot
+            assert(len(ylim) == 2), "ylim must be a list or tuple of length 2."
+            ax.set_ylim(ylim)
+            if left_space_pct is not None:
+                xlim = np.min(all_reals)
+                if xlim < 0:
+                    ax_lim = xlim - left_space_pct * abs(xlim)
+                ax.set_xlim(left=ax_lim)
+                if equal_axes:
+                    print('WARNING: Cannot set equal axes when setting ylim and left_space_pct. Ignoring.')
+            elif equal_axes:
+                ax.set_xlim(ylim)
+
+    else:
+        if left_space_pct is not None:
+            ax_min,ax_max = ax.get_xlim()
+            ay_min,ay_max = ax.get_ylim()
+            all_reals = np.concatenate([np.real(eig_values) for eig_values in eig_values_list])
+            xmin = np.min(all_reals)
+            if xmin < 0:
+                ax_min = xmin - left_space_pct * abs(xmin)
+            ax.set_xlim(ax_min, ax_max)
+        
+        # Fix axes ratio if equal_axes is True
+        if equal_axes:
+            if left_space_pct is not None:
+                side = max(ax_max-ax_min, ay_max-ay_min)
+                # For x, we want to keep the left side fixed:
+                ax.set_xlim(ax_min, ax_min + side)
+                # For y, we can center the data vertically:
+                y_center = (ay_min + ay_max) / 2. # Should be zero anyway...
+                ax.set_ylim(y_center - side/2, y_center + side/2)
+            else:
+                #ax.set_aspect('equal', adjustable='box') # This will change the shape of the plot
+                ax.set_aspect('equal', adjustable='datalim') # This will keep the shape of the plot
 
     # Show legend only if A is a list
     if isinstance(A, list):

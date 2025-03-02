@@ -200,7 +200,7 @@ class MakeSbpOp:
                 self.tL[0] , self.tR[-1] = 1 , 1
 
 
-        elif sbp_type.lower()=='upwind':
+        elif sbp_type.lower()=='upwind' or sbp_type.lower()=='upwind_m':
             from Source.Disc.UpwindOp import UpwindOp
             assert self.nn > 1 , "Please specify number of nodes nn > 1"
             assert self.nn > 1 , "Please specify degree p > 1"
@@ -219,6 +219,11 @@ class MakeSbpOp:
 
             self.D, self.Dp, self.Dm, self.Q, self.H, self.E, self.S, self.tL, self.tR, self.x, self.Ddiss = UpwindOp(p,self.nn)
             self.dx = 1./(nn-1)
+
+            if sbp_type.lower()=='upwind_m':
+                print('WARNING: Upwind split form is not fully set up.')
+                print('         Assuming that the baseflow is positive!')
+                self.D = self.Dm
 
         else:
             ''' Build Element-type SBP Operators '''
@@ -259,7 +264,8 @@ class MakeSbpOp:
             self.check_accuracy(self.D, self.x)
             self.check_compatibility(self.x,self.H,self.E)
             self.check_interpolation(self.tL, self.tR, self.x)
-            self.check_decomposition(self.E, self.S, self.Q, self.D, self.H)
+            if sbp_type.lower() != 'upwind_m':
+                self.check_decomposition(self.E, self.S, self.Q, self.D, self.H)
 
 
     def construct_tL(self,nn,van,p):

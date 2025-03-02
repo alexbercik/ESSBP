@@ -479,6 +479,8 @@ class PdeSolver:
                 cons_obj[i] = np.max(eigs.real)
             elif cons_obj_name_i == 'spec_rad':
                 cons_obj[i] = np.max(np.abs(eigs))
+            elif cons_obj_name_i == 'sol_error':
+                cons_obj[i] = self.calc_error(q,t)
             elif cons_obj_name_i == 'time':
                 cons_obj[i] = t
             else:
@@ -1077,7 +1079,7 @@ class PdeSolver:
                 plt.grid()
                 plt.show()
 
-    def plot_cons_obj(self,savefile=None,final_idx=-1):
+    def plot_cons_obj(self,savefile=None,final_idx=None,plot_change=True):
         '''
         Plot the conservation objectives
 
@@ -1101,20 +1103,23 @@ class PdeSolver:
                 time = np.linspace(0,self.t_final,len(self.cons_obj[i]))
 
             if cons_obj_name_i == 'energy':
-                plt.title(r'Change in Energy',fontsize=18)
-                plt.ylabel(r'$\vert \vert u(x,t)^2 \vert \vert_H$ - $\vert \vert u_0(x)^2 \vert \vert_H$',fontsize=16)
-                plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]-norm) 
-                #plt.ylabel(r'$- ( \vert \vert u(x,t)^2 \vert \vert_H$ - $\vert \vert u_0(x)^2 \vert \vert_H )$',fontsize=16)
-                #plt.plot(time[:final_idx],abs(self.cons_obj[i]-norm)) 
-                #plt.yscale('log')
-                #plt.gca().invert_yaxis()
-                plt.yscale('symlog',linthresh=1e-14)
-                ax = plt.gca()
-                ymin, ymax = ax.get_ylim()
-                positive_ticks = [0] + [10**exp for exp in range(-12, int(np.log10(ymax)) + 1, 4)]
-                negative_ticks = [-10**exp for exp in range(-12, int(np.log10(-ymin)) + 1, 4)]
-                custom_ticks = negative_ticks[::-1] + positive_ticks
-                ax.set_yticks(custom_ticks)
+                if plot_change:
+                    plt.title(r'Change in Energy',fontsize=18)
+                    plt.ylabel(r'$\vert \vert u(x,t)^2 \vert \vert_H - \vert \vert u_0(x)^2 \vert \vert_H$',fontsize=16)
+                    plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]-norm) 
+                    plt.yscale('symlog',linthresh=1e-14)
+                    ax = plt.gca()
+                    ymin, ymax = ax.get_ylim()
+                    positive_ticks = [0] + [10**exp for exp in range(-12, int(np.log10(ymax)) + 1, 4)]
+                    negative_ticks = [-10**exp for exp in range(-12, int(np.log10(-ymin)) + 1, 4)]
+                    custom_ticks = negative_ticks[::-1] + positive_ticks
+                    ax.set_yticks(custom_ticks)
+                else:
+                    plt.title(r'Energy',fontsize=18)
+                    plt.ylabel(r'$\vert \vert u(x,t)^2 \vert \vert_H $',fontsize=16)
+                    plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]) 
+                    plt.yscale('log')
+                    #plt.gca().invert_yaxis()
                 
             elif cons_obj_name_i == 'entropy':
                 plt.title(r'Change in Entropy',fontsize=18)
@@ -1129,10 +1134,16 @@ class PdeSolver:
                 ax.set_yticks(custom_ticks)
     
             elif cons_obj_name_i == 'conservation':
-                plt.title(r'Change in Conservation',fontsize=18)
-                plt.ylabel(r'$\vert \vert u(x,t) \vert \vert_H$ - $\vert \vert u_0(x) \vert \vert_H$',fontsize=16)
-                plt.ticklabel_format(axis='y',style='sci',scilimits=(0,1))
-                plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]-norm)              
+                if plot_change:
+                    plt.title(r'Change in Conservation',fontsize=18)
+                    plt.ylabel(r'$\vert \vert u(x,t) \vert \vert_H$ - $\vert \vert u_0(x) \vert \vert_H$',fontsize=16)
+                    plt.ticklabel_format(axis='y',style='sci',scilimits=(0,1))
+                    plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]-norm)   
+                else:
+                    plt.title(r'Conservation',fontsize=18)
+                    plt.ylabel(r'$\vert \vert u(x,t) \vert \vert_H$',fontsize=16)
+                    plt.ticklabel_format(axis='y',style='sci',scilimits=(0,1))
+                    plt.plot(time[:final_idx],self.cons_obj[i,:final_idx])           
             
             elif cons_obj_name_i == 'a_energy':
                 plt.title(r'Change in A-norm Energy',fontsize=18)
@@ -1148,6 +1159,12 @@ class PdeSolver:
                 plt.title(r'Spectral Radius of LHS',fontsize=18)
                 plt.ylabel(r'$\rho = \max \ \vert \lambda \vert$',fontsize=16)
                 plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]) 
+
+            elif cons_obj_name_i == 'sol_error':
+                plt.title(r'Solution Error',fontsize=18)
+                plt.ylabel(r'$\vert \vert u - u_e \vert \vert_H$',fontsize=16)
+                plt.yscale('log')
+                plt.plot(time[:final_idx],self.cons_obj[i,:final_idx])   
                 
             else:
                 print('WARNING: No default plotting set up for '+cons_obj_name_i)
