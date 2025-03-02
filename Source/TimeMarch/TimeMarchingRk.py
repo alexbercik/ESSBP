@@ -74,7 +74,7 @@ class TimeMarchingRk:
         # Congrats you reached the end
         i += 1
         k1 = self.dqdt(q, t)
-        self.final_common(q, q_sol, i, n_ts, dt, dqdt)
+        self.final_common(q, q_sol, i, n_ts, dt, k1)
         return self.return_q_sol(q,q_sol,i,dt,dqdt)
     
     def rk8(self, q, dt, n_ts):
@@ -102,14 +102,15 @@ class TimeMarchingRk:
 
         i = 0
         while tm_solver.status == 'running':
-            tm_solver.step()  # Advance one internal step
             t_current = tm_solver.t
             y_current = tm_solver.y
             # we need some estimate of i in relation to n_ts
             n_ts = int(i*self.t_final/t_current)+1
-
             self.common(y_current.reshape(self.shape_q,order='F'), q_sol,
                         i, n_ts, dt, dqdt)
+            if self.quitsim: break
+
+            tm_solver.step()  # Advance one internal step
             i += 1
         
         t_current = tm_solver.t

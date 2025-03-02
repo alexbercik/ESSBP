@@ -63,22 +63,7 @@ class TaylorSeries1D:
             terms += sp.Rational(1, sp.factorial(i))*self.df[i]*h**i
         return terms
     
-def Check_Taylor_Series_1D(Mat,x,num_terms=4,lim_terms=2,notebook=True,decimals=10,delta_x=None):
-    ''' Check the taylor expansion of the rows of a 1D matrix given x'''
-    if notebook:
-        from IPython.display import display, Math
-        from sympy.printing.latex import latex
-
-    u = sp.Symbol('u')
-    h = sp.Symbol(r'(\Delta x)')
-    u_Taylor = TaylorSeries1D(u,num_terms)
-    Dxs = []
-    if delta_x is None:
-        h_avg = np.mean(x[1:] - x[:-1])
-    else:
-        h_avg = delta_x
-
-    def round_to_nearest_simple_decimal(expr, threshold=1e-9):
+def round_to_nearest_simple_decimal(expr, decimals=10, threshold=1e-9):
         """Round numbers in expr close to simple decimals to those simple decimals."""
         rounded_expr = expr
         for number in expr.atoms(sp.Number):
@@ -95,6 +80,61 @@ def Check_Taylor_Series_1D(Mat,x,num_terms=4,lim_terms=2,notebook=True,decimals=
             else:
                 rounded_expr = rounded_expr.subs(number, printing_decimal)
         return rounded_expr
+    
+def Check_FD_Stencil_Expansion(stencil,locations,num_terms=4,lim_terms=2,
+                               notebook=True,decimals=10,xdenom=0):
+    ''' do a taylor expansion of a stencil assuming equispaced nodes 
+    stencil: list of values u_j of the stencil, e.g. [-0.5,0,0.5]
+    locations: list of locations j of the stencil, e.g. [-1,0,1]'''
+    if notebook:
+        from IPython.display import display, Math
+        from sympy.printing.latex import latex
+    u = sp.Symbol('u')
+    h = sp.Symbol(r'(\Delta x)')
+    if xdenom==0:
+        denom = 1
+    else:
+        denom = h**xdenom
+    u_Taylor = TaylorSeries1D(u,num_terms)
+
+    dx = 0
+    for j,a in enumerate(stencil):
+        if locations[j]==0:
+            dx += a*u / denom
+        else:
+            taylor = u_Taylor(locations[j]*h)
+            dx += a*taylor / denom
+
+    dx = sp.expand(sp.simplify(dx))
+    dx = round_to_nearest_simple_decimal(dx,decimals)
+
+    if lim_terms < len(dx.as_ordered_terms()):
+        res = sum(dx.as_ordered_terms()[-lim_terms:])
+    else:
+        res = dx
+
+    if notebook:
+        out = f'{latex(res)}'
+        display(Math(out))
+    else:
+        print(res)
+    
+    
+    
+def Check_Taylor_Series_1D(Mat,x,num_terms=4,lim_terms=2,notebook=True,decimals=10,delta_x=None):
+    ''' Check the taylor expansion of the rows of a 1D matrix given x'''
+    if notebook:
+        from IPython.display import display, Math
+        from sympy.printing.latex import latex
+
+    u = sp.Symbol('u')
+    h = sp.Symbol(r'(\Delta x)')
+    u_Taylor = TaylorSeries1D(u,num_terms)
+    Dxs = []
+    if delta_x is None:
+        h_avg = np.mean(x[1:] - x[:-1])
+    else:
+        h_avg = delta_x
 
     for i in range(len(x)):
         dx = 0
@@ -113,7 +153,7 @@ def Check_Taylor_Series_1D(Mat,x,num_terms=4,lim_terms=2,notebook=True,decimals=
         #d = {s: 0 for s in small_numbers}
         #d.update({s: 1 for s in numbers_near_one})
         #Dxs.append(dx.subs(d))
-        dx = round_to_nearest_simple_decimal(dx)
+        dx = round_to_nearest_simple_decimal(dx,decimals)
 
         if lim_terms < len(dx.as_ordered_terms()):
             limited_terms = sum(dx.as_ordered_terms()[-lim_terms:])

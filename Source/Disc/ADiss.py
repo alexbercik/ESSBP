@@ -214,6 +214,21 @@ class ADiss():
                     print("WARNING: fluxvec method not understood. Defaulting to fluxvec = 'lf'.")
                     self.fluxvec = 'lf'
                     self.dissipation = self.dissipation_upwind_lf
+
+            elif self.type == 'zelalem':
+                if self.jac_type == 'scalar' or self.jac_type == 'sca':
+                    self.dissipation = self.dissipation_zelalem_scalar
+                else:
+                    print("WARNING: Only scalar dissipation set up for type='zelalem' dissipation. Defaulting to jac_type = 'scalar'.")
+                    self.jac_type = 'scalar'
+                    self.dissipation = self.dissipation_dcp_scalar
+                
+                if 'eps_type' in self.solver.vol_diss.keys():
+                    assert isinstance(self.solver.vol_diss['eps_type'], int), 'Artificial Dissipation: eps_type must be an int, {0}'.format(self.solver.vol_diss['eps_type'])
+                    self.eps_type = self.solver.vol_diss['eps_type']
+                else:
+                    self.eps_type = 1
+
             
             else:
                 raise Exception('Artificial dissipation: diss_type not understood, '+ str(self.type))
@@ -411,6 +426,23 @@ class ADiss():
                 print('WARNING: H of sbp operator does not match H of dissipation operator! Not provably stable.')
             if self.sparse: Ddiss = sp.lm_to_sp(Ddiss)
             self.Ddiss = self.gdiag_lm( self.repeat_neq_gv(-self.solver.mesh.det_jac_inv), self.kron_neq_lm(Ddiss,self.neq_node))
+        elif self.type == 'zelalem':
+            assert (self.solver.disc_nodes.lower() in ['lgl', 'lg']), 'zelalem dissipation only implemented for LGL or LG.'
+            Ds = self.solver.sbp.D
+            for i in range(1,self.s):
+                Ds = self.lm_lm(self.solver.sbp.D, Ds)
+            Ds = Ds / ((self.solver.sbp.nn-1)**self.s) # make undivided
+            B = np.ones(self.nen) # can play with later
+
+            if self.sparse: Ds = sp.lm_to_sp(Ds)
+            self.rhs_D = self.kron_neq_lm(Ds,self.neq_node) 
+            DsT = self.lm_to_lmT(Ds,self.nen,self.nen)
+            if self.use_H:
+                Hundvd = np.diag(self.solver.sbp.H) / self.solver.sbp.dx
+                self.lhs_D = self.gdiag_lm(-self.solver.H_inv_phys,self.kron_neq_lm(self.lm_ldiag(DsT, B * Hundvd), self.neq_node))
+            else:
+                self.lhs_D = self.gdiag_lm(-self.solver.H_inv_phys,self.kron_neq_lm(self.lm_ldiag(DsT, B), self.neq_node))
+            
         elif self.type == 'b' or self.type == 'entb':
             assert(self.solver.disc_nodes.lower() == 'csbp'), 'Baseline dissipation only implemented for csbp.'
             D = BaselineDiss(self.s, self.nen)
@@ -625,6 +657,7 @@ class ADiss():
             if self.sparse: Ddiss = sp.lm_to_sp(Ddiss)
             self.Dxidiss = self.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), self.kron_neq_lm(self.kron_lm_eye(Ddiss, self.nen),self.neq_node)) 
             self.Detadiss = self.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), self.kron_neq_lm(self.kron_eye_lm(Ddiss, self.nen, self.nen),self.neq_node))
+
         else:
             raise Exception('ADiss: diss_type ' + self.type + ' not set up yet')
 
@@ -950,6 +983,39 @@ class ADiss():
         elif self.dim == 3:
             raise Exception('TODO')
         return self.coeff*diss
+    
+    def dissipation_zelalem_scalar(self, q):
+        ''' dissipation function for zelalem's idea, scalar functions or systems'''
+        if self.dim == 1:
+            maxeig = self.maxeig_dExdq(q)
+            if self.s % 2 == 1 and self.avg_half_nodes:
+                maxeig[:-1] = 0.5*(maxeig[:-1] + maxeig[1:])
+            A = self.repeat_neq_gv(maxeig)
+            diss = self.gm_gv(self.lhs_D, A * self.lm_gv(self.rhs_D, q))
+            if self.eps_type == 0:
+                # plain idea - low order dissipation, should scale as h**(s-1)
+                return self.coeff*diss
+            elif self.eps_type == 1:
+                # simple idea to increase effective order, multiply by h**(p-s+1)
+                h = 1/((self.nen-1)*self.solver.nelem)
+                coeff = h**(self.solver.p-self.s+1)*self.coeff
+                return coeff*diss
+            elif self.eps_type == 2:
+                # use boundaries
+                v = np.copy(q)
+                v_a = self.solver.sat.lm_gv(self.solver.sat.tLT, v)
+                v_b = self.solver.sat.lm_gv(self.solver.sat.tRT, v)
+                # assume periodic boundaries
+                vf_L = fn.pad_1dL(v_b, v_b[:,-1])
+                vf_R = fn.pad_1dR(v_a, v_a[:,0])
+                vf_jump = vf_R - vf_L
+
+                #vf_jump[:,1:]
+                #vf_jump[:,:-1]
+
+
+        else:
+            raise Exception('TODO')
     
     
     

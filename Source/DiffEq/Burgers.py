@@ -71,22 +71,14 @@ class Burgers(PdeBase):
                         u[i] = u0(sol.root)
             else:
                 # Post–shock: a shock forms at x=0.5.
-                # First compute the nontrivial left state u_L from u - sin(2*pi*t*u)= 0.
-                # We exclude the trivial solution u = 0 by choosing a bracket that does not include 0.
-                g = lambda u_val: u_val - np.sin(2*np.pi*time*u_val)
-                # For a typical t > t_break, g(1e-4) is negative and g(1) is positive.
-                sol_u = root_scalar(g, method='brentq', bracket=[1e-4, 1], xtol=1e-12, maxiter=1000)
-                u_L = sol_u.root
-                u_R = -u_L  # by symmetry
-                
-                # Now, for each spatial point x, invert the characteristic relation using the correct branch.
+                # for each spatial point x, invert the characteristic relation using the correct branch.
                 for i, xi in enumerate(x):
                     if xi == 0: u[i] = 0
                     elif xi == 1: u[i] = 0
                     else:
-                        if np.isclose(xi, shock, atol=1e-12):
+                        if abs(xi - shock) < 1e-12:
                             # At the shock, assign the Rankine–Hugoniot value.
-                            u[i] = 0.5*(u_L + u_R)  # which here is 0.
+                            u[i] = 0.0
                         elif xi < shock:
                             # For x to the left of the shock, invert f(x0)= x0 + sin(2*pi*x0)*t - xi on x0 in [0, shock].
                             f = lambda x0: x0 + u0(x0)*time - xi

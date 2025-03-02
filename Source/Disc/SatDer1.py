@@ -21,25 +21,33 @@ class SatDer1:
         '''
         q_a = self.lm_gv(self.tLT, q)
         q_b = self.lm_gv(self.tRT, q)
-        if q_bdyL is None: # periodic
-            EL = fn.shift_right(E)
-            ER = fn.shift_left(E)
-            intR = self.lm_gv(self.tb, ER)
-            intL = self.lm_gv(self.ta, EL)
+
+        EL = fn.shift_right(E)
+        intL = self.lm_gv(self.ta, EL)
+        ER = fn.shift_left(E)
+        intR = self.lm_gv(self.tb, ER)
+        
+        if q_bdyL is None:
             qf_L = fn.pad_1dL(q_b, q_b[:,-1])
-            qf_R = fn.pad_1dR(q_a, q_a[:,0])
         else:
-            EL = fn.shift_right(E)
-            ER = fn.shift_left(E)
-            intR = self.lm_gv(self.tb, ER)
-            intL = self.lm_gv(self.ta, EL)
-            # manually fix boundaries of EL, ER to ensure proper boundary coupling
-            if E_bdyL is None:
-                E_bdyL = self.calcEx(q_bdyL)
-                E_bdyR = self.calcEx(q_bdyR)
-            intR[:,-1] = self.lm_lv(self.tR, E_bdyR)
+            # manually fix boundaries of EL to ensure proper boundary coupling
+            if E_bdyL is None: E_bdyL = self.calcEx(q_bdyL)
             intL[:,0] = self.lm_lv(self.tL, E_bdyL)
             qf_L = fn.pad_1dL(q_b, q_bdyL)
+        
+        if q_bdyR is None:
+            qf_R = fn.pad_1dR(q_a, q_a[:,0])
+        elif q_bdyR == 'None':
+            # outflow boundary condition - do not apply a SAT here
+            qf_R = fn.pad_1dR(q_a, np.zeros(self.neq_node))
+            qf_L[:,-1] = 0.0
+            # but careful I am doing E * flux, must also subtract this from SAT
+            E_bdyR = E[-self.neq_node:,-1]
+            intR[:,-1] = self.lm_lv(self.tR, E_bdyR)
+        else:
+            # manually fix boundaries of ER to ensure proper boundary coupling
+            if E_bdyR is None: E_bdyR = self.calcEx(q_bdyR)
+            intR[:,-1] = self.lm_lv(self.tR, E_bdyR)
             qf_R = fn.pad_1dR(q_a, q_bdyR)
 
         diss = self.coeff*self.diss(qf_L,qf_R)
