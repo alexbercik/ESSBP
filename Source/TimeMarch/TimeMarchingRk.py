@@ -101,17 +101,20 @@ class TimeMarchingRk:
         #n_ts = int(self.t_final/dt)
 
         i = 0
+        t_current = tm_solver.t
+        y_current = tm_solver.y
+        n_ts = int(self.t_final/dt)
         while tm_solver.status == 'running':
-            t_current = tm_solver.t
-            y_current = tm_solver.y
-            # we need some estimate of i in relation to n_ts
-            n_ts = int(i*self.t_final/t_current)+1
             self.common(y_current.reshape(self.shape_q,order='F'), q_sol,
                         i, n_ts, dt, dqdt)
             if self.quitsim: break
 
             tm_solver.step()  # Advance one internal step
             i += 1
+            t_current = tm_solver.t
+            y_current = tm_solver.y
+            # we need some estimate of i in relation to n_ts
+            n_ts = int(i*self.t_final/t_current)+1
         
         t_current = tm_solver.t
         y_current = tm_solver.y
