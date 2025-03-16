@@ -120,13 +120,13 @@ class TimeMarching(TimeMarchingRk):
             if rtol is not None:
                 self.rtol = rtol
             else:
-                print('WARNING: rtol not set for rk8. Setting to 1e-3.')
-                self.rtol = 1e-3
+                print('WARNING: rtol not set for rk8. Setting to 1e-12.')
+                self.rtol = 1e-12
             if atol is not None:
                 self.atol = atol
             else:
-                print('WARNING: atol not set for rk8. Setting to 1e-6.')
-                self.atol = 1e-6
+                print('WARNING: atol not set for rk8. Setting to 1e-12.')
+                self.atol = 1e-12
 
     def solve(self, q0, dt, n_ts):
         '''
