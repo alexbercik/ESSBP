@@ -11,3 +11,8 @@ This directory contains all the files necessary to reproduce the plots from the 
 ## Paper
 
 The preprint of the paper can be found on arXiv: [Link to come later]
+
+## Debugging
+Install instructions can be found in the main directory for ESSBP.
+If you have issues running this code, feel free to contact Alex Bercik directly.
+Last verified to run properly at commit 7fc07251508759ebbb726d35e3bebd2f2ccc4453
