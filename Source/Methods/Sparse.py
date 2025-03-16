@@ -630,6 +630,10 @@ def lm_ldiag(csr, H):
     return csr.mult_ldiag(H)
 
 @njit
+def ldiag_lm(H, csr):
+    return csr.premult_ldiag(H)
+
+@njit
 def lm_gdiag(csr, H):
     return csr.mult_gdiag(H)
 

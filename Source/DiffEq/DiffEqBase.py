@@ -197,12 +197,18 @@ class PdeBase:
                 raise Exception('This q0_type does not work with xy provided.')
             qshape = np.shape(xy)
 
-        if q0_type == 'gausswave':
-            k = (8*np.log(self.q0_gauss_wave_val_bc/self.q0_max_q))
+        if q0_type == 'gausswave' or q0_type == 'gausswave_0.25':
             if self.dim == 1:
-                mid_point = 0.5*(self.xmax + self.xmin) # mean
+                if q0_type == 'gausswave_0.25':
+                    mid_point = 0.5*(self.xmax + self.xmin)
+                    k = (16*np.log(self.q0_gauss_wave_val_bc/self.q0_max_q))
+                    xmod = np.mod((xy - self.xmin) + 0.5*mid_point, self.dom_len) + self.xmin
+                else:
+                    mid_point = 0.5*(self.xmax + self.xmin) # mean
+                    k = (8*np.log(self.q0_gauss_wave_val_bc/self.q0_max_q))
+                    xmod = xy
                 stdev2 = abs(self.dom_len**2/k) # standard deviation squared
-                exp = -0.5*(xy-mid_point)**2/stdev2
+                exp = -0.5*(xmod-mid_point)**2/stdev2
                 q0 = self.q0_max_q * np.exp(exp)
             elif self.dim == 2:
                 mid_pointx = 0.5*(self.xmax[0] + self.xmin[0]) # mean
@@ -226,6 +232,16 @@ class PdeBase:
             stdev2 = 0.08**2
             exp = -0.5*(xy-0.5)**2/stdev2
             q0 = np.exp(exp)
+        elif q0_type == 'morlet_wavelet':
+            assert self.dim==1,'only for dim=1'
+            k = (8*np.log(self.q0_gauss_wave_val_bc/self.q0_max_q))
+            mid_point = 0.5*(self.xmax + self.xmin) # mean
+            stdev2 = abs(self.dom_len**2/k) # standard deviation squared
+            exp = -0.5*(xy-mid_point)**2/stdev2
+            gauss = self.q0_max_q * np.exp(exp)
+            k_pi = 10 # how many oscillations to include in the domain
+            cos = np.cos(k_pi*2.*np.pi*(xy-mid_point)/self.dom_len)
+            q0 = gauss * cos
         elif q0_type == 'gausswave_1d' or 'gausswave_debug' in q0_type:
             if 'y' in q0_type: xyz = 1
             elif 'z' in q0_type: xyz = 2
@@ -293,7 +309,7 @@ class PdeBase:
                 xy_LG = LG_set(self.nen)[0]
             xy_LG = 0.5*(xy_LG[:, None] + 1) # Convert from 1D to 2D array
             wBary_LG = MakeDgOp.BaryWeights(xy_LG) # Barycentric weights for LG nodes
-            van = MakeDgOp.VandermondeLagrange1D(self.x_ref,wBary_LG,xy_LG)
+            van = MakeDgOp.VandermondeLagrange1D(self.x_ref,xy_LG,wBary_LG)
             # The vandermonde maps from xy_LG coarse nodes to self.xy_elem solution nodes
             # now map the LG nodes to the entire domain
             mesh = MakeMesh(self.dim, self.xmin, self.xmax, self.nelem, xy_LG[:,0])
@@ -344,7 +360,7 @@ class PdeBase:
                 ax.plot(x[:, 0], exa_sol[:, 0], **self.plt_style_exa_sol,label='Exact')
                 for elem in range(1,x.shape[1]):
                     ax.plot(x[:, elem], exa_sol[:, elem], **self.plt_style_exa_sol)
-                
+            
             ax.plot(x[:, 0], num_sol[:, 0], **self.plt_style_sol[0], label='Numerical')
             for elem in range(1,x.shape[1]):
                 ax.plot(x[:, elem], num_sol[:, elem], **self.plt_style_sol[0])

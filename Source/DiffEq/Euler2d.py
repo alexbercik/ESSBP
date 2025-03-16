@@ -236,7 +236,7 @@ class Euler(PdeBase):
         ''' Check if thermodynamic variables are positive '''
         rho = q[::4,:]
         p = self.calc_p(q)
-        not_ok = np.any(rho < 0) and np.any(p < 0)
+        not_ok = np.any(rho < 0) or np.any(p < 0)
         return not_ok  
 
     def decompose_q(self, q):

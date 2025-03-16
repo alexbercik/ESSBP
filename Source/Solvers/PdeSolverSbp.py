@@ -182,6 +182,8 @@ class PdeSolverSbp(PdeSolver):
             sat = self.sat.calc(q,E)
         elif self.bc == 'homogeneous':
             sat = self.sat.calc(q, E, q_bdyL=np.array([0]), q_bdyR=np.array([0]))
+        elif self.bc == 'homogeneous-outflow':
+            sat = self.sat.calc(q, E, q_bdyL=np.array([0]), q_bdyR='None')
         elif self.bc == 'dirichlet':
             sat = self.sat.calc(q, E, q_bdyL=self.diffeq.qL, q_bdyR=self.diffeq.qR, E_bdyL=self.diffeq.EL, E_bdyR=self.diffeq.ER)
         else:
@@ -396,7 +398,7 @@ class PdeSolverSbp(PdeSolver):
             H_phys = self.H_phys_unkronned
         else:
             raise Exception('Something went wrong, nen = ',nen)
-        if q.ndim == 2: energy = np.tensordot(q, H_phys * q)
+        if q.ndim == 2: energy = np.tensordot(q, H_phys * q) #todo: I think np.sum(q*H_phys*q) works too?
         elif q.ndim == 3: energy = np.sum(q * H_phys[:,:,np.newaxis] * q, axis=(0, 1))  
         else: raise Exception('Something went wrong, q.ndim = ',q.ndim)
         return energy
