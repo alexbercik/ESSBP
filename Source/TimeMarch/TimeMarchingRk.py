@@ -101,25 +101,30 @@ class TimeMarchingRk:
         #n_ts = int(self.t_final/dt)
 
         i = 0
-        t_current = tm_solver.t
-        y_current = tm_solver.y
-        n_ts = int(self.t_final/dt)
+        #t_current = tm_solver.t
+        #y_current = tm_solver.y
+        #n_ts = int(self.t_final/dt)
         while tm_solver.status == 'running':
-            self.common(y_current.reshape(self.shape_q,order='F'), q_sol,
-                        i, n_ts, dt, dqdt)
-            if self.quitsim: break
-
             tm_solver.step()  # Advance one internal step
             i += 1
             t_current = tm_solver.t
             y_current = tm_solver.y
             # we need some estimate of i in relation to n_ts
             n_ts = int(i*self.t_final/t_current)+1
+            self.common(y_current.reshape(self.shape_q,order='F'), q_sol,
+                        i, n_ts, dt, dqdt)
+            if self.quitsim: break
         
-        t_current = tm_solver.t
-        y_current = tm_solver.y
+        #t_current = tm_solver.t
+        #y_current = tm_solver.y
+        if t_current < self.t_final:
+            #print("RK8: WARNING: Did not reach final time. t = %f" % t_current)
+            self.quitsim = True
+            self.failsim = True
+        else:
+            n_ts = i
         q = y_current.reshape(self.shape_q,order='F')
-        self.final_common(q, q_sol, i, i, dt, dqdt)
+        self.final_common(q, q_sol, i, n_ts, dt, dqdt)
         print("RK8: used %d steps" % i)
         return self.return_q_sol(q,q_sol,i,dt,dqdt)
 
