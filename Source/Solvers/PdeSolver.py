@@ -553,7 +553,7 @@ class PdeSolver:
                 neq = 1
 
         # determine error to use
-        if method == 'SBP' or method == 'Rms':
+        if method == 'SBP' or method == 'Rms' or method == 'L2':
             error = var - var_exa
         elif method == 'max diff':
             error = np.max(abs(var-var_exa))
@@ -568,7 +568,7 @@ class PdeSolver:
         # if we still need to apply a norm, do it
         if method == 'SBP' or method == 'Truncation-SBP':
             error = self.norm(error,neq)
-        elif method == 'Rms' or method == 'Truncation-Rms':
+        elif method == 'Rms' or method == 'Truncation-Rms' or method == 'L2':
             error = np.linalg.norm(error) / np.sqrt(self.nn)
         return error
 
@@ -779,7 +779,7 @@ class PdeSolver:
     
     def check_eigs(self, q=None, plot_eigs=True, returnA=False, returneigs=False, plot_maxvec=False, 
                    exact_dfdq=False, finite_diff=False, step=5.0e-6, istep=1e-15, tol=1.0e-10, 
-                   savefile=None, print_nothing=False, colour_by_k=False,
+                   savefile=None, print_nothing=False, colour_by_k=False, normalize=False,
                    ymin=None, ymax=None, xmin=None, xmax=None, print_error=False,
                    time=None, display_time=False, display_maxreal=False,
                    title=None, save_format='png', dpi=600, overwrite=False, **kargs):
@@ -821,6 +821,9 @@ class PdeSolver:
         A = self.calc_LHS(q=q, exact_dfdq=exact_dfdq, step=step, istep=istep, 
                           finite_diff=finite_diff, print_nothing=print_nothing,
                           print_error=print_error)
+        if normalize:
+            assert self.dim==1, 'Normalizing only set up for 1D'
+            A /= self.nelem*(self.nen-1)/(self.xmax-self.xmin)
         nen1, nen2 = A.shape
         if not print_nothing: 
             if nen1 >= 5000:
@@ -869,7 +872,7 @@ class PdeSolver:
                         nc_nodes = np.linspace(0,1,self.nen,endpoint=True)
                         elem_nodes = np.reshape(self.sbp.x,(self.nen,1))
                         wBary = MakeDgOp.BaryWeights(elem_nodes)
-                        V_to_nc = MakeDgOp.VandermondeLagrange1D(nc_nodes,wBary,elem_nodes)
+                        V_to_nc = MakeDgOp.VandermondeLagrange1D(nc_nodes,elem_nodes,wBary)
                         for elem in range(self.nelem):
                             eigvecs[elem*self.nen:(elem+1)*self.nen] = V_to_nc @ eigvecs[elem*self.nen:(elem+1)*self.nen]
                     elif self.disc_nodes == 'lg':
@@ -877,7 +880,7 @@ class PdeSolver:
                         nc_nodes = np.linspace(0,1,self.nen,endpoint=False)
                         elem_nodes = np.reshape(self.sbp.x,(self.nen,1))
                         wBary = MakeDgOp.BaryWeights(elem_nodes)
-                        V_to_nc = MakeDgOp.VandermondeLagrange1D(nc_nodes,wBary,elem_nodes)
+                        V_to_nc = MakeDgOp.VandermondeLagrange1D(nc_nodes,elem_nodes,wBary)
                         for elem in range(self.nelem):
                             eigvecs[elem*self.nen:(elem+1)*self.nen] = V_to_nc @ eigvecs[elem*self.nen:(elem+1)*self.nen]
 
@@ -1079,7 +1082,7 @@ class PdeSolver:
                 plt.grid()
                 plt.show()
 
-    def plot_cons_obj(self,savefile=None,final_idx=None,plot_change=True):
+    def plot_cons_obj(self,savefile=None,plot_change=True,final_idx=None,start_idx=0,logscale=True):
         '''
         Plot the conservation objectives
 
@@ -1106,7 +1109,27 @@ class PdeSolver:
                 if plot_change:
                     plt.title(r'Change in Energy',fontsize=18)
                     plt.ylabel(r'$\vert \vert u(x,t)^2 \vert \vert_H - \vert \vert u_0(x)^2 \vert \vert_H$',fontsize=16)
-                    plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]-norm) 
+                    plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx]-norm) 
+                    if logscale: 
+                        plt.yscale('symlog',linthresh=1e-14)
+                        ax = plt.gca()
+                        ymin, ymax = ax.get_ylim()
+                        positive_ticks = [0] + [10**exp for exp in range(-12, int(np.log10(ymax)) + 1, 4)]
+                        negative_ticks = [-10**exp for exp in range(-12, int(np.log10(-ymin)) + 1, 4)]
+                        custom_ticks = negative_ticks[::-1] + positive_ticks
+                        ax.set_yticks(custom_ticks)
+                else:
+                    plt.title(r'Energy',fontsize=18)
+                    plt.ylabel(r'$\vert \vert u(x,t)^2 \vert \vert_H $',fontsize=16)
+                    plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx]) 
+                    if logscale: plt.yscale('log')
+                    #plt.gca().invert_yaxis()
+                
+            elif cons_obj_name_i == 'entropy':
+                plt.title(r'Change in Entropy',fontsize=18)
+                plt.ylabel(r'$ 1 H s(x,t) - 1 H s(x,0) $',fontsize=16)
+                plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx]-norm) 
+                if logscale: 
                     plt.yscale('symlog',linthresh=1e-14)
                     ax = plt.gca()
                     ymin, ymax = ax.get_ylim()
@@ -1114,62 +1137,44 @@ class PdeSolver:
                     negative_ticks = [-10**exp for exp in range(-12, int(np.log10(-ymin)) + 1, 4)]
                     custom_ticks = negative_ticks[::-1] + positive_ticks
                     ax.set_yticks(custom_ticks)
-                else:
-                    plt.title(r'Energy',fontsize=18)
-                    plt.ylabel(r'$\vert \vert u(x,t)^2 \vert \vert_H $',fontsize=16)
-                    plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]) 
-                    plt.yscale('log')
-                    #plt.gca().invert_yaxis()
-                
-            elif cons_obj_name_i == 'entropy':
-                plt.title(r'Change in Entropy',fontsize=18)
-                plt.ylabel(r'$ 1 H s(x,t) - 1 H s(x,0) $',fontsize=16)
-                plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]-norm) 
-                plt.yscale('symlog',linthresh=1e-14)
-                ax = plt.gca()
-                ymin, ymax = ax.get_ylim()
-                positive_ticks = [0] + [10**exp for exp in range(-12, int(np.log10(ymax)) + 1, 4)]
-                negative_ticks = [-10**exp for exp in range(-12, int(np.log10(-ymin)) + 1, 4)]
-                custom_ticks = negative_ticks[::-1] + positive_ticks
-                ax.set_yticks(custom_ticks)
     
             elif cons_obj_name_i == 'conservation':
                 if plot_change:
                     plt.title(r'Change in Conservation',fontsize=18)
                     plt.ylabel(r'$\vert \vert u(x,t) \vert \vert_H$ - $\vert \vert u_0(x) \vert \vert_H$',fontsize=16)
                     plt.ticklabel_format(axis='y',style='sci',scilimits=(0,1))
-                    plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]-norm)   
+                    plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx]-norm)   
                 else:
                     plt.title(r'Conservation',fontsize=18)
                     plt.ylabel(r'$\vert \vert u(x,t) \vert \vert_H$',fontsize=16)
                     plt.ticklabel_format(axis='y',style='sci',scilimits=(0,1))
-                    plt.plot(time[:final_idx],self.cons_obj[i,:final_idx])           
+                    plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx])           
             
             elif cons_obj_name_i == 'a_energy':
                 plt.title(r'Change in A-norm Energy',fontsize=18)
                 plt.ylabel(r'$\vert \vert u(x,t)^2 \vert \vert_{AH}$ - $\vert \vert u_0(x)^2 \vert \vert_{AH}$',fontsize=16)
-                plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]-norm) 
+                plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx]-norm) 
 
             elif cons_obj_name_i == 'max_eig':
                 plt.title(r'Maximum Real Eigenvalue of LHS',fontsize=18)
                 plt.ylabel(r'$\max \ \Re(\lambda)$',fontsize=16)
-                plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]) 
+                plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx]) 
 
             elif cons_obj_name_i == 'spec_rad':
                 plt.title(r'Spectral Radius of LHS',fontsize=18)
                 plt.ylabel(r'$\rho = \max \ \vert \lambda \vert$',fontsize=16)
-                plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]) 
+                plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx]) 
 
             elif cons_obj_name_i == 'sol_error':
                 plt.title(r'Solution Error',fontsize=18)
                 plt.ylabel(r'$\vert \vert u - u_e \vert \vert_H$',fontsize=16)
-                plt.yscale('log')
-                plt.plot(time[:final_idx],self.cons_obj[i,:final_idx])   
+                if logscale: plt.yscale('log')
+                plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx])   
                 
             else:
                 print('WARNING: No default plotting set up for '+cons_obj_name_i)
                 plt.title(cons_obj_name_i,fontsize=18)
-                plt.plot(time[:final_idx],self.cons_obj[i,:final_idx]) 
+                plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx]) 
                 
             if savefile is not None:
                 plt.savefig(savefile+'_'+cons_obj_name_i+'.jpg',dpi=600)
@@ -1259,7 +1264,14 @@ class PdeSolver:
                 elif self.q_sol.ndim == 3: q = self.q_sol[:,:,-1]
         if 'time' not in kwargs: kwargs['time']=self.t_final
         if 'plot_exa' not in kwargs: kwargs['plot_exa']=True
-        self.diffeq.plot_sol(q, **kwargs)
+        if self.disc_nodes in ['lgl','lg','nc']:
+            x50 = np.linspace(0,1,50)
+            V = MakeDgOp.VandermondeLagrange1D(x50,self.sbp.x)
+            x = V @ self.mesh.x_elem # strictly not correct if nonpolynommial grid warping, but good enough
+            q = V @ q
+            self.diffeq.plot_sol(q, x, **kwargs)
+        else:
+            self.diffeq.plot_sol(q, **kwargs)
         
     def plot_error(self, method=None, savefile=None, extra_fn=None, extra_label=None, title=None):
         ''' plot the error from all time steps '''
@@ -1408,12 +1420,9 @@ class PdeSolver:
 
         assert x_old.ndim == 1 and len(x_old) == self.nen, 'ERROR: x_old must be 1-dimensional and of length self.nen.'
         x_old = np.reshape(x_old, (self.nen,1))
-
-        # Calculate barycentric weights based on x_old
-        w = MakeDgOp.BaryWeights(x_old)
         
         # Build the Vandermonde matrix for x_new
-        V = MakeDgOp.VandermondeLagrange1D(x_new, w, x_old)
+        V = MakeDgOp.VandermondeLagrange1D(x_new, x_old)
 
         if u_old.ndim == 2:
             from Source.Methods.Functions import lm_gv

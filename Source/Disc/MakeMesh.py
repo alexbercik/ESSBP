@@ -327,7 +327,7 @@ class MakeMesh:
             b = -2.0 * c
             d = -a * np.tanh(c)
             arg = (x-self.xmin)/self.dom_len
-            new_x = a * np.tanh(b * arg + c) + d
+            new_x = (a * np.tanh(b * arg + c) + d)*self.dom_len + self.xmin
             return new_x
     
         def stretch_tanh_der(x):
@@ -337,7 +337,7 @@ class MakeMesh:
             b = -2.0 * c
             d = -a * np.tanh(c)
             arg = (x-self.xmin)/self.dom_len
-            der = a * b / (np.cosh(b * arg + c)**2 * self.dom_len)
+            der = a * b / np.cosh(b * arg + c)**2
             return der
         
         def stretch_corners(x):

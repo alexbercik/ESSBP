@@ -91,12 +91,12 @@ class MakeDgOp:
         
         ########################## USEFUL MATRICES ###########################
         # van: vandermonde matrix (in DGSEM, vandermonde is identity matrix)
-        self.van = self.VandermondeLagrange1D(self.quad.xq,self.wBary,self.xy)
+        self.van = self.VandermondeLagrange1D(self.quad.xq,self.xy,self.wBary)
             # TODO: should I move this along with BaryWeights to BasisFun?
         # van_f: facet vandermonde matrices for each facet (equivalent to rrL and rrR)
         self.vanf = np.zeros((self.n_facet, self.nn_facet, self.nn_sol))
         for i in range(self.n_facet):
-            self.vanf[i] = self.VandermondeLagrange1D(self.vert[i],self.wBary,self.xy)
+            self.vanf[i] = self.VandermondeLagrange1D(self.vert[i],self.xy,self.wBary)
         # weight: inner product matrix W (stores weights for flux nodes)
         self.weight = self.InnerProduct(self.quad.wq)
         # weight_f: facet inner product matrix W (stores weights for facet nodes)
@@ -227,8 +227,9 @@ class MakeDgOp:
         ----------
         barycentric weights for lagrange interpolation at given nodal locations
         '''
-        dim = xNode.shape[1]
-        assert dim == 1, 'barycentric weights only currently set up for dim=1'
+        if xNode.ndim != 1:
+            dim = xNode.shape[1]
+            assert dim == 1, 'barycentric weights only currently set up for dim=1'
         
         Np=len(xNode) # number of basis functions
         wB=np.ones(Np) # initiate vector to store barycentric weights
@@ -243,7 +244,7 @@ class MakeDgOp:
         return wB
 
     @staticmethod
-    def VandermondeLagrange1D(xFlux,wBary,xNode):
+    def VandermondeLagrange1D(xFlux,xNode,wBary=None):
         '''
         Purpose
         -------
@@ -269,23 +270,115 @@ class MakeDgOp:
         polynomial evaluated at row ith node in xFlux. Acts on a function
         defined by solution nodal values of xNode.
         '''
-        dim = xNode.shape[1]
-        assert dim == 1, 'Lagrange Vandermonde only currently set up for dim=1'
+        if xNode.ndim != 1:
+            dim = xNode.shape[1]
+            assert dim == 1, ("Lagrange Vandermonde only set up for dim=1.")
+            x = xNode[:,0]
+        else:
+            x = xNode
+
+        if wBary is None:
+            # Calculate barycentric weights based on x_old
+            wBary = MakeDgOp.BaryWeights(x)
         
-        Np = len(xNode) # number of nodes that define lagrange polynomials
+        Np = len(x) # number of nodes that define lagrange polynomials
         M = len(xFlux) # points to which we interpolate
         V=np.zeros((M,Np)) # initialize matrix
         for i in range(M):  
             xi = xFlux[i]
-            if any(abs(xi - xNode) < 1e-12):
-                V[i, np.where(abs(xi - xNode[:,0]) < 1e-12)] = 1.0
+            if any(abs(xi - x) < 1e-12):
+                V[i, np.where(abs(xi - x) < 1e-12)] = 1.0
             else:
                 l=1
                 for k in range(Np):
-                    l = l*(xi-xNode[k]) # useful polynomial l(x)
-                    V[i,k] = wBary[k]/(xi-xNode[k]) # intermediate step
+                    l = l*(xi-x[k]) # useful polynomial l(x)
+                    V[i,k] = wBary[k]/(xi-x[k]) # intermediate step
                 V[i,:]=V[i,:]*l # define l_j(x_i)
         return V
+    
+    @staticmethod
+    def VandermondeLegendre1D(xNode,p,orthonormal=True):
+        '''
+        Purpose
+        -------
+        Calculates the Vandermonde Matrix in 1D from a Legendre modal basis 
+        to a Lagrange nodal basis. This maps from modal coefficients of the 
+        Legendre basis to solution nodes {S_p}={xNode} on which the Lagrange 
+        basis is defined.
+
+        u_modal = V @ u_nodal
+
+        Parameters
+        ----------
+        xNode: nodal locations defining lagrange polynomial basis
+        p : int
+            Maximum polynomial degree.
+
+        Returns
+        -------
+        V : ndarray of shape ((p+1), (p+1))
+            The Vandermonde matrix whose rows are the orthonormal 
+            Legendre polynomials evaluated at xNode.
+        '''
+        # Sanity check
+        if xNode.ndim != 1:
+            dim = xNode.shape[1]
+            assert dim == 1, ("Legendre Vandermonde only set up for dim=1.")
+            x = xNode[:,0]
+        else:
+            x = xNode
+        
+        Np = len(x)  # number of nodes, should be p+1
+        assert Np == p+1, (f"Number of nodes {Np} must equal p+1 = {p+1}.")
+
+        # Initialize the Vandermonde matrix
+        V = np.zeros((p+1, Np), dtype=float)
+
+        # Fill each row with the orthonormal Legendre polynomial of degree n
+        # Orthonormal Legendre: \hat{P}_n(x) = sqrt((2n+1)/2) * P_n(x)
+        # where P_n(x) is the standard Legendre polynomial of degree n.
+        for n in range(p+1):
+            # Create the standard Legendre polynomial of degree n
+            # via the numpy.polynomial.legendre module
+            coeffs = np.zeros(n+1)
+            coeffs[-1] = 1.0  # x^n term
+            Pn = np.polynomial.legendre.Legendre(coeffs,domain=np.array([0.,1.]))
+
+            # Compute orthonormal factor
+            if orthonormal:
+                factor = np.sqrt(2*n + 1)
+            else:
+                factor = 1.0
+
+            # Evaluate at each node
+            V[:,n] = factor * Pn(x)
+
+        return V
+    
+    @staticmethod
+    def Filter1D(p,Nc,s):
+        '''
+        A python implementation of the 1D filter from Hesthaven & Warburton, pg. 130 eq. 5.16.
+
+        Purpose
+        -------
+        This function returns a 1D filter matrix that can be used to filter out high frequency
+        modes in a DGSEM simulation. The filter matrix assumes u is in a modal basis.
+
+        A good set of starting parameters are Nc=0,s=16
+        '''
+        eps = np.finfo(float).eps
+        filterdiag = np.ones(p+1)
+        alpha = -np.log(eps)
+
+        # Initialize the filter function
+        for i in range(Nc,p+1):
+            filterdiag[i] = np.exp(-alpha*((i-Nc)/(p-Nc))**s)
+
+        # normally, would now do F = V @ np.diag(filterdiag) @ inv(V)
+        return filterdiag
+
+
     
     @staticmethod
     def InnerProduct(weights=None):

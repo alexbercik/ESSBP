@@ -76,7 +76,7 @@ class Quasi1dEuler(PdeBase):
                 self.rho_inf = 2.852280050286349e+00
                 rhou_inf = 1.866846848484981e+02
                 e_inf = 6.156988102623681e+05
-                self.a_inf = self.calc_a(self.rho_inf, rhou_inf, e_inf)
+                self.a_inf = self.calc_a(self.prim2cons(self.rho_inf, rhou_inf, e_inf))
                 self.t_scale = 1.0 # no need since it is steady
 
             
@@ -101,7 +101,7 @@ class Quasi1dEuler(PdeBase):
                 self.rho_inf = 1.
                 rhou_inf = 1.
                 e_inf = 1.
-                self.a_inf = self.calc_a(self.rho_inf, rhou_inf, e_inf)
+                self.a_inf = self.calc_a(self.prim2cons(self.rho_inf, rhou_inf, e_inf))
                 self.t_scale = 1.0 # no need since it is steady
             
         elif self.test_case == 'shock_tube':
@@ -334,16 +334,16 @@ class Quasi1dEuler(PdeBase):
         rho, rhou, e = self.decompose_q(q)
         return (self.g-1)*(e-0.5*(rhou*rhou/rho))
 
-    def calc_a(self,rho,rhou,e):
+    def calc_a(self,q):
         ''' function to calculate the sound speed given pressure and Q1 '''
         # Note: Regardless if fed Q*S or Q, will always return a, not a*S
-        return np.sqrt(self.g*self.calc_p(rho,rhou,e)/rho)   
+        return np.sqrt(self.g*self.calc_p(q)/q[::3])   
 
     def check_positivity(self, q):
         ''' Check if thermodynamic variables are positive '''
         rho = q[::3,:]
         p = self.calc_p(q)
-        not_ok = np.any(rho < 0) and np.any(p < 0)
+        not_ok = np.any(rho < 0) or np.any(p < 0)
         return not_ok  
 
     def decompose_q(self, q):
@@ -369,11 +369,13 @@ class Quasi1dEuler(PdeBase):
         return vec
 
     @staticmethod
-    def prim2cons(rho, u, e, svec):
+    def prim2cons(rho, u, e, svec=None):
         '''takes y_i[nen,nelem] or y_i[nen] primitive variables (for each i) to 
         q[nen*neq_node,nelem] or q[nen*neq_node] conservative vector, as long 
         as svec is in a shape that matches y_i '''
-        
+        if svec is None:
+            svec = np.ones_like(rho)
+            
         q_0 = rho * svec
         q_1 = q_0 * u
         q_2 = e * svec

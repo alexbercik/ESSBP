@@ -1099,6 +1099,10 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
     plt.xlim(xlim)
     #plt.subplots_adjust(left=0.2, right=0.8, top=0.8, bottom=0.2)
     ax = plt.gca()  # Get current axis
+    # Set major ticks at powers of 10
+    ax.yaxis.set_major_locator(tik.LogLocator(base=10.0, subs=[1.0], numticks=10))
+    # Set minor ticks at subdivisions within each decade
+    ax.yaxis.set_minor_locator(tik.LogLocator(base=10.0, subs='auto', numticks=10))
     # Conditionally set scalar labels for major ticks if scalar_xlabel is True
     if scalar_xlabel:
         ax.xaxis.set_major_formatter(tik.ScalarFormatter())  # Major ticks in scalar format
@@ -1135,9 +1139,9 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
                             500000 : r'$5\times10^5$' }
         for label in extra_labels:
             if label < xmax and label > xmin:
-                 ax.text(label, label_ypos, extra_labels[label], va='bottom', ha='center')
+                 ax.text(label, label_ypos, extra_labels[label], va='bottom', ha='center', fontsize=tick_size)
 
-    ax.tick_params(axis='both', labelsize=tick_size) 
+    ax.tick_params(axis='both', which='both', labelsize=tick_size) 
     plt.tight_layout()
     #fig.subplots_adjust(bottom=0.2)
     if savefile is not None:
@@ -1761,7 +1765,7 @@ def plot_eigs(A, plot_hull=True, plot_individual_eigs=False, labels=None, savefi
               tick_size=12, serif=True, left_space_pct=None,
               colors=None, markers=None, linestyles=None, legend_loc='best', 
               legend_anchor=None, legend_anchor_type=None, legend_alpha=None,
-              xlabel=None, ylabel=None, xlim=None, ylim=None):
+              xlabel=None, ylabel=None, xlim=None, ylim=None,title=None):
     if plot_hull:
         from scipy.spatial import ConvexHull
 
@@ -1869,6 +1873,8 @@ def plot_eigs(A, plot_hull=True, plot_individual_eigs=False, labels=None, savefi
         plt.ylabel(ylabel, fontsize=title_size)
     else:
         plt.ylabel('Imaginary Part', fontsize=title_size)
+    if title is not None:
+        plt.title(title, fontsize=title_size)
     ax = plt.gca()
     ax.tick_params(axis='both', labelsize=tick_size) 
     plt.grid(True)
