@@ -15,9 +15,10 @@ from Source.Solvers.PdeSolverSbp import PdeSolverSbp
 import numpy as np
 import matplotlib.pyplot as plt
 
+# NOTE: This was not used in the paper. But have fun with it if you want.
 
 ''' Set parameters for simultation '''
-savefile = None #'LCE_p4_lf_30n' # None for no save
+savefile = None # None for no save
 nen = 40 # number of nodes per element, as a list (multiple if traditional-refinement)
 ops = ['upwind','csbp','hgtl','hgt','mattsson']#,'lgl','lg']
 p = 4 # polynomial degree
@@ -68,20 +69,19 @@ for i,op in enumerate(ops):
         op_p = p
     elif op == 'mattsson':
         s = p+1 # dissipation degree
-        #if p == 2: eps = 0.025
-        #elif p == 3: eps = 0.001
-        #elif p == 4: eps = 0.0003
-        #else: raise Exception('No Mattsson dissipation for this p')
         eps = sig_fix*3.125/5**s
         label = 'Mattsson'
         op_nen = nen
         op_p = p
     elif op == 'lg':
         s = p # dissipation degree
-        if p == 1: eps = 0.05
-        elif p == 2: eps = 0.02
-        elif p == 3: eps = 0.0085
-        elif p == 4: eps = 0.0038
+        if p == 2: eps = 0.02
+        elif p == 3: eps = 0.01
+        elif p == 4: eps = 0.004
+        elif p == 5: eps = 0.002
+        elif p == 6: eps = 0.0008
+        elif p == 7: eps = 0.0004
+        elif p == 8: eps = 0.0002
         else: raise Exception('No dissipation for this p')
         eps = sig_fix*eps
         if useH != False: print("WARNING: useH should be set to False for LG since element-type")
@@ -91,10 +91,13 @@ for i,op in enumerate(ops):
         op_p = p
     elif op == 'lgl':
         s = p # dissipation degree
-        if p == 1: eps = 0.06
-        elif p == 2: eps = 0.023
-        elif p == 3: eps = 0.0095
+        if p == 2: eps = 0.02
+        elif p == 3: eps = 0.01
         elif p == 4: eps = 0.004
+        elif p == 5: eps = 0.002
+        elif p == 6: eps = 0.0008
+        elif p == 7: eps = 0.0004
+        elif p == 8: eps = 0.0002
         else: raise Exception('No dissipation for this p')
         eps = sig_fix*eps
         if useH != False: print("WARNING: useH should be set to False for LGL since element-type")
