@@ -79,10 +79,13 @@ class Burgers(PdeBase):
                         if abs(xi - shock) < 1e-12:
                             # At the shock, assign the Rankine–Hugoniot value.
                             u[i] = 0.0
+                        elif abs(xi - 0.0) < 1e-12 or abs(xi - 1.0) < 1e-12:
+                            # At the endpoints, just set u to zero
+                            u[i] = 0.0
                         elif xi < shock:
                             # For x to the left of the shock, invert f(x0)= x0 + sin(2*pi*x0)*t - xi on x0 in [0, shock].
                             f = lambda x0: x0 + u0(x0)*time - xi
-                            # f(0)= -xi (negative) and f(shock)= shock + sin(pi)*t - xi = 0.5 - xi (positive for xi<0.5)
+                            # f(0)= -xi (negative) and f(shock)= shock + sin(pi)*t - xi = 0.5 - xi (positive for 0<xi<0.5)
                             #if f(eps)*f(shock-eps) > 0:
                             #    # If the function has the same sign at both endpoints, we need to use a different bracket.
                             #    print('WARNING: The function has the same sign at both endpoints.')
@@ -92,7 +95,7 @@ class Burgers(PdeBase):
                         else:
                             # For x to the right of the shock, invert on x0 in [shock, 1].
                             f = lambda x0: x0 + u0(x0)*time - xi
-                            # f(shock)= 0.5 - xi (negative for xi>0.5) and f(1)= 1 - xi (positive for xi<1)
+                            # f(shock)= 0.5 - xi (negative for xi>0.5) and f(1)= 1 - xi (positive for 0.5<xi<1)
                             #if f(eps)*f(shock-eps) > 0:
                             #    # If the function has the same sign at both endpoints, we need to use a different bracket.
                             #    print('WARNING: The function has the same sign at both endpoints.')
@@ -140,6 +143,9 @@ class Burgers(PdeBase):
     def calcEx(self, q):
         E = 0.5*q**2
         return E
+    
+    def nonconservative_coeff(self, q):
+        return q
 
     def dExdx(self, q, E):
 
