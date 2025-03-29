@@ -2,6 +2,8 @@
 
 This directory contains all the files necessary to reproduce the plots from the paper titled "Stable Volume Dissipation for High-Order Finite-Difference Methods with the Generalized Summation-by-Parts Property" by Alex Bercik, David A. Craig Penner, and David W. Zingg, published in 2025 (preprint).
 
+## NOTE: We have recently become aware of a bug in our code that caused the numerical results to appear worse than they should in regions of near-zero density. The impacted section is 5.3. We are fixing the problem and will have an updated manuscript posted to arXiv soon.
+
 ## Contents
 
 - Source code for generating the plots
