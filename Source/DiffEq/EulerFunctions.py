@@ -957,10 +957,10 @@ def logmean_vec(p,pg):
     F = np.zeros((nen,nelem),dtype=p.dtype)
     for e in range(nelem):
         for i in range(nen):
-            if np.real(zeta2[i,e]) < 0.01:
+            if np.real(zeta2[i,e]) < 0.001:
                 F[i,e] = 2 * (1. + zeta2[i,e] / 3. + zeta2[i,e]**2 / 5. + zeta2[i,e]**3 / 7.)
             else:
-                F[i,e] = -np.log(xi[i,e]) / zeta2[i,e]
+                F[i,e] = -np.log(xi[i,e]) / zeta[i,e]
     p_ln = (p+pg)/F
     return p_ln
 
