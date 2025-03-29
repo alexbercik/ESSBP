@@ -102,7 +102,7 @@ class MakeDgOp:
         # weight_f: facet inner product matrix W (stores weights for facet nodes)
         self.weightf = self.InnerProduct(self.quad.wqf)
         # dd_x_sol: x derivative operator defined on solution nodes
-        self.dd_x_sol = self.Derivative1DLagrange(self.wBary,self.xy)
+        self.dd_x_sol = self.DerivativeLagrange1D(self.xy,self.wBary)
             # TODO: Make more general for dim>1
         
         # The following are not actually used. Regardless they are good for debugging.
@@ -183,32 +183,7 @@ class MakeDgOp:
             #op_dir_all[d,:,:] = perm_mat_dir @ op_dir0 @ perm_mat_dir
             op_dir_all[d,:,:] = op_dir0
 
-        return op_dir_all
-
-    @staticmethod
-    def Derivative1DLagrange(wBary,xNode):
-        '''
-         Purpose
-        -------
-        Calculates the 1D DG derivative operator defined on the reference
-        element assuming a lagrange nodal basis. Uses barycentric form, 
-        for more info see https://en.wikipedia.org/wiki/Lagrange_polynomial
-
-        Parameters
-        ----------
-        wBary: barycentric weights defining lagrange polynomial basis
-        xNode: nodal locations defining lagrange polynomial basis
-        '''
-        Np = len(xNode)
-        D = np.zeros((Np,Np))
-        for i in range(Np):
-            for j in range(Np):
-                if (i!=j):
-                    # D_ij = d l_j / d x at x=xNode[i]
-                    D[i,j] = wBary[j]/wBary[i]/(xNode[i]-xNode[j])
-                    # exploit that rows sum to 0 for case x_i = x_j
-                    D[i,i] = D[i,i] - D[i,j]
-        return D    
+        return op_dir_all   
     
     @staticmethod
     def BaryWeights(xNode):
@@ -297,20 +272,57 @@ class MakeDgOp:
         return V
     
     @staticmethod
-    def VandermondeLegendre1D(xNode,p,orthonormal=True):
+    def DerivativeLagrange1D(xNode,wBary=None):
+        '''
+         Purpose
+        -------
+        Calculates the 1D DG derivative operator defined on the reference
+        element assuming a lagrange nodal basis. Uses barycentric form, 
+        for more info see https://en.wikipedia.org/wiki/Lagrange_polynomial
+
+        Parameters
+        ----------
+        wBary: barycentric weights defining lagrange polynomial basis
+        xNode: nodal locations defining lagrange polynomial basis
+        '''
+        if xNode.ndim != 1:
+            dim = xNode.shape[1]
+            assert dim == 1, ("Lagrange Derivative only set up for dim=1.")
+            x = xNode[:,0]
+        else:
+            x = xNode
+
+        if wBary is None:
+            # Calculate barycentric weights based on x_old
+            wBary = MakeDgOp.BaryWeights(x)
+        
+        Np = len(xNode)
+        D = np.zeros((Np,Np))
+        for i in range(Np):
+            for j in range(Np):
+                if (i!=j):
+                    # D_ij = d l_j / d x at x=xNode[i]
+                    D[i,j] = wBary[j]/wBary[i]/(xNode[i]-xNode[j])
+                    # exploit that rows sum to 0 for case x_i = x_j
+                    D[i,i] = D[i,i] - D[i,j]
+        return D 
+    
+    @staticmethod
+    def VandermondeLegendre1D(x_in,p,orthonormal=True):
         '''
         Purpose
         -------
         Calculates the Vandermonde Matrix in 1D from a Legendre modal basis 
-        to a Lagrange nodal basis. This maps from modal coefficients of the 
-        Legendre basis to solution nodes {S_p}={xNode} on which the Lagrange 
-        basis is defined.
+        to evaluations of the Legendre basis at nodal locations.
 
-        u_modal = V @ u_nodal
+        If x_in is a vector of p+1 nodal locations, then the Vandermonde matrix
+        maps from modal coefficients of the Legendre basis to solution nodes
+        {S_p}={x_in} on which the Lagrange basis is defined.
+        i.e., u_modal = V @ u_nodal
 
         Parameters
         ----------
-        xNode: nodal locations defining lagrange polynomial basis
+        x_in: nodal locations defining lagrange polynomial basis
         p : int
             Maximum polynomial degree.
 
@@ -318,21 +330,20 @@ class MakeDgOp:
         -------
         V : ndarray of shape ((p+1), (p+1))
             The Vandermonde matrix whose rows are the orthonormal 
-            Legendre polynomials evaluated at xNode.
+            Legendre polynomials evaluated at x_in.
         '''
         # Sanity check
-        if xNode.ndim != 1:
-            dim = xNode.shape[1]
+        if x_in.ndim != 1:
+            dim = x_in.shape[1]
             assert dim == 1, ("Legendre Vandermonde only set up for dim=1.")
-            x = xNode[:,0]
+            x = x_in[:,0]
         else:
-            x = xNode
+            x = x_in
         
-        Np = len(x)  # number of nodes, should be p+1
-        assert Np == p+1, (f"Number of nodes {Np} must equal p+1 = {p+1}.")
+        N = len(x)  # number of nodes
 
         # Initialize the Vandermonde matrix
-        V = np.zeros((p+1, Np), dtype=float)
+        V = np.zeros((p+1, N), dtype=float)
 
         # Fill each row with the orthonormal Legendre polynomial of degree n
         # Orthonormal Legendre: \hat{P}_n(x) = sqrt((2n+1)/2) * P_n(x)
@@ -354,6 +365,90 @@ class MakeDgOp:
             V[:,n] = factor * Pn(x)
 
         return V
+    
+    @staticmethod
+    def EvaluateLegendre1D(x_in,coeffs,orthonormal=True):
+        '''
+        Purpose
+        -------
+        Evaluates the Legendre modal basis at given nodal locations.
+
+        IF x is a vector of p+1 nodal locations, then the Vandermonde matrix
+        maps from modal coefficients of the Legendre basis to solution nodes
+        {S_p}={x_in} on which the Lagrange basis is defined.
+        i.e., u_modal = V @ u_nodal
+
+        Parameters
+        ----------
+        x_in: nodal locations defining lagrange polynomial basis
+        coeffs : coefficients of the Legendre modal basis
+
+        Returns
+        -------
+        u : 1d array of solution evaluated at x_in locations
+        '''
+        # Sanity check
+        if x_in.ndim != 1:
+            dim = x_in.shape[1]
+            assert dim == 1, ("Legendre only set up for dim=1.")
+            x = x_in[:,0]
+        else:
+            x = x_in
+        
+        N = len(x)  # number of nodes
+        p = len(coeffs) - 1  # polynomial degree
+
+        # set the corrections for orthonormal
+        if orthonormal:
+            factor = np.sqrt(2*np.arange(p+1) + 1)
+        else:
+            factor = 1.0
+
+        # create the Legendre polynomial
+        Pn = np.polynomial.legendre.Legendre(factor * coeffs,domain=np.array([0.,1.]))
+
+        # Evaluate at each node
+        u = Pn(x)
+
+        return u
+    
+    @staticmethod
+    def DerivativeLegendre1D(p, orthonormal=True):
+        '''
+        Purpose
+        -------
+        Constructs the differentiation matrix that maps modal Legendre coefficients
+        to the derivative coefficients in the Legendre basis.
+        Uses the shifted Legendre polynomials Pn^* on [0,1], where Pn^*(x) = Pn(2x - 1).
+
+        Parameters
+        ----------
+        p : int
+            Maximum polynomial degree.
+        orthonormal : bool, optional
+            Whether to use orthonormal Legendre polynomials. Default is True.
+
+        Returns
+        -------
+        D : ndarray of shape ((p+1), (p+1))
+            The differentiation matrix that transforms Legendre modal coefficients
+            to modal derivatives.
+        '''
+        D = np.zeros((p+1, p+1), dtype=float)
+
+        # Fill the matrix: columns = n, rows = m
+        if orthonormal:
+            for n in range(1, p+1):
+                for m in range(n):
+                    if (n - m) % 2 == 1: 
+                        D[m, n] = (4*m + 2) * np.sqrt(2*n+1) / np.sqrt(2*m+1)
+        else:
+            for n in range(1, p+1):
+                for m in range(n):
+                    if (n - m) % 2 == 1: 
+                        D[m, n] = 4*m + 2 
+
+        return D
     
     @staticmethod
     def Filter1D(p,Nc,s):

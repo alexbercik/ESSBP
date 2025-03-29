@@ -270,6 +270,8 @@ class PdeSolverSbp(PdeSolver):
         if self.periodic:
             sat = self.sat.calc(q)
             #sat = self.sat.calc(q,Fvol)
+        elif self.bc == 'dirichlet':
+            sat = self.sat.calc(q, q_bdyL=self.diffeq.qL, q_bdyR=self.diffeq.qR)
         else:
             raise Exception('Not coded up yet')
         

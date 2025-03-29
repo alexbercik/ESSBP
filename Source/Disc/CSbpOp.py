@@ -112,6 +112,25 @@ def nonadiag(nn, a, b, c, d, e, f, g, h, i, bc='SAT', k1=-4, k2=-3, k3=-2,
             np.diag(g[2:], k7) + np.diag(h[3:], k8) + np.diag(i[4:], k9))
     return A
 
+def circulant(p,nn):
+    """ Builds a circulant matrix with interior degree p (note usually 2p for CSBP)
+    INPUT: p degree, nn number of nodes (makes matrix size nn x nn) 
+    OUTPUT: 2D array (matrix) """ 
+    dx = 1/nn
+    H = dx*np.eye(nn)
+
+    if p==2: Q = tridiag(nn, -1/2, 0, 1/2, bc='periodic')
+    elif p==4: Q = pentadiag(nn, 1/12, -2/3, 0, 2/3, -1/12, bc='periodic')
+    elif p==6: Q = heptadiag(nn,-1/60,3/20,-3/4,0,3/4,-3/20,1/60, bc='periodic')
+    elif p==8: Q = nonadiag(nn,1/280,-4/105,1/5,-4/5,0,4/5,-1/5,4/105,-1/280, bc='periodic')
+    else:
+        print("ERROR: You have not coded this order p yet. Try p=2,4,6,8.")
+        sys.exit()
+    D = Q / dx
+    S = Q
+
+    return H, D, Q, S, dx
+
         
 def CSbpOp(p,nn):
     """ Builds a 1D CSBP first derivative operator on reference element [0,1] 

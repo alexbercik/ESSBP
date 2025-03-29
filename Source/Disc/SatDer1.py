@@ -341,13 +341,19 @@ class SatDer1:
         diss = self.coeff*self.diss(self.lm_gv(self.tRT,qL), self.lm_gv(self.tLT,qR))
         sat = vol + surfa - surfb - diss 
         """
-        assert ((q_bdyL is None) and (q_bdyR is None)), 'base_had_1d SAT: Only periodic boundary conditions are implemented.'
         qa = self.lm_gv(self.tLT,q)
         qb = self.lm_gv(self.tRT,q)
-        qL = fn.pad_1dL(qb, qb[:,-1])
-        qR = fn.pad_1dR(qa, qa[:,0])
 
-        sat = self.Fsat_diff_periodic(q) - self.coeff*self.diss(qL, qR)
+        if (q_bdyL is None): #and (q_bdyR is None):
+            sat = self.Fsat_diff_periodic(q)
+            qL = fn.pad_1dL(qb, qb[:,-1])
+            qR = fn.pad_1dR(qa, qa[:,0])
+        else:
+            sat = self.Fsat_diff_dirichlet(q,q_bdyL,q_bdyR)
+            qL = fn.pad_1dL(qb, q_bdyL)
+            qR = fn.pad_1dR(qa, q_bdyR)
+
+        sat -= self.coeff*self.diss(qL, qR)
         return sat
     
     def base_had_2d(self, q, idx, q_bdyL=None, q_bdyR=None):

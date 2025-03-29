@@ -962,6 +962,102 @@ def Sat1d_had_Fsat_diff_periodic(taT,tb,q,flux,neq):
     return c
 
 @njit
+def Sat1d_had_Fsat_diff_dirichlet(taT,tb,q,qbL,qbR,flux,neq):
+    '''
+    A specialized function to compute the hadamard product between the sparse Vol
+    matrix and the Fvol matrix, then sum the rows. Made for 1d, periodic bc.
+
+    Parameters
+    ----------
+    taT, tb : CSR matrices
+        Boundary operator for a SAT interface (since 1D, the same in each element)
+    q : numpy array of shape (nen_neq, nelem)
+        The global vector for multiplication, should be along a single row or column of elements
+    qbL, qbR : numpy array of shape (nen_neq,)
+        The vectors for the left and right states
+    flux : function
+        Function to compute the flux between two states
+    neq : int
+        Number of equations in the system
+
+    Returns
+    -------
+    c : numpy array of shape (nrows, nelem)
+        Result of the volume flux differencing
+        note the -ve so that it corresponds to dExdx on the Right Hand Side
+    '''
+    nen_neq, nelem = q.shape
+    nen = nen_neq // neq
+
+    # Initialize result array
+    c = np.zeros((nen_neq, nelem), dtype=q.dtype)
+    maxcols = max(taT.ncols, tb.ncols)
+    
+    # loop for each element
+    for e in range(1,nelem): # will ignore left and right-most interfaces
+        # here think of e as either the looping over elements and considering the left interface,
+        # or looping over each interface e and stopping before hitting the rightmost 
+        qL = q[:,e-1]
+        qR = q[:,e]
+        eb = e-1
+
+        for row in range(nen):
+            qidx = row*neq
+            usedcols = np.zeros(maxcols, dtype=np.bool_)
+            
+            for taTidx in range(taT.indptr[row], taT.indptr[row + 1]):
+                col = taT.indices[taTidx]
+                usedcols[col] = True
+                qidxT = col*neq
+
+                f = flux(qL[qidx:qidx+neq], qR[qidxT:qidxT+neq])
+
+                # taT_data: add the result of the hadamard product
+                c[qidxT:qidxT+neq, e] += f * taT.data[taTidx]
+
+                # tbx_data: reuse the flux calculation if possible
+                for tbidx in range(tb.indptr[row], tb.indptr[row + 1]):
+                    if tb.indices[tbidx] == col:
+                        c[qidx:qidx+neq, eb] -= f * tb.data[tbidx]
+                        break
+
+            for tbidx in range(tb.indptr[row], tb.indptr[row + 1]):
+                col = tb.indices[tbidx]
+                if usedcols[col]: continue # Skip if this column was already done
+                usedcols[col] = True
+                qidxT = col*neq
+
+                f = flux(qL[qidx:qidx+neq], qR[qidxT:qidxT+neq])
+
+                # tbx_data: add the result of the hadamard product
+                c[qidx:qidx+neq, eb] -= f * tb.data[tbidx]
+    
+    # do left and right-most interfaces separately
+    for row in range(nen):
+        qidx = row*neq
+        
+        for taTidx in range(taT.indptr[row], taT.indptr[row + 1]):
+            col = taT.indices[taTidx]
+            qidxT = col*neq
+
+            f = flux(qbL, q[qidxT:qidxT+neq,0])
+
+            # taT_data: add the result of the hadamard product
+            c[qidxT:qidxT+neq, 0] += f * taT.data[taTidx]
+
+        for tbidx in range(tb.indptr[row], tb.indptr[row + 1]):
+            col = tb.indices[tbidx]
+            qidxT = col*neq
+
+            f = flux(q[qidx:qidx+neq,-1], qbR)
+
+            # tbx_data: add the result of the hadamard product
+            c[qidx:qidx+neq, -1] -= f * tb.data[tbidx]
+
+            
+    return c
+
+@njit
 def VolxVoly_had_Fvol_diff(Volx_list,Voly_list,q,flux,neq):
     '''
     A specialized function to compute the hadamard product between the sparse Volx and Voly

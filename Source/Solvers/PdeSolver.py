@@ -522,6 +522,7 @@ class PdeSolver:
             (len of q_sol) and stores the results in a 1D array.
             The default is False.
         '''
+        if self.diffeq.has_exa_sol == False: return None
         if tf == None: tf = self.t_final
         if q is None:
             if self.q_sol.ndim == 2: q = self.q_sol
@@ -987,17 +988,29 @@ class PdeSolver:
             return eigs
         
     # Define a function to compute eigenvalues and eigenvectors, and plot the results
-    def plot_pos_eigvecs(self, matrix=None, plot_type="real", threshold=1e-5, include_pairs=True):
-        assert self.dim==1, 'ERROR: Only implemented for 1D problems'        
+    def plot_eigvecs(self, matrix=None, plot_type="real", 
+                     plot_positive_eigs=True, plot_maxabs_eigs=False,
+                     threshold=1e-5, num_eigvecs = 5,
+                     include_pairs=True, return_eigs=False):
+        assert self.dim==1, 'ERROR: Only implemented for 1D problems'
+        assert (plot_positive_eigs and not plot_maxabs_eigs) or  \
+                (not plot_positive_eigs and plot_maxabs_eigs), 'ERROR: Choose one of plot_positive_eigs or plot_maxabs_eigs'      
         
         if matrix is None:
             matrix = self.calc_LHS()
+
+        if return_eigs:
+            eigvector_list = []
             
         # Compute eigenvalues and eigenvectors
         eigenvalues, eigenvectors = np.linalg.eig(matrix)
 
-        # Organize eigenvalues and eigenvectors by descending real part of eigenvalues
-        sorted_indices = np.argsort(-np.real(eigenvalues))
+        if plot_positive_eigs:
+            # Organize eigenvalues and eigenvectors by descending real part of eigenvalues
+            sorted_indices = np.argsort(-np.real(eigenvalues))
+        else:
+            # Organize eigenvalues and eigenvectors by descending magnitude of eigenvalues
+            sorted_indices = np.argsort(-np.abs(eigenvalues))
         eigenvalues = eigenvalues[sorted_indices]
         eigenvectors = eigenvectors[:, sorted_indices]
 
@@ -1008,41 +1021,43 @@ class PdeSolver:
         for idx, eigenvalue in enumerate(eigenvalues):
             if idx in processed_indices:
                 continue
-
-            if np.real(eigenvalue) > threshold:  # Check for positive real part above threshold
-                # Normalize the eigenvector
+            
+            # Check for positive real part above threshold OR
+            # maximum 5 eigenvalues by magnitude
+            if (plot_positive_eigs and np.real(eigenvalue) > threshold) \
+                or (plot_maxabs_eigs and idx < num_eigvecs):
                 eigenvector = eigenvectors[:, idx]
-                eigenvector = eigenvector / np.linalg.norm(eigenvector)
 
                 # Separate components of the eigenvector based on plot type
+                vars = eigenvector.reshape((self.nelem*self.nen,self.neq_node), order='C')
                 if plot_type == "real":
-                    var1 = eigenvector[::3].real
-                    var2 = eigenvector[1::3].real
-                    var3 = eigenvector[2::3].real
+                    vars = vars.real
                     ylabel = "Real Part"
                 elif plot_type == "imaginary":
-                    var1 = eigenvector[::3].imag
-                    var2 = eigenvector[1::3].imag
-                    var3 = eigenvector[2::3].imag
+                    vars = vars.imag
                     ylabel = "Imaginary Part"
                 elif plot_type == "power":
-                    var1 = np.abs(eigenvector[::3])**2
-                    var2 = np.abs(eigenvector[1::3])**2
-                    var3 = np.abs(eigenvector[2::3])**2
+                    vars = np.abs(vars)**2
                     ylabel = "Power Spectrum"
                 else:
                     raise ValueError("Invalid plot_type. Choose 'real', 'imaginary', or 'power'.")
 
-                var1 = var1 / np.linalg.norm(var1)
-                var2 = var2 / np.linalg.norm(var2)
-                var3 = var3 / np.linalg.norm(var3)
+                for vari in range(self.neq_node):
+                    if np.max(np.abs(vars[:,vari])) < 1e-12:
+                        norm = 1.
+                    else:
+                        norm = np.linalg.norm(vars[:,vari])
+                    vars[:,vari] = vars[:,vari] / norm
                 x = self.mesh.x
 
                 # Initialize figure
+                colors = ['#1f77b4', '#ff7f0e', '#2ca02c']
                 plt.figure()
-                plt.plot(x, var1, label='Variable 1', linestyle='solid', color='#1f77b4')
-                plt.plot(x, var2, label='Variable 2', linestyle='solid', color='#ff7f0e')
-                plt.plot(x, var3, label='Variable 3', linestyle='solid', color='#2ca02c')
+                for vari in range(self.neq_node):
+                    plt.plot(x, vars[:,vari], label=f'Variable {vari+1}', linestyle='solid', color=colors[vari])
+                
+                if return_eigs:
+                    eigvector_list.append(eigenvector)
 
                 # Check for and include the complex pair if applicable
                 if include_pairs and np.iscomplex(eigenvalue):
@@ -1050,28 +1065,22 @@ class PdeSolver:
                         if jdx != idx and np.isclose(eigenvalue.conj(), other_eigenvalue):
                             processed_indices.add(jdx)
                             paired_eigenvector = eigenvectors[:, jdx]
-                            paired_eigenvector = paired_eigenvector / np.linalg.norm(paired_eigenvector)
 
+                            vars2 = paired_eigenvector.reshape((self.nelem*self.nen,self.neq_node), order='C')
                             if plot_type == "real":
-                                paired_var1 = paired_eigenvector[::3].real
-                                paired_var2 = paired_eigenvector[1::3].real
-                                paired_var3 = paired_eigenvector[2::3].real
+                                vars2 = vars2.real
                             elif plot_type == "imaginary":
-                                paired_var1 = paired_eigenvector[::3].imag
-                                paired_var2 = paired_eigenvector[1::3].imag
-                                paired_var3 = paired_eigenvector[2::3].imag
+                                vars2 = vars2.imag
                             elif plot_type == "power":
-                                paired_var1 = np.abs(paired_eigenvector[::3])**2
-                                paired_var2 = np.abs(paired_eigenvector[1::3])**2
-                                paired_var3 = np.abs(paired_eigenvector[2::3])**2
+                                vars2 = np.abs(vars2)**2
 
-                            paired_var1 = paired_var1 / np.linalg.norm(paired_var1)
-                            paired_var2 = paired_var2 / np.linalg.norm(paired_var2)
-                            paired_var3 = paired_var3 / np.linalg.norm(paired_var3)
-
-                            plt.plot(x, paired_var1, label='Variable 1 (Pair)', linestyle='dotted', color='#1f77b4')
-                            plt.plot(x, paired_var2, label='Variable 2 (Pair)', linestyle='dotted', color='#ff7f0e')
-                            plt.plot(x, paired_var3, label='Variable 3 (Pair)', linestyle='dotted', color='#2ca02c')
+                            for vari in range(self.neq_node):
+                                if np.max(np.abs(vars2[:,vari])) < 1e-12:
+                                    norm = 1.
+                                else:
+                                    norm = np.linalg.norm(vars2[:,vari])
+                                vars2[:,vari] = vars2[:,vari] / norm
+                                plt.plot(x, vars2[:,vari], label=f'Variable {vari+1} (Pair)', linestyle='dotted', color=colors[vari])
 
                             break
 
@@ -1081,8 +1090,12 @@ class PdeSolver:
                 plt.legend()
                 plt.grid()
                 plt.show()
+        
+        if return_eigs:
+            return eigvector_list
 
-    def plot_cons_obj(self,savefile=None,plot_change=True,final_idx=None,start_idx=0,logscale=True):
+    def plot_cons_obj(self,savefile=None,plot_change=True,final_idx=None,start_idx=0,
+                      logscale=True,normalize_eigs=False):
         '''
         Plot the conservation objectives
 
@@ -1094,6 +1107,11 @@ class PdeSolver:
         if self.cons_obj is None:
             print('WARNING: No conservation objectives to plot.')
             return
+        if normalize_eigs:
+            assert self.dim==1, 'Normalizing only set up for 1D'
+            eig_norm = (self.xmax-self.xmin) / (self.nelem*(self.nen-1))
+        else:
+            eig_norm = 1
         for i in range(self.n_cons_obj):
             cons_obj_name_i = self.cons_obj_name[i].lower()
             if cons_obj_name_i == 'time': continue
@@ -1157,13 +1175,20 @@ class PdeSolver:
 
             elif cons_obj_name_i == 'max_eig':
                 plt.title(r'Maximum Real Eigenvalue of LHS',fontsize=18)
-                plt.ylabel(r'$\max \ \Re(\lambda)$',fontsize=16)
-                plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx]) 
+                if normalize_eigs:
+                    plt.ylabel(r'$\max \ \Re(\lambda) \Delta x$',fontsize=16)
+                else:
+                    plt.ylabel(r'$\max \ \Re(\lambda)$',fontsize=16)
+                plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx]*eig_norm) 
 
             elif cons_obj_name_i == 'spec_rad':
                 plt.title(r'Spectral Radius of LHS',fontsize=18)
-                plt.ylabel(r'$\rho = \max \ \vert \lambda \vert$',fontsize=16)
-                plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx]) 
+                if normalize_eigs:
+                    plt.ylabel(r'$\rho \Delta x = \max \ \vert \lambda \vert \Delta x$',fontsize=16)
+                else:
+                    plt.ylabel(r'$\rho = \max \ \vert \lambda \vert$',fontsize=16)
+                plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx]*eig_norm) 
+                if logscale: plt.yscale('log')
 
             elif cons_obj_name_i == 'sol_error':
                 plt.title(r'Solution Error',fontsize=18)
@@ -1264,11 +1289,12 @@ class PdeSolver:
                 elif self.q_sol.ndim == 3: q = self.q_sol[:,:,-1]
         if 'time' not in kwargs: kwargs['time']=self.t_final
         if 'plot_exa' not in kwargs: kwargs['plot_exa']=True
-        if self.disc_nodes in ['lgl','lg','nc']:
+        if self.disc_nodes in ['lgl','lg','nc'] and self.dim==1:
             x50 = np.linspace(0,1,50)
             V = MakeDgOp.VandermondeLagrange1D(x50,self.sbp.x)
             x = V @ self.mesh.x_elem # strictly not correct if nonpolynommial grid warping, but good enough
-            q = V @ q
+            from Source.Methods.Functions import kron_neq_lm
+            q = kron_neq_lm(V,self.neq_node) @ q
             self.diffeq.plot_sol(q, x, **kwargs)
         else:
             self.diffeq.plot_sol(q, **kwargs)

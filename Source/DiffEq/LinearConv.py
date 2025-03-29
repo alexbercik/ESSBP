@@ -66,6 +66,9 @@ class LinearConv(PdeBase):
 
         E = self.a * q
         return E
+    
+    def nonconservative_coeff(self, q):
+        return self.a
 
     def dExdq(self, q):
         nen,nelem = np.shape(q)
