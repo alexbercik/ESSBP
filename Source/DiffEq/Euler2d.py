@@ -21,7 +21,6 @@ class Euler(PdeBase):
     pde_order = 1
     has_exa_sol = True
     para_names = (r'$R$',r'$\gamma$',)
-    nondimensionalize = True
     enforce_positivity = True
     t_scale = 1.
     a_inf = 1.
@@ -35,7 +34,7 @@ class Euler(PdeBase):
     # Plotting constants
     var2plot_name = r'$\rho$' # rho, u, e, p, a, mach    
 
-    def __init__(self, para, q0_type=None, test_case='subsonic_nozzle',bc='periodic'):
+    def __init__(self, para, q0_type=None, test_case='subsonic_nozzle',bc='periodic', nondimensionalize=True):
 
         ''' Add inputs to the class '''
 
@@ -48,6 +47,7 @@ class Euler(PdeBase):
         if self.q0_type == None:
             self.q0_type = 'exact' # can be exact, ?
 
+        self.nondimensionalize = nondimensionalize
         if self.nondimensionalize:
             print('Using non-dimensionalized variables.')
 

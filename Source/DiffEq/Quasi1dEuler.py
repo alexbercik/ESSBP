@@ -24,8 +24,7 @@ class Quasi1dEuler(PdeBase):
     neq_node = 3            # No. of equations per node
     pde_order = 1
     has_exa_sol = True
-    para_names = (r'$R$',r'$\gamma$',)
-    nondimensionalize = True
+    para_names = (r'$R$',r'$\gamma$')
     enforce_positivity = True
     t_scale = 1.
     a_inf = 1.
@@ -40,7 +39,7 @@ class Quasi1dEuler(PdeBase):
     var2plot_name = r'$\rho$' # rho, u, e, p, a, mach    
 
     def __init__(self, para, q0_type=None, test_case='subsonic_nozzle',
-                 nozzle_shape='book', bc='periodic'):
+                 nozzle_shape='book', bc='periodic', nondimensionalize=True):
 
         ''' Add inputs to the class '''
 
@@ -53,8 +52,9 @@ class Quasi1dEuler(PdeBase):
         if self.q0_type == None:
             self.q0_type = 'linear' # can be exact, linear
 
+        self.nondimensionalize = nondimensionalize
         if self.nondimensionalize:
-            print('Using non-dimensionalized variables (unless explicitly overwritten).')
+            print('Using non-dimensionalized variables.')
 
         ''' Set flow and problem dependent parameters  '''
         
@@ -443,7 +443,13 @@ class Quasi1dEuler(PdeBase):
             time /= self.t_scale
         
         if x is None:
-            x = self.x_elem   
+            x = self.x_elem
+            qshape = self.qshape
+        else:
+            if x.ndim == 1:
+                qshape = (np.shape(x)[0]*self.neq_node,self.nelem)
+            elif x.ndim == 2:
+                qshape = (np.shape(x)[0]*self.neq_node, np.shape(x)[1])
         svec = self.fun_s(x)
             
         def calc_T(T_in, mach_in):
@@ -806,7 +812,7 @@ class Quasi1dEuler(PdeBase):
 
         if reshape: 
             #svec = np.reshape(svec, (self.nen,self.nelem), 'F') # fails if x was not qshape
-            exa_sol = np.reshape(exa_sol,(self.nen*self.neq_node,self.nelem),'F')
+            exa_sol = np.reshape(exa_sol,qshape,'F')
         
         if extra_vars:
             var_names = ['mach', 'T', 'p', 'rho', 'a', 'u', 'e']
@@ -923,18 +929,18 @@ class Quasi1dEuler(PdeBase):
             q[1::3] = q[1::3] * (self.rho_inf*self.a_inf)
             q[2::3] = q[2::3] * (self.rho_inf*self.a_inf*self.a_inf)
 
-        svecfail = False
         if q.ndim == 1:
             svec = self.svec
-            if len(q) != self.nn: svecfail = True
+            if len(q) != self.nn:
+                print('WARNING: q given to var2plot is not the same shape as self.svec')
+                print('         will assume S = 1', len(q), self.nn)
+                svec = np.ones((len(q)//self.neq_node))
         else:
             svec = self.svec_elem
-            if q.shape[1] != self.nelem: svecfail = True
-        if svecfail:
-            print('WARNING: q given to var2plot is not the same shape as self.svec_elem')
-            print('         will default to plotting q[0], which may be rho or rho*S')
-            print('         ', q.shape, self.svec.shape, self.svec_elem.shape)
-            return q[::self.neq_node]
+            if q.shape != self.qshape:
+                print('WARNING: q given to var2plot is not the same shape as self.svec_elem')
+                print('         will assume S = 1', q.shape, svec.shape)
+                svec = np.ones((q.shape[0]//self.neq_node,q.shape[1]))
         
         if var2plot_name is None:
             var2plot_name = self.var2plot_name
