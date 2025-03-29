@@ -8,6 +8,7 @@ Created on Fri Oct 23 17:28:45 2020
 
 import numpy as np
 from scipy.integrate import DOP853
+import traceback
 # import scipy.sparse as sp
 # from scipy.sparse.linalg import spsolve
 
@@ -29,43 +30,83 @@ class TimeMarchingRk:
     def rk4(self, q, dt, n_ts):
 
         q_sol = self.init_q_sol(q, n_ts)
+        quit = False
 
         # This method solves the 4th order explicit Runge-Kutta method.
         for i in range(0, n_ts):
 
             t = i * dt
 
-            k1 = self.dqdt(q, t)
+            try:
+                k1 = self.dqdt(q, t)
+            except Exception as e:
+                print("ERROR RK4: dqdt failed in first stage. Returning last q.")
+                traceback.print_exc()
+                quit = True
+                break
             self.common(q, q_sol, i, n_ts, dt, k1)
             if self.quitsim: break
 
             q1 = q + 0.5*dt*k1 # first predictor q_{n+1/2}
             
-            k2 = self.dqdt(q1, t+0.5*dt)
+            try:
+                k2 = self.dqdt(q1, t+0.5*dt)
+            except Exception as e:
+                print("ERROR RK4: dqdt failed in second stage. Returning q at stage 1 as last q.")
+                traceback.print_exc()
+                quit = True
+                q = q1
+                break
             q2 = q + 0.5*dt*k2 # first corrector q_{n+1/2}
             
-            k3 = self.dqdt(q2, t+0.5*dt)
+            try:
+                k3 = self.dqdt(q2, t+0.5*dt)
+            except Exception as e:
+                print("ERROR RK4: dqdt failed in third stage. Returning q at stage 2 as last q.")
+                traceback.print_exc()
+                quit = True
+                q = q2
+                break
             q3 = q + dt*k3     # second predictor q_{n+1}
             
-            k4 = self.dqdt(q3, t+dt)
+            try:
+                k4 = self.dqdt(q3, t+dt)
+            except Exception as e:
+                print("ERROR RK4: dqdt failed in fourth stage. Returning q at stage 3 as last q.")
+                traceback.print_exc()
+                quit = True
+                q = q3
+                break
+            
             q += dt*(k1 + 2*(k2+k3) + k4)/6 # final correction q_{n+1}
         
         # Congrats you reached the end
         i += 1
-        k1 = self.dqdt(q, t)
+        if quit:
+            k1 = np.empty_like(q)
+            k1.fill(np.nan)
+        else:
+            k1 = self.dqdt(q, t)
         self.final_common(q, q_sol, i, n_ts, dt, k1)
         return self.return_q_sol(q,q_sol,i,dt,k1)
 
     def explicit_euler(self, q, dt, n_ts):
 
         q_sol = self.init_q_sol(q, n_ts)
+        quit = False
 
         # This method solves the 1st order explicit Euler method.
         for i in range(0, n_ts):
 
             t = i * dt
 
-            dqdt = self.dqdt(q, t)
+            try:
+                dqdt = self.dqdt(q, t)
+            except Exception as e:
+                print("ERROR RK1: dqdt failed. Returning last q.")
+                traceback.print_exc()
+                quit = True
+                break
             self.common(q, q_sol, i, n_ts, dt, dqdt)
             if self.quitsim: break
 
@@ -73,7 +114,11 @@ class TimeMarchingRk:
 
         # Congrats you reached the end
         i += 1
-        k1 = self.dqdt(q, t)
+        if quit:
+            k1 = np.empty_like(q)
+            k1.fill(np.nan)
+        else:
+            k1 = self.dqdt(q, t)
         self.final_common(q, q_sol, i, n_ts, dt, k1)
         return self.return_q_sol(q,q_sol,i,dt,dqdt)
     
@@ -88,7 +133,7 @@ class TimeMarchingRk:
             return self.dqdt(y.reshape(self.shape_q,order='F'), t).flatten('F')
 
         tm_solver = DOP853(f, 0.0, q.flatten('F'), t_bound=self.t_final, 
-                           max_step=dt, rtol=self.rtol, atol=self.atol)
+                           first_step=dt, rtol=self.rtol, atol=self.atol)
         q_sol = None
         if self.keep_all_ts:
             print("WARNING: keep_all_ts not implemented for rk8. Ignoring.")
@@ -101,16 +146,21 @@ class TimeMarchingRk:
         #n_ts = int(self.t_final/dt)
 
         i = 0
-        #t_current = tm_solver.t
-        #y_current = tm_solver.y
-        #n_ts = int(self.t_final/dt)
+        t_current = 0.
+        y_current = q.flatten('F')
+        n_ts = int(self.t_final/dt)
         while tm_solver.status == 'running':
-            tm_solver.step()  # Advance one internal step
-            i += 1
-            t_current = tm_solver.t
-            y_current = tm_solver.y
-            # we need some estimate of i in relation to n_ts
-            n_ts = int(i*self.t_final/t_current)+1
+            try:
+                tm_solver.step()  # Advance one internal step
+                t_current = tm_solver.t
+                y_current = tm_solver.y
+                i += 1
+                # we need some estimate of i in relation to n_ts
+                n_ts = int(i*self.t_final/t_current)+1
+            except Exception as e:
+                print("ERROR RK8: WARNING: DOP853 step failed. Returning last q.")
+                traceback.print_exc()
+                break
             self.common(y_current.reshape(self.shape_q,order='F'), q_sol,
                         i, n_ts, dt, dqdt)
             if self.quitsim: break

@@ -232,8 +232,8 @@ class TimeMarching(TimeMarchingRk):
         if not self.quitsim:
             # if we already indicated to quit, then we did everything we had to in previous common().
             if t_idx != n_ts:
-                print('ERROR: final_common is being called before the final iteration even though quitsim = False.')
-                print('       ... continuing for now, but this is almost certainly a bug.')
+                print('ERROR: final_common is being called before the final iteration.')
+                print('       t =',t_idx * dt,'t_idx =', t_idx)
 
             if self.keep_all_ts or self.bool_calc_cons_obj:
                 mod_t_idx = t_idx/(self.skip_ts+1)
