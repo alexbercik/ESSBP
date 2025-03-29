@@ -57,6 +57,10 @@ class Sat(SatDer1, SatDer2):
         self.ysparsity, self.ysparsity_unkronned = None, None
         self.zsparsity, self.zsparsity_unkronned = None, None
 
+        if solver.disc_nodes.lower() == 'circulant': 
+            self.calc = lambda *x: 0
+            return
+
         assert isinstance(self.diss_type,str), 'SAT: diss_type must be a str, {0}'.format(self.diss_type)
         self.diss_type = self.diss_type.lower()
 
@@ -211,9 +215,13 @@ class Sat(SatDer1, SatDer2):
                 self.taT = sp.lm_to_lmT(self.ta,self.nen,self.nen)
                 self.Fsat_diff_periodic = lambda q: sp.Sat1d_had_Fsat_diff_periodic(self.taT, self.tb, 
                                                                                     q, self.calc_had_flux, self.neq_node)
+                self.Fsat_diff_dirichlet = lambda q, qL, qR: sp.Sat1d_had_Fsat_diff_dirichlet(self.taT, self.tb,
+                                                                                    q, qL, qR, self.calc_had_flux, self.neq_node)
             elif self.disc_type == 'had':
                 self.Fsat_diff_periodic = lambda q: fn.Sat1d_had_Fsat_diff_periodic(self.ta, self.tb,
                                                                                     q, self.calc_had_flux, self.neq_node)
+                self.Fsat_diff_dirichlet = lambda q, qL, qR: fn.Sat1d_had_Fsat_diff_dirichlet(self.ta, self.tb,
+                                                                                    q, qL, qR, self.calc_had_flux, self.neq_node)
 
 
                 #taphysT_pad = [self.taT]*self.nelem

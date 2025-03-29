@@ -1713,6 +1713,90 @@ def Sat1d_had_Fsat_diff_periodic(ta,tb,q,flux,neq):
     return c
 
 @njit
+def Sat1d_had_Fsat_diff_dirichlet(ta,tb,q,qbL,qbR,flux,neq):
+    '''
+    A specialized function to compute the hadamard product between the Vol
+    matrix and the Fvol matrix, then sum the rows. Made for 1d.
+
+    Parameters
+    ----------
+    ta, tb : local matrices
+        The matrices that represent the boundary operators
+    q : numpy array of shape (nen_neq, nelem)
+        The global vector for multiplication
+    qbL, qbR : numpy array of shape (nen_neq,)
+        The vectors for the left and right states
+    flux : function
+        Function to compute the flux between two states
+    neq : int
+        Number of equations in the system
+
+    Returns
+    -------
+    c : numpy array of shape (nen1, nelem)
+        Result of the volume flux differencing
+        note the -ve so that it corresponds to dExdx + dEydy on the Right Hand Side
+    '''
+    nen_neq, nelem = q.shape
+    nen = nen_neq // neq
+    tol = 1e-13
+
+    # Initialize result array
+    c = np.zeros((nen_neq, nelem), dtype=q.dtype)
+ 
+    # loop for each element
+    for e in range(1,nelem): # will ignore left and right-most interfaces
+        # here think of e as either the looping over elements and considering the left interface,
+        # or looping over each interface e and stopping before hitting the rightmost 
+        qL = q[:,e-1]
+        qR = q[:,e]
+        eb = e-1
+
+        for row in range(nen):
+            qidx = row*neq
+
+            for col in range(nen):
+                ta_val = ta[col, row]
+                tb_val = tb[row, col]
+                flux_used = False
+
+                if abs(ta_val) > tol:
+                    flux_used = True
+                    qidxT = col*neq
+                    
+                    f = flux(qL[qidx:qidx+neq], qR[qidxT:qidxT+neq])
+                    c[qidxT:qidxT+neq, e] += f * ta_val
+                
+                if abs(tb_val) > tol:
+                    if not flux_used:
+                        qidxT = col*neq
+                        f = flux(qL[qidx:qidx+neq], qR[qidxT:qidxT+neq])
+
+                    c[qidx:qidx+neq, eb] -= f * tb_val
+    
+    # do left and right-most interfaces separately
+    for row in range(nen):
+        qidx = row*neq
+
+        for col in range(nen):
+            ta_val = ta[col, row]
+            tb_val = tb[row, col]
+
+            if abs(ta_val) > tol:
+                qidxT = col*neq
+                
+                f = flux(qbL, q[qidxT:qidxT+neq,0])
+                c[qidxT:qidxT+neq, 0] += f * ta_val
+            
+            if abs(tb_val) > tol:
+                qidxT = col*neq
+                
+                f = flux(q[qidx:qidx+neq,-1], qbR)
+                c[qidx:qidx+neq, -1] -= f * tb_val
+    
+    return c
+
+@njit
 def VolxVoly_had_Fvol_diff(Volx,Voly,q,flux,neq):
     '''
     A specialized function to compute the hadamard product between the Volx and Voly

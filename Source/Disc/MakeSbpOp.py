@@ -225,6 +225,29 @@ class MakeSbpOp:
                 print('         Assuming that the baseflow is positive!')
                 self.D = self.Dm
 
+        elif sbp_type.lower()=='circulant':
+            from Source.Disc.CSbpOp import circulant
+            assert self.nn > 1 , "Please specify number of nodes nn > 1"
+            assert self.nn > 1 , "Please specify degree p > 1"
+            if p==2  and nn<3:
+                print('WARNING: nn set too small ({0}). Automatically increasing to minimum 3.'.format(nn))
+                self.nn = 5
+            elif p==4 and nn<5:
+                print('WARNING: nn set too small ({0}). Automatically increasing to minimum 5.'.format(nn))
+                self.nn = 5
+            elif p==6 and nn<7:
+                print('WARNING: nn set too small ({0}). Automatically increasing to minimum 7.'.format(nn))
+                self.nn = 7
+            elif p==8 and nn<9:
+                print('WARNING: nn set too small ({0}). Automatically increasing to minimum 9.'.format(nn))
+                self.nn = 9
+
+            self.H, self.D, self.Q, self.S, self.dx = circulant(self.p,self.nn)
+            self.x = np.linspace(0, 1, self.nn, endpoint=False)
+            self.E = np.zeros((self.nn,self.nn))
+            self.tL, self.tR = np.zeros(self.nn), np.zeros(self.nn)
+            print_progress = False
+
         else:
             ''' Build Element-type SBP Operators '''
             
