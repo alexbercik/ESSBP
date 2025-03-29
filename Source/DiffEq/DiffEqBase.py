@@ -232,6 +232,12 @@ class PdeBase:
             stdev2 = 0.08**2
             exp = -0.5*(xy-0.5)**2/stdev2
             q0 = np.exp(exp)
+        elif q0_type == 'gausswave_shifted':
+            assert self.dim==1,'only for dim=1'
+            assert (self.xmax==1 and self.xmin==0)
+            stdev2 = 0.08**2
+            exp = -0.5*(xy-0.5)**2/stdev2
+            q0 = np.exp(exp) - 0.5
         elif q0_type == 'morlet_wavelet':
             assert self.dim==1,'only for dim=1'
             k = (8*np.log(self.q0_gauss_wave_val_bc/self.q0_max_q))
@@ -252,6 +258,19 @@ class PdeBase:
             stdev2 = abs(self.dom_len[xyz]**2/k) # standard deviation squared
             exp = -0.5*((xy[:,xyz,:]-mid_pointx)**2/stdev2)
             q0 = self.q0_max_q * np.exp(exp)  
+        elif 'gausswave' in q0_type and 'skew' in q0_type:
+            assert self.dim == 1,'skew gausswave only works for dim = 1.'
+            from scipy.special import erf
+            mu = 0.5
+            sigma = 0.08
+            stdev2 = sigma**2
+            exp = -0.5*(xy-mu)**2/stdev2
+            gaussian = np.exp(exp)
+            # alpha: skewness parameter (0 = symmetric, >0 = right-skewed, <0 = left-skewed)
+            alpha = 1.5
+            skew = 0.5 * (1 + erf(alpha * (xy - mu) / (sigma * np.sqrt(2))))
+            q0 = gaussian * skew
+            if 'shift' in q0_type: q0 = q0 - 0.5
         elif q0_type == 'squarewave': 
             assert self.dim == 1,'square wave only works for dim = 1.' 
             dom_len = self.xmax - self.xmin
@@ -374,7 +393,7 @@ class PdeBase:
         
         
         elif self.dim == 2:
-            if x is None: raise Exception('x must be provided for 2D plots.')
+            #if x is None: raise Exception('x must be provided for 2D plots.')
 
             fig = plt.figure(figsize=(6,5.5*self.dom_len[1]/self.dom_len[0])) # scale figure properly
             ax = plt.axes()
