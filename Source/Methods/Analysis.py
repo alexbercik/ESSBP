@@ -1105,7 +1105,10 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
     ax.yaxis.set_minor_locator(tik.LogLocator(base=10.0, subs='auto', numticks=10))
     # Conditionally set scalar labels for major ticks if scalar_xlabel is True
     if scalar_xlabel:
-        ax.xaxis.set_major_formatter(tik.ScalarFormatter())  # Major ticks in scalar format
+        formatter = tik.ScalarFormatter()
+        formatter.set_scientific(False)
+        ax.xaxis.set_major_formatter(formatter)  # Major ticks in scalar format
+        ax.xaxis.set_minor_formatter(formatter)
 
     # Conditionally add extra minor ticks with labels if extra_xticks is True
     if extra_xticks:

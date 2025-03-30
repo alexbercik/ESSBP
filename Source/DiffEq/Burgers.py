@@ -35,7 +35,7 @@ class Burgers(PdeBase):
         self.use_split_form = use_split_form
         self.split_alpha = split_alpha
 
-    def exact_sol(self, time=0, x=None):
+    def exact_sol(self, time=0, x=None, guess=None):
 
         if x is None:
             x = self.x_elem
@@ -128,10 +128,15 @@ class Burgers(PdeBase):
                     #u[i] = bisect(eq, self.xmin - 0.01, self.xmax + 0.01, xtol=1e-12, maxiter=1000)
                     
                     u0 = lambda x0 : self.set_q0(xy=x0)
-                    eq = lambda x0 : np.mod((x[i] - self.xmin) - u0(x0)*time, self.dom_len) + self.xmin - x0
+                    modx = lambda x0: np.mod(x0-self.xmin,self.dom_len) + self.xmin
+                    eq = lambda x0 : modx(x[i] - u0(x0)*time) - x0
                     #eq = lambda x0 : x[i] - u0(x0)*time - x0
+                    if guess is None:
+                        u_0 = u0(x[i]-u0(x[i])*time)
+                    else:
+                        u_0 = guess[i] # u0(x0) = u(x,t)
                     res = root_scalar(eq,bracket=[self.xmin-0.01,self.xmax+0.01],method='secant',
-                                    x0=x[i]-u0(x[i])*time,xtol=1e-12,maxiter=1000)
+                                    x0=modx(x[i]-u_0*time),xtol=1e-12,maxiter=1000)
                     x0 = res.root
                     u[i] = u0(x0)
             

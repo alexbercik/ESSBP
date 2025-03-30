@@ -339,7 +339,7 @@ class Euler(PdeBase):
         w = self.gm_gv(self.Dx,v) - self.gm_gv(self.Dy,u)
         return 0.5*rho*(w*w)
 
-    def exact_sol(self, time=0, xy=None, extra_vars=False, nondimensionalize=None):
+    def exact_sol(self, time=0, xy=None, extra_vars=False, nondimensionalize=None, guess=None):
         ''' Returns the exact solution at given time. Use default time=0 for
         steady solutions. if extra_vars=True, a dictionary with arrays for
         mach, T, p, rho, a, u, and e is also returned along with exa_sol.  '''

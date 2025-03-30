@@ -87,7 +87,7 @@ class PdeBase:
                             'cmap': 'jet'}          # colourmap
 
     # Parameters for the initial solution
-    q0_max_q = 1.2                  # Max value in the vector q0
+    q0_max_q = 1.0                 # Max value in the vector q0
     q0_gauss_wave_val_bc = 1e-10    # Value at the boundary for Gauss wave
 
 
@@ -290,6 +290,11 @@ class PdeBase:
                 q0 = np.sin(w * x_scaled) * self.q0_max_q
                 if 'shift' in q0_type:
                     q0 = q0+2
+                if 'perturb' in q0_type:
+                    assert (self.xmax==1 and self.xmin==0)
+                    stdev2 = 0.08**2
+                    exp = -0.5*(xy-0.5)**2/stdev2
+                    q0 = q0 + 0.001*np.exp(exp)
             elif self.dim == 2:
                 x_scaled = (xy[:,0,:] + self.xmin[0]) / self.dom_len[0]
                 y_scaled = (xy[:,1,:] + self.xmin[1]) / self.dom_len[1]
@@ -375,7 +380,7 @@ class PdeBase:
             ax = plt.axes() 
 
             if plot_exa and self.has_exa_sol:
-                exa_sol = self.var2plot(self.exact_sol(time,x=x),var2plot_name)
+                exa_sol = self.var2plot(self.exact_sol(time,x=x,guess=q),var2plot_name)
                 ax.plot(x[:, 0], exa_sol[:, 0], **self.plt_style_exa_sol,label='Exact')
                 for elem in range(1,x.shape[1]):
                     ax.plot(x[:, elem], exa_sol[:, elem], **self.plt_style_exa_sol)
@@ -472,7 +477,7 @@ class PdeBase:
                 savefile = savefile + '_exa'
             if title is not None:
                 title = 'Exact Solution'
-            exa_sol = self.exact_sol(time)
+            exa_sol = self.exact_sol(time,guess=q)
             self.plot_sol(exa_sol, time=time, plot_exa=True, savefile=savefile,
                  show_fig=show_fig, ymin=ymin, ymax=ymax, display_time=display_time, 
                  title=title, plot_mesh=plot_mesh, save_format=save_format, dpi=dpi,

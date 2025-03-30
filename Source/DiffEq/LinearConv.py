@@ -45,7 +45,7 @@ class LinearConv(PdeBase):
             self.maxeig_dExdq = lambda q : np.ones(q.shape)
             self.central_flux = self.central_fix_flux
 
-    def exact_sol(self, time=0, x=None):
+    def exact_sol(self, time=0, x=None, guess=None):
 
         if x is None:
             x = self.x_elem
