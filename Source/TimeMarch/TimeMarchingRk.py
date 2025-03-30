@@ -154,7 +154,7 @@ class TimeMarchingRk:
         #n_ts = int(self.t_final/dt)
         i = 0
         frame = 1
-        nframes = q_sol.shape[2]
+        nframes = self.nframes
         frame_skip = 0
         t_current = 0.
         y_current = q.flatten('F')
@@ -174,7 +174,7 @@ class TimeMarchingRk:
             q = y_current.reshape(self.qshape,order='F')
             self.common(q, q_sol, i, n_ts, dt, dqdt, time=t_current)
 
-            if frame_skip == self.skip_ts:
+            if frame_skip == self.skip_ts or abs(t_current - self.t_final) < 1e-10:
                 if frame == nframes - 1:
                     nframes = int(1.5 * frame)
                     if keep_all_ts_lcl:
