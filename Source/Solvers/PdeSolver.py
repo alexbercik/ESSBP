@@ -318,6 +318,7 @@ class PdeSolver:
 
         self.diffeq.calc_cons_obj = self.calc_cons_obj
         self.diffeq.n_cons_obj = self.n_cons_obj
+        self.diffeq.cons_obj_name = self.cons_obj_name
 
         self.check_resid_conv = check_resid_conv
         self.print_residual = print_residual
