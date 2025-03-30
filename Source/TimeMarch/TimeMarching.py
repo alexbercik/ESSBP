@@ -278,6 +278,7 @@ class TimeMarching(TimeMarchingRk):
 
     def init_q_sol(self, q0, n_ts):
         ''' initiate the q_sol vector to store solutions '''
+        frames = 0
         if self.keep_all_ts:
             # initiate q_sol to a size depending on n_ts and skip_ts
             if n_ts/(self.skip_ts+1) == int(n_ts/(self.skip_ts+1)):
@@ -293,13 +294,14 @@ class TimeMarching(TimeMarchingRk):
            
             q_sol = np.zeros([*self.qshape, frames])
             q_sol[:, :, 0] = q0
-            
-            if self.bool_calc_cons_obj:
-                self.cons_obj = np.zeros((self.n_cons_obj, frames))
-
-            return q_sol
         else:
-            return None
+            q_sol = None
+            
+        if self.bool_calc_cons_obj:
+            self.cons_obj = np.zeros((self.n_cons_obj, frames))
+
+        self.nframes = frames
+        return q_sol
         
     def return_q_sol(self,q,q_sol,t_idx,dt,dqdt):
         ''' prepare q or q_sol to be returned by the main function '''
