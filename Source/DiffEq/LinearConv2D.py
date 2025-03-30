@@ -59,7 +59,7 @@ class LinearConv(PdeBase):
         if self.ax == self.ax_fix and self.ay == self.ay_fix:
             self.central_fluxes = self.central_fix_fluxes
 
-    def exact_sol(self, time=0, xy=None):
+    def exact_sol(self, time=0, xy=None, guess=None):
 
         if xy is None:
             xy = self.xy_elem

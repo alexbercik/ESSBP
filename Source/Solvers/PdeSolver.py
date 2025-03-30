@@ -541,7 +541,7 @@ class PdeSolver:
                 errors[i] = self.calc_error(self.q_sol[:,:,i],times[i],method=method)
             return errors
         
-        q_exa = self.diffeq.exact_sol(tf)
+        q_exa = self.diffeq.exact_sol(tf,guess=q)
         if var2plot_name is None:
             var = q
             var_exa = q_exa

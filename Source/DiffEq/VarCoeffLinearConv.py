@@ -89,7 +89,7 @@ class LinearConv(PdeBase):
             raise Exception('Variable coefficient not understood.')
         return ader
 
-    def exact_sol(self, time=0, x=None):
+    def exact_sol(self, time=0, x=None, guess=None):
         
         if x is None:
             x = self.x_elem
