@@ -130,22 +130,32 @@ class TimeMarchingRk:
         “Solving Ordinary Differential Equations I: Nonstiff Problems”, Sec. II.'''
 
         def f(t, y):
-            return self.dqdt(y.reshape(self.shape_q,order='F'), t).flatten('F')
+            return self.dqdt(y.reshape(self.qshape,order='F'), t).flatten('F')
 
         tm_solver = DOP853(f, 0.0, q.flatten('F'), t_bound=self.t_final, 
                            first_step=dt, rtol=self.rtol, atol=self.atol)
-        q_sol = None
-        if self.keep_all_ts:
-            print("WARNING: keep_all_ts not implemented for rk8. Ignoring.")
-            self.keep_all_ts = False
-        if self.bool_calc_cons_obj:
-            print("WARNING: bool_calc_cons_obj not implemented for rk8. Ignoring.")
-            self.bool_calc_cons_obj = False
+        
         # we don't have access to the internal steps, so we can't get dqdt without doing exrtra work
         dqdt = np.zeros_like(q)
-        #n_ts = int(self.t_final/dt)
+        q_sol = self.init_q_sol(q, n_ts)
+        if self.keep_all_ts:
+            self.keep_all_ts = False
+            keep_all_ts_lcl = True
+        else:
+            keep_all_ts_lcl = False
 
+        if self.bool_calc_cons_obj:
+            self.bool_calc_cons_obj = False
+            bool_calc_cons_obj_lcl = True
+            self.cons_obj[:, 0] = self.fun_calc_cons_obj(q,0.0,dqdt)
+        else:
+            bool_calc_cons_obj_lcl = False
+
+        #n_ts = int(self.t_final/dt)
         i = 0
+        frame = 1
+        nframes = q_sol.shape[2]
+        frame_skip = 0
         t_current = 0.
         y_current = q.flatten('F')
         n_ts = int(self.t_final/dt)
@@ -161,22 +171,61 @@ class TimeMarchingRk:
                 print("ERROR RK8: WARNING: DOP853 step failed. Returning last q.")
                 traceback.print_exc()
                 break
-            self.common(y_current.reshape(self.shape_q,order='F'), q_sol,
-                        i, n_ts, dt, dqdt)
+            q = y_current.reshape(self.qshape,order='F')
+            self.common(q, q_sol, i, n_ts, dt, dqdt, time=t_current)
+
+            if frame_skip == self.skip_ts:
+                if frame == nframes - 1:
+                    nframes = int(1.5 * frame)
+                    if keep_all_ts_lcl:
+                        print('\n')
+                        print('WARNING: q_sol is not large enough to hold all time steps.')
+                        print('         Increasing the current size by a factor of 1.5.')
+                        temp = np.zeros((*self.qshape, nframes))
+                        temp[:, :, :frame+1] = q_sol
+                        q_sol = temp
+                    if bool_calc_cons_obj_lcl:
+                        if not keep_all_ts_lcl: ('\n')
+                        print('WARNING: cons_obj is not large enough to hold all time steps.')
+                        print('         Increasing the current size by a factor of 1.5.')
+                        print('\n')
+                        temp = np.zeros((self.n_cons_obj, nframes))
+                        temp[:, :frame+1] = self.cons_obj
+                        self.cons_obj = temp
+                    del temp
+
+                if keep_all_ts_lcl: q_sol[:, :, frame] = q
+                if bool_calc_cons_obj_lcl: self.cons_obj[:, frame] = self.fun_calc_cons_obj(q,t_current,dqdt)
+                frame += 1
+                frame_skip = 0
+            else:
+                frame_skip += 1
+
             if self.quitsim: break
+
+            #TODO : make sure time is included in cons obj
         
         #t_current = tm_solver.t
         #y_current = tm_solver.y
         if t_current < self.t_final:
-            #print("RK8: WARNING: Did not reach final time. t = %f" % t_current)
             self.quitsim = True
             self.failsim = True
         else:
             n_ts = i
-        q = y_current.reshape(self.shape_q,order='F')
+        q = y_current.reshape(self.qshape,order='F')
         self.final_common(q, q_sol, i, n_ts, dt, dqdt)
+        if t_current < self.t_final:
+            print("RK8: WARNING: Did not reach final time. t = %f" % t_current)
+        else:
+            print("RK8: Reached final time. t = %f" % t_current)
         print("RK8: used %d steps" % i)
-        return self.return_q_sol(q,q_sol,i,dt,dqdt)
+        if keep_all_ts_lcl:
+            q_sol = q_sol[:, :, :frame]
+        else:
+            q_sol = q
+        if bool_calc_cons_obj_lcl:
+            self.cons_obj = self.cons_obj[:, :frame]
+        return q_sol
 
     
     # TODO: Do I want to put back any of the implicit methods? 
@@ -268,7 +317,7 @@ class TimeMarchingRk_old:
 
         def calc_time_step(q_in):
 
-            f_mat = np.zeros((*self.shape_q, n_step))
+            f_mat = np.zeros((*self.qshape, n_step))
 
             # Solve each explicit step individually
             for i in range(n_step):
@@ -296,7 +345,7 @@ class TimeMarchingRk_old:
             else:
                 # append the final frame manually
                 frames = int(n_ts/(self.skip_ts+1)) + 2
-            q_vec = np.zeros([*self.shape_q, frames])
+            q_vec = np.zeros([*self.qshape, frames])
             q_vec[:, :, 0] = q
 
         for i in range(1, n_ts+1):
@@ -374,7 +423,7 @@ class TimeMarchingRk_old:
             else:
                 # append the final frame manually
                 frames = int(n_ts/(self.skip_ts+1)) + 2
-            q_vec = np.zeros([*self.shape_q, frames])
+            q_vec = np.zeros([*self.qshape, frames])
             q_vec[:, :, 0] = q
 
         for i in range(1, n_ts+1):
@@ -510,7 +559,7 @@ class TimeMarchingRk_old:
             else:
                 # append the final frame manually
                 frames = int(n_ts/(self.skip_ts+1)) + 2
-            q_vec = np.zeros([*self.shape_q, frames])
+            q_vec = np.zeros([*self.qshape, frames])
             q_vec[:, :, 0] = q
 
         for i in range(1, n_ts+1):

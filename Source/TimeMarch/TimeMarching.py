@@ -128,6 +128,11 @@ class TimeMarching(TimeMarchingRk):
                 print('WARNING: atol not set for rk8. Setting to 1e-12.')
                 self.atol = 1e-12
 
+            if self.keep_all_ts or self.bool_calc_cons_obj:
+                # we need to track time as part of cons_obj
+                assert any(name.lower() == 'time' for name in self.diffeq.cons_obj_name), \
+                    'RK8 requires time to be in the cons_obj_name list.'
+
     def solve(self, q0, dt, n_ts):
         '''
         Parameters
@@ -145,13 +150,13 @@ class TimeMarching(TimeMarchingRk):
             3D array.
         '''
 
-        self.shape_q = q0.shape
+        self.qshape = q0.shape
         self.len_q = q0.size
         self.t_final = dt*n_ts
 
         return self.tm_solver(q0, dt, n_ts)
 
-    def common(self, q, q_sol, t_idx, n_ts, dt, dqdt):
+    def common(self, q, q_sol, t_idx, n_ts, dt, dqdt, time=None):
         '''
         Parameters
         ----------
@@ -164,16 +169,17 @@ class TimeMarching(TimeMarchingRk):
         dt : float
             Size of the time step.
         '''
+        if time is None: time = t_idx * dt
 
         if np.any(np.isnan(q)):
-            print('\n ERROR: there are undefined values for q at t =',t_idx * dt,'t_idx =', t_idx)
+            print('\n ERROR: there are undefined values for q at t =',time,'t_idx =', t_idx)
             self.quitsim = True
             self.failsim = True
             return
 
         if self.enforce_positivity:
             if self.diffeq.check_positivity(q):
-                print('\n ERROR: there are negative values for q at t =',t_idx * dt,'t_idx =', t_idx)
+                print('\n ERROR: there are negative values for q at t =',time,'t_idx =', t_idx)
                 self.quitsim = True
                 self.failsim = True
                 return
@@ -184,11 +190,10 @@ class TimeMarching(TimeMarchingRk):
                 if self.keep_all_ts:
                     q_sol[:, :, mod_t_idx] = q
                 if self.bool_calc_cons_obj:
-                    self.cons_obj[:, mod_t_idx] = self.fun_calc_cons_obj(q,t_idx * dt,dqdt)
+                    self.cons_obj[:, mod_t_idx] = self.fun_calc_cons_obj(q,time,dqdt)
 
         if self.bool_plot_sol:
-            tf = t_idx * dt
-            self.fun_plot_sol(q, tf)
+            self.fun_plot_sol(q, time)
 
         if self.print_sol_norm:
             if (t_idx % self.idx_print == 0) or (t_idx == n_ts):
@@ -226,14 +231,15 @@ class TimeMarching(TimeMarchingRk):
                 self.quitsim = True
                 self.failsim = False
 
-    def final_common(self, q, q_sol, t_idx, n_ts, dt, dqdt):
+    def final_common(self, q, q_sol, t_idx, n_ts, dt, dqdt, time=None):
         ''' Like common, but intended for the final iteration '''
+        if time is None: time = t_idx * dt
 
         if not self.quitsim:
             # if we already indicated to quit, then we did everything we had to in previous common().
             if t_idx != n_ts:
                 print('ERROR: final_common is being called before the final iteration.')
-                print('       t =',t_idx * dt,'t_idx =', t_idx)
+                print('       t =',time,'t_idx =', t_idx)
 
             if self.keep_all_ts or self.bool_calc_cons_obj:
                 mod_t_idx = t_idx/(self.skip_ts+1)
@@ -241,11 +247,10 @@ class TimeMarching(TimeMarchingRk):
                     if self.keep_all_ts:
                         q_sol[:, :, int(mod_t_idx)] = q
                     if self.bool_calc_cons_obj:
-                        self.cons_obj[:, int(mod_t_idx)] = self.fun_calc_cons_obj(q,t_idx * dt,dqdt)
+                        self.cons_obj[:, int(mod_t_idx)] = self.fun_calc_cons_obj(q,time,dqdt)
 
             if self.bool_plot_sol:
-                tf = t_idx * dt
-                self.fun_plot_sol(q, tf)
+                self.fun_plot_sol(q, time)
 
             if self.print_sol_norm:
                 if (t_idx % self.idx_print == 0) or (t_idx == n_ts):
@@ -264,7 +269,7 @@ class TimeMarching(TimeMarchingRk):
                 print('... Took {0}:{1:02d}:{2:02d} to run.'.format(h,m,s))
         
             if np.any(np.isnan(q)):
-                print('ERROR: there are undefined values for q at final t =',t_idx * dt,'t_idx =', t_idx)
+                print('ERROR: there are undefined values for q at final t =',time,'t_idx =', t_idx)
 
             if self.check_resid_conv:
                 if (resid < 1E-10): 
@@ -286,7 +291,7 @@ class TimeMarching(TimeMarchingRk):
                 frames = int(n_ts/(self.skip_ts+1)) + 2
                 self.append_qsol = True
            
-            q_sol = np.zeros([*self.shape_q, frames])
+            q_sol = np.zeros([*self.qshape, frames])
             q_sol[:, :, 0] = q0
             
             if self.bool_calc_cons_obj:
