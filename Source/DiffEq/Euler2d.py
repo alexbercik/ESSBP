@@ -53,31 +53,18 @@ class Euler(PdeBase):
 
         ''' Set flow and problem dependent parameters  '''
         
-        if self.test_case == 'density_wave':
+        if 'density_wave' in self.test_case:
             self.xmin_fix = (-1.,-1.)  # should be the same as self.x_min
             self.xmax_fix = (1.,1.) # should be the same as self.x_max
-            self.u0 = 0.1        # initial (ideally constant) velocity
-            self.v0 = 0.2
-            self.p0 = 20          # initial (ideally constant) pressure
-            if self.q0_type != 'density_wave':
-                print("WARNING: Overwriting inputted q0_type to 'density_wave'.")
-                self.q0_type = 'density_wave'
-            assert (bc == 'periodic'),\
-                "density_wave must use bc='periodic'."
-            self.steady = False
-
-            if self.nondimensionalize:
-                self.rho_inf = 1.
-                self.a_inf = np.sqrt(self.g*self.p0/self.rho_inf)
-                self.e_inf = self.rho_inf * self.a_inf * self.a_inf 
-                self.rhou_inf = self.rho_inf * self.a_inf
-                self.t_scale = self.a_inf
-
-        elif self.test_case == 'density_wave_1d':
-            self.xmin_fix = (-1.,-1.)  # should be the same as self.x_min
-            self.xmax_fix = (1.,1.) # should be the same as self.x_max
-            self.u0 = 0.1        # initial (ideally constant) velocity
-            self.v0 = 0.0
+            if '1dx' in self.test_case:
+                self.u0 = 0.1        # initial (ideally constant) velocity
+                self.v0 = 0.0
+            elif '1dy' in self.test_case:
+                self.u0 = 0.0        # initial (ideally constant) velocity
+                self.v0 = 0.1
+            else:
+                self.u0 = 0.1        # initial (ideally constant) velocity
+                self.v0 = 0.2
             self.p0 = 20          # initial (ideally constant) pressure
             if self.q0_type != 'density_wave':
                 print("WARNING: Overwriting inputted q0_type to 'density_wave'.")
@@ -411,7 +398,7 @@ class Euler(PdeBase):
             T = P / (rho * self.R)
             return rho, u, v, e, P, a, s, mach, T
 
-        if self.test_case == 'density_wave' or self.test_case == 'density_wave_1d':
+        if 'density_wave' in self.test_case:
             exa_sol = density_wave(time)
         elif self.test_case == 'vortex':    
             exa_sol = vortex(time)
@@ -448,7 +435,7 @@ class Euler(PdeBase):
         if xy is None:
             xy = self.xy_elem
 
-        if self.test_case == 'density_wave' or self.test_case == 'density_wave_1d':
+        if 'density_wave' in self.test_case:
             if q0_type != 'density_wave':
                 print("WARNING: Instead of using q0_type = '"+q0_type+", you should probably use q0_type = 'density_wave'.")
                 q0 = PdeBase.set_q0(self, q0_type=q0_type, xy=xy)
@@ -456,8 +443,12 @@ class Euler(PdeBase):
             else:
                 if self.test_case == 'density_wave':
                     rho = 1 + 0.98*np.sin(2*np.pi*(xy[:,0,:]+xy[:,1,:]))
-                else:
+                elif self.test_case == 'density_wave_1dx':
                     rho = 1 + 0.98*np.sin(2*np.pi*xy[:,0,:])
+                elif self.test_case == 'density_wave_1dy':
+                    rho = 1 + 0.98*np.sin(2*np.pi*xy[:,1,:])
+                else:
+                    raise Exception('Invalid test case.')
                 u = self.u0 * np.ones(rho.shape)
                 v = self.v0 * np.ones(rho.shape)
                 p = self.p0 * np.ones(rho.shape)
