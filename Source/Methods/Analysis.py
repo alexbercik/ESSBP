@@ -22,7 +22,7 @@ import traceback
 
 def animate(solver, file_name='animation', make_video=True, make_gif=False,
                plotfunc='plot_sol',plotargs={}, skipsteps=0,fps=24,
-               last_frame=False,tfinal=None):
+               last_frame=False,tfinal=None,time=None,nframes=None):
     '''
     Note: This uses bash calls with ffmpeg and ImageMagick, so have those installed
     Parameters
@@ -80,6 +80,7 @@ def animate(solver, file_name='animation', make_video=True, make_gif=False,
     assert('savefile' not in plotargs),"savefile should not be set in plotargs"
     assert(isinstance(skipsteps, int)),"skipsteps must be an integer"
     assert(isinstance(fps, int)),"fps must be an integer"
+    if nframes is not None: assert time is not None, "nframes only works if time is given"
     
     # set the plotting function
     plot = getattr(solver, plotfunc)
@@ -119,25 +120,41 @@ def animate(solver, file_name='animation', make_video=True, make_gif=False,
     print('...Making Frames') 
     suf = 'Complete.'  
     printProgressBar(0, frames, prefix = 'Progress:', suffix = suf) 
-    for i in range(frames):
-        stepi = i*(skipsteps+1)
-        timei =  solver.dt*(solver.skip_ts+1)*stepi # or tfinal/steps*stepi
-        # note, final time *may* be a little off due to how program was terminated
-        # and when solution checkpoints were saved, but it will be the only one 
-        # that is off. So fix the final time.
-        if i == frames - 1:
-            timei = min(timei, solver.t_final)
-        printProgressBar(i+1, frames, prefix = 'Progress:', suffix = suf)
-        
-        # call plotting function from solver module
-        plot(solver.q_sol[:,:,stepi], **plotargs, time=timei,
-             savefile=file_name+'/'+'frame'+str(i).zfill(numfill))
     
-    if last_frame:
-        # if i == frames - 1, then this may double plot the final
-        # frame, but I also don't really care if it does.
-        plot(solver.q_sol[:,:,-1], **plotargs, time=tfinal,
-             savefile=file_name+'/'+'frame'+str(frames))
+    
+    if nframes is None:
+        for i in range(frames):
+            stepi = i*(skipsteps+1)
+            if time is None:
+                timei =  solver.dt*(solver.skip_ts+1)*stepi # or tfinal/steps*stepi
+                # note, final time *may* be a little off due to how program was terminated
+                # and when solution checkpoints were saved, but it will be the only one 
+                # that is off. So fix the final time.
+                if i == frames - 1:
+                    timei = min(timei, solver.t_final)
+            else:
+                timei = time[stepi]
+            printProgressBar(i+1, frames, prefix = 'Progress:', suffix = suf)
+            
+            # call plotting function from solver module
+            plot(solver.q_sol[:,:,stepi], **plotargs, time=timei,
+                savefile=file_name+'/'+'frame'+str(i).zfill(numfill))
+        
+        if last_frame:
+            # if i == frames - 1, then this may double plot the final
+            # frame, but I also don't really care if it does.
+            plot(solver.q_sol[:,:,-1], **plotargs, time=tfinal,
+                savefile=file_name+'/'+'frame'+str(frames))
+        
+    else:
+        # divide time into the correct number of frames
+        for i,timei in enumerate(np.linspace(time[0],time[-1],nframes,endpoint=True)):
+            idx = np.argmin(abs(time-timei))
+            printProgressBar(i+1, nframes, prefix = 'Progress:', suffix = suf)
+
+            # call plotting function from solver module
+            plot(solver.q_sol[:,:,idx], **plotargs, time=timei,
+                savefile=file_name+'/'+'frame'+str(i).zfill(numfill))
 
     if (make_video or make_gif):
         # if images are saved as eps, convert to png with resolution given by -density (dpi)
@@ -160,7 +177,9 @@ def animate(solver, file_name='animation', make_video=True, make_gif=False,
 
     if make_video:
         print('...Making mp4')
-        cmd_str = 'ffmpeg -framerate '+str(fps)+' -i '+file_name+'/frame%0'+str(numfill)+'d.png -c:v libx264 -pix_fmt yuv420p '+file_name+'/animation.mp4'
+        #cmd_str = 'ffmpeg -framerate '+str(fps)+' -i '+file_name+'/frame%0'+str(numfill)+'d.png -c:v libx264 -pix_fmt yuv420p -crf 18 '+file_name+'/animation.mp4'
+        # for lossless compression but higher file size, use
+        cmd_str = 'ffmpeg -framerate '+str(fps)+' -i '+file_name+'/frame%0'+str(numfill)+'d.png -c:v prores_ks -pix_fmt yuv444p10le '+file_name+'/animation.mov'
         # see more options here: https://trac.ffmpeg.org/wiki/Slideshow or https://symbols.hotell.kau.se/2017/09/12/converting-images/
         cmd = subprocess.run(cmd_str, shell=True, capture_output=True, text=True)
         assert(cmd.returncode==0),"Not able to create mp4. Error raised: "+cmd.stderr
@@ -989,7 +1008,7 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
 
     fig = plt.figure(figsize=figsize)
     if title != None:
-        plt.title(title,fontsize=18)
+        plt.title(title,fontsize=title_size)
     if ylabel == None:
         ylabel = r"Error"
     if xlabel == None:
