@@ -37,7 +37,7 @@ class SatDer1:
         
         if q_bdyR is None:
             qf_R = fn.pad_1dR(q_a, q_a[:,0])
-        elif q_bdyR == 'None':
+        elif np.any(q_bdyR == 'None'):
             # outflow boundary condition - do not apply a SAT here
             qf_R = fn.pad_1dR(q_a, np.zeros(self.neq_node))
             qf_L[:,-1] = 0.0
