@@ -2101,7 +2101,7 @@ def Chandrashekar_fluxes_2D(qL,qR):
     betaL = 0.5*rhoL/pL
     rhoR = qR[0]
     uR = qR[1] / rhoR
-    vR = qL[2] / rhoR
+    vR = qR[2] / rhoR
     pR = (g-1)*(qR[3] - 0.5*(uR*qR[1] + vR*qR[2])) 
     betaR = 0.5*rhoR/pR
 
