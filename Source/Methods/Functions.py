@@ -1451,6 +1451,19 @@ def repeat_neq_gv(q,neq_node):
     return qn
 
 @njit
+def repeat_nen_gv(q,nen):
+    ''' take array of shape (neq,nelem) and return (nen*neq_node,nelem)
+        where the three neq_node values are repeated nen times.'''
+    neq_node, nelem = q.shape
+    qn = np.zeros((nen*neq_node,nelem),dtype=q.dtype) 
+    for e in range(nelem):
+        for i in range(nen):
+            for i2 in range(neq_node):
+                j = i*neq_node + i2
+                qn[j,e] = q[i2,e]
+    return qn
+
+@njit
 def kron_neq_gm(A,neq_node):
     ''' take array of shape (nen,nen2,nelem) and return (nen*neq_node,nen2*neq_node,nelem)
         the proper kronecker product for the operator acting on a vector (nen2*neq_node,nelem). '''
