@@ -14,6 +14,8 @@ if platform == "linux" or platform == "linux2": # True if on SciNet
 else:
     import matplotlib.pyplot as plt
 from matplotlib import rc
+import matplotlib.cm as cm
+import matplotlib.colors as mcolors
 rc('text', usetex=True)
 
 
@@ -294,7 +296,7 @@ class PdeBase:
                     assert (self.xmax==1 and self.xmin==0)
                     stdev2 = 0.08**2
                     exp = -0.5*(xy-0.5)**2/stdev2
-                    q0 = q0 + 0.001*np.exp(exp)
+                    q0 = q0 + 0.01*np.exp(exp)
             elif self.dim == 2:
                 x_scaled = (xy[:,0,:] + self.xmin[0]) / self.dom_len[0]
                 y_scaled = (xy[:,1,:] + self.xmin[1]) / self.dom_len[1]
@@ -348,7 +350,7 @@ class PdeBase:
     
 
     # TODO: Make a separate function for interactive plots? is this even possible using free packages?
-    def plot_sol(self, q, x=None, time=0., plot_exa=True, savefile=None,
+    def plot_sol(self, q, x=None, time=0., plot_exa=None, savefile=None,
                  show_fig=True, ymin=None, ymax=None, display_time=False, 
                  title=None, plot_mesh=False, save_format='png', dpi=600,
                  plot_only_exa=False, var2plot_name=None, legendloc=None, legend=True):
@@ -369,6 +371,8 @@ class PdeBase:
             plot_exa = False
         
         if self.dim == 1:
+            if plot_exa is None: plot_exa = True
+
             if x is None: 
                 x = self.x_elem
             else:
@@ -398,6 +402,7 @@ class PdeBase:
         
         
         elif self.dim == 2:
+            if plot_exa is None: plot_exa = False
             #if x is None: raise Exception('x must be provided for 2D plots.')
 
             fig = plt.figure(figsize=(6,5.5*self.dom_len[1]/self.dom_len[0])) # scale figure properly
@@ -410,8 +415,14 @@ class PdeBase:
             CS = ax.contourf(x,y,num_sol,levels=self.plt_contour_settings['levels'],
                                  vmin=ymin, vmax=ymax,
                                  cmap=self.plt_contour_settings['cmap'])
+            ax.set_aspect('equal', adjustable='box') # adjusts the shape of the figure to make data in x and y scale equally
             
-            cbar = fig.colorbar(CS)
+            if ymin is not None and ymax is not None:
+                norm = mcolors.Normalize(vmin=ymin, vmax=ymax)
+                mappable = cm.ScalarMappable(norm=norm, cmap=self.plt_contour_settings['cmap'])
+                cbar = fig.colorbar(mappable, ax=ax, shrink=0.79, aspect=18)
+            else:
+                cbar = fig.colorbar(CS, ax=ax, shrink=0.79, aspect=18)
             if var2plot_name is not None:
                 cbar.ax.set_ylabel(var2plot_name)     
                 
