@@ -32,6 +32,7 @@ class PdeSolver:
     had_flux = 'none'
     tm_atol = None
     tm_rtol = None
+    tm_nframes = None
 
     def __init__(self, diffeq, settings,                            # Diffeq
                  tm_method, dt, t_final,                    # Time marching
@@ -400,6 +401,7 @@ class PdeSolver:
                         dqdt=self.dqdt, dfdq=self.dfdq,
                         rtol=self.tm_rtol, atol=self.tm_atol)
         
+        tm_class.nframes = self.tm_nframes
         tm_class.print_progress = self.print_progress
         self.q_sol =  tm_class.solve(q0, self.dt, self.n_ts)
         self.cons_obj = tm_class.cons_obj
@@ -480,7 +482,7 @@ class PdeSolver:
                 cons_obj[i] = np.max(eigs.real)
             elif cons_obj_name_i == 'spec_rad':
                 cons_obj[i] = np.max(np.abs(eigs))
-            elif cons_obj_name_i == 'sol_error':
+            elif cons_obj_name_i == 'sol_error' or cons_obj_name_i == 'error':
                 cons_obj[i] = self.calc_error(q,t)
             elif cons_obj_name_i == 'time':
                 cons_obj[i] = t
@@ -825,7 +827,7 @@ class PdeSolver:
                           print_error=print_error)
         if normalize:
             assert self.dim==1, 'Normalizing only set up for 1D'
-            A /= self.nelem*(self.nen-1)/(self.xmax-self.xmin)
+            A /= self.neq_node*self.nelem*(self.nen-1)/(self.xmax-self.xmin)
         nen1, nen2 = A.shape
         if not print_nothing: 
             if nen1 >= 5000:
@@ -1191,16 +1193,17 @@ class PdeSolver:
                 plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx]*eig_norm) 
                 if logscale: plt.yscale('log')
 
-            elif cons_obj_name_i == 'sol_error':
+            elif cons_obj_name_i == 'sol_error' or cons_obj_name_i == 'error':
                 plt.title(r'Solution Error',fontsize=18)
                 plt.ylabel(r'$\vert \vert u - u_e \vert \vert_H$',fontsize=16)
-                if logscale: plt.yscale('log')
-                plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx])   
+                plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx])  
+                if logscale: plt.yscale('log') 
                 
             else:
                 print('WARNING: No default plotting set up for '+cons_obj_name_i)
                 plt.title(cons_obj_name_i,fontsize=18)
                 plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx]) 
+                if logscale: plt.yscale('log') 
                 
             if savefile is not None:
                 plt.savefig(savefile+'_'+cons_obj_name_i+'.jpg',dpi=600)

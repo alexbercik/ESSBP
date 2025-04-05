@@ -153,8 +153,7 @@ class TimeMarchingRk:
 
         #n_ts = int(self.t_final/dt)
         i = 0
-        frame = 1
-        nframes = self.nframes
+        bad_dt = 0
         frame_skip = 0
         t_current = 0.
         y_current = q.flatten('F')
@@ -174,32 +173,68 @@ class TimeMarchingRk:
             q = y_current.reshape(self.qshape,order='F')
             self.common(q, q_sol, i, n_ts, dt, dqdt, time=t_current)
 
-            if frame_skip == self.skip_ts or abs(t_current - self.t_final) < 1e-10:
-                if frame == nframes - 1:
-                    nframes = int(1.5 * frame)
-                    if keep_all_ts_lcl:
-                        print('\n')
-                        print('WARNING: q_sol is not large enough to hold all time steps.')
-                        print('         Increasing the current size by a factor of 1.5.')
-                        temp = np.zeros((*self.qshape, nframes))
-                        temp[:, :, :frame+1] = q_sol
-                        q_sol = temp
-                    if bool_calc_cons_obj_lcl:
-                        if not keep_all_ts_lcl: ('\n')
-                        print('WARNING: cons_obj is not large enough to hold all time steps.')
-                        print('         Increasing the current size by a factor of 1.5.')
-                        print('\n')
-                        temp = np.zeros((self.n_cons_obj, nframes))
-                        temp[:, :frame+1] = self.cons_obj
-                        self.cons_obj = temp
-                    del temp
+            # Check if step size is too small
+            if tm_solver.h_abs < 1e-7:
+                print(f"WARNING RK8: timestep has reached a very small dt = {tm_solver.h_abs:e} at t = {t_current}. Consider aborting.")
+                bad_dt += 1
+                if tm_solver.h_abs < 1e-10:
+                    print(f"ERROR RK8: timestep has reached timestep threshold of 1e-10. Aborting.")
+                    self.quitsim = True
+                    self.failsim = True
+                    break
+                if bad_dt > 50:
+                    print(f"ERROR RK8: too many very small time steps. Aborting.")
+                    self.quitsim = True
+                    self.failsim = True
+                    break
 
-                if keep_all_ts_lcl: q_sol[:, :, frame] = q
-                if bool_calc_cons_obj_lcl: self.cons_obj[:, frame] = self.fun_calc_cons_obj(q,t_current,dqdt)
-                frame += 1
-                frame_skip = 0
-            else:
-                frame_skip += 1
+            if keep_all_ts_lcl or bool_calc_cons_obj_lcl:
+                if self.use_time_frames:
+                    timediff = abs(t_current - self.frame_target_time)
+                    if timediff < self.frame_current_timediff:
+                        # we are closer to the target time. Save the current solution at current index.
+                        self.frame_current_timediff = timediff
+                    else:
+                        # we have started moving away from the target time. Update the target time.
+                        self.frame_idx += 1
+                        self.frame_target_time = self.t_final / self.nframes * self.frame_idx
+                        self.frame_current_timediff = abs(t_current - self.frame_target_time)
+
+                    if keep_all_ts_lcl:
+                        q_sol[:, :, self.frame_idx] = q
+                    if bool_calc_cons_obj_lcl:
+                        self.cons_obj[:, self.frame_idx] = self.fun_calc_cons_obj(q,t_current,dqdt)
+                
+                elif frame_skip == self.skip_ts or abs(t_current - self.t_final) < 1e-12:
+                    if self.frame_idx == self.nframes - 1:
+                        self.nframes = int(2 * self.nframes)
+                        if keep_all_ts_lcl:
+                            print('\n')
+                            print('WARNING: q_sol is not large enough to hold all time steps.')
+                            print('         Increasing the current size by a factor of 2.')
+                            temp = np.zeros((*self.qshape, self.nframes))
+                            temp[:, :, :self.frame_idx+1] = q_sol
+                            q_sol = temp
+                            del temp
+                        if bool_calc_cons_obj_lcl:
+                            if not keep_all_ts_lcl: ('\n')
+                            print('WARNING: cons_obj is not large enough to hold all time steps.')
+                            print('         Increasing the current size by a factor of 2.')
+                            print('\n')
+                            temp = np.zeros((self.n_cons_obj, self.nframes))
+                            temp[:, :self.frame_idx+1] = self.cons_obj
+                            self.cons_obj = temp
+                            del temp
+
+                    if keep_all_ts_lcl:
+                            q_sol[:, :, self.frame_idx] = q
+                    if bool_calc_cons_obj_lcl:
+                        self.cons_obj[:, self.frame_idx] = self.fun_calc_cons_obj(q,t_current,dqdt)
+
+                    self.frame_idx += 1
+                    frame_skip = 0
+                else:
+                    frame_skip += 1
 
             if self.quitsim: break
 
@@ -210,22 +245,123 @@ class TimeMarchingRk:
         if t_current < self.t_final:
             self.quitsim = True
             self.failsim = True
+            self.t_final = t_current
         else:
             n_ts = i
         q = y_current.reshape(self.qshape,order='F')
-        self.final_common(q, q_sol, i, n_ts, dt, dqdt)
+        self.final_common(q, q_sol, i, n_ts, dt, dqdt, time=t_current)
         if t_current < self.t_final:
             print("RK8: WARNING: Did not reach final time. t = %f" % t_current)
         else:
             print("RK8: Reached final time. t = %f" % t_current)
         print("RK8: used %d steps" % i)
         if keep_all_ts_lcl:
-            q_sol = q_sol[:, :, :frame]
+            if self.use_time_frames:
+                q_sol = q_sol[:, :, :self.frame_idx+1]
+            else:
+                q_sol = q_sol[:, :, :self.frame_idx] # already added one
         else:
             q_sol = q
         if bool_calc_cons_obj_lcl:
-            self.cons_obj = self.cons_obj[:, :frame]
+            if self.use_time_frames:
+                self.cons_obj = self.cons_obj[:, :self.frame_idx+1]
+            else:
+                self.cons_obj = self.cons_obj[:, :self.frame_idx]
         return q_sol
+    
+    def rk8_verner(self, q, dt, n_ts):
+        ''' uses the Explicit Runge-Kutta method of order 8.
+        Verner's RK8(7) coefficients (11-stage, embedded pair).
+        
+        Verner (2010): High Order Explicit Runge-Kutta Pairs with Low-Storage Implementations'''
+
+        q_sol = self.init_q_sol(q, n_ts)
+        quit = False
+
+        c = np.array([
+            0.0,
+            0.092662,
+            0.13122303617540176,
+            0.19683455426310264,
+            0.427173,
+            0.485972,
+            0.161915,
+            0.985468,
+            0.962697734860454,
+            0.99626,
+            0.997947,
+            1.0,
+            1.0
+        ])
+
+        # a coefficients: list of tuples (j, a_ij) for each stage i
+        a_stages = {
+            1: [(0, 0.092662)],
+            2: [(0, 0.03830746548250284), (1, 0.09291557069289892)],
+            3: [(0, 0.04920863856577566), (2, 0.14762591569732698)],
+            4: [(0, 0.2743076085702487), (2, -0.9319887203102656), (3, 1.084854111740017)],
+            5: [(0, 0.06461852970939692), (3, 0.26876292133689234), (4, 0.15259054895371074)],
+            6: [(0, 0.07189155819773217), (3, 0.12212657833625497), (4, -0.07943550859198561), (5, 0.04733237205799848)],
+            7: [(0, -6.073603893714329), (3, -73.8956), (4, 11.93985370695274), (5, -3.8392515414050546), (6, 72.85406972816664)],
+            8: [(0, -4.868640079323569), (3, -59.18572799975646), (4, 9.230819319232425), (5, -2.676847914962526),
+                (6, 58.45720009994686), (7, 0.00589430972372636)],
+            9: [(0, -6.689861899320853), (3, -81.44271004053111), (4, 13.367788256983971), (5, -4.470777638416181),
+                (6, 80.2332139216141), (7, -0.013136383362121816), (8, 0.011743783032194139)],
+            10: [(0, -6.788841955800464), (3, -82.65639855934829), (4, 13.59973921874899), (5, -4.574464055350504),
+                (6, 81.41943207216076), (7, -0.01416248014826418), (8, 0.013754415808352274), (9, -0.0011116560705810062)],
+            11: [(0, -6.910189846402486), (3, -84.14495154176749), (4, 13.885121223789838), (5, -4.702458788144493),
+                (6, 82.87411451529242), (7, -0.016454983371987802), (8, 0.016446639721625213),
+                (9, 0.004275449370796531), (10, -0.005902668488222361)],
+            12: [(0, -6.91197392119898), (3, -84.16635595878781), (4, 13.88834627565582), (5, -4.703463178409703),
+                (6, 82.89518622207405), (7, -0.010203450162282603), (8, 0.014279004232303915), (9, -0.005814993403397981)]
+        }
+
+        # Sparse b coefficients: (s, b_s)
+        b_terms = [
+            (0, 0.04625543159712467),
+            (5, 0.3706666165521011),
+            (6, 0.25904408245527466),
+            (7, -679.9841468175039),
+            (8, 49.89161129042053),
+            (9, 10271.235222137312),
+            (10, -14782.196606356897),
+            (11, 5141.377953616064)
+        ]
+
+        for i in range(n_ts):
+            t = i * dt
+            k = np.zeros((13, *self.qshape), order='F')
+
+            try:
+                for s in range(13):
+                    if s == 0:
+                        q_s = q
+                    else:
+                        q_s = q.copy()
+                        for j, a_sj in a_stages.get(s, []):
+                            q_s += dt * a_sj * k[j]
+                    k[s] = self.dqdt(q_s, t + c[s]*dt)
+            except Exception as e:
+                print(f"ERROR rk8_verner: dqdt failed in stage {s+1}. Returning last q.")
+                traceback.print_exc()
+                quit = True
+                break
+
+            self.common(q, q_sol, i, n_ts, dt, k[0])
+            if self.quitsim:
+                break
+
+            for s, bs in b_terms:
+                q += dt * bs * k[s]
+
+        i += 1
+        if quit:
+            k0 = np.empty_like(q)
+            k0.fill(np.nan)
+        else:
+            k0 = self.dqdt(q, t)
+        self.final_common(q, q_sol, i, n_ts, dt, k0)
+        return self.return_q_sol(q, q_sol, i, dt, k0)
 
     
     # TODO: Do I want to put back any of the implicit methods? 
