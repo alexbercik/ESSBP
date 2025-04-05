@@ -185,12 +185,28 @@ class TimeMarching(TimeMarchingRk):
                 return
 
         if self.keep_all_ts or self.bool_calc_cons_obj:
-            if int(t_idx) % (self.skip_ts + 1) == 0:
-                mod_t_idx = int(t_idx/(self.skip_ts+1))
+            if self.use_time_frames:
+                timediff = abs(time - self.frame_target_time)
+                if timediff < self.frame_current_timediff:
+                    # we are closer to the target time. Save the current solution at current index.
+                    self.frame_current_timediff = timediff
+                else:
+                    # we have started moving away from the target time. Update the target time.
+                    self.frame_idx += 1
+                    self.frame_target_time = self.t_final / self.nframes * self.frame_idx
+                    self.frame_current_timediff = abs(time - self.frame_target_time)
+
                 if self.keep_all_ts:
-                    q_sol[:, :, mod_t_idx] = q
+                    q_sol[:, :, self.frame_idx] = q
                 if self.bool_calc_cons_obj:
-                    self.cons_obj[:, mod_t_idx] = self.fun_calc_cons_obj(q,time,dqdt)
+                    self.cons_obj[:, self.frame_idx] = self.fun_calc_cons_obj(q,time,dqdt)
+
+            elif int(t_idx) % (self.skip_ts + 1) == 0:
+                self.frame_idx = int(t_idx/(self.skip_ts+1))
+                if self.keep_all_ts:
+                    q_sol[:, :, self.frame_idx] = q
+                if self.bool_calc_cons_obj:
+                    self.cons_obj[:, self.frame_idx] = self.fun_calc_cons_obj(q,time,dqdt)
 
         if self.bool_plot_sol:
             self.fun_plot_sol(q, time)
@@ -237,17 +253,16 @@ class TimeMarching(TimeMarchingRk):
 
         if not self.quitsim:
             # if we already indicated to quit, then we did everything we had to in previous common().
-            if t_idx != n_ts:
+            if t_idx != n_ts or (time is not None and time != self.t_final):
                 print('ERROR: final_common is being called before the final iteration.')
                 print('       t =',time,'t_idx =', t_idx)
 
             if self.keep_all_ts or self.bool_calc_cons_obj:
-                mod_t_idx = t_idx/(self.skip_ts+1)
-                if abs(mod_t_idx - round(mod_t_idx)) < 1e-9:
-                    if self.keep_all_ts:
-                        q_sol[:, :, int(mod_t_idx)] = q
-                    if self.bool_calc_cons_obj:
-                        self.cons_obj[:, int(mod_t_idx)] = self.fun_calc_cons_obj(q,time,dqdt)
+                # append final time step
+                if self.keep_all_ts:
+                    q_sol[:, :, -1] = q
+                if self.bool_calc_cons_obj:
+                    self.cons_obj[:, -1] = self.fun_calc_cons_obj(q,time,dqdt)
 
             if self.bool_plot_sol:
                 self.fun_plot_sol(q, time)
@@ -278,56 +293,71 @@ class TimeMarching(TimeMarchingRk):
 
     def init_q_sol(self, q0, n_ts):
         ''' initiate the q_sol vector to store solutions '''
-        frames = 0
-        if self.keep_all_ts:
-            # initiate q_sol to a size depending on n_ts and skip_ts
-            if n_ts/(self.skip_ts+1) == int(n_ts/(self.skip_ts+1)):
-                # we will land exactly on the final frame
-                frames = int(n_ts/(self.skip_ts+1)) + 1
-                self.append_qsol = False
+
+        if self.keep_all_ts or self.bool_calc_cons_obj:
+            if self.nframes is not None:
+                assert self.t_final is not None, 't_final must be set before using nframes'
+                assert isinstance(self.nframes, int), 'nframes must be an integer'
+                assert self.nframes > 1, 'nframes must be greater than 1'
+                self.use_time_frames = True
+                self.frame_target_time = self.t_final / self.nframes
+                self.frame_current_timediff = np.inf
             else:
-                print('WARNING: skip_ts in time marching is chosen so that you do not land exactly on the final')
-                print('         time step. Will manually append the final time step solution to q_sol.')
-                # append the final frame manually
-                frames = int(n_ts/(self.skip_ts+1)) + 2
-                self.append_qsol = True
-           
-            q_sol = np.zeros([*self.qshape, frames])
+                self.use_time_frames = False
+                # set tm_frames to a size depending on n_ts and skip_ts
+                if n_ts/(self.skip_ts+1) == int(n_ts/(self.skip_ts+1)):
+                    # we will land exactly on the final frame
+                    self.nframes = int(n_ts/(self.skip_ts+1)) 
+                else:
+                    print('WARNING: skip_ts in time marching is chosen so that you do not land exactly on the final')
+                    print('         time step. Will manually append the final time step solution to q_sol.')
+                    # will append the final frame manually
+                    self.nframes = int(n_ts/(self.skip_ts+1)) + 1
+
+        if self.keep_all_ts:
+            q_sol = np.zeros([*self.qshape, self.nframes+1])
             q_sol[:, :, 0] = q0
         else:
             q_sol = None
             
         if self.bool_calc_cons_obj:
-            self.cons_obj = np.zeros((self.n_cons_obj, frames))
+            self.cons_obj = np.zeros((self.n_cons_obj, self.nframes+1))
 
-        self.nframes = frames
+        self.frame_idx = 1
         return q_sol
         
-    def return_q_sol(self,q,q_sol,t_idx,dt,dqdt):
+    def return_q_sol(self,q,q_sol,t_idx,dt,dqdt,time=None):
         ''' prepare q or q_sol to be returned by the main function '''
         if self.quitsim:
             # NOTE: t_idx = i+1 from where the method determined q was bad
+            if time is None: time = (t_idx-1) * dt
             if self.keep_all_ts:
                 if self.failsim:
-                    # simulation failed, meaning there are some NaNs in q.
-                    # return up to *but not including* this current q.
-                    mod_t_idx = (t_idx-1)/(self.skip_ts+1)
-                    # recall we only saved q every mod_t_idx, but that may or many not be now
-                    # since the program could have exited for a t_idx between these checkpoints
-                    if abs(mod_t_idx - round(mod_t_idx)) < 1e-9 and (not self.return_failed_itn):
-                        # only return up to but not including this mod_t_idx 
-                        self.t_final = (int(mod_t_idx)-1)*(self.skip_ts+1)*dt
-                        print("... returning q's up to and including t =", self.t_final, "t_idx =", int(mod_t_idx)-1)
+                    if self.use_time_frames:
+                        self.t_final = time
                         if self.bool_calc_cons_obj:
-                            self.cons_obj = self.cons_obj[:, :int(mod_t_idx)]
-                        return q_sol[:,:,:int(mod_t_idx)]
+                            self.cons_obj = self.cons_obj[:, :self.frame_idx+1]
+                        return q_sol[:,:,:self.frame_idx+1]
                     else:
-                        # safe to return up to last mod_t_idx 
-                        self.t_final = int(mod_t_idx)*(self.skip_ts+1)*dt
-                        print("... returning q's up to and including t =", self.t_final, "t_idx =", int(mod_t_idx))
-                        if self.bool_calc_cons_obj:
-                            self.cons_obj = self.cons_obj[:, :int(mod_t_idx)+1]
-                        return q_sol[:,:,:int(mod_t_idx)+1]
+                        # simulation failed, meaning there are some NaNs in q.
+                        # return up to *but not including* this current q.
+                        mod_t_idx = (t_idx-1)/(self.skip_ts+1)
+                        # recall we only saved q every mod_t_idx, but that may or many not be now
+                        # since the program could have exited for a t_idx between these checkpoints
+                        if abs(mod_t_idx - round(mod_t_idx)) < 1e-9:
+                            # only return up to but not including this mod_t_idx 
+                            self.t_final = (int(mod_t_idx)-1)*(self.skip_ts+1)*dt
+                            print("... returning q's up to and including t =", self.t_final, "t_idx =", int(mod_t_idx)-1)
+                            if self.bool_calc_cons_obj:
+                                self.cons_obj = self.cons_obj[:, :int(mod_t_idx)]
+                            return q_sol[:,:,:int(mod_t_idx)]
+                        else:
+                            # safe to return up to last mod_t_idx 
+                            self.t_final = int(mod_t_idx)*(self.skip_ts+1)*dt
+                            print("... returning q's up to and including t =", self.t_final, "t_idx =", int(mod_t_idx))
+                            if self.bool_calc_cons_obj:
+                                self.cons_obj = self.cons_obj[:, :int(mod_t_idx)+1]
+                            return q_sol[:,:,:int(mod_t_idx)+1]
                 else:
                     # the simulation ended because convergence was reached.
                     # We want to return this most recent q.
@@ -356,11 +386,7 @@ class TimeMarching(TimeMarchingRk):
                 return q
         else:
             if self.keep_all_ts:
-                # might need to append the final solution value.
-                if self.append_qsol:
-                    if self.bool_calc_cons_obj:
-                        self.cons_obj[:, -1] = self.fun_calc_cons_obj(q,t_idx * dt,dqdt)
-                    q_sol[:,:,-1] = q
+                # no need to append final solution, should have been done in final_common
                 return q_sol
             else:
                 return q
