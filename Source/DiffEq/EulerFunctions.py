@@ -2143,7 +2143,7 @@ def StegerWarming_diss_1D(q):
     u = q[1::3,:]/rho
     k = (u*u)/2
     e = q[2::3,:]
-    p = g1*(q[2::3,:]-rho*k) # pressure
+    p = g1*(e-rho*k) # pressure
     a = np.sqrt(g*p/rho)
 
     H = (e + p)/rho
@@ -2170,7 +2170,7 @@ def StegerWarming_diss_2D(q, n):
     v = q[2::4,:]/rho
     k = (u*u+v*v)/2
     e = q[3::4,:]
-    p = g1*(q[3::4,:]-rho*k) # pressure
+    p = g1*(e-rho*k) # pressure
     nx = n[:,0,:]
     ny = n[:,1,:]
     norm = np.sqrt(nx*nx + ny*ny)

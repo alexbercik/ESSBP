@@ -2,7 +2,10 @@ import numpy as np
 
 def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
     ''' make the relevant operators according to DCP implementation in diablo '''
-    if sbp_type.lower() == 'csbp':
+    if sbp_type.lower() == 'csbp' or sbp_type.lower() == 'upwind':
+        if sbp_type.lower() == 'upwind':
+            print('WARNING: Using CSBP dissipation operator, but upwind central operator.')
+            print('         Make sure this is intentional!')
         # Initialize the matrix as a dense NumPy array
         Ds = np.zeros((nen, nen))
         B = np.ones(nen)
