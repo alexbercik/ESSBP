@@ -144,6 +144,8 @@ class PdeSolver:
         # Modifies the SAT terms in the Hadamard form. See ESSBP documentation.
         self.settings.setdefault('stop_after_metrics', False) 
         # Do not set up physical operators, SATs, etc. only Mesh setup.
+        self.settings.setdefault('stop_after_mesh', False) 
+        # Do not set up SATs, etc. only Mesh setup.
         self.settings.setdefault('skew_sym', True)
         # determines whether to use a split-form or divergence form for metrics
 

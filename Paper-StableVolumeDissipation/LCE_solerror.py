@@ -26,13 +26,13 @@ savefile = None # use a string like 'eigs.png' to save the plot, None for no sav
 a = 1.0 # wave speed 
 cfl = 0.01
 tf = 1 # final time
-nelem = 1 # number of elements
-nen = 80 # number of nodes per element, as a list
-op = 'csbp' # operator type
+nelem = 10 # number of elements
+nen = 0 # number of nodes per element, as a list
+op = 'lgl' # operator type
 p = 4 # polynomial degree
 linear_thresh = 1e-8 #1e-8 for gauss, 1e-7 for sin
 max_thresh = 9e-3 #9e-3 for gauss, 9e-4 for sin
-q0_type = 'GaussWave_sbpbook' #'sinwave_4pi' #'squarewave' #'GaussWave_sbpbook' # initial condition 
+q0_type = 'sinwave_4pi' #'sinwave_4pi' #'squarewave' #'GaussWave_sbpbook' # initial condition 
 settings = {} # additional settings for mesh type, etc. Not needed.
 plot_abs_error = True
 zoom = 0 # how many nodes to zoom in on? Counts the left-most node to start in the frame
@@ -74,15 +74,24 @@ if op in ['lg', 'lgl']:
             'sat':{'diss_type':'lf'},
             'label':r'$p={0}$, $\varepsilon = 0$'.format(int(p)),
             'p':p,'nelem':nelem,'nen':0}
-    run3 = {'diss':{'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':eps},
+    """ run3 = {'diss':{'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':eps},
             'sat':{'diss_type':'lf'},
             'label':f'$p={p}$, $\\varepsilon = {eps:.3g}$',
             'p':p,'nelem':nelem,'nen':0}
     run4 = {'diss':{'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':0.2*eps},
             'sat':{'diss_type':'lf'},
             'label':f'$p={p}$, $\\varepsilon = {0.2*eps:.3g}$',
+            'p':p,'nelem':nelem,'nen':0} """
+    run3 = {'diss':{'diss_type':'filter', 'jac_type':'scalar', 'eps_type':3, 'filter_Nc':0.7,'filter_s':4, 'coeff':100},
+            'sat':{'diss_type':'lf'},
+            'label':f'Filter 1',
+            'p':p,'nelem':nelem,'nen':0}
+    run4 = {'diss':{'diss_type':'filter', 'jac_type':'scalar', 'eps_type':3, 'filter_Nc':0.7,'filter_s':2, 'coeff':100},
+            'sat':{'diss_type':'lf'},
+            'label':f'Filter 2',
             'p':p,'nelem':nelem,'nen':0}
 else:
+    nelem_pm1 = 0
     run1 = {'diss':{'diss_type':'nd'},
             'sat':{'diss_type':'nd'},
             'label':r'Symmetric SAT $\varepsilon = 0$',
@@ -108,7 +117,8 @@ ylabel = r'Solution Error $\bm{u} - \bm{u}_{\mathrm{ex}}$'
 #colors = ['tab:blue', 'darkgoldenrod', 'k',  'm', 'tab:brown']
 colors = ['tab:green', 'tab:orange', 'k',  'm', 'tab:brown']
 if op in ['lg', 'lgl']: 
-    linestyles = ['-','-','-','-']
+    #linestyles = ['-','-','-','-']
+    linestyles = ['-','-','--',':']
     linewidths = [2.5,2.2,2.0,1.5]
 else:
     linestyles = [(0, (1, 1.5)), (0, (2, 3)), '-',(0, (4, 3, 1, 3))]

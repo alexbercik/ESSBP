@@ -941,7 +941,7 @@ def calc_conv_rate(dof_vec, err_vec, dim, n_points=None,
 
     return conv_vec, avg_conv
 
-def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
+def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None, showslope=True,
               extra_marker=None, skipfit=None, skip=None, ylabel=None, xlabel=None, title_size=16,
               ylim=(None,None),xlim=(None,None),grid=False,legendloc=None,convunc=True,
               figsize=(6,4), tick_size=12, extra_xticks=False, scalar_xlabel=False, serif=False,
@@ -1078,6 +1078,7 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
                     slope = r" $({0:9.4f} \pm {1:6.1g})$".format(p_opt[0],unc)
             else:
                 slope = r" $({0:9.2f})$".format(p_opt[0])
+            if not showslope: slope = ''
             plt.loglog(dof_mod,err_mod,markers[i%len(markers)],markersize=8, color=colors[i%len(colors)],
                        markerfacecolor = 'none', markeredgewidth=2, label=string+slope, zorder=zorder)
             plt.loglog(np.linspace(dof_mod[skipfit[i]],dof_mod[-1]), # plot
@@ -1085,6 +1086,7 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None,
                        linewidth=1, linestyle = linestyles[i%len(linestyles)], color=colors[i%len(colors)], zorder=zorder)
         elif len(dof_mod) == 2:
             slope = r" $({0:9.3})$".format(-(np.log(err_mod[1])-np.log(err_mod[0]))/(np.log(dof_mod[1])-np.log(dof_mod[0])))
+            if not showslope: slope = ''
             plt.loglog(dof_mod,err_mod,markers[i%len(markers)],markersize=8, color=colors[i%len(colors)],
                        markerfacecolor = 'none', markeredgewidth=2, label=string+slope, zorder=zorder)
             plt.loglog(dof_mod, err_mod, linewidth=1, linestyle = linestyles[i%len(linestyles)], color=colors[i%len(colors)], zorder=zorder)
@@ -1784,10 +1786,11 @@ def read_from_diablo(filename=None):
 def plot_eigs(A, plot_hull=True, plot_individual_eigs=False, labels=None, savefile=None,
               save_format='png', dpi=600, line_width=1.5, equal_axes=False, 
               title_size=12, legend_size=12, markersize=16, markeredge=2,
-              tick_size=12, serif=True, left_space_pct=None,
+              tick_size=12, serif=True, left_space_pct=None, adjust_axes=True,
               colors=None, markers=None, linestyles=None, legend_loc='best', 
               legend_anchor=None, legend_anchor_type=None, legend_alpha=None,
-              xlabel=None, ylabel=None, xlim=None, ylim=None,title=None):
+              xlabel=None, ylabel=None, xlim=None, ylim=None,title=None,
+              tick_interval=None):
     if plot_hull:
         from scipy.spatial import ConvexHull
 
@@ -1910,8 +1913,10 @@ def plot_eigs(A, plot_hull=True, plot_individual_eigs=False, labels=None, savefi
                 ylim = 0.5*(xlim[1] - xlim[0])
                 ax.set_ylim((-ylim,ylim))
             elif equal_axes and (ylim is not None):
-                print('WARNING: Cannot set equal axes when setting xlim and ylim. Ignoring.')
+                if not adjust_axes:
+                    print('WARNING: Cannot have adjust_axes=True if equal_axes=True and we set both xlim and ylim. Ignoring.')
                 ax.set_ylim(ylim)
+                ax.set_aspect('equal', adjustable='box')
             elif (ylim is not None):
                 ax.set_ylim(ylim)
 
@@ -1948,9 +1953,15 @@ def plot_eigs(A, plot_hull=True, plot_individual_eigs=False, labels=None, savefi
                 y_center = (ay_min + ay_max) / 2. # Should be zero anyway...
                 ax.set_ylim(y_center - side/2, y_center + side/2)
             else:
-                #ax.set_aspect('equal', adjustable='box') # This will change the shape of the plot
-                ax.set_aspect('equal', adjustable='datalim') # This will keep the shape of the plot
-
+                if adjust_axes:
+                    ax.set_aspect('equal', adjustable='datalim') # This will keep the shape of the plot
+                else:
+                    ax.set_aspect('equal', adjustable='box') # This will change the shape of the plot
+    
+    if tick_interval is not None:
+        ax.xaxis.set_major_locator(tik.MultipleLocator(tick_interval))
+        ax.yaxis.set_major_locator(tik.MultipleLocator(tick_interval))
+        
     # Show legend only if A is a list
     if isinstance(A, list):
         # Create a blended transform

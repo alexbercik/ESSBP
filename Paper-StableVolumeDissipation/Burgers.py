@@ -20,9 +20,9 @@ plt.rcParams['font.family'] = 'serif'
 
 ''' Set parameters for simultation 
 '''
-savefile = None # use a string like 'CSBPp4' to save the plot, None for no save. Note: '.png' added automatically at end
-tm_method = 'rk4' # must use rk4, because rk8 does not track conservation objectives (energy, max eigs, etc)
-cfl = 0.01
+savefile = 'CSBPp2nen40' # use a string like 'CSBPp4' to save the plot, None for no save. Note: '.png' added automatically at end
+tm_method = 'rk4' # for evenly spaced time steps, use 'rk4' with cfl=0.001. For quicker runs, use rk8
+cfl = 0.001
 tf = 1./(2*np.pi) # final time
 nelem = 1 # number of elements
 nen = 40 # number of nodes per element
@@ -30,17 +30,17 @@ p = 4 # polynomial degree
 op = 'csbp' # operator type
 coeff_fix = 1.0 # additional coefficient by which to modify 3.125/5**s and 0.625/5**s
 maxeig = 'rusanov' # maxeig for entropy-conservative SATs, e.g. 'rusanov', 'lf'
-q0_type = 'SinWave' # initial condition 
+q0_type = 'sinwave' # initial condition 
 q0_amplitude = 1. # amplitude of initial condition
 xmin = 0.
 xmax = 1.
 bc = 'periodic' 
 split_alpha = 2./3. # splitting parameter, 2/3 to recover entropy-conservative scheme
 settings = {} # additional settings for mesh type, etc. Not needed.
-cons_obj = ('Energy','Max_Eig','Spec_Rad','Conservation','Conservation_der','time') # what quantities to track, make sure time is included
+cons_obj = ('Energy','Max_Eig','Spec_Rad','time') # what quantities to track, make sure time is included
 # in the paper, we use 'Energy','Max_Eig','time'
-skip_ts = 10 # number of time steps to skip for plotting / saving quantities. makes runs slightly quicker.
-include_upwind = True
+skip_ts = 0 # number of time steps to skip for plotting / saving quantities. makes runs slightly quicker.
+include_upwind = False
 plot_solution = False # plot the solution at the end?
 print_errors = False # print errors at the end?
 plot_errors = False # plot the solution errors at the end?
@@ -94,7 +94,6 @@ for i in range(n_runs):
             p_op = int(2*p)
             coeff = 1.
             labels.append(f'UFD $p_\\text{{u}}={p_op}$')
-        op_ = 'upwind_m'
         sat = {'diss_type':'cons', 'jac_type':'sca', 'maxeig':maxeig}
         diss = {'diss_type':'upwind', 'coeff':coeff, 'fluxvec':'lf'}
         use_split_form = False
@@ -207,6 +206,7 @@ if plot_markers:
     linestyles = ['-','--','-',':','-',':']
     markers = ['o', '^', 's', 'v', 'x', '+', '*']
     marker_start = [0.01, 0.015, 0.0, 0.005, 0.01, 0.01] # where to start markers (in time units)
+    #marker_start = [0.0, 0.015, 0.0, 0.005, 0.01, 0.01]
     n_markers = 8 # Number of markers per line
 else:
     #linestyles = [(-1, (3,1)),(0, (1,2,3,2,1,3)),'-',':',(0,(1,1,1,3)),(-1,(2,4))] # this works well when 4 dissipations overlap
@@ -217,7 +217,8 @@ else:
 for i in range(len(cons_obj)-1):
     
     # general figure settings
-    plt.figure(figsize=(6,4))
+    #plt.figure(figsize=(6,4))
+    plt.figure(figsize=(5,4.5))
     if cons_obj[i].lower() == 'energy':
         #plt.title(r'Change in Energy',fontsize=18)
         use_norm = True
@@ -236,8 +237,13 @@ for i in range(len(cons_obj)-1):
         #legend_loc = 'upper center'
         #legend_anchor = (0.55,0.895) #(0.525,0.925)
         #legend_anchor = (0.565,0.875) #(0.565,0.895)
-        legend_loc = 'best'
-        legend_anchor = None
+        legend_loc = 'center right'
+        legend_anchor = (1.0, 0.5)
+        #legend_loc = 'upper right'
+        #legend_anchor = (1.0, 0.825) #(1.0, 0.87)
+        plt.ylim(-4e-2, 4e-2)
+        #legend_loc = 'best'
+        #legend_anchor = None
         grid = True
 
     elif cons_obj[i].lower() == 'conservation':
@@ -257,8 +263,13 @@ for i in range(len(cons_obj)-1):
         #legend_loc = 'center'
         #legend_anchor = (0.5, 0.35)
         #legend_anchor = (0.5, 0.4)
-        legend_loc = 'best'
-        legend_anchor = None
+        #legend_loc = 'best'
+        #legend_anchor = None
+        legend_loc = 'lower right'
+        legend_anchor = (1.0, 0.06)
+        plt.ylim(ymin=-2.5e-6, ymax=5)
+        #legend_loc = 'upper left'
+        #legend_anchor = (0.0, 0.95)
         grid = False
         print("!!! SANITY CHECK !!! Max eig...")
         for j in range(n_runs):
@@ -316,10 +327,10 @@ for i in range(len(cons_obj)-1):
                 markersize=8, markerfacecolor='none', markeredgewidth=linewidth,zorder=3)
         
     plt.xlabel(r'Time $t$',fontsize=16)
-    plt.legend(loc=legend_loc,fontsize=13, 
+    plt.legend(loc=legend_loc,fontsize=14, 
                     bbox_to_anchor=legend_anchor)
     ax = plt.gca()
-    ax.tick_params(axis='both', labelsize=12) 
+    ax.tick_params(axis='both', which='both', labelsize=13) 
     if grid:
         plt.grid(which='major',axis='y',linestyle='--',color='gray',linewidth='1')
     if cons_obj[i].lower() == 'energy' and use_norm:

@@ -18,7 +18,7 @@ from Source.Methods.Analysis import plot_eigs
 savefile = None # use a string like 'eigs.png' to save the plot, None for no save
 p = 4 # SBP polynomial degree
 s = p+1 # dissipation order
-coeff = 3.125*5**(-s) # volume dissipation coefficient
+coeff = 0.2*3.125*5**(-s) # volume dissipation coefficient
 nelem = 1 # number of elements
 nen = 80 # number of nodes per element
 sat = 'lf' # surface dissipation type
@@ -122,19 +122,31 @@ else:
     xlabel = r'$\Re(\lambda)$'
     ylabel = r'$\Im(\lambda)$'
 
-xlim=(-3.5,0.2) # normally use (-4.1,0.2) for large, (-3.5,0.2) for small, (-2.3,1.9) for main body
+xlim=(-3.5,0.5) # normally use (-4.1,0.2) for large, (-3.5,0.2) for small, (-2.3,1.9) for main body
+ylim=None # normally use (-1.5,1.5) for large, (-0.8,0.8) for small, (-1.2,1.2) for main body
 plot_eigs(As,plot_convex_hull,plot_individual_eigs,labels=labels,savefile=savefile,
           line_width=2,equal_axes=True,title_size=16,legend_size=14,markersize=50, 
           markeredge=1.4, tick_size=12, colors=colors, linestyles=linestyles, markers=markers,
           legend_loc='upper left', #legend_anchor=(0.0, 0.88), legend_anchor_type=('data','fig'),
           legend_alpha=0.9, left_space_pct=None, xlabel=xlabel, ylabel=ylabel,
-          xlim=xlim)
+          xlim=xlim, ylim=ylim)
 
 # Quick sanity check
 import numpy as np
+minleft = 0.0
 for A in As:
     eigs = np.linalg.eigvals(A)
     minleft = min(minleft, np.min(np.real(eigs)))
 print(f'Minimum real part of all discretizations: {minleft}')
 
                         
+# plotting format for main body:
+""" savefile = None
+xlim=(-3.0,0.2) # normally use (-4.1,0.2) for large, (-3.5,0.2) for small, (-2.3,1.9) for main body
+ylim=(-2.09,2.09) # normally use (-1.5,1.5) for large, (-0.8,0.8) for small, (-1.2,1.2) for main body
+plot_eigs(As,plot_convex_hull,plot_individual_eigs,labels=labels,savefile=savefile,
+          line_width=2,equal_axes=True,title_size=16,legend_size=14,markersize=50, 
+          markeredge=1.4, tick_size=12, colors=colors, linestyles=linestyles, markers=markers,
+          legend_loc='lower left', #legend_anchor=(0.0, 0.88), legend_anchor_type=('data','fig'),
+          legend_alpha=0.85, left_space_pct=None, xlabel=xlabel, ylabel=ylabel,
+          xlim=xlim, ylim=ylim, adjust_axes=False, tick_interval=0.5) """

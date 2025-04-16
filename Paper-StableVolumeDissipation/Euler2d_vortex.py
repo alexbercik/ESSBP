@@ -15,23 +15,23 @@ from Source.Solvers.PdeSolverSbp import PdeSolverSbp
 from Source.Methods.Analysis import run_convergence, plot_conv
 
 # Simultation parameters
-savefile_in = 'Vortex_Results/Euler2dVortex_CSBPp4Had_data.npz' # input .npz data file
-savefile_out = None # use a string like 'CSBPp4' to save the plot, None for no save. Note: '.png' added automatically at end
+savefile_in = 'Vortex_Results/Euler2dVortex_LGp4Div_data.npz' # input .npz data file
+savefile_out = None #'app_Euler2dVortex_HGTp3Had' # use a string like 'CSBPp4' to save, None for no save. Note: '.png' added automatically at end
 tm_method = 'rk8'
 cfl = 1.0 # if rk4, sets timestep. If rk8, sets max timestep (adaptive).
 tf = 20.0 # final time. For vortex, one period is t=20
-op = 'csbp' # 'lg', 'lgl', 'csbp', 'hgtl', 'hgt', 'mattsson', 'upwind'
+op = 'lgl' # 'lg', 'lgl', 'csbp', 'hgtl', 'hgt', 'mattsson', 'upwind'
 nelem = [3] # number of elements in each direction, as a list
 nen = [20,40,80,160] # number of nodes per element in each direction, as a list
 p = 4 # polynomial degree
 s = p+1 # dissipation degree
 # trad: p+1, elem: p
-disc_type = 'had' # 'div' for divergence form, 'had' for entropy-stable form
+disc_type = 'div' # 'div' for divergence form, 'had' for entropy-stable form
 had_flux = 'ranocha' # 2-point numerical flux used in hadamard form
-vars2plot = ['p'] # must be the same as loaded data
+vars2plot = ['p'] #['rho', 'entropy','q','p'] # can be any of these 4
 
 nthreads = 1 # number of threads for batch runs
-include_upwind = False # include upwind operators as a reference
+include_upwind = True # include upwind operators as a reference
 include_bothdiss = True # include both cons. and ent. volume dissipation
 savedata = False # save results of simulation? (ignored if reading in data)
 loaddata = True # skip the actual simulation and just try to load and plot the data
@@ -58,6 +58,7 @@ if op in ['csbp', 'hgtl', 'hgt', 'mattsson']:
     opu = 'upwind'
     useH = False
     bdy_fix = True
+    avg_nodes = True
     dx = (xmax[0]-xmin[0])/((nen[0]-1)*nelem[0])
 elif op == 'lgl' or op == 'lg':
     if p == 2: eps = 0.02
@@ -71,6 +72,7 @@ elif op == 'lgl' or op == 'lg':
     opu = op
     useH = False
     bdy_fix = False
+    avg_nodes = False
     dx = (xmax[0]-xmin[0])/(p*nelem[0])
 else:
     raise Exception('No dissipation for this operator')
@@ -101,10 +103,10 @@ if disc_type == 'div':
 
     schedule3 = [['disc_nodes',op],['nen',*nen],['nelem',*nelem],['p',p],['disc_type','div'],
                 ['vol_diss',{'diss_type':'nd'},
-                            {'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':eps},
-                            {'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':0.2*eps},
-                            {'diss_type':'dcp', 'jac_type':'matrix', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':eps},
-                            {'diss_type':'dcp', 'jac_type':'matrix', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':0.2*eps}]]
+                            {'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'avg_half_nodes':avg_nodes, 'coeff':eps},
+                            {'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'avg_half_nodes':avg_nodes, 'coeff':0.2*eps},
+                            {'diss_type':'dcp', 'jac_type':'matrix', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'avg_half_nodes':avg_nodes, 'coeff':eps},
+                            {'diss_type':'dcp', 'jac_type':'matrix', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'avg_half_nodes':avg_nodes, 'coeff':0.2*eps}]]
     labels3 = [f'$\\varepsilon=0$', f'Cons. Sca. $\\varepsilon={eps:g}$', f'Cons. Sca. $\\varepsilon={0.2*eps:g}$',
                                f'Cons. Mat. $\\varepsilon={eps:g}$', f'Cons. Mat. $\\varepsilon={0.2*eps:g}$']
     
@@ -119,7 +121,7 @@ elif disc_type == 'had':
                         ['vol_diss',{'diss_type':'upwind', 'fluxvec':'dt', 'coeff':eps, 'use_H':False, 'bdy_fix':False, 's':s},
                                     {'diss_type':'upwind', 'fluxvec':'dt', 'coeff':0.2*eps, 'use_H':False, 'bdy_fix':False, 's':s}],
                         ['disc_type','div']]
-            labels1 = [f'UFD $\\varepsilon={eps:g}$', f'UFD $\\varepsilon={0.2*eps:g}$']
+            labels1 = [f'USE $\\varepsilon={eps:g}$', f'USE $\\varepsilon={0.2*eps:g}$']
         else:
             schedule1 = [['disc_nodes',opu],['nen',*nen],['nelem',*nelem],['p',int(2*p), int(2*p+1)],
                         ['vol_diss',{'diss_type':'upwind', 'fluxvec':'dt', 'coeff':1.}],
@@ -131,16 +133,19 @@ elif disc_type == 'had':
 
     if include_bothdiss:
         schedule2 = [['disc_nodes',op],['nen',*nen],['nelem',*nelem],['p',p],['disc_type','had'],
-                    ['vol_diss',{'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':0.2*eps},
-                                {'diss_type':'dcp', 'jac_type':'matrix', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':0.2*eps}]]
+                    ['vol_diss',{'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'avg_half_nodes':avg_nodes, 'coeff':0.2*eps},
+                                {'diss_type':'dcp', 'jac_type':'matrix', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'avg_half_nodes':avg_nodes, 'coeff':0.2*eps}]]
         labels2 = [f'Cons. Sca. $\\varepsilon={0.2*eps:g}$', f'Cons. Mat. $\\varepsilon={0.2*eps:g}$']
+    else:
+        schedule2 = []
+        labels2 = []
 
     schedule3 = [['disc_nodes',op],['nen',*nen],['nelem',*nelem],['p',p],['disc_type','had'],
                 ['vol_diss',{'diss_type':'nd'},
-                            {'diss_type':'entdcp', 'jac_type':'scamat', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':eps},
-                            {'diss_type':'entdcp', 'jac_type':'scamat', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':0.2*eps},
-                            {'diss_type':'entdcp', 'jac_type':'matmat', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':eps},
-                            {'diss_type':'entdcp', 'jac_type':'matmat', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':0.2*eps}]]
+                            {'diss_type':'entdcp', 'jac_type':'scamat', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'avg_half_nodes':avg_nodes, 'coeff':eps},
+                            {'diss_type':'entdcp', 'jac_type':'scamat', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'avg_half_nodes':avg_nodes, 'coeff':0.2*eps},
+                            {'diss_type':'entdcp', 'jac_type':'matmat', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'avg_half_nodes':avg_nodes, 'coeff':eps},
+                            {'diss_type':'entdcp', 'jac_type':'matmat', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'avg_half_nodes':avg_nodes, 'coeff':0.2*eps}]]
     labels3 = [f'$\\varepsilon=0$', f'Ent. Sca.-Mat. $\\varepsilon={eps:g}$', f'Ent. Sca.-Mat. $\\varepsilon={0.2*eps:g}$',
                                f'Ent. Mat.-Mat. $\\varepsilon={eps:g}$', f'Ent. Mat.-Mat. $\\varepsilon={0.2*eps:g}$']
 
@@ -259,7 +264,15 @@ if __name__ == '__main__':
         elif disc_type == 'div':
             reorder = None
 
-        for varidx, var in enumerate(vars2plot):
+        for var in vars2plot:
+
+            # adjust manually, because Had data files saved all 4 but Div only saved p
+            if var == 'rho': varidx = 0
+            elif var == 'entropy': varidx = 1
+            elif var == 'q': varidx = 2
+            elif var == 'p': varidx = -1
+            else: raise Exception('Unknown variable to plot. Try one of [rho, q, p, entropy]')
+            if var in ['rho', 'q', 'entropy'] and disc_type == 'div': raise Exception('Sorry, divergence form only saved pressure, not rho, q, or entropy.')
 
             if p==1 or p==2 or p==3: loc = 'lower left'
             elif p==4: loc = 'lower left'
@@ -299,3 +312,29 @@ if __name__ == '__main__':
                     figsize=figsize, convunc=False, extra_xticks=True, scalar_xlabel=False,
                     serif=True, colors=colors, markers=markers, legendsize=12, legendreorder=reorder,
                     title_size=16, tick_size=13, put_legend_behind=put_legend_behind)
+            
+
+###### this is the code I ran to generate the comparison plots
+# run these first lines separately.
+""" varidx = -1
+errors_comp = np.zeros((4, dofs.shape[1]))
+errors_comp[0, :] = errors[-1,:,varidx] # run this for csbp
+errors_comp[1, :] = errors[-1,:,varidx] # run this for hgtl
+errors_comp[2, :] = errors[-1,:,varidx] # run this for hgt
+errors_comp[3, :] = errors[-1,:,varidx] # run this for mattsson
+
+labels = ['CSBP', 'HGTL', 'HGT', 'Mattsson']
+dofs_comp = np.array([dofs[-1,:], dofs[-1,:], dofs[-1,:], dofs[-1,:]])
+colors = ['m', 'tab:green', 'tab:blue', 'tab:orange']
+markers = ['+', '^', 's', 'o']
+savefile_var = 'Euler2dVortex_p4Had_comparison.png'
+ylabel = r'Pressure Error $\Vert p - p_{\mathrm{ex}} \Vert_\mathsf{H}$'
+figsize=(5,4.5)
+ylim=(1e-12,2e-3)
+loc = 'lower left'
+plot_conv(dofs_comp, errors_comp, labels, 2, 
+                    title=None, savefile=savefile_var, xlabel=xlabel, ylabel=ylabel, 
+                    ylim=ylim,xlim=(50,600), grid=True, legendloc=loc,
+                    figsize=figsize, convunc=False, extra_xticks=True, scalar_xlabel=False,
+                    serif=True, colors=colors, markers=markers, legendsize=12, legendreorder=None,
+                    title_size=16, tick_size=13, put_legend_behind=put_legend_behind) """

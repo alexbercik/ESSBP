@@ -129,6 +129,8 @@ class PdeSolverSbp(PdeSolver):
         ''' Modify solver approach '''
 
         self.diffeq.set_mesh(self.mesh)
+        if self.settings['stop_after_mesh']:
+            return
         if self.dim == 1:
             if self.disc_type == 'div':
                 self.dqdt = self.dqdt_1d_div
