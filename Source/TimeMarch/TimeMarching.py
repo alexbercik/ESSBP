@@ -129,11 +129,13 @@ class TimeMarching(TimeMarchingRk):
                 self.atol = 1e-12
 
             if self.keep_all_ts or self.bool_calc_cons_obj:
+                assert self.diffeq.cons_obj_name is not None, \
+                    'RK8 requires time to be in the cons_obj_name list if keep_all_ts=True.'
                 # we need to track time as part of cons_obj
                 assert any(name.lower() == 'time' for name in self.diffeq.cons_obj_name), \
                     'RK8 requires time to be in the cons_obj_name list.'
 
-    def solve(self, q0, dt, n_ts):
+    def solve(self, q0, dt, n_ts, t0):
         '''
         Parameters
         ----------
@@ -152,9 +154,10 @@ class TimeMarching(TimeMarchingRk):
 
         self.qshape = q0.shape
         self.len_q = q0.size
-        self.t_final = dt*n_ts
+        self.t_initial = t0
+        self.t_final = t0 + dt*n_ts
 
-        return self.tm_solver(q0, dt, n_ts)
+        return self.tm_solver(q0, dt, n_ts, t0)
 
     def common(self, q, q_sol, t_idx, n_ts, dt, dqdt, time=None):
         '''
@@ -169,7 +172,7 @@ class TimeMarching(TimeMarchingRk):
         dt : float
             Size of the time step.
         '''
-        if time is None: time = t_idx * dt
+        if time is None: time = t_idx * dt + self.t_initial
 
         if np.any(np.isnan(q)):
             print('\n ERROR: there are undefined values for q at t =',time,'t_idx =', t_idx)
@@ -193,7 +196,7 @@ class TimeMarching(TimeMarchingRk):
                 else:
                     # we have started moving away from the target time. Update the target time.
                     self.frame_idx += 1
-                    self.frame_target_time = self.t_final / self.nframes * self.frame_idx
+                    self.frame_target_time = self.t_final / self.nframes * self.frame_idx + self.t_initial
                     self.frame_current_timediff = abs(time - self.frame_target_time)
 
                 if self.keep_all_ts:
@@ -253,8 +256,8 @@ class TimeMarching(TimeMarchingRk):
 
         if not self.quitsim:
             # if we already indicated to quit, then we did everything we had to in previous common().
-            if t_idx != n_ts or (time is not None and time != self.t_final):
-                print('ERROR: final_common is being called before the final iteration.')
+            if t_idx != n_ts or (time is not None and abs(time - self.t_final)>1e-12):
+                print('ERROR: final_common is being called before (or after?) the final iteration.')
                 print('       t =',time,'t_idx =', t_idx)
 
             if self.keep_all_ts or self.bool_calc_cons_obj:
@@ -300,7 +303,7 @@ class TimeMarching(TimeMarchingRk):
                 assert isinstance(self.nframes, int), 'nframes must be an integer'
                 assert self.nframes > 1, 'nframes must be greater than 1'
                 self.use_time_frames = True
-                self.frame_target_time = self.t_final / self.nframes
+                self.frame_target_time = self.t_final / self.nframes + self.t_initial
                 self.frame_current_timediff = np.inf
             else:
                 self.use_time_frames = False
@@ -386,8 +389,14 @@ class TimeMarching(TimeMarchingRk):
                 return q
         else:
             if self.keep_all_ts:
-                # no need to append final solution, should have been done in final_common
-                return q_sol
+                if self.use_time_frames:
+                    #self.t_final = time
+                    if self.bool_calc_cons_obj:
+                        self.cons_obj = self.cons_obj[:, :self.frame_idx+1]
+                    return q_sol[:,:,:self.frame_idx+1]
+                else:
+                    # no need to append final solution, should have been done in final_common
+                    return q_sol
             else:
                 return q
 

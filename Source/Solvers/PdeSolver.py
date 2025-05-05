@@ -33,10 +33,10 @@ class PdeSolver:
     tm_atol = None
     tm_rtol = None
     tm_nframes = None
+    t_initial = 0.0
 
     def __init__(self, diffeq, settings,                            # Diffeq
-                 tm_method, dt, t_final,                    # Time marching
-                 q0=None,                                   # Initial solution
+                 tm_method, dt, t_final,                    # Time marching                                  # Initial solution
                  p=2, disc_type='div',                      # Discretization
                  surf_diss=None, vol_diss=None, had_flux='none',
                  nelem=0, nen=0,  disc_nodes='lgl',
@@ -152,9 +152,6 @@ class PdeSolver:
         # Time marching
         self.tm_method = tm_method.lower()
         self.t_final = t_final
-
-        # Initial solution
-        self.q0 = q0
 
         # Sparsity
         self.sparse = sparse
@@ -379,19 +376,20 @@ class PdeSolver:
 
         if self.print_progress: print('---------- Solver succesfully initialized. ----------')
 
-    def solve(self, q0_in=None, q0_idx=None):
+    def solve(self, q0=None):
 
         ''' Solve to calculate the solution and the objective '''
 
-        stat_time = time.time()
+        #start_time = time.time()
         
-        if q0_in is not None:
-            q0 = q0_in
-        else:
+        if q0 is None:
             q0 = self.diffeq.set_q0()
 
         if self.dt_to_be_set:
             raise Exception('Time step not set yet. Use set_timestep(dt) before running solve().')
+        
+        if self.t_initial != 0.0:
+            self.set_timestep(self.dt)
         
         tm_class = TimeMarching(self.diffeq, self.tm_method, self.keep_all_ts,
                         skip_ts = self.skip_ts,
@@ -405,12 +403,13 @@ class PdeSolver:
         
         tm_class.nframes = self.tm_nframes
         tm_class.print_progress = self.print_progress
-        self.q_sol =  tm_class.solve(q0, self.dt, self.n_ts)
+        self.q_sol =  tm_class.solve(q0, self.dt, self.n_ts, self.t_initial)
         self.cons_obj = tm_class.cons_obj
         self.t_final = tm_class.t_final
 
-        end_time = time.time()
-        self.simulation_time = end_time - stat_time
+        #end_time = time.time()
+        #self.simulation_time = end_time - start_time
+        #print(f"solver.solve() complete. Took {self.simulation_time} seconds.")
     
     def calc_cons_obj(self, q, t, dqdt, cons_obj_name=None):
         '''
@@ -609,7 +608,6 @@ class PdeSolver:
         
         self.__init__(new_diffeq, self.settings, 
                       self.tm_method, self.dt, self.t_final, 
-                      q0=self.q0, 
                       p=self.p, disc_type=self.disc_type, had_flux=self.had_flux,
                       surf_diss=self.surf_diss, vol_diss=self.vol_diss,
                       nelem=self.nelem, nen=self.nen, disc_nodes=self.disc_nodes,
@@ -646,10 +644,10 @@ class PdeSolver:
 
         # set the number of time steps
         if isinstance(self.t_final, int) or isinstance(self.t_final, float):
-            self.n_ts = int(np.round(self.t_final / self.dt))
-            if abs(self.n_ts - (self.t_final / self.dt)) > 1e-12:
+            self.n_ts = int(np.round((self.t_final-self.t_initial) / self.dt))
+            if abs(self.n_ts - ((self.t_final-self.t_initial) / self.dt)) > 1e-12:
                 dt_old = np.copy(self.dt)
-                self.dt = self.t_final/self.n_ts
+                self.dt = (self.t_final-self.t_initial)/self.n_ts
                 print('WARNING: To ensure final time is exact, changing dt from {0} to {1}'.format(dt_old,self.dt))
         elif self.t_final == 'steady':
             self.n_ts = 100000
@@ -663,6 +661,7 @@ class PdeSolver:
                 print(f'WARNING: since nondimensionalizing, changing time from t_final and dt')
                 print(f'         from t_final={self.t_final} and dt={self.dt} to t_final={self.t_final * self.diffeq.t_scale} and dt={self.dt * self.diffeq.t_scale}.')
                 self.t_final = self.t_final * self.diffeq.t_scale
+                self.t_initial = self.t_initial * self.diffeq.t_scale
                 self.dt = self.dt * self.diffeq.t_scale
 
         if self.diffeq.steady and not self.check_resid_conv:
@@ -828,8 +827,13 @@ class PdeSolver:
                           finite_diff=finite_diff, print_nothing=print_nothing,
                           print_error=print_error)
         if normalize:
-            assert self.dim==1, 'Normalizing only set up for 1D'
-            A /= self.neq_node*self.nelem*(self.nen-1)/(self.xmax-self.xmin)
+            if self.dim==1:
+                ds = self.neq_node*self.nelem*(self.nen-1)/(self.xmax-self.xmin)
+            elif self.dim==2:
+                dx = self.nelem[0]*(self.nen-1)/(self.xmax[0]-self.xmin[0])
+                dy = self.nelem[1]*(self.nen-1)/(self.xmax[1]-self.xmin[1])
+                ds = self.neq_node*np.sqrt(dx*dx+dy*dy)
+            A /= ds
         nen1, nen2 = A.shape
         if not print_nothing: 
             if nen1 >= 5000:
@@ -1295,13 +1299,24 @@ class PdeSolver:
                 elif self.q_sol.ndim == 3: q = self.q_sol[:,:,-1]
         if 'time' not in kwargs: kwargs['time']=self.t_final
         if 'plot_exa' not in kwargs: kwargs['plot_exa']=True
-        if self.disc_nodes in ['lgl','lg','nc'] and self.dim==1:
-            x50 = np.linspace(0,1,50)
-            V = MakeDgOp.VandermondeLagrange1D(x50,self.sbp.x)
-            x = V @ self.mesh.x_elem # strictly not correct if nonpolynommial grid warping, but good enough
-            from Source.Methods.Functions import kron_neq_lm
-            q = kron_neq_lm(V,self.neq_node) @ q
-            self.diffeq.plot_sol(q, x, **kwargs)
+        if self.disc_nodes in ['lgl','lg','nc']:
+            if self.dim==1:
+                x50 = np.linspace(0,1,50)
+                V = MakeDgOp.VandermondeLagrange1D(x50,self.sbp.x)
+                x = V @ self.mesh.x_elem # strictly not correct if nonpolynommial grid warping, but good enough
+                from Source.Methods.Functions import kron_neq_lm
+                q = kron_neq_lm(V,self.neq_node) @ q
+                self.diffeq.plot_sol(q, x, **kwargs)
+            elif self.dim==2:
+                x50 = np.linspace(0,1,50)
+                V = MakeDgOp.VandermondeLagrange1D(x50,self.sbp.x)
+                V = np.kron(V,V)
+                xy = np.zeros((int(len(x50)**2),2,self.nelem[0]*self.nelem[1]))
+                xy[:,0,:] = V @ self.mesh.xy_elem[:,0,:]
+                xy[:,1,:] = V @ self.mesh.xy_elem[:,1,:]
+                from Source.Methods.Functions import kron_neq_lm
+                q = kron_neq_lm(V,self.neq_node) @ q
+                self.diffeq.plot_sol(q, xy, **kwargs)
         else:
             self.diffeq.plot_sol(q, **kwargs)
         
