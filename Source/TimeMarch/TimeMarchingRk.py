@@ -27,7 +27,7 @@ class TimeMarchingRk:
 
     ''' Specific RK methods '''
 
-    def rk4(self, q, dt, n_ts):
+    def rk4(self, q, dt, n_ts, t0):
 
         q_sol = self.init_q_sol(q, n_ts)
         quit = False
@@ -35,7 +35,7 @@ class TimeMarchingRk:
         # This method solves the 4th order explicit Runge-Kutta method.
         for i in range(0, n_ts):
 
-            t = i * dt
+            t = i * dt + t0
 
             try:
                 k1 = self.dqdt(q, t)
@@ -90,7 +90,7 @@ class TimeMarchingRk:
         self.final_common(q, q_sol, i, n_ts, dt, k1)
         return self.return_q_sol(q,q_sol,i,dt,k1)
 
-    def explicit_euler(self, q, dt, n_ts):
+    def explicit_euler(self, q, dt, n_ts, t0):
 
         q_sol = self.init_q_sol(q, n_ts)
         quit = False
@@ -98,7 +98,7 @@ class TimeMarchingRk:
         # This method solves the 1st order explicit Euler method.
         for i in range(0, n_ts):
 
-            t = i * dt
+            t = i * dt + t0
 
             try:
                 dqdt = self.dqdt(q, t)
@@ -122,7 +122,7 @@ class TimeMarchingRk:
         self.final_common(q, q_sol, i, n_ts, dt, k1)
         return self.return_q_sol(q,q_sol,i,dt,dqdt)
     
-    def rk8(self, q, dt, n_ts):
+    def rk8(self, q, dt, n_ts, t0):
         ''' uses the Explicit Runge-Kutta method of order 8.
         Calls the Scipy Implementation of “DOP853” algorithm.
         
@@ -132,7 +132,7 @@ class TimeMarchingRk:
         def f(t, y):
             return self.dqdt(y.reshape(self.qshape,order='F'), t).flatten('F')
 
-        tm_solver = DOP853(f, 0.0, q.flatten('F'), t_bound=self.t_final, 
+        tm_solver = DOP853(f, t0, q.flatten('F'), t_bound=self.t_final, 
                            first_step=dt, rtol=self.rtol, atol=self.atol)
         
         # we don't have access to the internal steps, so we can't get dqdt without doing exrtra work
@@ -157,7 +157,7 @@ class TimeMarchingRk:
         frame_skip = 0
         t_current = 0.
         y_current = q.flatten('F')
-        n_ts = int(self.t_final/dt)
+        n_ts = int((self.t_final-t0)/dt)
         while tm_solver.status == 'running':
             try:
                 tm_solver.step()  # Advance one internal step
@@ -165,7 +165,7 @@ class TimeMarchingRk:
                 y_current = tm_solver.y
                 i += 1
                 # we need some estimate of i in relation to n_ts
-                n_ts = int(i*self.t_final/t_current)+1
+                n_ts = int(i*(self.t_final-t0)/(t_current-t0))+1
             except Exception as e:
                 print("ERROR RK8: WARNING: DOP853 step failed. Returning last q.")
                 traceback.print_exc()
@@ -206,7 +206,7 @@ class TimeMarchingRk:
                         self.cons_obj[:, self.frame_idx] = self.fun_calc_cons_obj(q,t_current,dqdt)
                 
                 elif frame_skip == self.skip_ts or abs(t_current - self.t_final) < 1e-12:
-                    if self.frame_idx == self.nframes - 1:
+                    if self.frame_idx == self.nframes:
                         self.nframes = int(2 * self.nframes)
                         if keep_all_ts_lcl:
                             print('\n')
@@ -269,7 +269,7 @@ class TimeMarchingRk:
                 self.cons_obj = self.cons_obj[:, :self.frame_idx]
         return q_sol
     
-    def rk8_verner(self, q, dt, n_ts):
+    def rk8_verner(self, q, dt, n_ts, t0):
         ''' uses the Explicit Runge-Kutta method of order 8.
         Verner's RK8(7) coefficients (11-stage, embedded pair).
         
@@ -329,7 +329,7 @@ class TimeMarchingRk:
         ]
 
         for i in range(n_ts):
-            t = i * dt
+            t = i * dt + t0
             k = np.zeros((13, *self.qshape), order='F')
 
             try:
