@@ -14,23 +14,26 @@ if base_dir not in path:
 from Source.DiffEq.Euler2d import Euler
 from Source.Solvers.PdeSolverSbp import PdeSolverSbp
 from concurrent.futures import ProcessPoolExecutor
+from Source.Disc.MakeDgOp import MakeDgOp
+from Source.Disc.SbpQuadRule import SbpQuadRule
+from Source.Disc.MakeMesh import MakeMesh
+from Source.Disc.CSbpOp import HGTOp
 
 # Simultation parameters
 savefile_dir = 'KelvinHelmholtz_Results' # output directory for reading / saving results (name is created automatically)
 # the savefile out is created automatically
 tf = 15.0 # final time.
-op = 'lg' # 'lg', 'lgl', 'csbp', 'hgtl', 'hgt', 'mattsson', 'upwind'
-nelem = [4,8,16,32] # number of elements in each direction, as a list
-nen = [0] #[20,40,80,160] #[30,60,120,240,480] # number of nodes per element in each direction, as a list. Use [0] for LG/LGL.
-p = [3,4,5,6,7,8] # polynomial degree, as a list
-#s = p+1 # dissipation degree. trad: p+1, elem: p - NOTE: Overwritten below.
+op = 'csbp' # 'lg', 'lgl', 'csbp', 'hgtl', 'hgt', 'mattsson', 'upwind'
+nelem = [1] #[4,8,16,32] # number of elements in each direction, as a list
+nen = [20,40,80,160] #[30,60,120,240,480] #[0] # number of nodes per element in each direction, as a list. Use [0] for LG/LGL.
+p = [2,3,4] #[3,4,5,6,7,8] # polynomial degree, as a list
 had_flux = 'ranocha' # 2-point numerical flux used in hadamard form
 rk8_atol = 1e-7 # absolute tolerance for RK8
 rk8_rtol = 1e-7 # relative tolerance for RK8
 tm_nframes = 300 # number of solution snapshots to save simulation
 cons_obj_name=('time','entropy') # note: what to track? make sure to include 'time'
 
-nthreads = 5 # number of threads for batch runs
+nthreads = 1 # number of threads for batch runs
 include_upwind = True # include upwind operators as a reference (only relevant for lg and lgl)
 include_bothdiss = False # include both cons. and ent. volume dissipation on entropy-stable schemes?
 include_energy = True # include energy-stable schemes?
@@ -38,9 +41,9 @@ loaddata = False # skip the actual simulation and just try to load and display t
 use_scalar_sat = False # use a scalar rusanov sat instead of the matrix dissipation
 verbose_output = False 
 nondimensionalize = False
-skip_if_exists = False # skip the simulation if the savefile already exists. Otherwise will retry with either rk4 OR larger rk8 tolerance.
-minimum_density = 1e-3 # minimum density for the simulation to be considered a crash
-rerun_with_rk4 = True # rerun with rk4 if the simulation fails with rk8. If False, will use rk8 with larger tolerance.
+skip_if_exists = True # skip the simulation if the savefile already exists. Otherwise will retry with either rk4 OR larger rk8 tolerance.
+minimum_density = 1e-2 # minimum density for the simulation to be considered a crash
+rerun_with_rk4 = False # rerun with rk4 if the simulation fails with rk8. If False, will use rk8 with larger tolerance.
 
 # Problem parameters
 tm_method = 'rk8'
@@ -55,7 +58,7 @@ settings = {'metric_method':'exact',
 
 
 
-def check_run(savefile_base, extension='.npz'):
+def check_run(savefile_base, extension='.npz', nelem=1, p=0, nen=0):
     ''' Returns the final time, and exit code 0,1,2 for success, density crash, or error. '''
     ''' If exit code is 1 or 2, it also returns the minimum density.'''
     data = np.load(savefile_base + extension, allow_pickle=True)
@@ -72,6 +75,30 @@ def check_run(savefile_base, extension='.npz'):
     
     else:
         rho = data['q_sol'][::4,:,-1]
+        if op in ['lgl', 'lg']:
+            # perform interpolation to a finer grid (can be negative inbetween grid nodes)
+            xnew = np.linspace(0,1,50)
+            if op == 'lgl':
+                quad = SbpQuadRule(int(p), sbp_fam='R0', nn=0, quad_rule='lgl')
+            elif op == 'lg':
+                quad = SbpQuadRule(int(p), sbp_fam='Rd', nn=0, quad_rule='lg')
+            xsbp = quad.xq[:,0]
+            mesh = MakeMesh(2,xmin,xmax,(int(nelem),int(nelem)),xsbp,print_progress=False)
+            V = MakeDgOp.VandermondeLagrange1D(xnew,xsbp)
+            V = np.kron(V,V)
+            xy = np.zeros((int(len(xnew)**2),2,int(nelem)**2))
+            xy[:,0,:] = V @ mesh.xy_elem[:,0,:]
+            xy[:,1,:] = V @ mesh.xy_elem[:,1,:]
+            rho = V @ rho
+        elif op in ['hgt']:
+            _, _, _, _, _, _, _, tL, tR = HGTOp(int(p),int(nen))
+            tLT = tL.reshape(1,int(nen))
+            tRT = tR.reshape(1,int(nen))
+            rhoL = np.kron(tLT, np.eye(int(nen))) @ rho
+            rhoR = np.kron(tRT, np.eye(int(nen))) @ rho
+            rhoT = np.kron(np.eye(int(nen)), tRT) @ rho
+            rhoB = np.kron(np.eye(int(nen)), tLT) @ rho
+            rho = np.concatenate((rho,rhoL,rhoR,rhoT,rhoB), axis=0)
         minrho = np.min(rho)
         if np.min(rho) < minimum_density:
             # DENSITY CRASH
@@ -129,7 +156,7 @@ def run_simulation(case, p, nelem, nen, savefile_dir, op, para, q0_type, test_ca
             # check if previous run completed succesfully or crashed "sucessfuly",
             # otherwise rerun with a larger rk8 tolerance, because likely was too stiff
 
-            final_time, exit_code, minrho = check_run(savefile_base, extension)
+            final_time, exit_code, minrho = check_run(savefile_base, extension, nelem, p, nen)
 
             if exit_code == 0:
                 print(f"... {savefile_base} ran to completion. Skipping.")
@@ -149,7 +176,7 @@ def run_simulation(case, p, nelem, nen, savefile_dir, op, para, q0_type, test_ca
                 
                 if os.path.exists(savefile2):
                     print(f"... however there exists a file with larger rk8 tolerances. Checking result...")
-                    final_time2, exit_code, minrho = check_run(savefile_base2, extension)
+                    final_time2, exit_code, minrho = check_run(savefile_base2, extension, nelem, p, nen)
 
                     if exit_code == 0:
                         print(f"... {savefile_base2} ran to completion.")
@@ -181,6 +208,9 @@ def run_simulation(case, p, nelem, nen, savefile_dir, op, para, q0_type, test_ca
                     try:
                         print('RERUNNING:', case, 'p:', p, 'nen:', nen, 'nelem:', nelem)
 
+                        data = np.load(savefile_base + extension, allow_pickle=True)
+                        q0 = data['q_sol'][:,:,-1]
+
                         # Set up the differential equation and solver
                         diffeq = Euler(para, q0_type, test_case, bc, nondimensionalize)
                         solver = PdeSolverSbp(diffeq, settings, tm_method2, dt2, tf,
@@ -192,8 +222,9 @@ def run_simulation(case, p, nelem, nen, savefile_dir, op, para, q0_type, test_ca
                         solver.tm_atol = rk8_atol * tol_fac # increase rk8 tolerances
                         solver.tm_rtol = rk8_rtol * tol_fac
                         solver.tm_nframes = tm_nframes
+                        solver.t_initial = final_time
 
-                        solver.solve()
+                        solver.solve(q0=q0)
                         minrho = np.min(solver.q_sol[::4,:,-1])
 
                         print('---------------------------------------------------')
@@ -303,7 +334,7 @@ if __name__ == '__main__':
                         
                         if os.path.exists(savefile):
 
-                            final_time1, exit_code, minrho = check_run(savefile_base, extension)
+                            final_time1, exit_code, minrho = check_run(savefile_base, extension, nelem_, p_, nen_)
 
                             if exit_code == 0:
                                 #final_time = round(final_time1,2)
@@ -323,7 +354,7 @@ if __name__ == '__main__':
                                 
                                 if os.path.exists(savefile2):
 
-                                    final_time2, exit_code, minrho = check_run(savefile_base2, extension)
+                                    final_time2, exit_code, minrho = check_run(savefile_base2, extension, nelem_, p_, nen_)
 
                                     if exit_code == 0:
                                         final_time = f"{final_time1:.2f}({final_time2:.2f})"
@@ -615,185 +646,3 @@ if __name__ == '__main__':
 
             except Exception as e:
                 print(f"Simulation FAILED with error: {e}")
-
-
-
-
-# ############################################################
-# # if we want to plot the entropy dissipation
-# include_upwind = True
-# plot_markers = False
-# savefile = None
-# savefile_dir = 'KelvinHelmholtz_Results' # where to read from
-# op = 'csbp'
-# nelem = '1'
-# nen = '240'
-# p = '4'
-# if op in ['csbp', 'hgtl', 'hgt', 'mattsson']:
-#     eps = 3.125/5**(int(p)+1)
-# elif op == 'lgl' or op == 'lg':
-#     if p == '2': eps = 0.02
-#     elif p == '3': eps = 0.01
-#     elif p == '4': eps = 0.004
-#     elif p == '5': eps = 0.002
-#     elif p == '6': eps = 0.0008
-#     elif p == '7': eps = 0.0004
-#     elif p == '8': eps = 0.0002
-# cases = ['had_nodiss', 'had_ent1_scamat', 'had_ent02_scamat', 'had_ent1_matmat', 'had_ent02_matmat']
-# labels = [f'$\\varepsilon=0$', f'Ent. Sca.-Mat. $\\varepsilon={eps:g}$', f'Ent. Sca.-Mat. $\\varepsilon={0.2*eps:g}$',
-#           f'Ent. Mat.-Mat. $\\varepsilon={eps:g}$', f'Ent. Mat.-Mat. $\\varepsilon={0.2*eps:g}$']
-# linewidth=2
-# #colors = ['tab:red', 'tab:blue', 'tab:orange', 'tab:green', 'k', 'm', 'tab:brown']
-# colors = ['tab:red', 'tab:orange', 'tab:blue', 'darkgoldenrod', 'k',  'm', 'tab:brown']
-
-# import matplotlib.pyplot as plt
-# from matplotlib import rc
-# rc('text', usetex=True)
-# plt.rcParams['text.latex.preamble'] = r'\usepackage{amsmath} \usepackage{bm}'
-# plt.rcParams['font.family'] = 'serif'
-# if include_upwind and op == 'csbp':
-#     data = np.zeros((len(cases)+2, 2, 301))
-#     idx_start = 2
-#     colors = ['tab:red', 'tab:orange', 'darkgoldenrod', 'k',  'm', 'tab:green', 'tab:blue']
-#     markers = ['o', '^', 'v', 'x', '+', 'd', 's']
-#     marker_start = [0, 0, 0.5, 1, 1, 1.5, 1.5]
-#     linestyles = ['-','--',':','-','-','--','--']
-
-#     file = savefile_dir + '/upwind_p' + str(2*int(p)) + '_nen' + nen + '_nelem' + nelem + '_upwind.npz'
-#     try:
-#         file_data = np.load(file, allow_pickle=True)
-#         cons_obj = file_data['cons_obj']
-#         cons_obj_name = file_data['cons_obj_name']
-#         time_idx = [j for j in range(len(cons_obj_name)) if cons_obj_name[j].lower() == 'time'][0]
-#         entropy_idx = [j for j in range(len(cons_obj_name)) if cons_obj_name[j].lower() == 'entropy'][0]
-#         tot_idx = len(cons_obj[time_idx, :])
-#         data[0, 0, :tot_idx] = cons_obj[time_idx, :]
-#         data[0, 1, :tot_idx] = cons_obj[entropy_idx, :]
-#         data[0, :, tot_idx:] = np.nan
-#     except:
-#         print('ERROR: File {} not found. Ignoring.'.format(file))
-#         data[0, :, :] = np.nan
-    
-#     try:
-#         file = savefile_dir + '/upwind_p' + str(2*int(p)+1) + '_nen' + nen + '_nelem' + nelem + '_upwind.npz'
-#         file_data = np.load(file, allow_pickle=True)
-#         cons_obj = file_data['cons_obj']
-#         cons_obj_name = file_data['cons_obj_name']
-#         time_idx = [j for j in range(len(cons_obj_name)) if cons_obj_name[j].lower() == 'time'][0]
-#         entropy_idx = [j for j in range(len(cons_obj_name)) if cons_obj_name[j].lower() == 'entropy'][0]
-#         tot_idx = len(cons_obj[time_idx, :])
-#         data[1, 0, :tot_idx] = cons_obj[time_idx, :]
-#         data[1, 1, :tot_idx] = cons_obj[entropy_idx, :]
-#         data[1, :, tot_idx:] = np.nan
-#     except:
-#         print('ERROR: File {} not found. Ignoring.'.format(file))
-#         data[1, :, :] = np.nan
-
-#     labels = [f'UFD $p_u = {2*int(p)}$', f'UFD $p_u = {2*int(p)+1}$'] + labels
-
-# elif include_upwind and op in ['lgl', 'lg']:
-#     data = np.zeros((len(cases)+1, 2, 300))
-#     idx_start = 1
-#     colors = ['tab:red', 'darkgoldenrod', 'k',  'm', 'tab:green', 'tab:blue']
-#     markers = ['o', 'v', 'x', '+', 'd', 's']
-#     marker_start = [0.01, 0.015, 0.0, 0.005, 0.01, 0.01]
-#     linestyles = ['-',':','-','-','--','--']
-
-#     try:
-#         file = savefile_dir + '/' + op + '_p' + p + '_nen' + nen + '_nelem' + nelem + '_upwind.npz'
-#         file_data = np.load(file, allow_pickle=True)
-#         cons_obj = file_data['cons_obj']
-#         cons_obj_name = file_data['cons_obj_name']
-#         time_idx = [j for j in range(len(cons_obj_name)) if cons_obj_name[j].lower() == 'time'][0]
-#         entropy_idx = [j for j in range(len(cons_obj_name)) if cons_obj_name[j].lower() == 'entropy'][0]
-#         tot_idx = len(cons_obj[time_idx, :])
-#         data[0, 0, :tot_idx] = cons_obj[time_idx, :]
-#         data[0, 1, :tot_idx] = cons_obj[entropy_idx, :]
-#         data[0, :, tot_idx:] = np.nan
-#     except:
-#         print('ERROR: File {} not found. Ignoring.'.format(file))
-#         data[0, :, :] = np.nan
-
-#     labels = [f'USE $p_u = {int(p)-1}$'] + labels
-# else:
-#     data = np.zeros((len(cases), 2, 300))
-#     idx_start = 0
-#     colors = ['darkgoldenrod', 'k',  'm', 'tab:green', 'tab:blue']
-#     markers = ['v', 'x', '+', 'd', 's']
-#     marker_start = [0.01, 0.0, 0.005, 0.01, 0.01]
-#     linestyles = [':','-','-','--','--']
-
-# for idx in range(len(cases)):
-#     try:
-#         file = savefile_dir + '/' + op + '_p' + p + '_nen' + nen + '_nelem' + nelem + '_' + cases[idx] + '.npz'
-#         file_data = np.load(file, allow_pickle=True)
-#         cons_obj = file_data['cons_obj']
-#         cons_obj_name = file_data['cons_obj_name']
-#         time_idx = [j for j in range(len(cons_obj_name)) if cons_obj_name[j].lower() == 'time'][0]
-#         entropy_idx = [j for j in range(len(cons_obj_name)) if cons_obj_name[j].lower() == 'entropy'][0]
-#         tot_idx = len(cons_obj[time_idx, :])
-#         data[idx + idx_start, 0, :tot_idx] = cons_obj[time_idx, :]
-#         data[idx + idx_start, 1, :tot_idx] = cons_obj[entropy_idx, :]
-#         data[idx + idx_start, :, tot_idx:] = np.nan
-#     except:
-#         print('ERROR: File {} not found. Ignoring.'.format(file))
-#         data[idx + idx_start, :, :] = np.nan
-
-# if plot_markers:
-#     n_markers = 8 # Number of markers per line
-# else:
-#     markers = ['','','','','','','']
-#     marker_start = [0,0,0,0,0,0,0] # where to start markers (in time units)
-#     nmarkers = 0
-
-# plt.figure(figsize=(5,4.5))
-
-# plt.ylabel(r'Entropy Change $\boldsymbol{1}^\mathsf{T} \mathsf{H} \left( \mathcal{S} \left(\boldsymbol{u}\right) -  \mathcal{S} \left(\boldsymbol{u}_0\right) \right) $',fontsize=16)
-# plt.xlabel(r'Time $t$',fontsize=16)
-# plt.yscale('symlog',linthresh=1e-3)
-# #plt.ylim(-1e-3, 1e-8)
-# plt.xlim(-0.5, 15.5)
-# legend_loc = 'best'
-# legend_anchor = None
-# #legend_loc = 'upper center'
-# #legend_anchor = (0.55,0.895) 
-
-# for casei in range(len(labels)):
-#     entropy = data[casei,1,:] - data[casei,1,0] 
-#     time = data[casei,0] 
-    
-#     # Define the spacing interval
-#     marker_spacing = 15 / (n_markers - 1)
-#     # Generate marker positions before shifting
-#     marker_positions = np.arange(n_markers) * marker_spacing
-#     # Apply the offset
-#     marker_positions += marker_start[casei]
-#     # Remove markers beyond the last time point
-#     marker_positions = marker_positions[marker_positions <= np.max(time)]
-#     # Get corresponding indices
-#     marker_indices = np.searchsorted(time, marker_positions)
-            
-#     plt.plot(time, entropy, color=colors[casei], linestyle=linestyles[casei], 
-#             marker=markers[casei], markevery=marker_indices, label=labels[casei], linewidth=linewidth, 
-#             markersize=9, markerfacecolor='none', markeredgewidth=linewidth,zorder=2)
-    
-#     # again so that markers are ontop
-#     if plot_markers:
-#         plt.plot(time, entropy, color=colors[casei], linestyle='', 
-#             marker=markers[casei], markevery=marker_indices, label=None, linewidth=None, 
-#             markersize=8, markerfacecolor='none', markeredgewidth=linewidth,zorder=3)
-    
-# plt.legend(loc=legend_loc,fontsize=14, 
-#                 bbox_to_anchor=legend_anchor)
-# ax = plt.gca()
-# ax.tick_params(axis='both', which='both', labelsize=13) 
-# plt.grid(which='major',axis='y',linestyle='--',color='gray',linewidth='1')
-
-# #positive_ticks = [0] + [10**exp for exp in range(-12, int(np.log10(ymax)) + 1, 4)]
-# #negative_ticks = [-10**exp for exp in range(-12, int(np.log10(-ymin)) + 1, 4)]
-# #custom_ticks = negative_ticks[::-1] + positive_ticks
-# #ax.set_yticks(custom_ticks)
-
-# plt.tight_layout()
-# if savefile is not None:
-#     plt.savefig(savefile,dpi=600)
