@@ -86,7 +86,7 @@ class PdeBase:
                          'node size': 4,        # markersize used on nodes
                          'node color': 'black'} # marker colour used for nodes
     plt_contour_settings = {'levels': 100,          # number of distinct contours
-                            'cmap': 'jet'}          # colourmap
+                            'cmap': 'inferno'} #'jet'}          # colourmap
 
     # Parameters for the initial solution
     q0_max_q = 1.0                 # Max value in the vector q0
@@ -353,7 +353,8 @@ class PdeBase:
     def plot_sol(self, q, x=None, time=0., plot_exa=None, savefile=None,
                  show_fig=True, ymin=None, ymax=None, display_time=False, 
                  title=None, plot_mesh=False, save_format='png', dpi=600,
-                 plot_only_exa=False, var2plot_name=None, legendloc=None, legend=True):
+                 plot_only_exa=False, var2plot_name=None, legendloc=None, legend=True,
+                 show_negative=False):
         '''
         Purpose
         ----------
@@ -403,23 +404,37 @@ class PdeBase:
         
         elif self.dim == 2:
             if plot_exa is None: plot_exa = False
-            #if x is None: raise Exception('x must be provided for 2D plots.')
+            if x is None: 
+                x = fn.reshape_to_meshgrid_2D(self.xy_elem[:,0,:],self.nen,self.nelem[0],self.nelem[1])
+                y = fn.reshape_to_meshgrid_2D(self.xy_elem[:,1,:],self.nen,self.nelem[0],self.nelem[1])
+                nen = self.nen
+            else:
+                x_in = np.copy(x)
+                nen = int(np.sqrt(x_in.shape[0]))
+                x = fn.reshape_to_meshgrid_2D(x_in[:,0,:],nen,self.nelem[0],self.nelem[1])
+                y = fn.reshape_to_meshgrid_2D(x_in[:,1,:],nen,self.nelem[0],self.nelem[1])
+
 
             fig = plt.figure(figsize=(6,5.5*self.dom_len[1]/self.dom_len[0])) # scale figure properly
             ax = plt.axes()
             
-            x = fn.reshape_to_meshgrid_2D(self.xy_elem[:,0,:],self.nen,self.nelem[0],self.nelem[1])
-            y = fn.reshape_to_meshgrid_2D(self.xy_elem[:,1,:],self.nen,self.nelem[0],self.nelem[1])
-            num_sol = fn.reshape_to_meshgrid_2D(self.var2plot(q,var2plot_name),self.nen,self.nelem[0],self.nelem[1])
+            num_sol = fn.reshape_to_meshgrid_2D(self.var2plot(q,var2plot_name),nen,self.nelem[0],self.nelem[1])
+
+            cmap = plt.get_cmap(self.plt_contour_settings['cmap'])
+            if show_negative:
+                cmap.set_bad(color='white')  
+                cmap.set_under(color='white') 
+                if ymin is None: ymin = 0.0
             
             CS = ax.contourf(x,y,num_sol,levels=self.plt_contour_settings['levels'],
-                                 vmin=ymin, vmax=ymax,
-                                 cmap=self.plt_contour_settings['cmap'])
+                                 vmin=ymin, vmax=ymax,cmap=cmap)
             ax.set_aspect('equal', adjustable='box') # adjusts the shape of the figure to make data in x and y scale equally
             
-            if ymin is not None and ymax is not None:
+            if ymin is not None or ymax is not None:
+                if ymin is None: ymin = np.min(num_sol)
+                if ymax is None: ymax = np.max(num_sol)
                 norm = mcolors.Normalize(vmin=ymin, vmax=ymax)
-                mappable = cm.ScalarMappable(norm=norm, cmap=self.plt_contour_settings['cmap'])
+                mappable = cm.ScalarMappable(norm=norm, cmap=cmap)
                 cbar = fig.colorbar(mappable, ax=ax, shrink=0.79, aspect=18)
             else:
                 cbar = fig.colorbar(CS, ax=ax, shrink=0.79, aspect=18)
@@ -447,8 +462,21 @@ class PdeBase:
                     edge_verticesy = np.linspace(self.xmin[1],self.xmax[1],self.nelem[1]+1)
                     ax.set_xticks(edge_verticesx) # label element boundaries
                     ax.set_yticks(edge_verticesy)
+
+            if show_negative:
+                # to really make it obvious, add squares where solution is less than ymin
+                square_size = 0.005*np.sqrt((self.xmax[0] - self.xmin[0])**2 +
+                                           (self.xmax[1] - self.xmin[1])**2 )  # physical size of the square
+                import matplotlib.patches as patches
+                for i in range(len(x)):
+                    for j in range(len(y)):
+                        if num_sol[i, j] < ymin:
+                            # You may need to adjust x[j] and y[i] depending on mesh alignment
+                            ax.add_patch(patches.Rectangle(
+                                        (x[i,j] - square_size/2, y[i,j] - square_size/2),
+                                        square_size, square_size,
+                                        facecolor='white', edgecolor='none'))
             
-                
             plt.xlabel(r'$x$',fontsize=self.plt_label_font_size)
             plt.ylabel(r'$y$',fontsize=self.plt_label_font_size,rotation=0,labelpad=15)
         
