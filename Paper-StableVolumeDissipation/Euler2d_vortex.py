@@ -15,12 +15,12 @@ from Source.Solvers.PdeSolverSbp import PdeSolverSbp
 from Source.Methods.Analysis import run_convergence, plot_conv
 
 # Simultation parameters
-savefile_in = 'Vortex_Results/Euler2dVortex_LGp4Div_data.npz' # input .npz data file
-savefile_out = None #'app_Euler2dVortex_HGTp3Had' # use a string like 'CSBPp4' to save, None for no save. Note: '.png' added automatically at end
+savefile_in = 'Vortex_Results/Euler2dVortex_CSBPp4Div_data.npz' # input .npz data file
+savefile_out = None # use a string like 'CSBPp4' to save, None for no save. Note: '.png' added automatically at end
 tm_method = 'rk8'
 cfl = 1.0 # if rk4, sets timestep. If rk8, sets max timestep (adaptive).
 tf = 20.0 # final time. For vortex, one period is t=20
-op = 'lgl' # 'lg', 'lgl', 'csbp', 'hgtl', 'hgt', 'mattsson', 'upwind'
+op = 'csbp' # 'lg', 'lgl', 'csbp', 'hgtl', 'hgt', 'mattsson', 'upwind'
 nelem = [3] # number of elements in each direction, as a list
 nen = [20,40,80,160] # number of nodes per element in each direction, as a list
 p = 4 # polynomial degree
@@ -28,7 +28,7 @@ s = p+1 # dissipation degree
 # trad: p+1, elem: p
 disc_type = 'div' # 'div' for divergence form, 'had' for entropy-stable form
 had_flux = 'ranocha' # 2-point numerical flux used in hadamard form
-vars2plot = ['p'] #['rho', 'entropy','q','p'] # can be any of these 4
+vars2plot = ['rho', 'entropy','q','p'] # can be any of these 4
 
 nthreads = 1 # number of threads for batch runs
 include_upwind = True # include upwind operators as a reference
@@ -88,7 +88,7 @@ if disc_type == 'div':
                         ['vol_diss',{'diss_type':'upwind', 'fluxvec':'dt', 'coeff':eps, 'use_H':False, 'bdy_fix':False, 's':s},
                                     {'diss_type':'upwind', 'fluxvec':'dt', 'coeff':0.2*eps, 'use_H':False, 'bdy_fix':False, 's':s}],
                         ['disc_type','div']]
-            labels1 = [f'UFD $\\varepsilon={eps:g}$', f'UFD $\\varepsilon={0.2*eps:g}$']
+            labels1 = [f'USE $\\varepsilon={eps:g}$', f'USE $\\varepsilon={0.2*eps:g}$']
         else:
             schedule1 = [['disc_nodes',opu],['nen',*nen],['nelem',*nelem],['p',int(2*p), int(2*p+1)],
                         ['vol_diss',{'diss_type':'upwind', 'fluxvec':'dt', 'coeff':1.}],
@@ -298,9 +298,15 @@ if __name__ == '__main__':
 
             #figsize=(6,4)
             figsize=(5,4.5)
-            ylim=(1e-12,2e-3)
-            #ylim=(1e-10,2e-3)
             loc = 'lower left' #'best' #'lower left' #'best'
+
+            if op in ['csbp', 'hgtl', 'hgt', 'mattsson']:
+                xlim = (50,600)
+                ylim=(1e-12,2e-3)
+                #ylim=(1e-10,2e-3)
+            else:
+                xlim = (47,550)
+                ylim=(1e-11,2e-3)
 
             if savefile_out is not None:
                 savefile_var = savefile_out + '_' + var + '.png'
@@ -308,7 +314,7 @@ if __name__ == '__main__':
                 savefile_var = None
             plot_conv(dofs, errors[:,:,varidx], labels, 2, 
                     title=title, savefile=savefile_var, xlabel=xlabel, ylabel=ylabel, 
-                    ylim=ylim,xlim=(50,600), grid=True, legendloc=loc,
+                    ylim=ylim,xlim=xlim, grid=True, legendloc=loc,
                     figsize=figsize, convunc=False, extra_xticks=True, scalar_xlabel=False,
                     serif=True, colors=colors, markers=markers, legendsize=12, legendreorder=reorder,
                     title_size=16, tick_size=13, put_legend_behind=put_legend_behind)
