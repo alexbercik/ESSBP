@@ -199,7 +199,7 @@ if show_dissipation:
     fig.legend(loc='lower left',fontsize=14,bbox_to_anchor=(0.125, 0.15),
             fancybox=True,shadow=False,ncol=1,columnspacing=1.5)
     fig.tight_layout()
-    if savefile is not None: fig.savefig(savefile + '_vars.png', dpi=600)
+    if savefile is not None: fig.savefig(savefile + '_vars.pdf', dpi=600)
 
     ####### plot contributions to RHS #######
     solver = PdeSolverSbp(diffeq, {}, tm_method, dt, tf, 
@@ -236,7 +236,7 @@ if show_dissipation:
     #plt.legend(loc='lower left',fontsize=14, bbox_to_anchor=(-0.015, -0.02))
     plt.legend(loc='upper center',fontsize=14,  bbox_to_anchor=(0.472, 1.155), fancybox=True, shadow=False, ncol=2, columnspacing=1.5)
     plt.tight_layout()
-    if savefile is not None: plt.savefig(savefile + '_diss.png', dpi=600)
+    if savefile is not None: plt.savefig(savefile + '_diss.pdf', dpi=600)
 
 
 ########### plot the aggregated results (logged manually, can verify from above) ############
@@ -282,7 +282,7 @@ if plot_aggregated:
             data = max_eigs
             ylabel = r'max $\Re (\lambda)$'
             yticks = None
-            if savefile is not None: savefile_ = savefile + '_max_eig.png'
+            if savefile is not None: savefile_ = savefile + '_max_eig.pdf'
             else: savefile_ = None
             legendloc = 'lower left'
             legendanchor = None
@@ -298,7 +298,7 @@ if plot_aggregated:
                     5e3 : r'$5 \times 10^3$',
                     1e4 : r'$10^4$'}
             ylabel_adjust = -0.2
-            if savefile is not None: savefile_ = savefile + '_spec_rad.png'
+            if savefile is not None: savefile_ = savefile + '_spec_rad.pdf'
             else: savefile_ = None
             legendloc = 'upper left'
             legendanchor = None
@@ -313,7 +313,7 @@ if plot_aggregated:
                     10 : r'$10$',
                     50 : r'$>50$'}
             ylabel_adjust = -0.10
-            if savefile is not None: savefile_ = savefile + '_crash_time.png'
+            if savefile is not None: savefile_ = savefile + '_crash_time.pdf'
             else: savefile_ = None
             legendloc = 'upper right'
             legendanchor = (1.0,0.93)

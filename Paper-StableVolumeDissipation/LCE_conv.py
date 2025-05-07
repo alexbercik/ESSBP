@@ -16,16 +16,16 @@ from Source.Methods.Analysis import run_convergence, plot_conv
 
 ''' Set parameters for simultation 
 '''
-savefile = None # use a string like 'eigs.png' to save the plot, None for no save
+savefile = None # use a string like 'conv.png' or 'conv.pdf' to save the plot, None for no save
 cfl = 0.01
-tm_method = 'rk4' # if rk4, use cfl=0.01 at least. if rk8, can use cfl=0.1 (it is adaptive anyway)
-tf = 1. # final time
+tm_method = 'rk8' # if rk4, use cfl=0.01 at least. if rk8, can use cfl=0.1 (it is adaptive anyway)
+tf = 1.0 # final time
 nelem = [1] # number of elements, as a list (multiple if element-refinement)
 nen = [40,60,80,120,160,240] # number of nodes per element, as a list (multiple if traditional-refinement)
 op = 'csbp'
 p = 4 # polynomial degree
 s = p+1 # dissipation degree
-eps = 0.2*3.125/5**s # volume dissipation coefficient for CSBP, HGTL, HGT, Mattsson (LGL/LG will be set automatically)
+eps = 3.125/5**s # volume dissipation coefficient for CSBP, HGTL, HGT, Mattsson (LGL/LG will be set automatically)
 include_upwind = True # include upwind flux dissipation in the convergence test?
 compare_formulations = False # compare different Artificial Dissipation formulations? (e.g. including H, B)
 compare_operators = False # compare different operators? (e.g. CSBP, HGT, Mattsson)
@@ -34,6 +34,7 @@ useH = False # include H? Only needed if compare_formulations = False
 include_spectral_p = True # if lgl/lg, plot dissipation against higher order? i.e. against p baseline
 include_spectral_pm1 = True # if lgl/lg, plot dissipation against same order? i.e. against p-1 baseline
 compare_spectral_equalp = True # if lgl/lg, plot FD dissipation against same order? i.e. against p-1 baseline
+put_legend_behind = False
 
 # set up the differential equation, plus more less important settings
 print_sanity_check = False
@@ -276,8 +277,8 @@ else:
     else: ylim=(4e-12,9.5e-3)
     #figsize=(6,4)
     #ylim=(2e-11,3e-2)
-    #ylim=(5e-11,1.5e-2)
-    ylim=(5e-11,3e-2)
+    ylim=(5e-11,1.5e-2) # this is used for the main body
+    #ylim=(5e-11,3e-2)
     figsize=(5,4.5)
     legendanc = None
 if np.min(tot_dofs) == 80 and np.max(tot_dofs) == 640: 
@@ -291,7 +292,7 @@ if op in ['lg','lgl']:
     xlim=(34,750)
     xtick=True
 plot_conv(tot_dofs, tot_errors, tot_labels, 1,
-          title=title, savefile=savefile, xlabel=xlabel, ylabel=ylabel, put_legend_behind=True,
+          title=title, savefile=savefile, xlabel=xlabel, ylabel=ylabel, put_legend_behind=put_legend_behind,
           ylim=ylim,xlim=xlim, grid=True, legendloc=loc, legend_anchor=legendanc, title_size=18,
           figsize=figsize, convunc=False, extra_xticks=xtick, scalar_xlabel=False,
           serif=True, colors=colors, markers=markers, tick_size=13, legendsize=13)
