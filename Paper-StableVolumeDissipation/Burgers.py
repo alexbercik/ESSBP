@@ -20,14 +20,14 @@ plt.rcParams['font.family'] = 'serif'
 
 ''' Set parameters for simultation 
 '''
-savefile = 'CSBPp2nen40' # use a string like 'CSBPp4' to save the plot, None for no save. Note: '.png' added automatically at end
+savefile = None # use a string like 'CSBPp4' to save the plot, None for no save. Note: '.png' added automatically at end
 tm_method = 'rk4' # for evenly spaced time steps, use 'rk4' with cfl=0.001. For quicker runs, use rk8
 cfl = 0.001
 tf = 1./(2*np.pi) # final time
-nelem = 1 # number of elements
-nen = 40 # number of nodes per element
-p = 4 # polynomial degree
-op = 'csbp' # operator type
+nelem = 5 # number of elements
+nen = 0 # number of nodes per element
+p = 6 # polynomial degree
+op = 'lgl' # operator type
 coeff_fix = 1.0 # additional coefficient by which to modify 3.125/5**s and 0.625/5**s
 maxeig = 'rusanov' # maxeig for entropy-conservative SATs, e.g. 'rusanov', 'lf'
 q0_type = 'sinwave' # initial condition 
@@ -40,12 +40,13 @@ settings = {} # additional settings for mesh type, etc. Not needed.
 cons_obj = ('Energy','Max_Eig','Spec_Rad','time') # what quantities to track, make sure time is included
 # in the paper, we use 'Energy','Max_Eig','time'
 skip_ts = 0 # number of time steps to skip for plotting / saving quantities. makes runs slightly quicker.
-include_upwind = False
+include_upwind = True
 plot_solution = False # plot the solution at the end?
 print_errors = False # print errors at the end?
 plot_errors = False # plot the solution errors at the end?
 show_dissipation = False # show the dissipation plots?
 plot_markers = True # plot markers on the line plots?
+file_format = '.pdf' # ".pdf" or ".png"
 
 
 # instantiate Burgers Diffeq object
@@ -206,7 +207,9 @@ if plot_markers:
     linestyles = ['-','--','-',':','-',':']
     markers = ['o', '^', 's', 'v', 'x', '+', '*']
     marker_start = [0.01, 0.015, 0.0, 0.005, 0.01, 0.01] # where to start markers (in time units)
-    #marker_start = [0.0, 0.015, 0.0, 0.005, 0.01, 0.01]
+    if op == 'csbp' and p==2 and nelem==1 and nen==40: marker_start = [0.01, 0.015, 0.0, 0.005, 0.01, 0.01] 
+    if op == 'csbp' and p==4 and nelem==1 and nen==40: marker_start = [0.0, 0.015, 0.0, 0.005, 0.01, 0.01] 
+    if op == 'lgl' and p==6 and nelem==5: marker_start = [0.01, 0.015, 0.0, 0.005, 0.01, 0.01] 
     n_markers = 8 # Number of markers per line
 else:
     #linestyles = [(-1, (3,1)),(0, (1,2,3,2,1,3)),'-',':',(0,(1,1,1,3)),(-1,(2,4))] # this works well when 4 dissipations overlap
@@ -228,18 +231,20 @@ for i in range(len(cons_obj)-1):
         else:
             plt.ylabel(r'Energy $\Vert \bm{u} \Vert_\mathsf{H}^2 $',fontsize=16)
             plt.yscale('log')
-        if p == 1 or p == 2:
-            legend_loc = 'upper center'
-        elif p == 3:
-            legend_loc = 'upper left'
-        else:
-            legend_loc = 'lower left'
+        legend_loc = 'best'
+        legend_anchor = None
         #legend_loc = 'upper center'
         #legend_anchor = (0.55,0.895) #(0.525,0.925)
         #legend_anchor = (0.565,0.875) #(0.565,0.895)
-        legend_loc = 'center right'
-        legend_anchor = (1.0, 0.5)
-        #legend_loc = 'upper right'
+        if op == 'csbp' and p==2 and nelem==1 and nen==40:
+            legend_loc = 'upper right'
+            legend_anchor = (1.0, 0.825) #(1.0, 0.87)
+        if op == 'csbp' and p==4 and nelem==1 and nen==40:
+            legend_loc = 'upper right'
+            legend_anchor = (1.0, 0.87)
+        elif op == 'lgl' and p==6 and nelem==5:
+            legend_loc = 'center right'
+            legend_anchor = (1.0, 0.5)
         #legend_anchor = (1.0, 0.825) #(1.0, 0.87)
         plt.ylim(-4e-2, 4e-2)
         #legend_loc = 'best'
@@ -260,13 +265,18 @@ for i in range(len(cons_obj)-1):
         plt.ylabel(r'$\max \ \Re(\lambda) $',fontsize=16)
         plt.yscale('symlog',linthresh=1e-5)
         use_norm = False
+        legend_loc = 'best'
+        legend_anchor = None
         #legend_loc = 'center'
         #legend_anchor = (0.5, 0.35)
         #legend_anchor = (0.5, 0.4)
         #legend_loc = 'best'
         #legend_anchor = None
-        legend_loc = 'lower right'
-        legend_anchor = (1.0, 0.06)
+        if (op == 'csbp' and p==2 and nelem==1 and nen==40) or \
+            (op == 'csbp' and p==4 and nelem==1 and nen==40) or \
+            (op == 'lgl' and p==6 and nelem==5):
+            legend_loc = 'lower right'
+            legend_anchor = (1.0, 0.06)
         plt.ylim(ymin=-2.5e-6, ymax=5)
         #legend_loc = 'upper left'
         #legend_anchor = (0.0, 0.95)
@@ -342,4 +352,4 @@ for i in range(len(cons_obj)-1):
 
     plt.tight_layout()
     if savefile is not None:
-        plt.savefig(savefile+'_'+cons_obj[i].lower()+'.png',dpi=600)
+        plt.savefig(savefile+'_'+cons_obj[i].lower()+file_format,dpi=600)

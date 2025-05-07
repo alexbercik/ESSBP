@@ -15,7 +15,7 @@ from Source.Solvers.PdeSolverSbp import PdeSolverSbp
 from Source.Methods.Analysis import run_convergence, plot_conv
 
 # Simultation parameters
-savefile_in = 'Vortex_Results/Euler2dVortex_CSBPp4Div_data.npz' # input .npz data file
+savefile_in = 'Vortex_Results/Euler2dVortex_CSBPp4Had_data.npz' # input .npz data file
 savefile_out = None # use a string like 'CSBPp4' to save, None for no save. Note: '.png' added automatically at end
 tm_method = 'rk8'
 cfl = 1.0 # if rk4, sets timestep. If rk8, sets max timestep (adaptive).
@@ -26,19 +26,20 @@ nen = [20,40,80,160] # number of nodes per element in each direction, as a list
 p = 4 # polynomial degree
 s = p+1 # dissipation degree
 # trad: p+1, elem: p
-disc_type = 'div' # 'div' for divergence form, 'had' for entropy-stable form
+disc_type = 'had' # 'div' for divergence form, 'had' for entropy-stable form
 had_flux = 'ranocha' # 2-point numerical flux used in hadamard form
-vars2plot = ['rho', 'entropy','q','p'] # can be any of these 4
+vars2plot = ['p'] #['rho', 'entropy','q','p'] # can be any of these 4
 
 nthreads = 1 # number of threads for batch runs
-include_upwind = True # include upwind operators as a reference
+include_upwind = False # include upwind operators as a reference
 include_bothdiss = True # include both cons. and ent. volume dissipation
 savedata = False # save results of simulation? (ignored if reading in data)
 loaddata = True # skip the actual simulation and just try to load and plot the data
 plot = True
 verbose_output = False # will always be false for nthreads > 1
 put_legend_behind = True
-shorten_legend = True
+shorten_legend = False
+file_format = '.pdf'
 
 # Problem parameters
 para = [287,1.4] # [R, gamma]
@@ -309,7 +310,7 @@ if __name__ == '__main__':
                 ylim=(1e-11,2e-3)
 
             if savefile_out is not None:
-                savefile_var = savefile_out + '_' + var + '.png'
+                savefile_var = savefile_out + '_' + var + file_format
             else:
                 savefile_var = None
             plot_conv(dofs, errors[:,:,varidx], labels, 2, 
@@ -333,7 +334,7 @@ labels = ['CSBP', 'HGTL', 'HGT', 'Mattsson']
 dofs_comp = np.array([dofs[-1,:], dofs[-1,:], dofs[-1,:], dofs[-1,:]])
 colors = ['m', 'tab:green', 'tab:blue', 'tab:orange']
 markers = ['+', '^', 's', 'o']
-savefile_var = 'Euler2dVortex_p4Had_comparison.png'
+savefile_var = 'Euler2dVortex_p4Had_comparison.pdf'
 ylabel = r'Pressure Error $\Vert p - p_{\mathrm{ex}} \Vert_\mathsf{H}$'
 figsize=(5,4.5)
 ylim=(1e-12,2e-3)

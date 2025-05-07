@@ -22,19 +22,19 @@ from Source.Methods.Analysis import run_convergence, plot_conv
 
 ''' Set parameters for simultation 
 '''
-savefile = None # use a string like 'eigs.png' to save the plot, None for no save
+savefile = None # use a string like 'sol.png' or 'sol.pdf' to save the plot, None for no save
 a = 1.0 # wave speed 
 cfl = 0.01
 tf = 1 # final time
-nelem = 10 # number of elements
+nelem = 2 # number of elements
 nen = 0 # number of nodes per element, as a list
 op = 'lgl' # operator type
-p = 4 # polynomial degree
-linear_thresh = 1e-8 #1e-8 for gauss, 1e-7 for sin
-max_thresh = 9e-3 #9e-3 for gauss, 9e-4 for sin
-q0_type = 'sinwave_4pi' #'sinwave_4pi' #'squarewave' #'GaussWave_sbpbook' # initial condition 
+p = 8 # polynomial degree
+linear_thresh = 1e-7 #1e-8 for gauss, 1e-7 for sin, 1e-5 for LGLp4, 1e-7 fpr LGLp8
+max_thresh = 1e-4 #9e-3 for csbp gauss, 9e-4 for csbp sin, 3e-2 for LGLp4, 1e-4 for LGLp8
+q0_type = 'sinwave_2pi' #'sinwave_4pi' #'GaussWave_sbpbook' 'sinwave_2pi' #'squarewave' # initial condition 
 settings = {} # additional settings for mesh type, etc. Not needed.
-plot_abs_error = True
+plot_abs_error = False
 zoom = 0 # how many nodes to zoom in on? Counts the left-most node to start in the frame
 interp_num = 200 # for LG/LGL, number of nodes to interpolate to per element 
 
@@ -74,21 +74,13 @@ if op in ['lg', 'lgl']:
             'sat':{'diss_type':'lf'},
             'label':r'$p={0}$, $\varepsilon = 0$'.format(int(p)),
             'p':p,'nelem':nelem,'nen':0}
-    """ run3 = {'diss':{'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':eps},
+    run3 = {'diss':{'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':eps},
             'sat':{'diss_type':'lf'},
             'label':f'$p={p}$, $\\varepsilon = {eps:.3g}$',
             'p':p,'nelem':nelem,'nen':0}
     run4 = {'diss':{'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':0.2*eps},
             'sat':{'diss_type':'lf'},
             'label':f'$p={p}$, $\\varepsilon = {0.2*eps:.3g}$',
-            'p':p,'nelem':nelem,'nen':0} """
-    run3 = {'diss':{'diss_type':'filter', 'jac_type':'scalar', 'eps_type':3, 'filter_Nc':0.7,'filter_s':4, 'coeff':100},
-            'sat':{'diss_type':'lf'},
-            'label':f'Filter 1',
-            'p':p,'nelem':nelem,'nen':0}
-    run4 = {'diss':{'diss_type':'filter', 'jac_type':'scalar', 'eps_type':3, 'filter_Nc':0.7,'filter_s':2, 'coeff':100},
-            'sat':{'diss_type':'lf'},
-            'label':f'Filter 2',
             'p':p,'nelem':nelem,'nen':0}
 else:
     nelem_pm1 = 0
@@ -117,8 +109,8 @@ ylabel = r'Solution Error $\bm{u} - \bm{u}_{\mathrm{ex}}$'
 #colors = ['tab:blue', 'darkgoldenrod', 'k',  'm', 'tab:brown']
 colors = ['tab:green', 'tab:orange', 'k',  'm', 'tab:brown']
 if op in ['lg', 'lgl']: 
-    #linestyles = ['-','-','-','-']
-    linestyles = ['-','-','--',':']
+    linestyles = ['-','-','-','-']
+    #linestyles = ['-','-','--',':']
     linewidths = [2.5,2.2,2.0,1.5]
 else:
     linestyles = [(0, (1, 1.5)), (0, (2, 3)), '-',(0, (4, 3, 1, 3))]
@@ -133,17 +125,17 @@ dx = 1./((nen_tmp-1)*nelem)
 dt = cfl * dx / a
 diffeq1 = LinearConv(a, q0_type)
 diffeq1.q0_max_q = 1.
-solver1 = PdeSolverSbp(diffeq1, settings, 'rk4', dt, tf, p=run1['p'], surf_diss=run1['sat'], vol_diss=run1['diss'], nelem=run1['nelem'], nen=run1['nen'], disc_nodes=op, bc='periodic')
+solver1 = PdeSolverSbp(diffeq1, settings, 'rk8', dt, tf, p=run1['p'], surf_diss=run1['sat'], vol_diss=run1['diss'], nelem=run1['nelem'], nen=run1['nen'], disc_nodes=op, bc='periodic')
 diffeq2 = LinearConv(a, q0_type)
 diffeq2.q0_max_q = 1.
-solver2 = PdeSolverSbp(diffeq2, settings, 'rk4', dt, tf, p=run2['p'], surf_diss=run2['sat'], vol_diss=run2['diss'], nelem=run2['nelem'], nen=run2['nen'], disc_nodes=op, bc='periodic')
+solver2 = PdeSolverSbp(diffeq2, settings, 'rk8', dt, tf, p=run2['p'], surf_diss=run2['sat'], vol_diss=run2['diss'], nelem=run2['nelem'], nen=run2['nen'], disc_nodes=op, bc='periodic')
 diffeq3 = LinearConv(a, q0_type)
 diffeq3.q0_max_q = 1.
-solver3 = PdeSolverSbp(diffeq3, settings, 'rk4', dt, tf, p=run3['p'], surf_diss=run3['sat'], vol_diss=run3['diss'], nelem=run3['nelem'], nen=run3['nen'], disc_nodes=op, bc='periodic')
+solver3 = PdeSolverSbp(diffeq3, settings, 'rk8', dt, tf, p=run3['p'], surf_diss=run3['sat'], vol_diss=run3['diss'], nelem=run3['nelem'], nen=run3['nen'], disc_nodes=op, bc='periodic')
 diffeq4 = LinearConv(a, q0_type)
 diffeq4.q0_max_q = 1.
-solver4 = PdeSolverSbp(diffeq4, settings, 'rk4', dt, tf, p=run4['p'], surf_diss=run4['sat'], vol_diss=run4['diss'], nelem=run4['nelem'], nen=run4['nen'], disc_nodes=op, bc='periodic')
-solver1.skip_ts, solver2.skip_ts, solver3.skip_ts, solver4.skip_ts = 100, 100, 100, 100 # don't save info on every iteration - unecessary
+solver4 = PdeSolverSbp(diffeq4, settings, 'rk8', dt, tf, p=run4['p'], surf_diss=run4['sat'], vol_diss=run4['diss'], nelem=run4['nelem'], nen=run4['nen'], disc_nodes=op, bc='periodic')
+solver1.keep_all_ts, solver2.keep_all_ts, solver3.keep_all_ts, solver4.keep_all_ts = False, False, False, False # don't save info on every iteration - unecessary
 solver1.solve()
 solver2.solve()
 solver3.solve()
@@ -164,10 +156,10 @@ if op in ['lg', 'lgl']:
     er4 = tmp - exa
     end = interp_num - zoom
 else:
-    er1 = solver1.q_sol[:,:,-1] - solver1.diffeq.exact_sol(time=tf)
-    er2 = solver2.q_sol[:,:,-1] - solver2.diffeq.exact_sol(time=tf)
-    er3 = solver3.q_sol[:,:,-1] - solver3.diffeq.exact_sol(time=tf)
-    er4 = solver4.q_sol[:,:,-1] - solver4.diffeq.exact_sol(time=tf)
+    er1 = solver1.q_sol - solver1.diffeq.exact_sol(time=tf)
+    er2 = solver2.q_sol - solver2.diffeq.exact_sol(time=tf)
+    er3 = solver3.q_sol - solver3.diffeq.exact_sol(time=tf)
+    er4 = solver4.q_sol - solver4.diffeq.exact_sol(time=tf)
     x1 = solver1.diffeq.x_elem
     x2 = solver2.diffeq.x_elem
     x3 = solver3.diffeq.x_elem
@@ -202,7 +194,7 @@ if op in ['lg', 'lgl']:
     anchor = (0.5, 1.248)
 else:
     order = [0,3,1,2]
-    (0.435, 1.248)
+    anchor = (0.435, 1.248)
 plt.legend([handles[idx] for idx in order],[labels[idx] for idx in order],loc='upper center',fontsize=14,  
            bbox_to_anchor=anchor, fancybox=True, shadow=False, ncol=2, columnspacing=1.5)
 # bbox_to_anchor=(0.435, 1.248), bbox_to_anchor=(0.445, 1.248)
