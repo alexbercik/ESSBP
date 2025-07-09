@@ -20,7 +20,7 @@ import scipy.optimize as sc
 import copy
 import traceback
 
-def animate(solver, file_name='animation', make_video=True, make_gif=False,
+def animate(solver, q_sol=None, file_name='animation', make_video=True, make_gif=False,
                plotfunc='plot_sol',plotargs={}, skipsteps=0,fps=24,
                last_frame=False,tfinal=None,time=None,nframes=None):
     '''
@@ -84,15 +84,17 @@ def animate(solver, file_name='animation', make_video=True, make_gif=False,
     
     # set the plotting function
     plot = getattr(solver, plotfunc)
+    if q_sol is None:
+        q_sol = solver.q_sol
     
-    qshape = np.shape(solver.q_sol)
+    qshape = np.shape(q_sol)
     steps = qshape[2]
     if tfinal is None:
         tfinal = solver.t_final
         frames = int((steps-1)/(skipsteps+1)) + 1 # note int acts as a floor fn
     else:
         assert(tfinal <= solver.t_final),"tfinal must not exceed simulation time"
-        frames = int(tfinal/((skipsteps+1)*solver.dt)) + 1 # note int acts as a floor fn
+        frames = int(tfinal/((skipsteps+1)*solver.dt)) + 1 # TODO: fix note int acts as a floor fn
     numfill = len(str(frames)) # format appending number for saved files
         
     plotargs['show_fig']=False
@@ -104,7 +106,7 @@ def animate(solver, file_name='animation', make_video=True, make_gif=False,
         var2plot_name = plotargs['var2plot_name']
     else:
         var2plot_name = solver.diffeq.var2plot_name
-    ax.plot([0,0],[np.min(solver.diffeq.var2plot(np.min(solver.q_sol,axis=2),var2plot_name)),np.max(solver.diffeq.var2plot(np.max(solver.q_sol,axis=2),var2plot_name))])
+    ax.plot([0,0],[np.min(solver.diffeq.var2plot(np.min(q_sol,axis=2),var2plot_name)),np.max(solver.diffeq.var2plot(np.max(q_sol,axis=2),var2plot_name))])
     ymin,ymax= ax.get_ylim()
     plt.close()
     if 'ymin' not in plotargs: plotargs['ymin']=ymin
@@ -137,13 +139,13 @@ def animate(solver, file_name='animation', make_video=True, make_gif=False,
             printProgressBar(i+1, frames, prefix = 'Progress:', suffix = suf)
             
             # call plotting function from solver module
-            plot(solver.q_sol[:,:,stepi], **plotargs, time=timei,
+            plot(q_sol[:,:,stepi], **plotargs, time=timei, idx=stepi,
                 savefile=file_name+'/'+'frame'+str(i).zfill(numfill))
         
         if last_frame:
             # if i == frames - 1, then this may double plot the final
             # frame, but I also don't really care if it does.
-            plot(solver.q_sol[:,:,-1], **plotargs, time=tfinal,
+            plot(q_sol[:,:,-1], **plotargs, time=tfinal,
                 savefile=file_name+'/'+'frame'+str(frames))
         
     else:
@@ -153,7 +155,7 @@ def animate(solver, file_name='animation', make_video=True, make_gif=False,
             printProgressBar(i+1, nframes, prefix = 'Progress:', suffix = suf)
 
             # call plotting function from solver module
-            plot(solver.q_sol[:,:,idx], **plotargs, time=timei,
+            plot(q_sol[:,:,idx], **plotargs, time=timei, idx=idx,
                 savefile=file_name+'/'+'frame'+str(i).zfill(numfill))
 
     if (make_video or make_gif):
@@ -472,7 +474,8 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
              ylim=None, xlim=(None,None), ignore_fail=False, plot=True, vars2plot=None,
              nthreads=1, extra_marker=None, skipfit=None, skip=None, title_size=16,
              legendloc=None, figsize=(6,4), tick_size=12, extra_xticks=False, scalar_xlabel=False, 
-             serif=False, colors=None, markers=None, linestyles=None, legendsize=12, legendreorder=None):
+             serif=False, colors=None, markers=None, linestyles=None, legendsize=12, 
+             legendreorder=None, preamble=None):
     '''
     Purpose
     ----------
@@ -759,24 +762,27 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
     ''' Plot Results '''
     if plot:
         if vars2plot is None:
-            if title == None:
-                title = r"Convergence of " + error_type + " Error"
+            #if title == None:
+            #    title = r"Convergence of " + error_type + " Error"
             plot_conv(dofs, errors, legend_strings, solver.dim, title=title, savefile=savefile,
                         ylabel=ylabel,xlabel=xlabel,grid=grid,convunc=convunc,ylim=ylim,xlim=xlim,
                     extra_marker=extra_marker, skipfit=skipfit, skip=skip, title_size=title_size,
                     legendloc=legendloc, figsize=figsize, tick_size=tick_size, 
                     extra_xticks=extra_xticks, scalar_xlabel=scalar_xlabel, serif=serif, colors=colors, 
-                    markers=markers, linestyles=linestyles, legendsize=legendsize, legendreorder=legendreorder)
+                    markers=markers, linestyles=linestyles, legendsize=legendsize, 
+                    legendreorder=legendreorder, preamble=preamble)
         else:
             for varidx, var in enumerate(vars2plot):
                 if title == None:
                     title = r"Convergence of " + error_type + ' ' + var + " Error"
+                    #TODO: modify ylabel instead?
                 plot_conv(dofs, errors[:,:,varidx], legend_strings, solver.dim, title, savefile,
                             ylabel=ylabel,xlabel=xlabel,grid=grid,convunc=convunc,ylim=ylim,xlim=xlim,
                             extra_marker=extra_marker, skipfit=skipfit, skip=skip, title_size=title_size,
                             legendloc=legendloc, figsize=figsize, tick_size=tick_size, 
                             extra_xticks=extra_xticks, scalar_xlabel=scalar_xlabel, serif=serif, colors=colors, 
-                            markers=markers, linestyles=linestyles, legendsize=legendsize, legendreorder=legendreorder)
+                            markers=markers, linestyles=linestyles, legendsize=legendsize, 
+                            legendreorder=legendreorder, preamble=preamble)
     
     if return_conv:
         return dofs_ret, errors_ret, legend_strings_ret
@@ -850,7 +856,6 @@ def prep_new_solver_instance(base_solver, variables):
     
     solver_kwargs = {'settings':solver_copy.settings, 
                 'tm_method':solver_copy.tm_method, 'dt':solver_copy.dt, 't_final':solver_copy.t_final, 
-                'q0':solver_copy.q0, 
                 'p':solver_copy.p, 'disc_type':solver_copy.disc_type,
                 'surf_diss':solver_copy.surf_diss, 'vol_diss':solver_copy.vol_diss, 'had_flux':solver_copy.had_flux,
                 'nelem':solver_copy.nelem, 'nen':solver_copy.nen, 'disc_nodes':solver_copy.disc_nodes,
@@ -946,7 +951,7 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None, 
               ylim=(None,None),xlim=(None,None),grid=False,legendloc=None,convunc=True,
               figsize=(6,4), tick_size=12, extra_xticks=False, scalar_xlabel=False, serif=False,
               colors=None, markers=None, linestyles=None, legendsize=12, legendreorder=None,
-              remove_outliers=False, legend_anchor=None, put_legend_behind=False):
+              remove_outliers=False, legend_anchor=None, put_legend_behind=False, preamble=None):
     '''
     Parameters
     ----------
@@ -976,6 +981,8 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None, 
 
     if serif:
         plt.rcParams['font.family'] = 'serif'
+    if preamble is not None:
+        plt.rcParams['text.latex.preamble'] = '\n'.join(preamble)
     
     assert dof_vec.shape==err_vec.shape,"The two inputted arrays are not the same shape!"
     if dof_vec.ndim>1:
@@ -1133,6 +1140,7 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None, 
 
     # Conditionally add extra minor ticks with labels if extra_xticks is True
     if extra_xticks:
+        ax.xaxis.set_minor_formatter(tik.NullFormatter()) # manually turn off minor ticks
         tick_labels = ax.get_xticklabels()  # Get major tick labels
         label_ypos = ax.get_ylim()[0]
         xmin, xmax = ax.get_xlim()
@@ -1149,8 +1157,11 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None, 
         # Add manual labels for 5×10^n
         if scalar_xlabel:
             extra_labels = {5 : r'$5$',
+                            20 : r'$20$',
                             50 : r'$50$',
+                            200 : r'$200$',
                             500 : r'$500$',
+                            2000 : r'$2000$',
                             5000 : r'$5000$'}
         else:
             extra_labels = {5 : r'$5\times10^0$',
@@ -1790,7 +1801,7 @@ def plot_eigs(A, plot_hull=True, plot_individual_eigs=False, labels=None, savefi
               colors=None, markers=None, linestyles=None, legend_loc='best', 
               legend_anchor=None, legend_anchor_type=None, legend_alpha=None,
               xlabel=None, ylabel=None, xlim=None, ylim=None,title=None,
-              tick_interval=None):
+              tick_interval=None,no_legend=False,figsize=(6, 6)):
     if plot_hull:
         from scipy.spatial import ConvexHull
 
@@ -1810,6 +1821,9 @@ def plot_eigs(A, plot_hull=True, plot_individual_eigs=False, labels=None, savefi
     # Check if A is a list of matrices or a single matrix
     if isinstance(A, list):
         if labels is None:
+            if not no_legend:
+                print("WARNING: No labels provided, using default labels.")
+                print("         Use no_legend=True to suppress default labels.")
             labels = [f'A{i+1}' for i in range(len(A))]
         elif len(labels) != len(A):
             raise ValueError("Length of labels must match the number of matrices in A.")
@@ -1826,7 +1840,7 @@ def plot_eigs(A, plot_hull=True, plot_individual_eigs=False, labels=None, savefi
         eig_values_list = [np.linalg.eigvals(A)]
         labels = ["A"]  # Default label for a single matrix
     
-    plt.figure(figsize=(6, 6))
+    plt.figure(figsize=figsize)
     
     # Loop through each matrix's eigenvalues
     for idx, (eig_values, label) in enumerate(zip(eig_values_list, labels)):
@@ -1980,11 +1994,12 @@ def plot_eigs(A, plot_hull=True, plot_individual_eigs=False, labels=None, savefi
             print("Invalid legend_anchor_type. Try of the format ('data','fig'). Using default 'data' type.")
             bbox_transform = ax.transData
         
-        legend = plt.legend(fontsize=legend_size,loc=legend_loc, 
-                   bbox_to_anchor=legend_anchor, bbox_transform=bbox_transform)
-        
-        if legend_alpha is not None:
-            legend.get_frame().set_alpha(legend_alpha)
+        if not no_legend:
+            legend = plt.legend(fontsize=legend_size,loc=legend_loc, 
+                    bbox_to_anchor=legend_anchor, bbox_transform=bbox_transform)
+            
+            if legend_alpha is not None:
+                legend.get_frame().set_alpha(legend_alpha)
 
     # Save the plot if a savefile is provided
     if savefile is not None:

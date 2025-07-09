@@ -25,7 +25,8 @@ class LinearConv(PdeBase):
     dim = 1
     neq_node = 1    # 1 equation in 1D
     npar = 0        # No. of design parameters
-    pde_order = 1 # Order of the highest derivative in the PDE
+    pde_order1 = True
+    pde_order2 = False
     x = None
     has_exa_sol = False # TODO: can I put in an exact solution?
     para_names = ('alpha',)

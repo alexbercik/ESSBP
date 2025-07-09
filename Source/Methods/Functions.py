@@ -11,6 +11,13 @@ import numpy as np
 
 # The useful functions are defined first, the others are shoved to the bottom
 
+@njit
+def cabs(x):
+    ''' the standard abs(x) is not analytic. Replace with this version.'''
+    sgn = np.sign(np.real(x))
+    res = sgn * x
+    return res
+
 # TODO: This is the function to speed up (is approximately 40% of total code runtime)
 @njit
 def gm_gv(A,b):
@@ -703,8 +710,9 @@ def abs_eig_mat(mat):
     a 4d array in the same shape where the matrices in each nen,nelem are now
     absoluted through it's eigenvalues. That is, if A is one such matrix, 
     and it has eigenvalues L and right eigenvectors X, then this returns
-    X @ abs(L) @ inv(X
+    X @ abs(L) @ inv(X)
     note: inv(X) = X.T if eigenvectors X orthogonal, i.e. if A symmetric real (sym hyperbolic)
+           use the function abs_eig_mat_sym if this is the case!
 
     Parameters
     ----------
@@ -721,7 +729,35 @@ def abs_eig_mat(mat):
     for e in range(nelem):
         for n in range(nen):
             eig_val, eig_vec = np.linalg.eig(mat[n,:,:,e])
-            mat_abs[n,:,:,e] = eig_vec @ np.diag(np.abs(eig_val)).astype(mattype) @ np.linalg.inv(eig_vec)
+            mat_abs[n,:,:,e] = eig_vec * np.abs(eig_val).astype(mattype) @ np.linalg.inv(eig_vec)
+    return mat_abs
+
+@njit
+def abs_eig_mat_sym(mat):
+    '''
+    Given a 4d array in the shape (nen,neq,neq,nelem), return
+    a 4d array in the same shape where the matrices in each nen,nelem are now
+    absoluted through it's eigenvalues. That is, if A is one such matrix, 
+    and it has eigenvalues L and right eigenvectors X, then this returns
+    X @ abs(L) @ inv(X)
+    note: inv(X) = X.T if eigenvectors X orthogonal, i.e. if A symmetric real (sym hyperbolic)
+
+    Parameters
+    ----------
+    *entries : numpy arrays of shape (nen,nelem)
+
+    Returns
+    -------
+    c : numpy array of shape (nen*neq_node,nen*neq_node)
+    '''
+    nen,neq,neqb,nelem = mat.shape
+    assert neq==neqb, f'array shapes are not block diagonal ({neq} != {neqb})'
+    mattype=mat.dtype
+    mat_abs = np.zeros((nen,neq,neq,nelem),dtype=mattype)
+    for e in range(nelem):
+        for n in range(nen):
+            eig_val, eig_vec = np.linalg.eigh(mat[n,:,:,e])
+            mat_abs[n,:,:,e] = eig_vec * np.abs(eig_val).astype(mattype) @ eig_vec.T
     return mat_abs
 
 @njit
@@ -1965,6 +2001,18 @@ def Sat2d_had_Fsat_diff_periodic(tax,tay,tbx,tby,q,flux,neq):
                     c[qidx:qidx+neq, eb] -= fy * tby_val
     
     return c
+
+@njit
+def norm_gv_neq(q,neq):
+    ''' take array of shape (nen*neq_node,nelem) and return (neq_node,nelem)
+        where each neq_node is like running np.linalg.norm(q,axis=0) for each neq. '''
+    nen_neq, nelem = q.shape
+    nen = nen_neq // neq
+    qn = np.zeros((neq,nelem),dtype=q.dtype) 
+    for e in range(nelem):
+        for i in range(neq):
+            qn[i,e] = np.linalg.norm(q[i::neq,e],axis=0)
+    return qn
 
 """ Old functions (no longer useful)
 

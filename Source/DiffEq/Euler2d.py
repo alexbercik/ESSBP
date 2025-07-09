@@ -18,7 +18,8 @@ class Euler(PdeBase):
     diffeq_name = 'Euler2d'
     dim = 2
     neq_node = 4            # No. of equations per node
-    pde_order = 1
+    pde_order1 = True
+    pde_order2 = False
     has_exa_sol = True
     para_names = (r'$R$',r'$\gamma$',)
     enforce_positivity = True
@@ -80,10 +81,13 @@ class Euler(PdeBase):
                 self.rhou_inf = self.rho_inf * self.a_inf
                 self.t_scale = self.a_inf
 
-        elif self.test_case == 'vortex':
+        elif self.test_case == 'vortex' or self.test_case == 'vortex_lowma':
             self.xmin_fix = (-5.,-5.)  # should be the same as self.x_min
             self.xmax_fix = (5.,5.) # should be the same as self.x_max
-            self.mach0 = 0.5
+            if self.test_case == 'vortex_lowma':
+                self.mach0 = 0.1
+            else:
+                self.mach0 = 0.5
             self.beta = 0.2
             self.vtx_rad = 0.5
             self.a_inf = 1.
@@ -102,8 +106,11 @@ class Euler(PdeBase):
                 self.rhou_inf = self.rho_inf * self.a_inf
                 self.t_scale = self.a_inf
 
-        elif self.test_case == 'kelvin-helmholtz' or self.test_case == 'kelvin-helmholtz_asym':
-            self.has_exa_sol = False
+        elif self.test_case == 'kelvin-helmholtz' or self.test_case == 'kelvin-helmholtz_asym' or self.test_case == 'kelvin-helmholtz_noperturb':
+            if self.test_case == 'kelvin-helmholtz_noperturb':
+                self.has_exa_sol = True
+            else:
+                self.has_exa_sol = False
             self.xmin_fix = (-1.,-1.)  # should be the same as self.x_min
             self.xmax_fix = (1.,1.) # should be the same as self.x_max
             if self.q0_type != 'kelvin-helmholtz':
@@ -370,6 +377,16 @@ class Euler(PdeBase):
 
             return q
         
+        def kelvin_helmholtz(tf):
+            ''' initial condition for kelvin-helmholtz problem '''
+
+            if self.q0_type != 'kelvin-helmholtz':
+                print("ERROR: for exact_sol, initial condition must be kelvin-helmholtz, not '"+self.q0_type+"'")
+            
+            q = self.set_q0(xy=xy)
+            return q
+
+        
         def manufactured_soln(t):
             ''' manufactured solution. '''
 
@@ -400,10 +417,12 @@ class Euler(PdeBase):
 
         if 'density_wave' in self.test_case:
             exa_sol = density_wave(time)
-        elif self.test_case == 'vortex':    
+        elif self.test_case == 'vortex' or self.test_case == 'vortex_lowma':    
             exa_sol = vortex(time)
         elif self.test_case == 'manufactured_soln':
             exa_sol = manufactured_soln(time)
+        elif self.test_case == self.test_case == 'kelvin-helmholtz_noperturb':
+            exa_sol = kelvin_helmholtz(time)
         else:
             raise Exception('Invalid test case.')
             
@@ -464,7 +483,7 @@ class Euler(PdeBase):
             p = (self.g-1)*rho*(rho-0.5)
             q0 = self.prim2cons(rho, u, v, e)
                 
-        elif self.test_case == 'vortex':
+        elif self.test_case == 'vortex' or self.test_case == 'vortex_lowma':
             if q0_type != 'vortex':
                 print('WARNING: Ignoring q0_type and setting initial conditions to vortex.')
             r2 = - (xy[:,0,:]/self.vtx_rad)**2 - (xy[:,1,:]/self.vtx_rad)**2
@@ -475,7 +494,7 @@ class Euler(PdeBase):
             e = p/(self.g-1) + 0.5 * rho * (u*u + v*v)
             q0 = self.prim2cons(rho, u, v, e)
 
-        elif self.test_case == 'kelvin-helmholtz' or self.test_case == 'kelvin-helmholtz_asym':
+        elif self.test_case == 'kelvin-helmholtz' or self.test_case == 'kelvin-helmholtz_asym' or self.test_case == 'kelvin-helmholtz_noperturb':
             if q0_type != 'kelvin-helmholtz':
                 print('WARNING: Ignoring q0_type and setting initial conditions to kelvin-helmholtz.')
             B = np.tanh( 15 * xy[:,1,:] + 7.5 ) - np.tanh( 15 * xy[:,1,:] - 7.5 )
@@ -483,6 +502,8 @@ class Euler(PdeBase):
             u = 0.5 * ( B - 1 )
             if self.test_case == 'kelvin-helmholtz_asym':
                 v = 0.1 * np.sin( 2 * np.pi * xy[:,0,:] ) * ( 1. + 0.01 * np.sin( np.pi * xy[:,0,:] ) * np.sin( np.pi * xy[:,1,:] ) )
+            elif self.test_case == 'kelvin-helmholtz_noperturb':
+                v = np.zeros_like(xy[:,0,:])
             else:
                 v = 0.1 * np.sin( 2 * np.pi * xy[:,0,:] )
             e = 1 / ( self.g - 1 ) + 0.5 * rho * (u*u + v*v)
@@ -620,3 +641,8 @@ class Euler(PdeBase):
         a = np.sqrt(self.g*p_rho) # sound speed
         lam = np.maximum(np.abs(v+a),np.abs(v-a))
         return lam
+    
+    def use_alternative_dEndw_abs(self):
+        " overwrite dEndw_abs_2D "
+        self.dEndw_abs = efn.dEndw_abs_2D_alternative
+        # TODO: do the same for Derigs? (SAT)

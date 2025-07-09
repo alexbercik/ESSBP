@@ -2,13 +2,32 @@ import numpy as np
 
 def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
     ''' make the relevant operators according to DCP implementation in diablo '''
-    if sbp_type.lower() == 'csbp' or sbp_type.lower() == 'upwind':
+    if sbp_type.lower() == 'csbp' or sbp_type.lower() == 'upwind' or sbp_type.lower() == 'circulant':
         if sbp_type.lower() == 'upwind':
             print('WARNING: Using CSBP dissipation operator, but upwind central operator.')
             print('         Make sure this is intentional!')
         # Initialize the matrix as a dense NumPy array
         Ds = np.zeros((nen, nen))
         B = np.ones(nen)
+
+        if sbp_type.lower() == 'circulant':
+            B = np.ones(nen)
+            if s == 1:
+                from Source.Disc.CSbpOp import tridiag
+                Ds = tridiag(nen, -0.5, 0., 0.5, bc='periodic')
+            elif s == 2:
+                from Source.Disc.CSbpOp import tridiag
+                Ds = tridiag(nen, 1.0, 2.0, 1.0, bc='periodic')
+            elif s == 3:
+                from Source.Disc.CSbpOp import pentadiag
+                Ds = pentadiag(nen, 0.0, -1.0, 3.0, -3.0, 1.0, bc='periodic')
+            elif s == 4:
+                from Source.Disc.CSbpOp import pentadiag
+                Ds = pentadiag(nen, 1.0, -4.0, 6.0, -4.0, 1.0, bc='periodic')
+            elif s == 5:
+                from Source.Disc.CSbpOp import heptadiag
+                Ds = heptadiag(nen, 0.0, -1.0, 5.0, -10.0, 10.0, -5.0, 1.0, bc='periodic')
+            return Ds, B
 
         if s==1:
             if nen < 3:

@@ -19,6 +19,8 @@ import Source.Methods.Sparse as sp
 
 class PdeSolverSbp(PdeSolver):
 
+    Vptop1 = None
+
     def init_disc_specific(self):
         
         self.energy = self.sbp_energy
@@ -161,10 +163,12 @@ class PdeSolverSbp(PdeSolver):
 
         # save sparsity information
         if self.sparse:
+            self.lm_gv = staticmethod(sp.lm_gv)
             self.gm_gv = staticmethod(sp.gm_gv)
             self.gm_gm_had_diff = staticmethod(sp.gm_gm_had_diff)
 
         else:
+            self.lm_gv = staticmethod(fn.lm_gv)
             self.gm_gv = staticmethod(fn.gm_gv)
             self.gm_gm_had_diff = staticmethod(fn.gm_gm_had_diff)
             
@@ -270,7 +274,7 @@ class PdeSolverSbp(PdeSolver):
             #dqdt = - dExdx
         
         if self.periodic:
-            sat = self.sat.calc(q)
+            sat = self.sat.calc(q,None)
             #sat = self.sat.calc(q,Fvol)
         elif self.bc == 'dirichlet':
             sat = self.sat.calc(q, q_bdyL=self.diffeq.qL, q_bdyR=self.diffeq.qR)
@@ -813,4 +817,91 @@ class PdeSolverSbp(PdeSolver):
         print('Total estimated conservation = {0:.4g}'.format(erbdy + erQT))
         print('Actual conservation = {0:.4g}'.format(cons))
         print('Estimation off by {0:.4g}'.format(abs(cons - erbdy - erQT)))
+
+    def zelalem_diss_coeff(self,q):
+        ''' compute the Zelalem dissipation coefficients 
+        NOTE: self.adiss.eps_type must have been set by init '''
+        try:
+            eps_type = self.adiss.eps_type # for easy access
+        except:
+            return 0.
+        if self.dim == 1:
+            if eps_type == 0 or eps_type == 1:
+                return 0.
+            if eps_type == 2 or eps_type == 21:
+                "boundary jumps"
+                v = q # TODO: could generalize this to residual or the derivative
+                v_a = self.sat.lm_gv(self.sat.tLT, v)
+                v_b = self.sat.lm_gv(self.sat.tRT, v)
+                if not self.periodic: raise Exception('Need to implement non-periodic BCs')
+                vf_L = fn.pad_1dL(v_b, v_b[:,-1]) # this is the solution to the left of the interface
+                vf_R = fn.pad_1dR(v_a, v_a[:,0]) # this is the solution to the right of the interface
+                vf_jump2 = (vf_R - vf_L)**2 # size (neq,nelem+1)
+                vf_sum2 = (vf_R + vf_L)**2 # size (neq,nelem+1)
+                denom = vf_sum2[:,1:]  + vf_sum2[:,:-1]
+                if eps_type == 2:
+                    # take the norm in case we have system
+                    # returns shape (nelem)
+                    coeff = np.linalg.norm(np.sqrt(np.divide((vf_jump2[:,1:] + vf_jump2[:,:-1]), denom,
+                                                            out=np.zeros_like(denom, dtype=float), where=denom!=0)), axis=0)
+                elif eps_type == 21:
+                    # start with shape (neq,nelem)
+                    coeff = np.sqrt(np.divide((vf_jump2[:,1:] + vf_jump2[:,:-1]), denom,
+                                    out=np.zeros_like(denom, dtype=float), where=denom!=0))
+                    # extend to shape (nen*neq,nelem)
+                    coeff = fn.repeat_nen_gv(coeff, self.nen)
+            elif eps_type == 3 or eps_type == 31:
+                "difference between conservative and nonconservative forms"
+                dEdx1 = self.gm_gv(self.Dx, self.diffeq.calcEx(q))
+                dEdx2 = self.diffeq.nonconservative_coeff(q) * self.gm_gv(self.Dx, q)   
+                if eps_type == 3:
+                    # take the norm in case we have system
+                    denom = np.linalg.norm(dEdx1 + dEdx2, axis=0)
+                    coeff = np.divide(np.linalg.norm(dEdx1 - dEdx2, axis=0), denom,
+                                        out=np.zeros_like(denom, dtype=float), where=denom!=0)
+                else:
+                    # returns shape (neq,nelem)
+                    denom = fn.norm_gv_neq(dEdx1 + dEdx2, self.neq_node)
+                    coeff = np.divide(fn.norm_gv_neq(dEdx1 - dEdx2, self.neq_node), denom,
+                                        out=np.zeros_like(denom, dtype=float), where=denom!=0)
+                    coeff = fn.repeat_nen_gv(coeff, self.nen)
+            elif eps_type == 4 or eps_type == 41:
+                "difference between degree p and degree p+1 flux derivatives"
+                if self.Vptop1 is None:
+                    # have not set up the p+1 derivative yet
+                    assert self.disc_nodes in ['lgl','lg','nc'], 'ERROR: Interpolation only implemented for element-type.'
+                    from Source.Disc.MakeDgOp import MakeDgOp
+                    sbpp1 = MakeSbpOp(self.p+1, self.disc_nodes, 0, print_progress=False)
+                    Vp1top = MakeDgOp.VandermondeLagrange1D(self.sbp.x, sbpp1.x)
+                    self.Vptop1 = fn.kron_neq_lm(MakeDgOp.VandermondeLagrange1D(sbpp1.x, self.sbp.x), self.neq_node)
+                    self.Vp1top_Dp1 = fn.kron_neq_lm(Vp1top @ sbpp1.D, self.neq_node)
+                    self.Dp = fn.kron_neq_lm(self.sbp.D, self.neq_node)
+                    if self.sparse:
+                        self.Vptop1 = sp.lm_to_sp(self.Vptop1)
+                        self.Vp1top_Dp1 = sp.lm_to_sp(self.Vp1top_Dp1)
+                        self.Dp = sp.lm_to_sp(self.Dp)
+                # TODO: could generalize this to residual? can't use q otherwise pointless
+                vp = self.lm_gv(self.Dp, self.diffeq.calcEx(q))
+                vp1 = self.lm_gv(self.Vp1top_Dp1, self.diffeq.calcEx(self.lm_gv(self.Vptop1, q)))
+                if eps_type == 4:
+                    # take the norm in case we have system
+                    denom = np.linalg.norm(vp + vp1, axis=0)
+                    coeff = np.divide(np.linalg.norm(vp - vp1, axis=0), denom,
+                                        out=np.zeros_like(denom, dtype=float), where=denom!=0)
+                else:
+                    # returns shape (neq,nelem)
+                    denom = fn.norm_gv_neq(vp + vp1, self.neq_node)
+                    coeff = np.divide(fn.norm_gv_neq(vp - vp1, self.neq_node), denom,
+                                        out=np.zeros_like(denom, dtype=float), where=denom!=0)
+                    coeff = fn.repeat_nen_gv(coeff, self.nen)
+
+            else:
+                raise Exception('Desired type not implemented yet')
+            #TODO: use something based on entropy flux like in "Entropy correction with SIAC filters, Picklo & Edoh"
+        elif self.dim == 2:
+            raise Exception('Not implemented yet')
+        elif self.dim == 3:
+            raise Exception('Not implemented yet')
+        
+        return coeff
         
