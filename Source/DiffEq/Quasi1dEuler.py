@@ -22,7 +22,8 @@ class Quasi1dEuler(PdeBase):
     diffeq_name = 'Quasi1dEuler'
     dim = 1
     neq_node = 3            # No. of equations per node
-    pde_order = 1
+    pde_order1 = True
+    pde_order2 = False
     has_exa_sol = True
     para_names = (r'$R$',r'$\gamma$')
     enforce_positivity = True
@@ -338,6 +339,13 @@ class Quasi1dEuler(PdeBase):
         ''' function to calculate the sound speed given pressure and Q1 '''
         # Note: Regardless if fed Q*S or Q, will always return a, not a*S
         return np.sqrt(self.g*self.calc_p(q)/q[::3])   
+    
+    def calc_mach(self,q):
+        ''' function to calculate the mach number given pressure and Q1 '''
+        # Note: Regardless if fed Q*S or Q, will always return a, not a*S
+        a = self.calc_a(q)
+        u = q[1::3]/q[0::3]
+        return u/a
 
     def check_positivity(self, q):
         ''' Check if thermodynamic variables are positive '''

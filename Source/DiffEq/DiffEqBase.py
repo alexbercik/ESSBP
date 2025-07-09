@@ -280,7 +280,8 @@ class PdeBase:
             q0 = np.ones_like(xy)
             q0[x_scaled <= 0.25] = 0.
             q0[x_scaled >= 0.75] = 0.
-        elif ('sinwave' in q0_type) and not ('gassner' in q0_type):
+        elif ('sinwave' in q0_type) and not ('gassner' in q0_type) \
+            or ('coswave' in q0_type) and not ('gassner' in q0_type):
             if self.dim == 1:
                 if '4pi' in q0_type:
                     w = 4*np.pi
@@ -289,7 +290,10 @@ class PdeBase:
                 else:
                     w = 2*np.pi
                 x_scaled = (xy + self.xmin) / self.dom_len
-                q0 = np.sin(w * x_scaled) * self.q0_max_q
+                if 'sinwave' in q0_type:
+                    q0 = np.sin(w * x_scaled) * self.q0_max_q
+                elif 'coswave' in q0_type:
+                    q0 = np.cos(w * x_scaled) * self.q0_max_q
                 if 'shift' in q0_type:
                     q0 = q0+2
                 if 'perturb' in q0_type:
@@ -352,9 +356,9 @@ class PdeBase:
     # TODO: Make a separate function for interactive plots? is this even possible using free packages?
     def plot_sol(self, q, x=None, time=0., plot_exa=None, savefile=None,
                  show_fig=True, ymin=None, ymax=None, display_time=False, 
-                 title=None, plot_mesh=False, save_format='png', dpi=600,
+                 title=None, plot_mesh=False, save_format='png', dpi=300,
                  plot_only_exa=False, var2plot_name=None, legendloc=None, legend=True,
-                 show_negative=False):
+                 show_negative=False, time_round=2, **kwargs):
         '''
         Purpose
         ----------
@@ -405,14 +409,15 @@ class PdeBase:
         elif self.dim == 2:
             if plot_exa is None: plot_exa = False
             if x is None: 
+                xy = None
                 x = fn.reshape_to_meshgrid_2D(self.xy_elem[:,0,:],self.nen,self.nelem[0],self.nelem[1])
                 y = fn.reshape_to_meshgrid_2D(self.xy_elem[:,1,:],self.nen,self.nelem[0],self.nelem[1])
                 nen = self.nen
             else:
-                x_in = np.copy(x)
-                nen = int(np.sqrt(x_in.shape[0]))
-                x = fn.reshape_to_meshgrid_2D(x_in[:,0,:],nen,self.nelem[0],self.nelem[1])
-                y = fn.reshape_to_meshgrid_2D(x_in[:,1,:],nen,self.nelem[0],self.nelem[1])
+                xy = np.copy(x)
+                nen = int(np.sqrt(xy.shape[0]))
+                x = fn.reshape_to_meshgrid_2D(xy[:,0,:],nen,self.nelem[0],self.nelem[1])
+                y = fn.reshape_to_meshgrid_2D(xy[:,1,:],nen,self.nelem[0],self.nelem[1])
 
 
             fig = plt.figure(figsize=(6,5.5*self.dom_len[1]/self.dom_len[0])) # scale figure properly
@@ -488,7 +493,7 @@ class PdeBase:
             # define matplotlib.patch.Patch properties
             # TODO: Add a check to see whether to set alpha or not
             props = dict(boxstyle='round', facecolor='white', alpha=0.5)
-            ax.text(0.05, 0.95, f'$t={round(time,2)}$', transform=ax.transAxes, 
+            ax.text(0.05, 0.95, f'$t={round(time,time_round)}$', transform=ax.transAxes, 
                     fontsize=self.plt_label_font_size, verticalalignment='top', bbox=props)
         
         if plt.title is not None:
@@ -516,7 +521,7 @@ class PdeBase:
                 savefile = savefile + '_exa'
             if title is not None:
                 title = 'Exact Solution'
-            exa_sol = self.exact_sol(time,guess=q)
+            exa_sol = self.exact_sol(time,xy=xy,guess=q)
             self.plot_sol(exa_sol, time=time, plot_exa=True, savefile=savefile,
                  show_fig=show_fig, ymin=ymin, ymax=ymax, display_time=display_time, 
                  title=title, plot_mesh=plot_mesh, save_format=save_format, dpi=dpi,

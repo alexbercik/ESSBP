@@ -401,7 +401,7 @@ class Sat(SatDer1, SatDer2):
 
         ''' Set the methods that will be used to calculate the SATs '''
 
-        if solver.pde_order == 1:
+        if solver.pde_order1:
 
             if self.neq_node == 1:
                 self.calc_spec_rad = lambda gm: np.abs(fn.gm_to_gdiag(gm))
@@ -726,6 +726,8 @@ class Sat(SatDer1, SatDer2):
         
                 
             elif self.diffeq_name=='Burgers':
+                if self.disc_type != 'div':
+                    print("WARNING: Your choice of SAT is not compatible with disc_type='had'!")
                 if self.dim >= 2:
                     raise Exception('Burgers equation SATs only set up for 1D!')
                 else:
@@ -769,7 +771,12 @@ class Sat(SatDer1, SatDer2):
             #self.calc_dfdq_sat_der1 = getattr(self, self.diffeq.dfdq_sat_type_der1)
 
         else:
-            raise Exception('SAT methods for reqested order of PDE is not available')
+            self.calc = lambda *x : 0
+
+        if solver.pde_order2:
+            raise Exception('TODO: SATs for second-order PDEs not implemented yet.')
+        else:
+            self.calc_visc = lambda *x : 0
             
         
         ''' Check if using a generalized Hadamard form, then adjust as needed '''

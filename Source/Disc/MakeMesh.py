@@ -347,9 +347,9 @@ class MakeMesh:
             b = self.warp_factor2
             xk = self.warp_factor3
             #assert(a>=0),'warp_factor must be >0, or >1 to squish at boundaries'
-            if a<1:
+            if a<0:
                 print('WARNING: warp_factor1 below allowed bound 1, capping manually.')
-                a = 1
+                a = 0
             if a>1E16:
                 print('WARNING: warp_factor1 above 1E16, capping manually.')
                 a = 1E16
@@ -386,9 +386,9 @@ class MakeMesh:
             b = self.warp_factor2
             xk = self.warp_factor3
             #assert(a>=0),'warp_factor must be >0, or >1 to squish at boundaries'
-            if a<1:
+            if a<0:
                 print('WARNING: warp_factor1 below allowed bound 1, capping manually.')
-                a = 1
+                a = 0
             if a>1E16:
                 print('WARNING: warp_factor1 above 1E16, capping manually.')
                 a = 1E16
@@ -418,6 +418,77 @@ class MakeMesh:
             df = np.where(1-xk<=x, a*b*(1-x)**(a-1)+c1,df)
             return df
         
+        def corners2(x):
+            ''' stretches the corners but keeps the ends and middle linear'''
+            assert(self.xmin==0 and self.xmax==1),'Only set up for interval [0,1]'
+            x0 = self.warp_factor # how far in to start exponential
+            x1 = self.warp_factor2 # for far in to stop exponential
+            c = self.warp_factor3 # strength of the exponential
+
+            e0 = np.exp(c*x0)
+            e1 = np.exp(c*x1)
+            
+            k = 1/(2*(e1-e0) + 2*c*(e0*x0-e1*x1) + c*e1)
+            a0 = k*c*e0
+            a1 = k*c*e1
+            d = k*e0*(c*x0-1)
+
+            f = np.where(x<=x0, a0*x,0)
+            f = np.where(((x0<=x) & (x<=x1)), k*np.exp(c*x)+d,f)
+            f = np.where(((x1<=x) & (x<=(1-x1))), a1*x+0.5*(1-a1),f)
+            f = np.where((((1-x1)<=x) & (x<=(1-x0))), -k*np.exp(c*(1-x))-d+1,f)
+            f = np.where((1-x0)<=x, a0*x+(1-a0),f)
+            return f
+        
+        def corners2_der(x):
+            ''' stretches the corners but keeps the ends and middle linear'''
+            assert(self.xmin==0 and self.xmax==1),'Only set up for interval [0,1]'
+            x0 = self.warp_factor # how far in to start exponential
+            x1 = self.warp_factor2 # for far in to stop exponential
+            c = self.warp_factor3 # strength of the exponential
+
+            e0 = np.exp(c*x0)
+            e1 = np.exp(c*x1)
+            
+            k = 1/(2*(e1-e0) + 2*c*(e0*x0-e1*x1) + c*e1)
+            a0 = k*c*e0
+            a1 = k*c*e1
+            d = k*e0*(c*x0-1)
+
+            df = np.where(x<=x0, a0,0)
+            df = np.where(((x0<=x) & (x<=x1)), c*k*np.exp(c*x),df)
+            df = np.where(((x1<=x) & (x<=(1-x1))), a1,df)
+            df = np.where((((1-x1)<=x) & (x<=(1-x0))), c*k*np.exp(c*(1-x)),df)
+            df = np.where((1-x0)<=x, a0,df)
+            return df
+        
+        def corners_periodic(x):
+            ''' stretches the corners but keeps the ends and middle approximately linear'''
+            assert(self.xmin==0 and self.xmax==1),'Only set up for interval [0,1]'
+            x0 = self.warp_factor # how far in to have transition
+            a = self.warp_factor2 # strength of the transition
+            N = max(3,int(self.warp_factor3)) # how many modes to use
+
+            f = np.copy(x)
+            for n in range(1,N+1):
+                c = 2*(1-x0)/(1-2*x0)*np.sin(2*np.pi*n*x0)/(np.pi*n)
+                f += a*c*np.sin(2*np.pi*n*x)/(2*np.pi*n)
+            return f
+        
+        def corners_periodic_der(x):
+            ''' stretches the corners but keeps the ends and middle approximately linear'''
+            assert(self.xmin==0 and self.xmax==1),'Only set up for interval [0,1]'
+            x0 = self.warp_factor # how far in to have transition
+            a = self.warp_factor2 # strength of the transition
+            N = max(3,int(self.warp_factor3)) # how many modes to use
+
+            df = np.ones_like(x)
+            for n in range(1,N+1):
+                c = 2*(1-x0)/(1-2*x0)*np.sin(2*np.pi*n*x0)/(np.pi*n)
+                df += a*c*np.cos(2*np.pi*n*x)
+            return df
+
+        
         # switch between different mappings here
         if self.warp_type == 'default' or self.warp_type == 'papers':
             warp_fun = stretch_line
@@ -431,6 +502,12 @@ class MakeMesh:
         elif self.warp_type == 'corners':
             warp_fun = stretch_corners
             warp_der = stretch_corners_der 
+        elif self.warp_type == 'corners2':
+            warp_fun = corners2
+            warp_der = corners2_der 
+        elif self.warp_type == 'corners_periodic':
+            warp_fun = corners_periodic
+            warp_der = corners_periodic_der
         elif self.warp_type == 'tanh':
             warp_fun = stretch_tanh
             warp_der = stretch_tanh_der 
@@ -1177,7 +1254,7 @@ class MakeMesh:
 # =============================================================================
 
     def plot(self,plt_save_name=None,markersize=4,fontsize=12,dpi=1000,label=True,
-             label_all_lines=True, nodes=True, bdy_nodes=False):
+             label_all_lines=True, nodes=True, bdy_nodes=False,save_format='png'):
         if self.dim == 1:
             fig = plt.figure(figsize=(6,1))
             ax = plt.axes(frameon=False) # turn off the frame
@@ -1284,7 +1361,7 @@ class MakeMesh:
             
         if plt_save_name is not None:
             fig.tight_layout()
-            fig.savefig(plt_save_name+'.png', format='png',dpi=dpi)
+            fig.savefig(plt_save_name, format=save_format,dpi=dpi)
             
 
     def get_jac_metrics(self, sbp, periodic, metric_method='exact', bdy_metric_method='exact',

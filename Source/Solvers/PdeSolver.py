@@ -34,6 +34,7 @@ class PdeSolver:
     tm_rtol = None
     tm_nframes = None
     t_initial = 0.0
+    dt = None
 
     def __init__(self, diffeq, settings,                            # Diffeq
                  tm_method, dt, t_final,                    # Time marching                                  # Initial solution
@@ -229,7 +230,8 @@ class PdeSolver:
         #self.settings.setdefault('s',None) # usually set to p+1
         #self.settings.setdefault('coeff',0.1) # coefficient out infront
         #self.settings.setdefault('fluxvec',None) # what type of flux differencing? lf? only used if diss_type='upwind'
-        self.pde_order = self.diffeq.pde_order
+        self.pde_order1 = self.diffeq.pde_order1
+        self.pde_order2 = self.diffeq.pde_order2
 
 
         assert isinstance(p, int), 'p must be an integer'
@@ -361,7 +363,10 @@ class PdeSolver:
         # Time marching data
         if self.t_final == None:
             print('No t_final given. Checking diffeq for a default t_final.')
-            self.t_final = self.diffeq.t_final
+            try:
+                self.t_final = self.diffeq.t_final
+            except:
+                print('WARNING: No default t_final found in diffeq. Should set manually before calling solve().')
         if (isinstance(self.t_final, int) or isinstance(self.t_final, float)) and hasattr(self.diffeq, 't_final'):
             if (self.t_final != self.diffeq.t_final) and (self.diffeq.t_final is not None):
                 print('WARNING: The diffeq default is t_final =',self.diffeq.t_final,', but you selected t_final =',t_final)
@@ -448,6 +453,9 @@ class PdeSolver:
                 raise Exception('ERROR: Cannot calculate conservation objectives with derivatives since dqdt was not stored.')
             if any('max_eig'==name.lower() or 'spec_rad'==name.lower() for name in cons_obj_name):
                 raise Exception('TODO: Need to loop over time steps to calculate eigenvalues')
+            
+        if any('zelalem_coeff' in name.lower() for name in self.cons_obj_name):
+            zel_coeff = self.zelalem_diss_coeff(q)
 
         for i in range(n_cons_obj):
             cons_obj_name_i = cons_obj_name[i].lower()
@@ -487,6 +495,13 @@ class PdeSolver:
                 cons_obj[i] = self.calc_error(q,t)
             elif cons_obj_name_i == 'time':
                 cons_obj[i] = t
+            elif 'zelalem_coeff' in cons_obj_name_i:
+                if 'max' in cons_obj_name_i:
+                    cons_obj[i] = np.max(zel_coeff)
+                elif 'min' in cons_obj_name_i:
+                    cons_obj[i] = np.min(zel_coeff)
+                elif 'mean' in cons_obj_name_i:
+                    cons_obj[i] = np.mean(zel_coeff)
             else:
                 raise Exception('Unknown conservation objective function')
 
@@ -617,7 +632,7 @@ class PdeSolver:
                       print_residual=self.print_residual, check_resid_conv=self.check_resid_conv,
                       sparse=self.sparse, sat_sparse=self.sat_sparse)
         
-    def set_timestep(self, dt):
+    def set_timestep(self, dt=None):
         """
         Purpose
         ----------
@@ -630,7 +645,7 @@ class PdeSolver:
             The new time step to be used.
         """
 
-        if dt == None:
+        if dt == None and self.dt == None:
             print('WARNING: No time step given. Continuing with initialization, ignoring time marching.')
             print('         Use set_timestep(dt) to set a time step before running solve().')
             self.dt = None
@@ -638,9 +653,17 @@ class PdeSolver:
             self.dt_to_be_set = True
             return
         
-        else:
+        elif dt is not None:
             self.dt = float(dt)
-            self.dt_to_be_set = False
+
+        if self.t_final == None:
+            print('WARNING: No t_final given. Continuing with initialization, ignoring time marching.')
+            print('         Use set_timestep() to set a time step before running solve().')
+            self.n_ts = None
+            self.dt_to_be_set = True
+            return
+        
+        self.dt_to_be_set = False
 
         # set the number of time steps
         if isinstance(self.t_final, int) or isinstance(self.t_final, float):
@@ -1319,9 +1342,78 @@ class PdeSolver:
                 self.diffeq.plot_sol(q, xy, **kwargs)
         else:
             self.diffeq.plot_sol(q, **kwargs)
+
+    def plot_sol_error(self, q=None, x=None, idx=-1, time=None, savefile=None, display_time=False,
+                   title=None, logscale=True, linear_thresh=None, max_thresh=None, show_fig=True,
+                    color='tab:green', linestyle=(0, (1, 1.5)), linewidth=2.3, **kwargs):
+        ''' plot the error from a single time as a function of x '''
+        assert self.dim == 1, 'ERROR: Only implemented for 1D problems'
+        assert self.neq_node == 1, 'ERROR: Only implemented for neq_node=1'
+        xlabel = r'$x$'
+        ylabel = r'Solution Error $\bm{u} - \bm{u}_{\mathrm{ex}}$'
+
+        if time is None:
+            time = self.t_final
+
+        if x is None:
+            x = self.mesh.x_elem
+
+        if q is None:
+            if self.q_sol.ndim == 2:
+                q = self.q_sol
+            elif self.q_sol.ndim == 3:
+                q = self.q_sol[:,:,idx]
+
+        if self.disc_nodes in ['lg', 'lgl', 'nc']:
+            q, x = self.interpolate(u_old=q,return_mesh=True,num_nodes=20)
+        er = q - self.diffeq.exact_sol(x=x, time=time)
+
+        plt.figure(figsize=(6,4.4))
+        if title is not None: plt.title(title,fontsize=18)
+        plt.ylabel(ylabel,fontsize=16)
+        plt.xlabel(xlabel,fontsize=16)
+        ax = plt.gca()
+        if linear_thresh is None:
+            linear_thresh = np.min(abs(er))
+        if logscale: 
+            plt.yscale('symlog',linthresh=linear_thresh)
+        else:
+            plt.yscale('linear')
+            from matplotlib.ticker import FuncFormatter
+            def custom_sci_notation(x, pos):
+                if x == 0:
+                    return "0"
+                exponent = int(np.floor(np.log10(abs(x))))
+                coeff = x / 10**exponent
+                if abs(coeff - 1) < 0.09 :
+                    return f"$10^{{{exponent:+d}}}$"
+                elif abs(coeff + 1) < 0.09:
+                    return f"$-10^{{{exponent:+d}}}$"
+                else:
+                    return f"${coeff:.1f}\\times 10^{{{exponent:+d}}}$"
+            ax.yaxis.set_major_formatter(FuncFormatter(custom_sci_notation))
+        plt.grid(which='major',axis='y',linestyle='--',color='gray',linewidth='1')
+        ax.tick_params(axis='both', labelsize=13) 
+        if max_thresh is not None:
+            plt.ylim(-max_thresh,max_thresh)
+
+        plt.plot(x, er[:,0], color=color, linestyle=linestyle, linewidth=linewidth) 
+        for elem in range(1,self.nelem):
+            plt.plot(x[:,elem], er[:,elem], color=color, linestyle=linestyle, linewidth=linewidth) 
+
+        if display_time and (time is not None):
+            props = dict(boxstyle='round', facecolor='white', alpha=0.5)
+            ax.text(0.05, 0.95, f'$t={round(time,2)}$', transform=ax.transAxes, 
+                    fontsize=15, verticalalignment='top', bbox=props)
+
+        plt.tight_layout()
+        if savefile is not None: plt.savefig(savefile, dpi=300)
+        if show_fig:
+            plt.show()
+        plt.close()
         
     def plot_error(self, method=None, savefile=None, extra_fn=None, extra_label=None, title=None):
-        ''' plot the error from all time steps '''
+        ''' plot the error from all time steps as a function of time'''
         errors = self.calc_error(method=method, use_all_t=True)
         steps = np.shape(self.q_sol)[2]
         times = np.linspace(0,self.t_final,steps)
@@ -1454,10 +1546,17 @@ class PdeSolver:
         assert self.disc_nodes in ['lgl','lg','nc'], 'ERROR: Interpolation only implemented for element-type.'
 
         from Source.Disc.MakeDgOp import MakeDgOp
-        from Source.Methods.Functions import lm_gv
+        from Source.Methods.Functions import lm_gv, kron_neq_lm
 
         if u_old is None:
-            u_old = self.q_sol[:,:,-1]
+            if self.q_sol is None:
+                raise Exception('ERROR: No solution to interpolate.')
+            elif self.q_sol.ndim == 2:
+                u_old = self.q_sol
+            elif self.q_sol.ndim == 3:
+                u_old = self.q_sol[:,:,-1]
+            else:
+                raise Exception('ERROR: q_sol must be 2D or 3D array.')
 
         if x_new is None:
             x_new = np.linspace(0,1,num_nodes,endpoint=True)
@@ -1470,14 +1569,14 @@ class PdeSolver:
         
         # Build the Vandermonde matrix for x_new
         V = MakeDgOp.VandermondeLagrange1D(x_new, x_old)
+        Vsys = kron_neq_lm(V,self.neq_node)
 
         if u_old.ndim == 2:
-            from Source.Methods.Functions import lm_gv
-            u_new = lm_gv(V, u_old)
+            u_new = lm_gv(Vsys, u_old)
             if return_mesh:
                 new_mesh = lm_gv(V, self.mesh.x_elem)
         else:
-            u_new = V @ u_old
+            u_new = Vsys @ u_old
             if return_mesh:
                 new_mesh = V @ self.mesh.x
 

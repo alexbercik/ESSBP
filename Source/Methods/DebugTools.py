@@ -8,6 +8,7 @@ Created on Tue Dec  8 00:31:11 2020
 
 import sympy as sp
 import numpy as np
+from Source.Methods.Analysis import printProgressBar
 
 def profiler(command, filename="profile.stats", n_stats=50, verbose=False,
              sortby='cumulative'):
@@ -176,4 +177,74 @@ def Check_Taylor_Series_1D(Mat,x,num_terms=4,lim_terms=2,notebook=True,decimals=
             print(r'Mat[{0}] = {1}'.format(i,Dxs[i]))
 
 
+def calcJacobian_complex_step(f, q, h=1.0e-15):
+    """Complex step differentiation for a function f at point q."""
+    if q.ndim == 1:
+        nen = len(q)
+        nelem = 1
+    else:
+        nen,nelem = q.shape
+    nn = nelem*nen 
+    A = np.zeros((nn,nn)) 
+    for i in range(nen):
+        if nn>=400:
+            printProgressBar(i, nen-1, prefix = 'Complex Step Progress:')
+        for j in range(nelem):
+            ei = np.zeros((nen,nelem),dtype=np.complex128)
+            ei[i,j] = h*1j
+            if q.ndim == 1:
+                qi = f(np.complex128(q)+ei)
+            else:
+                qi = f(np.complex128(q)+ei).flatten('F')
+            idx = np.where(np.imag(ei.flatten('F'))>h/10)[0][0]
+            A[:,idx] = np.imag(qi)/h
+    return A
+
+def calcJacobian_finite_diff(f, q, h=1.0e-4):
+    """Finite difference differentiation for a function f at point q."""
+    nen,nelem = q.shape
+    nn = nelem*nen 
+    A = np.zeros((nn,nn)) 
+    for i in range(nen):
+        if nn>=400:
+            printProgressBar(i, nen-1, prefix = 'Complex Step Progress:')
+        for j in range(nelem):
+            ei = np.zeros((nen,nelem))
+            ei[i,j] = 1.*h
+            q_r = f(q+ei).flatten('F')
+            q_l = f(q-ei).flatten('F')
+            idx = np.where(ei.flatten('F')>h/10)[0][0]
+            A[:,idx] = (q_r - q_l)/(2*h)
+    return A
+
+def compare_Jacobian(f, q, h=1.0e-4, hi=1.0e-15, returnA=False, returnbool=False):
+    """Compare the Jacobian calculated by complex step and finite difference."""
+    A_complex = calcJacobian_complex_step(f, q, hi)
+    A_finite = calcJacobian_finite_diff(f, q, h)
+    abs_diff = np.abs(A_complex - A_finite)
+    rel_diff = abs_diff / (np.maximum(np.abs(A_complex), np.abs(A_finite)) + h)
+    maxdiff_abs = np.max(abs_diff)
+    maxdiff_rel = np.max(rel_diff)
+
+    reltol = 0.01
+    abstol = 10*h
+    ok = (maxdiff_abs < abstol) and (maxdiff_rel < reltol)
+    
+    if ok:
+        print("The Jacobians are equal within the tolerance.")
+    
+    else:
+        print("The Jacobians differ.")
+        print("Maximum absolute difference:", maxdiff_abs)
+        i, j = np.where(rel_diff == maxdiff_rel)
+        if i is not [] and j is not []:
+            print("Maximum relative difference:", maxdiff_rel, f"({A_complex[i[0], j[0]]:.2e} and {A_finite[i[0], j[0]]:.2e})")
+    
+    if returnA:
+        if returnbool:
+            return A_complex, A_finite, ok
+        else:
+            return A_complex, A_finite
+    elif returnbool:
+        return ok
     

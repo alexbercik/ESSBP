@@ -32,7 +32,14 @@ def cabs(x):
     ''' the standard abs(x) is not analytic. Replace with this version.'''
     sgn = np.sign(np.real(x))
     res = sgn * x
+    #res = np.sqrt(x*x)
     return res
+
+@njit
+def cmax(x, y, eps=0.0):
+    ''' A continuous version of max(x,y) that is analytic at x=y. Though I believe it is not needed'''
+    z = x - y
+    return 0.5*(x + y + np.sqrt(z*z + eps))
 
 @njit 
 def calcEx_1D(q):
@@ -207,6 +214,18 @@ def dEndw_abs_2D(q,dxidx,entropy_fix=False):
     
     Lam, X, _, XT = dEndq_eigs_2D(q,dxidx,val=True,vec=True,inv=False,trans=True,entropy_fix=entropy_fix)
     dEndw_abs = fn.gbdiag_gbdiag(X, fn.gdiag_gbdiag(cabs(Lam), XT))
+    return dEndw_abs
+
+@njit
+def dEndw_abs_2D_alternative(q,dxidx,entropy_fix=False):
+    ''' Instead of computing |A|@P as we usually do, this computes |A@P| directly
+     It is probably wrong, but worth testing to see what it gives us. Since the
+      eigenvalues/eigenvectors of A@P are not directly computable, we do it numerically. '''
+    
+    A = dEndq_2D(q,dxidx)
+    P = symmetrizer_2D(q)
+    AP = fn.gbdiag_gbdiag(A, P)
+    dEndw_abs = fn.abs_eig_mat_sym(AP)
     return dEndw_abs
 
 @njit
@@ -1563,6 +1582,7 @@ def maxeig_dExdq_1D(q):
     p_rho = g1*(e_rho-0.5*u*u) # pressure / rho, even if quasi1D Euler
     a = np.sqrt(g*p_rho) # sound speed, = a if quasi1D Euler
     lam = np.maximum(cabs(u+a),cabs(u-a))
+    #lam = cmax(cabs(u+a),cabs(u-a))
     return lam
 
 @njit

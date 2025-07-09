@@ -614,7 +614,7 @@ class SatDer1:
             f_avg = (Ef_L + Ef_R) / 2
         else:
             f_avg = a_f * (qf_L + qf_R) / 2
-        numflux = f_avg - sigma * abs(a_f) * qf_jump / 2
+        numflux = f_avg - sigma * fn.cabs(a_f) * qf_jump / 2
         
         sat = sat - self.tR @ numflux[:,1:] + self.tL @ numflux[:,:-1]
         return sat
@@ -655,13 +655,13 @@ class SatDer1:
             f_avg = self.calc_avgq(Ef_L, Ef_R)
         else:  
             f_avg = (qf_avg)**2 / 2
-        numflux = f_avg - sigma * abs(qf_avg) * qf_jump / 2
+        numflux = f_avg - sigma * fn.cabs(qf_avg) * qf_jump / 2
         
         sat = sat - self.lm_gv(self.tR, numflux[:,1:]) \
                   + self.lm_gv(self.tL, numflux[:,:-1])
         return sat
             
-    def div_1d_burgers_es(self, q, E, q_bdyL=None, q_bdyR=None):
+    def div_1d_burgers_es(self, q, E=None, q_bdyL=None, q_bdyR=None):
         '''
         Entropy-conservative/stable SATs for self.split_alpha=2/3 found in SBP book
         (uses extrapolation of the solution from the coupled elements)
@@ -681,6 +681,7 @@ class SatDer1:
             sigma[0] = 1
             sigma[-1] = 1
 
+        if E is None: E = q**2 / 2.
         sat = (1./6.) * ( self.lm_gv(self.tR, (4. * self.lm_gv(self.tRT, E) - q_b*q_R - q_R*q_R))
                         - self.lm_gv(self.tL, (4. * self.lm_gv(self.tLT, E) - q_a*q_L - q_L*q_L)) )
         
@@ -689,11 +690,11 @@ class SatDer1:
             q_Ljump = q_a - q_L
             #NOTE: dividing by 2 below
             if self.maxeig_type == 'rusanov':
-                q_Rlambda = np.maximum(np.abs(q_b), np.abs(q_R))
-                q_Llambda = np.maximum(np.abs(q_a), np.abs(q_L))
+                q_Rlambda = np.maximum(fn.cabs(q_b), fn.cabs(q_R))
+                q_Llambda = np.maximum(fn.cabs(q_a), fn.cabs(q_L))
             elif self.maxeig_type == 'lf':
-                q_Rlambda = np.abs(q_b + q_R) / 2.
-                q_Llambda = np.abs(q_a + q_L) / 2.
+                q_Rlambda = fn.cabs(q_b + q_R) / 2.
+                q_Llambda = fn.cabs(q_a + q_L) / 2.
             else:
                 raise Exception(f"maxeig_type {self.maxeig_type} not recognized. Try 'rusanov' or 'lf'.")
             
@@ -743,11 +744,11 @@ class SatDer1:
             q_Ljump = q_a - q_L
             #NOTE: dividing by 2 below
             if self.maxeig_type == 'rusanov': # as in eq 24 of local linear stability paper
-                q_Rlambda = np.maximum(np.abs(q_b), np.abs(q_R))
-                q_Llambda = np.maximum(np.abs(q_a), np.abs(q_L))
+                q_Rlambda = np.maximum(fn.cabs(q_b), fn.cabs(q_R))
+                q_Llambda = np.maximum(fn.cabs(q_a), fn.cabs(q_L))
             elif self.maxeig_type == 'lf':
-                q_Rlambda = np.abs(q_b + q_R) / 2.
-                q_Llambda = np.abs(q_a + q_L) / 2.
+                q_Rlambda = fn.cabs(q_b + q_R) / 2.
+                q_Llambda = fn.cabs(q_a + q_L) / 2.
             else:
                 raise Exception(f"maxeig_type {self.maxeig_type} not recognized. Try 'rusanov' or 'lf'.")
             
@@ -808,7 +809,7 @@ class SatDer1:
         dAdq = self.d2Exdq2(qfacet)
 
         #A_abs = self.diffeq.dExdq_abs(A) # actually just absolute value (scalar in 3d format)
-        A_abs = abs(A)
+        A_abs = fn.cabs(A)
         sign_A = np.sign(A)
         
         

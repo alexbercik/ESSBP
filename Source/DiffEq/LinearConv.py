@@ -23,7 +23,8 @@ class LinearConv(PdeBase):
     diffeq_name = 'LinearConvection'
     dim = 1
     neq_node = 1    # 1 equation in 1D
-    pde_order = 1 # Order of the highest derivative in the PDE
+    pde_order1 = True
+    pde_order2 = False
     x = None
     has_exa_sol = True
     para_names = ('a',)

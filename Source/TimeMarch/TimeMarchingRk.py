@@ -205,15 +205,15 @@ class TimeMarchingRk:
                     if bool_calc_cons_obj_lcl:
                         self.cons_obj[:, self.frame_idx] = self.fun_calc_cons_obj(q,t_current,dqdt)
                 
-                elif frame_skip == self.skip_ts or abs(t_current - self.t_final) < 1e-12:
-                    if self.frame_idx == self.nframes:
+                elif frame_skip == self.skip_ts or abs(t_current - self.t_final) < 1e-13:
+                    if self.frame_idx == self.nframes+1:
                         self.nframes = int(2 * self.nframes)
                         if keep_all_ts_lcl:
                             print('\n')
                             print('WARNING: q_sol is not large enough to hold all time steps.')
                             print('         Increasing the current size by a factor of 2.')
-                            temp = np.zeros((*self.qshape, self.nframes))
-                            temp[:, :, :self.frame_idx+1] = q_sol
+                            temp = np.zeros((*self.qshape, self.nframes+1))
+                            temp[:, :, :self.frame_idx] = q_sol
                             q_sol = temp
                             del temp
                         if bool_calc_cons_obj_lcl:
@@ -221,8 +221,8 @@ class TimeMarchingRk:
                             print('WARNING: cons_obj is not large enough to hold all time steps.')
                             print('         Increasing the current size by a factor of 2.')
                             print('\n')
-                            temp = np.zeros((self.n_cons_obj, self.nframes))
-                            temp[:, :self.frame_idx+1] = self.cons_obj
+                            temp = np.zeros((self.n_cons_obj, self.nframes+1))
+                            temp[:, :self.frame_idx] = self.cons_obj 
                             self.cons_obj = temp
                             del temp
 

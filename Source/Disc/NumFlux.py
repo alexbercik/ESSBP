@@ -31,7 +31,7 @@ class NumFlux:
 
         ''' Set the methods that will be used to calculate the SATs '''
 
-        assert self.pde_order == 1, 'Num Flux only for cons law are available'
+        assert self.pde_order1, 'Num Flux only for cons law are available'
 
         if method == 'central':
             self.numflux = lambda qL,qR: self.LF(qL,qR,0,0)
