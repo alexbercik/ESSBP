@@ -1212,6 +1212,7 @@ class PdeSolver:
                 else:
                     plt.ylabel(r'$\max \ \Re(\lambda)$',fontsize=16)
                 plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx]*eig_norm) 
+                if logscale: plt.yscale('log') 
 
             elif cons_obj_name_i == 'spec_rad':
                 plt.title(r'Spectral Radius of LHS',fontsize=18)
@@ -1236,6 +1237,7 @@ class PdeSolver:
                 
             if savefile is not None:
                 plt.savefig(savefile+'_'+cons_obj_name_i+'.jpg',dpi=600)
+            plt.show()
 
     def force_steady_solution(self, q0_type=None):
         '''
