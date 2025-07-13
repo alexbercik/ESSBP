@@ -182,11 +182,13 @@ class TimeMarchingRk:
                     self.quitsim = True
                     self.failsim = True
                     break
-                if bad_dt > 50:
-                    print(f"ERROR RK8: too many very small time steps. Aborting.")
+                if bad_dt > 40:
+                    print(f"ERROR RK8: too many consecutive very small time steps. Aborting.")
                     self.quitsim = True
                     self.failsim = True
                     break
+            else:
+                bad_dt = 0
 
             if keep_all_ts_lcl or bool_calc_cons_obj_lcl:
                 if self.use_time_frames:
