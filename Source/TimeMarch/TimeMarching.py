@@ -279,12 +279,12 @@ class TimeMarching(TimeMarchingRk):
                 resid = np.linalg.norm(dqdt)
                 resid = resid*resid # I actually want the norm squared
 
+            sim_time = tm.time() - self.start_time
+            h,m,s = int(sim_time//3600),int((sim_time//60)%60),int(sim_time%60)
             if self.print_progress:
-                sim_time = tm.time() - self.start_time
                 suf = 'Complete.'
-                h,m,s = int(sim_time//3600),int((sim_time//60)%60),int(sim_time%60)
                 printProgressBar(t_idx, n_ts, prefix = 'Progress:', suffix = suf)
-                print('... Took {0}:{1:02d}:{2:02d} to run.'.format(h,m,s))
+            print('... Took {0}:{1:02d}:{2:02d} to run.'.format(h,m,s))
         
             if np.any(np.isnan(q)):
                 print('ERROR: there are undefined values for q at final t =',time,'t_idx =', t_idx)
