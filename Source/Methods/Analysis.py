@@ -18,7 +18,6 @@ import itertools
 from tabulate import tabulate
 import scipy.optimize as sc
 import copy
-import traceback
 
 def animate(solver, q_sol=None, file_name='animation', make_video=True, make_gif=False,
                plotfunc='plot_sol',plotargs={}, skipsteps=0,fps=24,
@@ -472,7 +471,7 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
              scale_dt=True, return_conv=False, savefile=None, labels=None,
              title=None, ylabel=None, xlabel=None, grid=False, convunc=True, 
              ylim=None, xlim=(None,None), ignore_fail=False, plot=True, vars2plot=None,
-             nthreads=1, extra_marker=None, skipfit=None, skip=None, title_size=16,
+             nthreads=1, extra_marker=None, skipfit_st=None, skipfit_end=None, skip=None, title_size=16,
              legendloc=None, figsize=(6,4), tick_size=12, extra_xticks=False, scalar_xlabel=False, 
              serif=False, colors=None, markers=None, linestyles=None, legendsize=12, 
              legendreorder=None, preamble=None):
@@ -565,7 +564,9 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
         print('Performing element refinement.')
         runs_nelem = [x[1:] for x in schedule if x[0] == 'nelem'][0]
         schedule.remove([x for x in schedule if x[0] == 'nelem'][0])
-        runs_p = [x[1:] for x in schedule if x[0] == 'p'][0]
+        runs_p = next((x[1:] for x in schedule if x[0] == 'p'), None)
+        if runs_p is None:
+            runs_p = [solver.p]
         if len(runs_nen)==len(runs_nelem):
             print('... Match nen to nelem for each run')
             match_nen_to_nelem = True
@@ -577,8 +578,8 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
             print('.. Match nen to p for each run')
             match_nen_to_p = True
         else:
-            print('.. Match nen to nelem for each run using default nen')
-            runs_nen = [solver.nen] * len(runs_nelem) # reset these as well
+            print('.. Match nen to nelem for each run using default nen=0')
+            runs_nen = [0] * len(runs_nelem) # reset these as well
             match_nen_to_nelem = True
     else:
         raise Exception('Convergence schedule must contain either nen or nelem refinement.')
@@ -634,6 +635,7 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
 
     n_toti = 1
     if nthreads == 1: # run in serial
+        import traceback
         # set a couple useful time-saving settings
         solver.keep_all_ts = False
         #solver.print_progress = False
@@ -686,6 +688,7 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
     else:
         # Run in parallel mode with ProcessPoolExecutor
         with ProcessPoolExecutor(max_workers=nthreads) as executor:
+            import traceback
             futures = {}
             for casei in range(n_cases):
                 for atti in range(n_attributes):
@@ -718,7 +721,6 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
 
                 except Exception as e:
                     print(f"Error in parallel execution for case {casei}, run {runi}: {e}")
-                    import traceback
                     traceback.print_exc()
                     dofs[casei, runi] = np.nan
                     errors[casei, runi] = np.nan
@@ -766,7 +768,7 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
             #    title = r"Convergence of " + error_type + " Error"
             plot_conv(dofs, errors, legend_strings, solver.dim, title=title, savefile=savefile,
                         ylabel=ylabel,xlabel=xlabel,grid=grid,convunc=convunc,ylim=ylim,xlim=xlim,
-                    extra_marker=extra_marker, skipfit=skipfit, skip=skip, title_size=title_size,
+                    extra_marker=extra_marker, skipfit_st=None, skipfit_end=None, skip=skip, title_size=title_size,
                     legendloc=legendloc, figsize=figsize, tick_size=tick_size, 
                     extra_xticks=extra_xticks, scalar_xlabel=scalar_xlabel, serif=serif, colors=colors, 
                     markers=markers, linestyles=linestyles, legendsize=legendsize, 
@@ -778,7 +780,7 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
                     #TODO: modify ylabel instead?
                 plot_conv(dofs, errors[:,:,varidx], legend_strings, solver.dim, title, savefile,
                             ylabel=ylabel,xlabel=xlabel,grid=grid,convunc=convunc,ylim=ylim,xlim=xlim,
-                            extra_marker=extra_marker, skipfit=skipfit, skip=skip, title_size=title_size,
+                            extra_marker=extra_marker, skipfit_st=None, skipfit_end=None, skip=skip, title_size=title_size,
                             legendloc=legendloc, figsize=figsize, tick_size=tick_size, 
                             extra_xticks=extra_xticks, scalar_xlabel=scalar_xlabel, serif=serif, colors=colors, 
                             markers=markers, linestyles=linestyles, legendsize=legendsize, 
@@ -947,11 +949,12 @@ def calc_conv_rate(dof_vec, err_vec, dim, n_points=None,
     return conv_vec, avg_conv
 
 def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None, showslope=True,
-              extra_marker=None, skipfit=None, skip=None, ylabel=None, xlabel=None, title_size=16,
+              extra_marker=None, skipfit_st=None, skipfit_end=None, skip=None, ylabel=None, xlabel=None, title_size=16,
               ylim=(None,None),xlim=(None,None),grid=False,legendloc=None,convunc=True,
               figsize=(6,4), tick_size=12, extra_xticks=False, scalar_xlabel=False, serif=False,
               colors=None, markers=None, linestyles=None, legendsize=12, legendreorder=None,
-              remove_outliers=False, legend_anchor=None, put_legend_behind=False, preamble=None):
+              remove_outliers=False, legend_anchor=None, put_legend_behind=False, preamble=None,
+              ransac_settings=None):
     '''
     Parameters
     ----------
@@ -970,6 +973,8 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None, 
     skipfit : list of ints, optional
         for each case, decide how many initial runs to skip in fit, AFTER skip
         Note: does not account for the entries removed if nan
+        skipfit_st is how many at the beginning to ignore
+        skipfit_end is how many at the end to ignore
     skip : list of ints, optional
         for each case, decide how many initial runs to skip from plotting.
         Note: does account for the entries removed
@@ -995,11 +1000,17 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None, 
     
     assert len(legend_strings)==n_cases,"ERROR: legend_strings do not match n_cases"
     
-    if skipfit == None:
-        skipfit = [0] * n_cases
+    if skipfit_st == None:
+        skipfit_st = [0] * n_cases
     else:
-        assert(len(skipfit)==n_cases),"ERROR: skipfit does not match n_cases"
-        
+        assert(len(skipfit_st)==n_cases),"ERROR: skipfit_st does not match n_cases"
+
+    if skipfit_end == None:
+        skipfit_end = [None] * n_cases
+    else:
+        assert(len(skipfit_end)==n_cases),"ERROR: skipfit_end does not match n_cases"
+        skipfit_end = [-i if (i is not None and i!=0) else None for i in skipfit_end]
+
     if skip == None:
         skip = [0] * n_cases
     else:
@@ -1056,14 +1067,19 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None, 
         ######################################################################
         string = legend_strings[i].replace("disc_nodes=","")
         if len(dof_mod) > 2:
-            x_data = np.log(dof_mod[skipfit[i]:])
-            y_data = np.log(err_mod[skipfit[i]:])
+            x_data = np.log(dof_mod[skipfit_st[i]:skipfit_end[i]])
+            y_data = np.log(err_mod[skipfit_st[i]:skipfit_end[i]])
             if remove_outliers:
+                if ransac_settings is None:
+                    ransac_settings = {"residual_threshold": 0.1,  # smaller = more aggressive
+                                        "min_samples": 2,           # minimum number of samples to estimate the model
+                                        "max_trials": 1000,         # increase if convergence is an issue
+                                        "stop_probability": 0.99 }
                 from sklearn.linear_model import RANSACRegressor
                 # Reshape x for sklearn
                 x_data_reshaped = x_data.reshape(-1, 1)
                 # Fit using RANSAC to remove outliers
-                ransac = RANSACRegressor()
+                ransac = RANSACRegressor(**ransac_settings)
                 ransac.fit(x_data_reshaped, y_data)
                 inlier_mask = ransac.inlier_mask_
                 x_data = x_data[inlier_mask]
@@ -1088,8 +1104,12 @@ def plot_conv(dof_vec, err_vec, legend_strings, dim, title=None, savefile=None, 
             if not showslope: slope = ''
             plt.loglog(dof_mod,err_mod,markers[i%len(markers)],markersize=8, color=colors[i%len(colors)],
                        markerfacecolor = 'none', markeredgewidth=2, label=string+slope, zorder=zorder)
-            plt.loglog(np.linspace(dof_mod[skipfit[i]],dof_mod[-1]), # plot
-                       np.exp(fit_func(np.log(np.linspace(dof_mod[skipfit[i]],dof_mod[-1])), *p_opt)), 
+            if skipfit_end[i] == None:
+                last_i = -1
+            else:
+                last_i = skipfit_end[i]
+            plt.loglog(np.linspace(dof_mod[skipfit_st[i]],dof_mod[last_i]), # plot
+                       np.exp(fit_func(np.log(np.linspace(dof_mod[skipfit_st[i]],dof_mod[last_i])), *p_opt)), 
                        linewidth=1, linestyle = linestyles[i%len(linestyles)], color=colors[i%len(colors)], zorder=zorder)
         elif len(dof_mod) == 2:
             slope = r" $({0:9.3})$".format(-(np.log(err_mod[1])-np.log(err_mod[0]))/(np.log(dof_mod[1])-np.log(dof_mod[0])))
