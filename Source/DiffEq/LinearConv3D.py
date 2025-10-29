@@ -49,7 +49,7 @@ class LinearConv(PdeBase):
             self.dExdq = dExdq_fix
             self.dExdq_abs = dExdq_fix
             self.maxeig_dExdq = lambda q : np.ones(q.shape)
-            self.central_Ex = self.central_fix_Ex
+            #self.central_Ex = self.central_fix_Ex
         
         if self.ay == self.ay_fix:
             print('Using the fixed ay={} diffeq functions since params match.'.format(self.ay_fix))
@@ -59,7 +59,7 @@ class LinearConv(PdeBase):
             self.dEydq = dEydq_fix
             self.dEydq_abs = dEydq_fix
             self.maxeig_dEydq = lambda q : np.ones(q.shape)
-            self.central_Ey = self.central_fix_Ey
+            #self.central_Ey = self.central_fix_Ey
 
         if self.az == self.az_fix:
             print('Using the fixed ay={} diffeq functions since params match.'.format(self.az_fix))
@@ -69,7 +69,7 @@ class LinearConv(PdeBase):
             self.dEzdq = dEzdq_fix
             self.dEzdq_abs = dEzdq_fix
             self.maxeig_dEzdq = lambda q : np.ones(q.shape)
-            self.central_Ez = self.central_fix_Ez
+            #self.central_Ez = self.central_fix_Ez
 
     def exact_sol(self, time=0, xyx=None, guess=None):
 
