@@ -47,12 +47,12 @@ class PdeSolverSbp(PdeSolver):
         elif self.dim == 2:
             self.nn = (self.nelem[0] * self.nen, self.nelem[1] * self.nen)
             self.qshape = (self.nen**2 * self.neq_node , self.nelem[0] * self.nelem[1])
-            #self.H_perp = np.diag(self.sbp.H)
+            #Hperp = np.diag(self.sbp.H)
         elif self.dim == 3:
             self.nn = (self.nelem[0] * self.nen, self.nelem[1] * self.nen, self.nelem[2] * self.nen)
             self.qshape = (self.nen**3 * self.neq_node , self.nelem[0] * self.nelem[1] * self.nelem[2])  
             #H = np.diag(self.sbp.H) 
-            #self.H_perp = np.kron(H,H)
+            #Hperp = np.kron(H,H)
 
         
         # decide whether to use sparse formulation or not
@@ -473,70 +473,77 @@ class PdeSolverSbp(PdeSolver):
         if self.dim==1:
             pass
         elif self.dim==2:
+            Hperp = np.diag(self.sbp.H)
             Dx = np.kron(self.sbp.D, eye)
             Dy = np.kron(eye, self.sbp.D)
-            tLx = np.kron(self.tL, eye)
-            tRx = np.kron(self.tR, eye)
-            tLy = np.kron(eye, self.tL)
-            tRy = np.kron(eye, self.tR)
-            tLTx = tLx.T
-            tRTx = tRx.T
-            tLTy = tLy.T
-            tRTy = tRy.T
+            tLTx = np.kron(self.sbp.tL, eye)
+            tRTx = np.kron(self.sbp.tR, eye)
+            tLTy = np.kron(eye, self.sbp.tL)
+            tRTy = np.kron(eye, self.sbp.tR)
+            tLx = tLTx.T
+            tRx = tRTx.T
+            tLy = tLTy.T
+            tRy = tRTy.T
             Hinv = np.linalg.inv(np.kron(self.sbp.H, self.sbp.H))
             LHS1 = Dx @ self.mesh.metrics[:,0,:] + Dy @ self.mesh.metrics[:,2,:]
             LHS2 = Dx @ self.mesh.metrics[:,1,:] + Dy @ self.mesh.metrics[:,3,:]    
-            RHS1 = tRx @ ( self.H_perp * ( tRTx @ self.mesh.metrics[:,0,:] - self.mesh.bdy_metrics[:,1,0,:] )) \
-                 - tLx @ ( self.H_perp * ( tLTx @ self.mesh.metrics[:,0,:] - self.mesh.bdy_metrics[:,0,0,:] )) \
-                 + tRy @ ( self.H_perp * ( tRTy @ self.mesh.metrics[:,2,:] - self.mesh.bdy_metrics[:,3,2,:] )) \
-                 - tLy @ ( self.H_perp * ( tLTy @ self.mesh.metrics[:,2,:] - self.mesh.bdy_metrics[:,2,2,:] ))
-            RHS2 = tRx @ ( self.H_perp * ( tRTx @ self.mesh.metrics[:,1,:] - self.mesh.bdy_metrics[:,1,1,:] )) \
-                 - tLx @ ( self.H_perp * ( tLTx @ self.mesh.metrics[:,1,:] - self.mesh.bdy_metrics[:,0,1,:] )) \
-                 + tRy @ ( self.H_perp * ( tRTy @ self.mesh.metrics[:,3,:] - self.mesh.bdy_metrics[:,3,3,:] )) \
-                 - tLy @ ( self.H_perp * ( tLTy @ self.mesh.metrics[:,3,:] - self.mesh.bdy_metrics[:,2,3,:] ))
+            RHS1 = tRx @ ( Hperp[:,None] * ( tRTx @ self.mesh.metrics[:,0,:] - self.mesh.bdy_metrics[:,1,0,:] )) \
+                 - tLx @ ( Hperp[:,None] * ( tLTx @ self.mesh.metrics[:,0,:] - self.mesh.bdy_metrics[:,0,0,:] )) \
+                 + tRy @ ( Hperp[:,None] * ( tRTy @ self.mesh.metrics[:,2,:] - self.mesh.bdy_metrics[:,3,2,:] )) \
+                 - tLy @ ( Hperp[:,None] * ( tLTy @ self.mesh.metrics[:,2,:] - self.mesh.bdy_metrics[:,2,2,:] )) 
+            RHS2 = tRx @ ( Hperp[:,None] * ( tRTx @ self.mesh.metrics[:,1,:] - self.mesh.bdy_metrics[:,1,1,:] )) \
+                 - tLx @ ( Hperp[:,None] * ( tLTx @ self.mesh.metrics[:,1,:] - self.mesh.bdy_metrics[:,0,1,:] )) \
+                 + tRy @ ( Hperp[:,None] * ( tRTy @ self.mesh.metrics[:,3,:] - self.mesh.bdy_metrics[:,3,3,:] )) \
+                 - tLy @ ( Hperp[:,None] * ( tLTy @ self.mesh.metrics[:,3,:] - self.mesh.bdy_metrics[:,2,3,:] ))
             tot1 = LHS1 - Hinv @ RHS1
             tot2 = LHS2 - Hinv @ RHS2
         else:
-            Dx = np.kron(np.kron(self.sbp.D, eye), eye)
-            Dy = np.kron(np.kron(eye, self.sbp.D), eye)
-            Dz = np.kron(np.kron(eye, eye), self.sbp.D)
-            tLx = np.kron(np.kron(self.tL, eye), eye)
-            tRx = np.kron(np.kron(self.tR, eye), eye)
-            tLy = np.kron(np.kron(eye, self.tL), eye)
-            tRy = np.kron(np.kron(eye, self.tR), eye)
-            tLz = np.kron(np.kron(eye, eye), self.tL)
-            tRz = np.kron(np.kron(eye, eye), self.tR)
-            tLTx = tLx.T
-            tRTx = tRx.T
-            tLTy = tLy.T
-            tRTy = tRy.T
-            tLTz = tLz.T
-            tRTz = tRz.T
-            Hinv = np.linalg.inv(np.kron(np.kron(self.sbp.H, self.sbp.H),self.sbp.H))
-            LHS1 = Dx @ self.mesh.metrics[:,0,:] + Dy @ self.mesh.metrics[:,3,:] + Dz @ self.mesh.metrics[:,6,:]
-            LHS2 = Dx @ self.mesh.metrics[:,1,:] + Dy @ self.mesh.metrics[:,4,:] + Dz @ self.mesh.metrics[:,7,:]
-            LHS3 = Dx @ self.mesh.metrics[:,2,:] + Dy @ self.mesh.metrics[:,5,:] + Dz @ self.mesh.metrics[:,8,:] 
-            RHS1 = tRx @ ( self.H_perp * ( tRTx @ self.mesh.metrics[:,0,:] - self.mesh.bdy_metrics[:,1,0,:] )) \
-                 - tLx @ ( self.H_perp * ( tLTx @ self.mesh.metrics[:,0,:] - self.mesh.bdy_metrics[:,0,0,:] )) \
-                 + tRy @ ( self.H_perp * ( tRTy @ self.mesh.metrics[:,3,:] - self.mesh.bdy_metrics[:,3,3,:] )) \
-                 - tLy @ ( self.H_perp * ( tLTy @ self.mesh.metrics[:,3,:] - self.mesh.bdy_metrics[:,2,3,:] )) \
-                 + tRz @ ( self.H_perp * ( tRTz @ self.mesh.metrics[:,6,:] - self.mesh.bdy_metrics[:,5,6,:] )) \
-                 - tLz @ ( self.H_perp * ( tLTz @ self.mesh.metrics[:,6,:] - self.mesh.bdy_metrics[:,4,6,:] ))
-            RHS2 = tRx @ ( self.H_perp * ( tRTx @ self.mesh.metrics[:,1,:] - self.mesh.bdy_metrics[:,1,1,:] )) \
-                 - tLx @ ( self.H_perp * ( tLTx @ self.mesh.metrics[:,1,:] - self.mesh.bdy_metrics[:,0,1,:] )) \
-                 + tRy @ ( self.H_perp * ( tRTy @ self.mesh.metrics[:,4,:] - self.mesh.bdy_metrics[:,3,4,:] )) \
-                 - tLy @ ( self.H_perp * ( tLTy @ self.mesh.metrics[:,4,:] - self.mesh.bdy_metrics[:,2,4,:] )) \
-                 + tRz @ ( self.H_perp * ( tRTz @ self.mesh.metrics[:,7,:] - self.mesh.bdy_metrics[:,5,7,:] )) \
-                 - tLz @ ( self.H_perp * ( tLTz @ self.mesh.metrics[:,7,:] - self.mesh.bdy_metrics[:,4,7,:] ))
-            RHS3 = tRx @ ( self.H_perp * ( tRTx @ self.mesh.metrics[:,2,:] - self.mesh.bdy_metrics[:,1,2,:] )) \
-                 - tLx @ ( self.H_perp * ( tLTx @ self.mesh.metrics[:,2,:] - self.mesh.bdy_metrics[:,0,2,:] )) \
-                 + tRy @ ( self.H_perp * ( tRTy @ self.mesh.metrics[:,5,:] - self.mesh.bdy_metrics[:,3,5,:] )) \
-                 - tLy @ ( self.H_perp * ( tLTy @ self.mesh.metrics[:,5,:] - self.mesh.bdy_metrics[:,2,5,:] )) \
-                 + tRz @ ( self.H_perp * ( tRTz @ self.mesh.metrics[:,8,:] - self.mesh.bdy_metrics[:,5,8,:] )) \
-                 - tLz @ ( self.H_perp * ( tLTz @ self.mesh.metrics[:,8,:] - self.mesh.bdy_metrics[:,4,8,:] ))
-            tot1 = LHS1 - Hinv @ RHS1
-            tot2 = LHS2 - Hinv @ RHS2
-            tot3 = LHS3 - Hinv @ RHS3
+            #Hperp = np.diag(np.kron(self.sbp.H,self.sbp.H))
+            h = np.diag(self.sbp.H)           # 1D weights
+            Hperp = np.kron(h, h) 
+            D = sp.lm_to_sp(self.sbp.D)
+            Dx = sp.kron_lm_eye(sp.kron_lm_eye(D, self.nen), self.nen)
+            Dy = sp.kron_lm_eye(sp.kron_eye_lm(D, self.nen), self.nen)
+            Dz = sp.kron_eye_lm(sp.kron_eye_lm(D, self.nen), self.nen)
+            tL = sp.lm_to_sp(self.sbp.tL.reshape(self.nen,1))
+            tR = sp.lm_to_sp(self.sbp.tR.reshape(self.nen,1))
+            tLx = sp.kron_lm_eye(sp.kron_lm_eye(tL, self.nen), self.nen)
+            tRx = sp.kron_lm_eye(sp.kron_lm_eye(tR, self.nen), self.nen)
+            tLy = sp.kron_lm_eye(sp.kron_eye_lm(tL, self.nen), self.nen)
+            tRy = sp.kron_lm_eye(sp.kron_eye_lm(tR, self.nen), self.nen)
+            tLz = sp.kron_eye_lm(sp.kron_eye_lm(tL, self.nen), self.nen)
+            tRz = sp.kron_eye_lm(sp.kron_eye_lm(tR, self.nen), self.nen)
+            tLTx = tLx.T()
+            tRTx = tRx.T()
+            tLTy = tLy.T()
+            tRTy = tRy.T()
+            tLTz = tLz.T()
+            tRTz = tRz.T()
+            Hinv = np.kron(np.kron(1/h, 1/h),1/h)
+            LHS1 = sp.lm_gv(Dx, self.mesh.metrics[:,0,:]) + sp.lm_gv(Dy, self.mesh.metrics[:,3,:]) + sp.lm_gv(Dz, self.mesh.metrics[:,6,:])
+            LHS2 = sp.lm_gv(Dx, self.mesh.metrics[:,1,:]) + sp.lm_gv(Dy, self.mesh.metrics[:,4,:]) + sp.lm_gv(Dz, self.mesh.metrics[:,7,:])
+            LHS3 = sp.lm_gv(Dx, self.mesh.metrics[:,2,:]) + sp.lm_gv(Dy, self.mesh.metrics[:,5,:]) + sp.lm_gv(Dz, self.mesh.metrics[:,8,:])
+            RHS1 = sp.lm_gv(tRx, ( Hperp[:,None] * ( sp.lm_gv(tRTx, self.mesh.metrics[:,0,:]) - self.mesh.bdy_metrics[:,1,0,:] ))) \
+                 - sp.lm_gv(tLx, ( Hperp[:,None] * ( sp.lm_gv(tLTx, self.mesh.metrics[:,0,:]) - self.mesh.bdy_metrics[:,0,0,:] ))) \
+                 + sp.lm_gv(tRy, ( Hperp[:,None] * ( sp.lm_gv(tRTy, self.mesh.metrics[:,3,:]) - self.mesh.bdy_metrics[:,3,3,:] ))) \
+                 - sp.lm_gv(tLy, ( Hperp[:,None] * ( sp.lm_gv(tLTy, self.mesh.metrics[:,3,:]) - self.mesh.bdy_metrics[:,2,3,:] ))) \
+                 + sp.lm_gv(tRz, ( Hperp[:,None] * ( sp.lm_gv(tRTz, self.mesh.metrics[:,6,:]) - self.mesh.bdy_metrics[:,5,6,:] ))) \
+                 - sp.lm_gv(tLz, ( Hperp[:,None] * ( sp.lm_gv(tLTz, self.mesh.metrics[:,6,:]) - self.mesh.bdy_metrics[:,4,6,:] )))
+            RHS2 = sp.lm_gv(tRx, ( Hperp[:,None] * ( sp.lm_gv(tRTx, self.mesh.metrics[:,1,:]) - self.mesh.bdy_metrics[:,1,1,:] ))) \
+                 - sp.lm_gv(tLx, ( Hperp[:,None] * ( sp.lm_gv(tLTx, self.mesh.metrics[:,1,:]) - self.mesh.bdy_metrics[:,0,1,:] ))) \
+                 + sp.lm_gv(tRy, ( Hperp[:,None] * ( sp.lm_gv(tRTy, self.mesh.metrics[:,4,:]) - self.mesh.bdy_metrics[:,3,4,:] ))) \
+                 - sp.lm_gv(tLy, ( Hperp[:,None] * ( sp.lm_gv(tLTy, self.mesh.metrics[:,4,:]) - self.mesh.bdy_metrics[:,2,4,:] ))) \
+                 + sp.lm_gv(tRz, ( Hperp[:,None] * ( sp.lm_gv(tRTz, self.mesh.metrics[:,7,:]) - self.mesh.bdy_metrics[:,5,7,:] ))) \
+                 - sp.lm_gv(tLz, ( Hperp[:,None] * ( sp.lm_gv(tLTz, self.mesh.metrics[:,7,:]) - self.mesh.bdy_metrics[:,4,7,:] )))
+            RHS3 = sp.lm_gv(tRx, ( Hperp[:,None] * ( sp.lm_gv(tRTx, self.mesh.metrics[:,2,:]) - self.mesh.bdy_metrics[:,1,2,:] ))) \
+                 - sp.lm_gv(tLx, ( Hperp[:,None] * ( sp.lm_gv(tLTx, self.mesh.metrics[:,2,:]) - self.mesh.bdy_metrics[:,0,2,:] ))) \
+                 + sp.lm_gv(tRy, ( Hperp[:,None] * ( sp.lm_gv(tRTy, self.mesh.metrics[:,5,:]) - self.mesh.bdy_metrics[:,3,5,:] ))) \
+                 - sp.lm_gv(tLy, ( Hperp[:,None] * ( sp.lm_gv(tLTy, self.mesh.metrics[:,5,:]) - self.mesh.bdy_metrics[:,2,5,:] ))) \
+                 + sp.lm_gv(tRz, ( Hperp[:,None] * ( sp.lm_gv(tRTz, self.mesh.metrics[:,8,:]) - self.mesh.bdy_metrics[:,5,8,:] ))) \
+                 - sp.lm_gv(tLz, ( Hperp[:,None] * ( sp.lm_gv(tLTz, self.mesh.metrics[:,8,:]) - self.mesh.bdy_metrics[:,4,8,:] )))
+            tot1 = LHS1 - Hinv[:,None] * RHS1
+            tot2 = LHS2 - Hinv[:,None] * RHS2
+            tot3 = LHS3 - Hinv[:,None] * RHS3
             
         if return_ers:
             if self.dim==2:
@@ -642,6 +649,7 @@ class PdeSolverSbp(PdeSolver):
         if self.dim==1:
             pass
         elif self.dim==2:
+            Hperp = np.diag(self.sbp.H)
             Dx = np.kron(self.sbp.D, eye)
             Dy = np.kron(eye, self.sbp.D)
             tLx = np.kron(self.tL, eye)
@@ -652,22 +660,22 @@ class PdeSolverSbp(PdeSolver):
             tRTx = tRx.T
             tLTy = tLy.T
             tRTy = tRy.T
-            Ex = tRx @ (self.H_perp * tRTx) - tLx @ (self.H_perp * tLTx)
-            Ey = tRy @ (self.H_perp * tRTy) - tLy @ (self.H_perp * tLTy)
+            Ex = tRx @ (Hperp * tRTx) - tLx @ (Hperp * tLTx)
+            Ey = tRy @ (Hperp * tRTy) - tLy @ (Hperp * tLTy)
             one = np.ones(self.qshape[0])
             Hinv = np.linalg.inv(np.kron(self.sbp.H, self.sbp.H))
             LHS1 = Dx @ self.mesh.metrics[:,0,:] + Dy @ self.mesh.metrics[:,2,:]
             LHS2 = Dx @ self.mesh.metrics[:,1,:] + Dy @ self.mesh.metrics[:,3,:]    
-            RHS1 = tRx @ ( self.H_perp * ( tRTx @ self.mesh.metrics[:,0,:] - (1 - tau) * self.mesh.bdy_metrics[:,1,0,:] )) \
-                 - tLx @ ( self.H_perp * ( tLTx @ self.mesh.metrics[:,0,:] - (1 - tau) * self.mesh.bdy_metrics[:,0,0,:] )) \
-                 + tRy @ ( self.H_perp * ( tRTy @ self.mesh.metrics[:,2,:] - (1 - tau) * self.mesh.bdy_metrics[:,3,2,:] )) \
-                 - tLy @ ( self.H_perp * ( tLTy @ self.mesh.metrics[:,2,:] - (1 - tau) * self.mesh.bdy_metrics[:,2,2,:] )) \
+            RHS1 = tRx @ ( Hperp * ( tRTx @ self.mesh.metrics[:,0,:] - (1 - tau) * self.mesh.bdy_metrics[:,1,0,:] )) \
+                 - tLx @ ( Hperp * ( tLTx @ self.mesh.metrics[:,0,:] - (1 - tau) * self.mesh.bdy_metrics[:,0,0,:] )) \
+                 + tRy @ ( Hperp * ( tRTy @ self.mesh.metrics[:,2,:] - (1 - tau) * self.mesh.bdy_metrics[:,3,2,:] )) \
+                 - tLy @ ( Hperp * ( tLTy @ self.mesh.metrics[:,2,:] - (1 - tau) * self.mesh.bdy_metrics[:,2,2,:] )) \
                  - tau * fn.gm_lv(fn.gdiag_lm(self.mesh.metrics[:,0,:], Ex), one) \
                  - tau * fn.gm_lv(fn.gdiag_lm(self.mesh.metrics[:,2,:], Ey), one)
-            RHS2 = tRx @ ( self.H_perp * ( tRTx @ self.mesh.metrics[:,1,:] - (1 - tau) * self.mesh.bdy_metrics[:,1,1,:] )) \
-                 - tLx @ ( self.H_perp * ( tLTx @ self.mesh.metrics[:,1,:] - (1 - tau) * self.mesh.bdy_metrics[:,0,1,:] )) \
-                 + tRy @ ( self.H_perp * ( tRTy @ self.mesh.metrics[:,3,:] - (1 - tau) * self.mesh.bdy_metrics[:,3,3,:] )) \
-                 - tLy @ ( self.H_perp * ( tLTy @ self.mesh.metrics[:,3,:] - (1 - tau) * self.mesh.bdy_metrics[:,2,3,:] )) \
+            RHS2 = tRx @ ( Hperp * ( tRTx @ self.mesh.metrics[:,1,:] - (1 - tau) * self.mesh.bdy_metrics[:,1,1,:] )) \
+                 - tLx @ ( Hperp * ( tLTx @ self.mesh.metrics[:,1,:] - (1 - tau) * self.mesh.bdy_metrics[:,0,1,:] )) \
+                 + tRy @ ( Hperp * ( tRTy @ self.mesh.metrics[:,3,:] - (1 - tau) * self.mesh.bdy_metrics[:,3,3,:] )) \
+                 - tLy @ ( Hperp * ( tLTy @ self.mesh.metrics[:,3,:] - (1 - tau) * self.mesh.bdy_metrics[:,2,3,:] )) \
                  - tau * fn.gm_lv(fn.gdiag_lm(self.mesh.metrics[:,1,:], Ex), one) \
                  - tau * fn.gm_lv(fn.gdiag_lm(self.mesh.metrics[:,3,:], Ey), one)
             tot1 = LHS1 - theta * Hinv @ RHS1
@@ -700,6 +708,7 @@ class PdeSolverSbp(PdeSolver):
         bdy2 = np.zeros_like(q)
         
         if self.dim == 2:
+            Hperp = np.diag(self.sbp.H)
             for col in range(self.nelem[0]):
                 # starts at bottom left to top left, then next column to right
                 start = col*self.nelem[0]
@@ -711,10 +720,10 @@ class PdeSolverSbp(PdeSolver):
                 
                 bdy1[:,start:end] += self.mesh.metrics[:,2,start:end] * (Esurfyref @ Ex[:,start:end]) \
                                     + self.mesh.metrics[:,3,start:end] * (Esurfyref @ Ey[:,start:end])
-                bdy2[:,start:end] += (self.saty.tR * self.H_perp[:,0]) @ (self.mesh.bdy_metrics[:,3,2,start:end] * (self.saty.tLT @ ExR)) \
-                                    - (self.saty.tL * self.H_perp[:,0]) @ (self.mesh.bdy_metrics[:,2,2,start:end] * (self.saty.tRT @ ExL)) \
-                                    + (self.saty.tR * self.H_perp[:,0]) @ (self.mesh.bdy_metrics[:,3,3,start:end] * (self.saty.tLT @ EyR)) \
-                                    - (self.saty.tL * self.H_perp[:,0]) @ (self.mesh.bdy_metrics[:,2,3,start:end] * (self.saty.tRT @ EyL))
+                bdy2[:,start:end] += (self.saty.tR * Hperp[:,0]) @ (self.mesh.bdy_metrics[:,3,2,start:end] * (self.saty.tLT @ ExR)) \
+                                    - (self.saty.tL * Hperp[:,0]) @ (self.mesh.bdy_metrics[:,2,2,start:end] * (self.saty.tRT @ ExL)) \
+                                    + (self.saty.tR * Hperp[:,0]) @ (self.mesh.bdy_metrics[:,3,3,start:end] * (self.saty.tLT @ EyR)) \
+                                    - (self.saty.tL * Hperp[:,0]) @ (self.mesh.bdy_metrics[:,2,3,start:end] * (self.saty.tRT @ EyL))
                 
             for row in range(self.nelem[1]):
                 # starts at bottom left to bottom right, then next row up
@@ -725,10 +734,10 @@ class PdeSolverSbp(PdeSolver):
                 
                 bdy1[:,row::self.nelem[1]] += self.mesh.metrics[:,0,row::self.nelem[1]] * (Esurfxref @ Ex[:,row::self.nelem[1]]) \
                         + self.mesh.metrics[:,1,row::self.nelem[1]] * (Esurfxref @ Ey[:,row::self.nelem[1]])
-                bdy2[:,row::self.nelem[1]] += (self.satx.tR * self.H_perp[:,0]) @ (self.mesh.bdy_metrics[:,1,0,row::self.nelem[1]] * (self.satx.tLT @ ExR)) \
-                        - (self.satx.tL * self.H_perp[:,0]) @ (self.mesh.bdy_metrics[:,0,0,row::self.nelem[1]] * (self.satx.tRT @ ExL)) \
-                        + (self.satx.tR * self.H_perp[:,0]) @ (self.mesh.bdy_metrics[:,1,1,row::self.nelem[1]] * (self.satx.tLT @ EyR)) \
-                        - (self.satx.tL * self.H_perp[:,0]) @ (self.mesh.bdy_metrics[:,0,1,row::self.nelem[1]] * (self.satx.tRT @ EyL))
+                bdy2[:,row::self.nelem[1]] += (self.satx.tR * Hperp[:,0]) @ (self.mesh.bdy_metrics[:,1,0,row::self.nelem[1]] * (self.satx.tLT @ ExR)) \
+                        - (self.satx.tL * Hperp[:,0]) @ (self.mesh.bdy_metrics[:,0,0,row::self.nelem[1]] * (self.satx.tRT @ ExL)) \
+                        + (self.satx.tR * Hperp[:,0]) @ (self.mesh.bdy_metrics[:,1,1,row::self.nelem[1]] * (self.satx.tLT @ EyR)) \
+                        - (self.satx.tL * Hperp[:,0]) @ (self.mesh.bdy_metrics[:,0,1,row::self.nelem[1]] * (self.satx.tRT @ EyL))
 
         elif self.dim == 3:
             skipx = self.nelem[1]*self.nelem[2]
