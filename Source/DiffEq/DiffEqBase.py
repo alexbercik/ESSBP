@@ -162,7 +162,7 @@ class PdeBase:
         elif self.dim == 3:
             self.qshape = ((self.nen**3)*self.neq_node,self.nelem[0]*self.nelem[1]*self.nelem[2])
 
-    def set_q0(self, q0_type=None, xy=None):
+    def set_q0(self, q0_type=None, xy=None, **kwargs):
         '''
         Parameters
         ----------
@@ -195,8 +195,8 @@ class PdeBase:
             elif self.dim == 3:
                 xy = self.xyz_elem
         else:
-            if q0_type in ('gassnersinwave','gassnersinwave_coarse'):
-                raise Exception('This q0_type does not work with xy provided.')
+            #if q0_type in ('gassnersinwave','gassnersinwave_coarse'):
+            #    raise Exception('This q0_type does not work with xy provided.')
             qshape = np.shape(xy)
 
         if q0_type == 'gausswave' or q0_type == 'gausswave_0.25':
@@ -301,6 +301,21 @@ class PdeBase:
                     stdev2 = 0.08**2
                     exp = -0.5*(xy-0.5)**2/stdev2
                     q0 = q0 + 0.01*np.exp(exp)
+                if 'coarse' in q0_type:
+                    ncoarse = 8 # number of linear pieces for the coarse IC
+                    qshape = self.qshape
+                    if ncoarse > 1:
+                        xflat = xy.flatten('F')
+                        qflat = q0.flatten('F')
+                        # section boundaries
+                        for i in range(ncoarse-1):
+                            # endpoints
+                            x0, x1 = xflat[(i*len(xflat))//ncoarse], xflat[((i+1)*len(xflat))//ncoarse]
+                            y0, y1 = qflat[(i*len(xflat))//ncoarse], qflat[((i+1)*len(xflat))//ncoarse]
+                            # linear interpolation
+                            xmod = (xflat[(i*len(xflat))//ncoarse:((i+1)*len(xflat))//ncoarse] - x0 ) / (x1-x0)
+                            qflat[(i*len(xflat))//ncoarse:((i+1)*len(xflat))//ncoarse] = xmod * (y1 - y0) + y0
+                        q0 = qflat.reshape(qshape, order='F')
             elif self.dim == 2:
                 x_scaled = (xy[:,0,:] + self.xmin[0]) / self.dom_len[0]
                 y_scaled = (xy[:,1,:] + self.xmin[1]) / self.dom_len[1]
@@ -390,9 +405,13 @@ class PdeBase:
 
             if plot_exa and self.has_exa_sol:
                 exa_sol = self.var2plot(self.exact_sol(time,x=x,guess=q),var2plot_name)
-                ax.plot(x[:, 0], exa_sol[:, 0], **self.plt_style_exa_sol,label='Exact')
-                for elem in range(1,x.shape[1]):
-                    ax.plot(x[:, elem], exa_sol[:, elem], **self.plt_style_exa_sol)
+                if np.shape(x[:, 0]) != np.shape(exa_sol[:, 0]):
+                    print('WARNING: Shapes of x and exa_sol do not match. Plotting only numerical solution.')
+                    plot_exa = False
+                if plot_exa:
+                    ax.plot(x[:, 0], exa_sol[:, 0], **self.plt_style_exa_sol,label='Exact')
+                    for elem in range(1,x.shape[1]):
+                        ax.plot(x[:, elem], exa_sol[:, elem], **self.plt_style_exa_sol)
             
             ax.plot(x[:, 0], num_sol[:, 0], **self.plt_style_sol[0], label='Numerical')
             for elem in range(1,x.shape[1]):
