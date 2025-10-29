@@ -119,6 +119,19 @@ class ADiss():
                 self.use_H = True
                 self.use_noH = False
 
+            if 'use_A' in self.solver.vol_diss.keys():
+                if isinstance(self.solver.vol_diss['use_A'], bool):
+                    self.use_A = self.solver.vol_diss['use_A']
+                else:
+                    assert (isinstance(self.solver.vol_diss['use_A'], str) and (self.solver.vol_diss['use_A'] in ['True','False'])), \
+                            "Artificial Dissipation: use_A must be a boolean or one of 'True','False', {0}".format(self.solver.vol_diss['use_A'])
+                    if self.solver.vol_diss['use_A']:
+                        self.use_A = True
+                    else:
+                        self.use_A = False
+            else:
+                self.use_A = True
+
             if self.type == 'upwind' or self.type == 'upwindlgl':
                 if 'fluxvec' in self.solver.vol_diss.keys():
                     self.fluxvec = self.solver.vol_diss['fluxvec']
@@ -198,6 +211,8 @@ class ADiss():
             elif self.type == 'upwind' or self.type == 'upwindlgl':
                 if self.fluxvec.lower() == 'lf':
                     self.dissipation = self.dissipation_upwind_lf
+                elif self.fluxvec.lower() == 'burgers':
+                    self.dissipation = self.dissipation_upwind_burgers
                 elif self.fluxvec.lower() == 'sw' or self.fluxvec.lower()=='stegerwarming':
                     if self.dim == 1: 
                         from Source.DiffEq.EulerFunctions import StegerWarming_diss_1D
@@ -217,21 +232,40 @@ class ADiss():
                     self.fluxvec = 'lf'
                     self.dissipation = self.dissipation_upwind_lf
 
-            elif self.type == 'zelalem':
-                if self.jac_type == 'scalar' or self.jac_type == 'sca':
-                    self.dissipation = self.dissipation_zelalem_scalar
-                elif self.jac_type == 'matrix' or self.jac_type == 'mat':
-                    self.dissipation = self.dissipation_zelalem_matrix
+            elif self.type == 'zelalem' or self.type == 'entzelalem':
+
+                if self.type == 'zelalem':
+                    if self.jac_type == 'scalar' or self.jac_type == 'sca':
+                        self.dissipation = self.dissipation_zelalem_scalar
+                    elif self.jac_type == 'matrix' or self.jac_type == 'mat':
+                        self.dissipation = self.dissipation_zelalem_matrix
+                    else:
+                        print("WARNING: Only scalar and matrix dissipation set up for type='zelalem' dissipation. Defaulting to jac_type = 'scalar'.")
+                        self.jac_type = 'scalar'
+                        self.dissipation = self.dissipation_zelalem_scalar
                 else:
-                    print("WARNING: Only scalar and matrix dissipation set up for type='zelalem' dissipation. Defaulting to jac_type = 'scalar'.")
-                    self.jac_type = 'scalar'
-                    self.dissipation = self.dissipation_zelalem_scalar
+                    if self.jac_type == 'scalarmatrix' or self.jac_type == 'scamat':
+                        self.dissipation = self.dissipation_entzelalem_scalarmatrix
+                    elif self.jac_type == 'matrixmatrix' or self.jac_type == 'matmat':
+                        self.dissipation = self.dissipation_entzelalem_matrixmatrix
+                    else:
+                        print("WARNING: jac method not understood for type='entzelalem' dissipation. Defaulting to jac_type = 'scalarmatrix'.")
+                        self.jac_type = 'scalarmatrix'
+                        self.dissipation = self.dissipation_entzelalem_scalarmatrix
                 
                 if 'eps_type' in self.solver.vol_diss.keys():
                     assert isinstance(self.solver.vol_diss['eps_type'], int), 'Artificial Dissipation: eps_type must be an int, {0}'.format(self.solver.vol_diss['eps_type'])
                     self.eps_type = self.solver.vol_diss['eps_type']
                 else:
-                    self.eps_type = 1
+                    self.eps_type = 4
+
+                if 'D_type' in self.solver.vol_diss.keys():
+                    assert isinstance(self.solver.vol_diss['D_type'], str), 'Artificial Dissipation: D_type must be an str, {0}'.format(self.solver.vol_diss['D_type'])
+                    assert self.solver.vol_diss['D_type'] in ['sbp','1st'], "D_type must be one of ['sbp','1st']"
+                    self.D_type = self.solver.vol_diss['D_type']
+                else:
+                    self.D_type = 'sbp'
+                    
 
             elif self.type == 'ranocha':
                 if self.jac_type == 'scalar' or self.jac_type == 'sca':
@@ -253,29 +287,41 @@ class ADiss():
                 else:
                     self.B_type = 0
             
-            elif self.type == 'filter':
-                if self.jac_type == 'scalar' or self.jac_type == 'sca':
-                    self.dissipation = self.dissipation_filter_scalar
-                elif self.jac_type == 'matrix' or self.jac_type == 'mat':
-                    self.dissipation = self.dissipation_filter_matrix
-                else:
-                    print("WARNING: Only scalar and matrix dissipation set up for type='filter' dissipation. Defaulting to jac_type = 'scalar'.")
-                    self.jac_type = 'scalar'
-                    self.dissipation = self.dissipation_filter_scalar
+            elif self.type == 'filter' or self.type == 'entfilter':
 
-                if 'filter_Nc' in self.solver.vol_diss.keys():
-                    assert isinstance(self.solver.vol_diss['filter_Nc'], int) or isinstance(self.solver.vol_diss['filter_Nc'], float), \
-                    'Artificial Dissipation: filter_Nc must be an int or float, {0}'.format(self.solver.vol_diss['filter_Nc'])
-                    self.filter_Nc = self.solver.vol_diss['filter_Nc']
-                else:
-                    self.filter_Nc = 0
+                if self.type == 'filter':
+                    if self.jac_type == 'scalar' or self.jac_type == 'sca':
+                        self.dissipation = self.dissipation_filter_scalar
+                    elif self.jac_type == 'matrix' or self.jac_type == 'mat':
+                        raise Exception('Not yet implemented: filter matrix dissipation')
+                        self.dissipation = self.dissipation_filter_matrix
+                    else:
+                        print("WARNING: Only scalar and matrix dissipation set up for type='filter' dissipation. Defaulting to jac_type = 'scalar'.")
+                        self.jac_type = 'scalar'
+                        self.dissipation = self.dissipation_filter_scalar
+                elif self.type == 'entfilter':
+                    if self.jac_type == 'scalarmatrix' or self.jac_type == 'scamat':
+                        self.dissipation = self.dissipation_entfilter_scalarmatrix
+                    elif self.jac_type == 'matrixmatrix' or self.jac_type == 'matmat':
+                        self.dissipation = self.dissipation_entfilter_matrixmatrix
+                    else:
+                        print("WARNING: jac method not understood for type='entfilter' dissipation. Defaulting to jac_type = 'scalarmatrix'.")
+                        self.jac_type = 'scalarmatrix'
+                        self.dissipation = self.dissipation_entfilter_scalarmatrix
 
-                if 'filter_s' in self.solver.vol_diss.keys():
-                    assert isinstance(self.solver.vol_diss['filter_s'], int) or isinstance(self.solver.vol_diss['filter_s'], float), \
-                    'Artificial Dissipation: filter_s must be an int or float, {0}'.format(self.solver.vol_diss['filter_s'])
-                    self.filter_s = self.solver.vol_diss['filter_s']
+                if 'alpha' in self.solver.vol_diss.keys():
+                    assert isinstance(self.solver.vol_diss['alpha'], int) or isinstance(self.solver.vol_diss['alpha'], float), \
+                    'Artificial Dissipation: filter alpha must be an int or float, {0}'.format(self.solver.vol_diss['alpha'])
+                    self.filter_alpha = self.solver.vol_diss['alpha']
                 else:
-                    self.filter_s = 16
+                    self.filter_alpha = 1
+
+                if 'beta' in self.solver.vol_diss.keys():
+                    assert isinstance(self.solver.vol_diss['beta'], int) or isinstance(self.solver.vol_diss['beta'], float), \
+                    'Artificial Dissipation: filter beta must be an int or float, {0}'.format(self.solver.vol_diss['beta'])
+                    self.filter_beta = self.solver.vol_diss['beta']
+                else:
+                    self.filter_beta = 4
 
                 if 'eps_type' in self.solver.vol_diss.keys():
                     assert isinstance(self.solver.vol_diss['eps_type'], int), 'Artificial Dissipation: eps_type must be an int, {0}'.format(self.solver.vol_diss['eps_type'])
@@ -410,10 +456,8 @@ class ADiss():
         ''' prepare the various operators needed for the dissipation function '''
         # xavg = self.solver.mesh.dom_len/self.nelem/(self.nen-1) # this was used in the original work
         #xavg = (self.solver.mesh.bdy_x[1,:]-self.solver.mesh.bdy_x[0,:])/(self.nen-1)
-        self.dxi = 1./((self.nen-1)*self.solver.nelem) # this is the reference spacing. Physical spacing is taken care of implicitly by metrics.
-        #TODO: Not actually correct. the Delta xi should only be 1./((self.nen-1)
-        #      then the Delta x should be taken care of by element size separately... but will keep this for now because
-        #      the scaling works out as long as the elements are all the same size (no grid warping)
+        self.dxi = 1./(self.nen-1) # this is the reference spacing. Physical spacing is taken care of implicitly by metrics.
+        self.dx = (self.solver.mesh.bdy_x[1,:]-self.solver.mesh.bdy_x[0,:]) # physical spacing - element size
 
         if self.type == 'w' or self.type == 'entw':
             Ds1 = self.solver.sbp.D
@@ -489,12 +533,24 @@ class ADiss():
                 print('WARNING: H of sbp operator does not match H of dissipation operator! Not provably stable.')
             if self.sparse: Ddiss = sp.lm_to_sp(Ddiss)
             self.Ddiss = self.gdiag_lm( self.repeat_neq_gv(-self.solver.mesh.det_jac_inv), self.kron_neq_lm(Ddiss,self.neq_node))
-        elif self.type == 'zelalem':
+        elif self.type == 'zelalem' or self.type == 'entzelalem':
             if self.solver.disc_nodes.lower() in ['lgl', 'lg']:
-                Ds = self.solver.sbp.D
+                if self.D_type == 'sbp':
+                    Ds = self.solver.sbp.D
+                elif self.D_type == '1st':
+                    nn = self.solver.sbp.nn
+                    x = self.solver.sbp.x
+                    Ds = np.zeros((nn,nn))
+                    h = 1/(x[1] - x[0])
+                    Ds[0,0], Ds[0,1] = -h, h
+                    for i in range(1,nn):
+                        h = 1/(x[i] - x[i-1])
+                        Ds[i,i-1], Ds[i,i] = -h, h 
+                else:
+                    raise Exception('Something went wrong')
+                Ds = Ds / (self.solver.sbp.nn-1) # make undivided
                 for i in range(1,self.s):
                     Ds = fn.lm_lm(self.solver.sbp.D, Ds)
-                Ds = Ds / ((self.solver.sbp.nn-1)**self.s) # make undivided
                 B = np.ones(self.nen) # can play with later
             else:
                 Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen, self.bdy_fix)
@@ -527,23 +583,36 @@ class ADiss():
                 self.lhs_D = self.kron_neq_lm(self.ldiag_lm(Hinv_undvd, self.lm_ldiag(DT, B)), self.neq_node)
             else:
                 self.lhs_D = self.kron_neq_lm(self.lm_ldiag(DT, B), self.neq_node)
-        elif self.type == 'filter':
+        elif self.type == 'filter' or self.type == 'entfilter':
             # Currently not dimensionally consistent. Where would I put the variable coefficient?
             assert self.solver.disc_nodes.lower() in ['lgl', 'lg'], 'Filter dissipation only implemented for LGL and LG.'
             from Source.Disc.MakeDgOp import MakeDgOp
             V = MakeDgOp.VandermondeLegendre1D(self.solver.sbp.x,self.solver.p)
-            Vinv = np.linalg.inv(V) 
+            #Vinv = np.linalg.inv(V) # since square, equal to projection P
             H = np.diag(self.solver.sbp.H)
-            # this Vandermonde maps from Legendre modal coefficients to Lagrange nodal values
-            if self.sparse: 
-                V = sp.lm_to_sp(V)
-                Vinv = sp.lm_to_sp(Vinv) # since square, equal to projection P
-            #Vinv = self.lm_ldiag(self.lm_to_lmT(V), H) # V.T @ H, this is not exact for LGL, only LG!
+            M = np.diag((V.T * H) @ V)  # should be diagonal TODO: Generalize for non LGL or LG?
+            Minv = 1/M
+            P = Minv[:,np.newaxis] * V.T * H # # since square, equal to Vinv
+
             #F_diag = 1-MakeDgOp.Filter1D(self.solver.p,int(self.filter_Nc),self.filter_s)
             x = np.linspace(0,1,self.nen)
-            F_diag = self.filter_Nc*x**self.filter_s
-            Filter = self.lm_lm(self.ldiag_lm(H,V), self.ldiag_lm(F_diag, Vinv))
-            self.Filter = self.gdiag_lm(-self.solver.H_inv_phys, self.kron_neq_lm(Filter, self.neq_node))
+            #F_diag = self.filter_alpha*x**self.filter_beta
+            F_diag = x**self.filter_beta
+            C = M * F_diag # should be diagonal
+            Csqrt = np.sqrt(C)
+            FilterRHS = (V * Csqrt) @ P
+            if self.use_H:
+                FilterLHS = FilterRHS.T * H
+            else:
+                FilterLHS = FilterRHS.T
+
+            # this Vandermonde maps from Legendre modal coefficients to Lagrange nodal values
+            if self.sparse: 
+                FilterRHS = sp.lm_to_sp(FilterRHS)
+                FilterLHS = sp.lm_to_sp(FilterLHS) 
+
+            self.FilterRHS = self.kron_neq_lm(FilterRHS, self.neq_node)
+            self.FilterLHS = self.gdiag_lm(-self.solver.H_inv_phys, self.kron_neq_lm(FilterLHS, self.neq_node))
             
 
 
@@ -793,6 +862,14 @@ class ADiss():
             maxeig = self.maxeig_dEndq(q,self.dzetadx)
             A = self.repeat_neq_gv(maxeig)
             diss += self.gm_gv(self.Dzetadiss, A * q) # zeta part
+        return self.coeff*diss
+    
+    def dissipation_upwind_burgers(self, q):
+        ''' dissipation function for fully upwind burgers flux-vector splitting '''
+        if self.dim == 1:
+            diss = self.gm_gv(self.Ddiss, 0.5 * abs(q) * q)
+        else:
+            raise Exception('Burgers dissipation only implemented for 1D.')
         return self.coeff*diss
     
     def dissipation_upwind_stegerwarming(self, q):
@@ -1091,10 +1168,13 @@ class ADiss():
     def dissipation_zelalem_scalar(self, q):
         ''' dissipation function for zelalem's idea, scalar functions or systems'''
         if self.dim == 1:
-            maxeig = self.maxeig_dExdq(q)
-            if self.s % 2 == 1 and self.avg_half_nodes:
-                maxeig[:-1] = 0.5*(maxeig[:-1] + maxeig[1:])
-            A = self.repeat_neq_gv(maxeig)
+            if self.use_A:
+                maxeig = self.maxeig_dExdq(q)
+                if self.s % 2 == 1 and self.avg_half_nodes:
+                    maxeig[:-1] = 0.5*(maxeig[:-1] + maxeig[1:])
+                A = self.repeat_neq_gv(maxeig)
+            else:
+                A = 1
             diss = self.gm_gv(self.lhs_D, A * self.lm_gv(self.rhs_D, q))
             if self.eps_type == 0:
                 # plain idea - low order dissipation, should scale as h**(s-1)
@@ -1105,26 +1185,15 @@ class ADiss():
                 # simple idea to increase effective order, multiply by h**(p-s+1)
                 # this makes the boundary scale as h**p and interior as h**(s+p)
                 # e.g. for mattsson 2004 dissipation, using s=p we get h**p boundary and h**2p interior 
-                #coeff = self.dxi**(self.solver.p-self.s+1) * self.coeff
-                # TODO: scaling does not come from h**s, but from Jacobian...
-                coeff = self.dxi**self.solver.p * self.coeff
-            elif self.eps_type == 2:
-                # use difference between conservative and non-conservative flux derivative
-                dEdx1 = self.solver.gm_gv(self.solver.Dx, self.solver.diffeq.calcEx(q))
-                dEdx2 = self.solver.diffeq.nonconservative_coeff(q) * self.solver.gm_gv(self.solver.Dx, q)   
-                #coeff = fn.repeat_nen_gv(np.linalg.norm(dEdx1 - dEdx2, axis=0) * self.coeff, self.nen)
-                coeff = np.linalg.norm(dEdx1 - dEdx2, axis=0) * self.coeff
-            elif self.eps_type == 3:
-                # use boundaries
-                v = np.copy(q)
-                v_a = self.solver.sat.lm_gv(self.solver.sat.tLT, v)
-                v_b = self.solver.sat.lm_gv(self.solver.sat.tRT, v)
-                # assume periodic boundaries
-                vf_L = fn.pad_1dL(v_b, v_b[:,-1]) # this is the solution to the left of the interface
-                vf_R = fn.pad_1dR(v_a, v_a[:,0]) # this is the solution to the right of the interface
-                vf_jump = np.abs(vf_R - vf_L) # the absolute jump at each interface
-                #coeff = fn.repeat_nen_gv(0.5*(vf_jump[:,1:] + vf_jump[:,:-1]) * self.coeff, self.nen)
-                coeff = 0.5*np.linalg.norm(vf_jump[:,1:] + vf_jump[:,:-1], axis=0) * self.coeff # take the norm in case we have system
+                coeff = self.dx**(self.solver.p-self.s+1) * self.coeff
+                #coeff = self.dxi**self.solver.p * self.coeff
+            else:
+                coeff = self.coeff * self.solver.zelalem_diss_coeff(q)
+                # self.eps_type = 2: boundary solution jumps, with normalization of neq_node
+                # self.eps_type = 3: diff between cons. and non-cons. flux derivative, with normalization of neq_node
+                # self.eps_type = 21: boundary solution jumps, without normalization of neq_node
+                # self.eps_type = 31: diff between cons. and non-cons. flux derivative, without normalization of neq_node
+                
             return coeff*diss
 
         else:
@@ -1133,10 +1202,14 @@ class ADiss():
     def dissipation_zelalem_matrix(self, q):
         ''' dissipation function for zelalem's idea, systems'''
         if self.dim == 1:
-            A = self.dExdq_abs(q)
-            if self.s % 2 == 1 and self.avg_half_nodes:
-                A[:-1] = 0.5*(A[:-1] + A[1:])
-            diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(A, self.lm_gv(self.rhs_D, q)))
+            if self.use_A:
+                A = self.dExdq_abs(q)
+                if self.s % 2 == 1 and self.avg_half_nodes:
+                    A[:-1] = 0.5*(A[:-1] + A[1:])
+                diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(A, self.lm_gv(self.rhs_D, q)))
+            else:
+                diss = self.gm_gv(self.lhs_D, self.lm_gv(self.rhs_D, q))
+
             if self.eps_type == 0:
                 # plain idea - low order dissipation, should scale as h**(s-1)
                 # TODO: scaling does not come from h**s, but from Jacobian...
@@ -1146,30 +1219,92 @@ class ADiss():
                 # simple idea to increase effective order, multiply by h**(p-s+1)
                 # this makes the boundary scale as h**p and interior as h**(s+p)
                 # e.g. for mattsson 2004 dissipation, using s=p we get h**p boundary and h**2p interior 
-                #coeff = self.dxi**(self.solver.p-self.s+1) * self.coeff
-                # TODO: scaling does not come from h**s, but from Jacobian...
-                coeff = self.dxi**self.solver.p * self.coeff
-            elif self.eps_type == 2:
-                # use difference between conservative and non-conservative flux derivative
-                dEdx1 = self.solver.gm_gv(self.solver.Dx, self.solver.diffeq.calcEx(q))
-                dEdx2 = self.solver.diffeq.nonconservative_coeff(q) * self.solver.gm_gv(self.solver.Dx, q)   
-                #coeff = self.coeff * np.linalg.norm((dEdx1 - dEdx2).reshape((self.nen, self.neq_node, self.nelem),order='C'), axis=0)   
-                coeff = fn.repeat_nen_gv(np.abs(dEdx1 - dEdx2) * self.coeff, self.nen)
-            elif self.eps_type == 3:
-                # use boundaries
-                v = np.copy(q)
-                v_a = self.solver.sat.lm_gv(self.solver.sat.tLT, v)
-                v_b = self.solver.sat.lm_gv(self.solver.sat.tRT, v)
-                # assume periodic boundaries
-                vf_L = fn.pad_1dL(v_b, v_b[:,-1]) # this is the solution to the left of the interface
-                vf_R = fn.pad_1dR(v_a, v_a[:,0]) # this is the solution to the right of the interface
-                vf_jump = np.abs(vf_R - vf_L) # the absolute jump at each interface
-                coeff = fn.repeat_nen_gv(0.5*(vf_jump[:,1:] + vf_jump[:,:-1]) * self.coeff, self.nen)
+                coeff = self.dx**(self.solver.p-self.s+1) * self.coeff
+                #coeff = self.dxi**self.solver.p * self.coeff
+            else:
+                coeff = self.coeff * self.solver.zelalem_diss_coeff(q)
+                # self.eps_type = 2: boundary solution jumps, with normalization of neq_node
+                # self.eps_type = 3: diff between cons. and non-cons. flux derivative, with normalization of neq_node
+                # self.eps_type = 21: boundary solution jumps, without normalization of neq_node
+                # self.eps_type = 31: diff between cons. and non-cons. flux derivative, without normalization of neq_node
+
             return coeff*diss
             #diss_reshaped = diss.reshape((self.nen, self.neq_node, self.nelem), order='C')
             #res = np.multiply(diss_reshaped, coeff[np.newaxis, :, :], out=diss_reshaped).reshape((self.nen * self.neq_node, self.nelem)) 
             #return res
 
+        else:
+            raise Exception('TODO')
+        
+    def dissipation_entzelalem_scalarmatrix(self, q):
+        ''' dissipation function for zelalem's idea, scalar functions or systems'''
+
+        w = self.entropy_var(q)
+        if self.dim == 1:
+            if self.use_A:
+                dqdw = self.dqdw(q)
+                maxeig = self.repeat_neq_gv(self.maxeig_dExdq(q))
+                AP = fn.gdiag_gbdiag(maxeig, dqdw)
+                if self.s % 2 == 1 and self.avg_half_nodes:
+                    AP[:-1] = 0.5*(AP[:-1] + AP[1:])
+                diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_D, w)))
+            else:
+                diss = self.gm_gv(self.lhs_D, self.lm_gv(self.rhs_D, w))
+
+            if self.eps_type == 0:
+                # plain idea - low order dissipation, should scale as h**(s-1)
+                # TODO: scaling does not come from h**s, but from Jacobian...
+                coeff = self.coeff
+                #self.dxi**(self.solver.p-self.s+1)
+            elif self.eps_type == 1:
+                # simple idea to increase effective order, multiply by h**(p-s+1)
+                # this makes the boundary scale as h**p and interior as h**(s+p)
+                # e.g. for mattsson 2004 dissipation, using s=p we get h**p boundary and h**2p interior 
+                coeff = self.dx**(self.solver.p-self.s+1) * self.coeff
+                #coeff = self.dxi**self.solver.p * self.coeff
+            else:
+                coeff = self.coeff * self.solver.zelalem_diss_coeff(q)
+                # self.eps_type = 2: boundary solution jumps, with normalization of neq_node
+                # self.eps_type = 3: diff between cons. and non-cons. flux derivative, with normalization of neq_node
+                # self.eps_type = 21: boundary solution jumps, without normalization of neq_node
+                # self.eps_type = 31: diff between cons. and non-cons. flux derivative, without normalization of neq_node
+                
+            return coeff*diss
+
+        else:
+            raise Exception('TODO')
+        
+    def dissipation_entzelalem_matrixmatrix(self, q):
+        ''' dissipation function for zelalem's idea, scalar functions or systems'''
+        w = self.entropy_var(q)
+        if self.dim == 1:
+            if self.use_A:
+                AP = self.dExdw_abs(q)
+                if self.s % 2 == 1 and self.avg_half_nodes:
+                    AP[:-1] = 0.5*(AP[:-1] + AP[1:])
+                diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_D, w)))
+            else:
+                diss = self.gm_gv(self.lhs_D, self.lm_gv(self.rhs_D, w))
+
+            if self.eps_type == 0:
+                # plain idea - low order dissipation, should scale as h**(s-1)
+                # TODO: scaling does not come from h**s, but from Jacobian...
+                coeff = self.coeff
+                #self.dxi**(self.solver.p-self.s+1)
+            elif self.eps_type == 1:
+                # simple idea to increase effective order, multiply by h**(p-s+1)
+                # this makes the boundary scale as h**p and interior as h**(s+p)
+                # e.g. for mattsson 2004 dissipation, using s=p we get h**p boundary and h**2p interior 
+                coeff = self.dx**(self.solver.p-self.s+1) * self.coeff
+                #coeff = self.dxi**self.solver.p * self.coeff
+            else:
+                coeff = self.coeff * self.solver.zelalem_diss_coeff(q)
+                # self.eps_type = 2: boundary solution jumps, with normalization of neq_node
+                # self.eps_type = 3: diff between cons. and non-cons. flux derivative, with normalization of neq_node
+                # self.eps_type = 21: boundary solution jumps, without normalization of neq_node
+                # self.eps_type = 31: diff between cons. and non-cons. flux derivative, without normalization of neq_node
+                
+            return coeff*diss
 
         else:
             raise Exception('TODO')
@@ -1196,36 +1331,96 @@ class ADiss():
             raise Exception('TODO')
         
     def dissipation_filter_scalar(self, q):
-        ''' dissipation function for Ranocha's dissipation, scalar functions or systems'''
-        # TODO: Do something about the variable coefficient...
+        ''' dissipation function for filter-based dissipation, scalar functions or systems'''
         if self.dim == 1:
-            # TODO: something with coefficient
-            diss = self.gm_gv(self.Filter, q)
+            if self.use_A:
+                maxeig = self.maxeig_dExdq(q)
+                if self.s % 2 == 1 and self.avg_half_nodes:
+                    maxeig[:-1] = 0.5*(maxeig[:-1] + maxeig[1:])
+                A = self.repeat_neq_gv(maxeig)
+            else:
+                A = 1
+            diss = self.gm_gv(self.FilterLHS, A * self.lm_gv(self.FilterRHS, q))
+
         else:
             raise Exception('TODO')
         
         if self.eps_type == 0:
             # plain idea - low order dissipation, should scale as h**(s-1)
             coeff = self.coeff
-        elif self.eps_type == 2:
-            # use difference between conservative and non-conservative flux derivative
-            dEdx1 = self.solver.gm_gv(self.solver.Dx, self.solver.diffeq.calcEx(q))
-            dEdx2 = self.solver.diffeq.nonconservative_coeff(q) * self.solver.gm_gv(self.solver.Dx, q)   
-            coeff = np.linalg.norm(dEdx1 - dEdx2, axis=0) * self.coeff
-        elif self.eps_type == 3:
-            # use boundaries
-            v = np.copy(q)
-            v_a = self.solver.sat.lm_gv(self.solver.sat.tLT, v)
-            v_b = self.solver.sat.lm_gv(self.solver.sat.tRT, v)
-            # assume periodic boundaries
-            vf_L = fn.pad_1dL(v_b, v_b[:,-1]) # this is the solution to the left of the interface
-            vf_R = fn.pad_1dR(v_a, v_a[:,0]) # this is the solution to the right of the interface
-            vf_jump = np.abs(vf_R - vf_L) # the absolute jump at each interface
-            coeff = 0.5*np.linalg.norm(vf_jump[:,1:] + vf_jump[:,:-1], axis=0) * self.coeff # take the norm in case we have system
+        elif self.eps_type == 1:
+            coeff = self.dx**(self.solver.p-self.s+1) * self.coeff
+        else:
+            coeff = self.coeff * self.solver.zelalem_diss_coeff(q)
+            # self.eps_type = 2: boundary solution jumps, with normalization of neq_node
+            # self.eps_type = 3: diff between cons. and non-cons. flux derivative, with normalization of neq_node
+            # self.eps_type = 21: boundary solution jumps, without normalization of neq_node
+            # self.eps_type = 31: diff between cons. and non-cons. flux derivative, without normalization of neq_node
+                
+        return coeff*diss
         
+    def dissipation_entfilter_scalarmatrix(self, q):
+        ''' dissipation function for filter-based dissipation, scalar functions or systems'''
+        w = self.entropy_var(q)
+        if self.dim == 1:
+            if self.use_A:
+                dqdw = self.dqdw(q)
+                maxeig = self.repeat_neq_gv(self.maxeig_dExdq(q))
+                AP = fn.gdiag_gbdiag(maxeig, dqdw)
+                if self.s % 2 == 1 and self.avg_half_nodes:
+                    AP[:-1] = 0.5*(AP[:-1] + AP[1:])
+                diss = self.gm_gv(self.FilterLHS, fn.gbdiag_gv(AP, self.lm_gv(self.FilterRHS, w)))
+            else:
+                raise Exception("TODO")
+                diss = self.gm_gv(self.FilterLHS, fn.gbdiag_gv(AP, self.lm_gv(self.FilterRHS, w)))
+
+        else:
+            raise Exception('TODO')
+        
+        if self.eps_type == 0:
+            # plain idea - low order dissipation, should scale as h**(s-1)
+            coeff = self.coeff
+        elif self.eps_type == 1:
+            coeff = self.dx**(self.solver.p-self.s+1) * self.coeff
+        else:
+            coeff = self.coeff * self.solver.zelalem_diss_coeff(q)
+            # self.eps_type = 2: boundary solution jumps, with normalization of neq_node
+            # self.eps_type = 3: diff between cons. and non-cons. flux derivative, with normalization of neq_node
+            # self.eps_type = 21: boundary solution jumps, without normalization of neq_node
+            # self.eps_type = 31: diff between cons. and non-cons. flux derivative, without normalization of neq_node
+                
+        return coeff*diss
+        
+    def dissipation_entfilter_matrixmatrix(self, q):
+        ''' dissipation function for filter-based dissipation, scalar functions or systems'''
+        w = self.entropy_var(q)
+        if self.dim == 1:
+            if self.use_A:
+                AP = self.dExdw_abs(q)
+                if self.s % 2 == 1 and self.avg_half_nodes:
+                    AP[:-1] = 0.5*(AP[:-1] + AP[1:])
+                diss = self.gm_gv(self.FilterLHS, fn.gbdiag_gv(AP, self.lm_gv(self.FilterRHS, w)))
+            else:
+                raise Exception('TODO')
+        else:
+            raise Exception('TODO')
+        
+        if self.eps_type == 0:
+            # plain idea - low order dissipation, should scale as h**(s-1)
+            coeff = self.coeff
+        elif self.eps_type == 1:
+            coeff = self.dx**(self.solver.p-self.s+1) * self.coeff
+        else:
+            coeff = self.coeff * self.solver.zelalem_diss_coeff(q)
+            # self.eps_type = 2: boundary solution jumps, with normalization of neq_node
+            # self.eps_type = 3: diff between cons. and non-cons. flux derivative, with normalization of neq_node
+            # self.eps_type = 21: boundary solution jumps, without normalization of neq_node
+            # self.eps_type = 31: diff between cons. and non-cons. flux derivative, without normalization of neq_node
+                
         return coeff*diss
     
     def dissipation_filter_matrix(self, q):
+        raise Exception('TODO')
         ''' dissipation function for Ranocha's dissipation, systems'''
         # TODO: Do something about the variable coefficient...
         if self.dim == 1:
