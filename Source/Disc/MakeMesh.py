@@ -9,6 +9,7 @@ Created on Tue May 19 11:54:23 2020
 import numpy as np
 import matplotlib.pyplot as plt
 import Source.Methods.Functions as fn
+import Source.Methods.Sparse as sp
 from sys import stderr
 from contextlib import redirect_stderr
 
@@ -132,7 +133,7 @@ class MakeMesh:
         ''' Create mesh '''
 
         # Get the location of all the nodes in the element
-        self.xy_elem = np.zeros((self.nen**2, 2, self.nelem[0]*self.nelem[1])) # Each slice is for one elem
+        self.xy_elem = np.zeros((self.nen**2, 2, self.nelem[0]*self.nelem[1])) # Each slice is for one elem 
         self.xy = np.zeros((self.nn[0]*self.nn[1],2))
         self.grid_lines = np.zeros(((self.nelem[0]+self.nelem[1]+2),2,100))
         self.bdy_xy = np.zeros((self.nen,2,4,self.nelem[0]*self.nelem[1])) # nodes, x or y (physical value), facet (Left, Right, Lower, Upper), element
@@ -155,7 +156,8 @@ class MakeMesh:
                 self.bdy_xy[:,1,0,e] = self.bdy_xy[:,1,1,e] = y_elem
                 self.bdy_xy[:,1,2,e], self.bdy_xy[:,1,3,e] = verticesy[j], verticesy[j+1]
                 self.bdy_xy[:,0,2,e] = self.bdy_xy[:,0,3,e] = x_elem
-                
+        
+        self.xy_elem_unwarped = np.copy(self.xy_elem) 
         for i in range(self.nelem[0]*self.nelem[1]):
             a = i*self.nen**2
             b = (i+1)*self.nen**2
@@ -182,7 +184,7 @@ class MakeMesh:
         self.bdy_jac_exa = np.zeros((self.nen,2,2,4,self.nelem[0]*self.nelem[1]))
         self.bdy_jac_exa[:,0,0,:,:] = elem_length_x
         self.bdy_jac_exa[:,1,1,:,:] = elem_length_y        
-        #self.bdy_det_jac_exa = np.ones((self.nen,4,self.nelem[0]*self.nelem[1]))*(elem_length_x*elem_length_y)
+        self.bdy_det_jac_exa = np.ones((self.nen,4,self.nelem[0]*self.nelem[1]))*(elem_length_x*elem_length_y)
         #self.bdy_jac_inv_exa = np.zeros((self.nen,2,2,4,self.nelem[0]*self.nelem[1]))
         #self.bdy_jac_inv_exa[:,0,0,:,:] = 1/elem_length_x
         #self.bdy_jac_inv_exa[:,1,1,:,:] = 1/elem_length_y
@@ -262,7 +264,7 @@ class MakeMesh:
         self.bdy_jac_exa[:,0,0,:,:] = elem_length_x
         self.bdy_jac_exa[:,1,1,:,:] = elem_length_y      
         self.bdy_jac_exa[:,2,2,:,:] = elem_length_z
-        #self.bdy_det_jac_exa = np.ones((self.nen**2,6,self.nelem[0]*self.nelem[1]*self.nelem[2]))*(elem_length_x*elem_length_y*elem_length_z)
+        self.bdy_det_jac_exa = np.ones((self.nen**2,6,self.nelem[0]*self.nelem[1]*self.nelem[2]))*(elem_length_x*elem_length_y*elem_length_z)
         #self.bdy_jac_inv_exa = np.zeros((self.nen**2,3,3,6,self.nelem[0]*self.nelem[1]*self.nelem[2]))
         #self.bdy_jac_inv_exa[:,0,0,:,:] = 1/elem_length_x
         #self.bdy_jac_inv_exa[:,1,1,:,:] = 1/elem_length_y  
@@ -534,7 +536,7 @@ class MakeMesh:
         #self.bdy_jac_inv_exa = 1/self.bdy_jac_exa
         
             
-    def warp_mesh_2d(self):
+    def warp_mesh_2d(self, xy=None):
         '''
         Warps a rectangular mesh to test curvlinear coordinate trasformations.
     
@@ -582,6 +584,26 @@ class MakeMesh:
             dxdy = self.warp_factor*np.sin(np.pi*argx)*np.cos(np.pi*argy)*np.pi
             dydx = -self.warp_factor*np.exp(1-argx)*np.sin(np.pi*argx - 0.75)*np.sin(np.pi*argy) + self.warp_factor*np.exp(1-argx)*np.cos(np.pi*argx - 0.75)*np.sin(np.pi*argy)*np.pi
             dydy = 1 + self.warp_factor*np.exp(1-argx)*np.sin(np.pi*argx - 0.75)*np.cos(np.pi*argy)*np.pi
+            return dxdx, dxdy, dydx, dydy
+
+        def warp_metrics_paper(x,y):
+            ''' Based on function from Tristan's Paper. Warps a rectangular mesh
+            Try to keep the warp.factor <0.24 ''' 
+            #assert self.warp_factor<0.24,'Try a warp_factor < 0.24 for this mesh transformation'
+            argx = (x-self.xmin[0])/self.dom_len[0]
+            argy = (y-self.xmin[1])/self.dom_len[1]
+            new_x = x + self.warp_factor*self.dom_len[0]*np.sin(np.pi*argx)*np.sin(np.pi*argy)
+            new_y = y + 0.5*self.warp_factor*self.dom_len[1]*np.exp(1-argy)*np.sin(np.pi*argx)*np.sin(np.pi*argy) 
+            return new_x , new_y
+
+        def warp_metrics_paper_der(x,y):
+            ''' the derivative of the function warp_metrics_paper wrt x (i.e. dnew_x/dx) '''
+            argx = (x-self.xmin[0])/self.dom_len[0]
+            argy = (y-self.xmin[1])/self.dom_len[1]
+            dxdx = 1 + self.warp_factor*np.pi*np.cos(np.pi*argx)*np.sin(np.pi*argy)
+            dxdy = self.warp_factor*self.dom_len[0]*np.pi*np.sin(np.pi*argx)*np.cos(np.pi*argy)/self.dom_len[1]
+            dydx = 0.5*self.warp_factor*self.dom_len[1]*np.pi*np.exp(1-argy)*np.cos(np.pi*argx)*np.sin(np.pi*argy)/self.dom_len[0]
+            dydy = 1 + 0.5*self.warp_factor*(np.pi*np.exp(1-argy)*np.sin(np.pi*argx)*np.cos(np.pi*argy) - np.exp(1-argy)*np.sin(np.pi*argx)*np.sin(np.pi*argy))
             return dxdx, dxdy, dydx, dydy
         
         def warp_bdy(x,y):
@@ -737,6 +759,9 @@ class MakeMesh:
         if self.warp_type == 'default' or self.warp_type == 'papers':
             warp_fun = warp_rectangle
             warp_der = warp_rectangle_der 
+        elif self.warp_type == 'metrics_paper':
+            warp_fun = warp_metrics_paper
+            warp_der = warp_metrics_paper_der
         elif self.warp_type == 'quad':
             warp_fun = warp_quad
             warp_der = warp_quad_der 
@@ -765,46 +790,56 @@ class MakeMesh:
             print('WARNING: mesh.warp_type not understood. Reverting to default.')
             warp_fun = warp_rectangle
             warp_der = warp_rectangle_der 
+
+        if xy is not None:
+            xy_new = np.copy(xy)
+            xy_new[:,0,:], xy_new[:,1,:] = warp_fun(xy[:,0,:], xy[:,1,:])
+            return xy_new
+        else:
             
-        xy_elem_old = np.copy(self.xy_elem)
-        bdy_xy_old = np.copy(self.bdy_xy)
-        self.xy_elem[:,0,:], self.xy_elem[:,1,:] = warp_fun(self.xy_elem[:,0,:], self.xy_elem[:,1,:])
-        self.bdy_xy[:,0,:,:], self.bdy_xy[:,1,:,:] = warp_fun(self.bdy_xy[:,0,:,:],self.bdy_xy[:,1,:,:])
-        self.grid_lines[:,0,:], self.grid_lines[:,1,:] = warp_fun(self.grid_lines[:,0,:], self.grid_lines[:,1,:])
-        
-        for i in range(self.nelem[0]*self.nelem[1]):
-            a = i*self.nen**2
-            b = (i+1)*self.nen**2
-            self.xy[a:b,:] = self.xy_elem[:,:,i]
-        
-        dxnewdx, dxnewdy, dynewdx, dynewdy = warp_der(xy_elem_old[:,0,:], xy_elem_old[:,1,:])
-        dxdxref = np.copy(self.jac_exa[:,0,0,:])
-        dydyref = np.copy(self.jac_exa[:,1,1,:])
-        # chain rule, ignoring cross terms that are 0 in original transformation
-        self.jac_exa[:,0,0,:] = dxnewdx * dxdxref 
-        self.jac_exa[:,0,1,:] = dxnewdy * dydyref
-        self.jac_exa[:,1,0,:] = dynewdx * dxdxref
-        self.jac_exa[:,1,1,:] = dynewdy * dydyref
-        for elem in range(self.nelem[0]*self.nelem[1]):
-            self.det_jac_exa[:,elem] = np.linalg.det(self.jac_exa[:,:,:,elem])
-        assert np.all(self.det_jac_exa>0),"Not a valid coordinate transformation. Try using a lower warp_factor."
-        #for elem in range(self.nelem[0]*self.nelem[1]):
-        #    self.jac_inv_exa[:,:,:,elem] = np.linalg.inv(self.jac_exa[:,:,:,elem])
-        #    self.det_jac_inv_exa[:,elem] =  np.linalg.det(self.jac_inv_exa[:,:,:,elem])
-        #if np.max(abs(self.det_jac_inv_exa - 1/self.det_jac_exa) > 1e-12):
-        #    print('WANRING: Numerical error in calculation of determinant inverse is {0:.2g}'.format(np.max(abs(self.det_jac_inv_exa - 1/self.det_jac_exa))))
-        
-        dxnewdx, dxnewdy, dynewdx, dynewdy = warp_der(bdy_xy_old[:,0,:,:], bdy_xy_old[:,1,:,:])
-        dxdxref = np.copy(self.bdy_jac_exa[:,0,0,:,:])
-        dydyref = np.copy(self.bdy_jac_exa[:,1,1,:,:])
-        self.bdy_jac_exa[:,0,0,:,:] = dxnewdx * dxdxref # chain rule, ignoring cross terms that are 0 in original transformation
-        self.bdy_jac_exa[:,0,1,:,:] = dxnewdy * dydyref
-        self.bdy_jac_exa[:,1,0,:,:] = dynewdx * dxdxref
-        self.bdy_jac_exa[:,1,1,:,:] = dynewdy * dydyref
-        #for elem in range(self.nelem[0]*self.nelem[1]):
-            #for i in range(4):
-                #self.bdy_det_jac_exa[:,i,elem] = np.linalg.det(self.bdy_jac_exa[:,:,:,i,elem])
-                #self.bdy_jac_inv_exa[:,:,:,i,elem] = np.linalg.inv(self.bdy_jac_exa[:,:,:,i,elem])
+            xy_elem_old = np.copy(self.xy_elem)
+            bdy_xy_old = np.copy(self.bdy_xy)
+            self.xy_elem[:,0,:], self.xy_elem[:,1,:] = warp_fun(self.xy_elem[:,0,:], self.xy_elem[:,1,:])
+            self.bdy_xy[:,0,:,:], self.bdy_xy[:,1,:,:] = warp_fun(self.bdy_xy[:,0,:,:],self.bdy_xy[:,1,:,:])
+            self.grid_lines[:,0,:], self.grid_lines[:,1,:] = warp_fun(self.grid_lines[:,0,:], self.grid_lines[:,1,:])
+            
+            for i in range(self.nelem[0]*self.nelem[1]):
+                a = i*self.nen**2
+                b = (i+1)*self.nen**2
+                self.xy[a:b,:] = self.xy_elem[:,:,i]
+            
+            dxnewdx, dxnewdy, dynewdx, dynewdy = warp_der(xy_elem_old[:,0,:], xy_elem_old[:,1,:])
+            dxdxref = np.copy(self.jac_exa[:,0,0,:])
+            dydyref = np.copy(self.jac_exa[:,1,1,:])
+            # chain rule, ignoring cross terms that are 0 in original transformation
+            self.jac_exa[:,0,0,:] = dxnewdx * dxdxref 
+            self.jac_exa[:,0,1,:] = dxnewdy * dydyref
+            self.jac_exa[:,1,0,:] = dynewdx * dxdxref
+            self.jac_exa[:,1,1,:] = dynewdy * dydyref
+            for elem in range(self.nelem[0]*self.nelem[1]):
+                self.det_jac_exa[:,elem] = np.linalg.det(self.jac_exa[:,:,:,elem])
+            assert np.all(self.det_jac_exa>0),"Not a valid coordinate transformation. Try using a lower warp_factor."
+            #for elem in range(self.nelem[0]*self.nelem[1]):
+            #    self.jac_inv_exa[:,:,:,elem] = np.linalg.inv(self.jac_exa[:,:,:,elem])
+            #    self.det_jac_inv_exa[:,elem] =  np.linalg.det(self.jac_inv_exa[:,:,:,elem])
+            #if np.max(abs(self.det_jac_inv_exa - 1/self.det_jac_exa) > 1e-12):
+            #    print('WANRING: Numerical error in calculation of determinant inverse is {0:.2g}'.format(np.max(abs(self.det_jac_inv_exa - 1/self.det_jac_exa))))
+            
+            dxnewdx, dxnewdy, dynewdx, dynewdy = warp_der(bdy_xy_old[:,0,:,:], bdy_xy_old[:,1,:,:])
+            dxdxref = np.copy(self.bdy_jac_exa[:,0,0,:,:])
+            dydyref = np.copy(self.bdy_jac_exa[:,1,1,:,:])
+            self.bdy_jac_exa[:,0,0,:,:] = dxnewdx * dxdxref # chain rule, ignoring cross terms that are 0 in original transformation
+            self.bdy_jac_exa[:,0,1,:,:] = dxnewdy * dydyref
+            self.bdy_jac_exa[:,1,0,:,:] = dynewdx * dxdxref
+            self.bdy_jac_exa[:,1,1,:,:] = dynewdy * dydyref
+            self.bdy_det_jac_exa = self.bdy_jac_exa[:,0,0,:,:] * self.bdy_jac_exa[:,1,1,:,:] \
+                                    - self.bdy_jac_exa[:,0,1,:,:] * self.bdy_jac_exa[:,1,0,:,:]
+            assert np.all(self.bdy_det_jac_exa>0),"Not a valid coordinate transformation. Try using a lower warp_factor."
+            #for elem in range(self.nelem[0]*self.nelem[1]):
+                #for i in range(4):
+                    #self.bdy_det_jac_exa[:,i,elem] = np.linalg.det(self.bdy_jac_exa[:,:,:,i,elem])
+                    #self.bdy_jac_inv_exa[:,:,:,i,elem] = np.linalg.inv(self.bdy_jac_exa[:,:,:,i,elem])
+
                 
         ''' Uncomment the below section to debug and test the consistency of the warping '''
 # =============================================================================
@@ -867,7 +902,7 @@ class MakeMesh:
             new_x = x + self.warp_factor*self.dom_len[0]*np.sin(np.pi*argx)*np.sin(np.pi*argy)
             new_y = y + self.warp_factor*self.dom_len[1]*np.exp(1-argy)*np.sin(np.pi*argx)*np.sin(np.pi*argy) 
             new_z = z + 0.25*self.warp_factor*self.dom_len[2]*(np.sin(2*np.pi*(new_x-self.xmin[0])/self.dom_len[0])+np.sin(2*np.pi*(new_y-self.xmin[1])/self.dom_len[1]))
-            return new_x , new_y, new_z
+            return new_x, new_y, new_z
         
         def warp_cuboid_der(x,y,z):
             ''' the derivative of the function warp_cuboid wrt x (i.e. dnew_x/dx) '''   
@@ -910,6 +945,167 @@ class MakeMesh:
             dxdy = 0.25*self.warp_factor*self.dom_len[0]*2*np.pi*(np.cos(2*np.pi*(new_y-self.xmin[1])/self.dom_len[1])*dydy/self.dom_len[1] + np.cos(2*np.pi*(new_z-self.xmin[2])/self.dom_len[2])*dzdy/self.dom_len[2])
             dxdz = 0.25*self.warp_factor*self.dom_len[0]*2*np.pi*(np.cos(2*np.pi*(new_y-self.xmin[1])/self.dom_len[1])*dydz/self.dom_len[1] + np.cos(2*np.pi*(new_z-self.xmin[2])/self.dom_len[2])*dzdz/self.dom_len[2])
             dxdx = np.ones(np.shape(dydy))
+            return dxdx, dxdy, dxdz, dydx, dydy, dydz, dzdx, dzdy, dzdz
+
+        def warp_asym(x,y,z):
+            ''' inspired by cuboid, but removes upper triangular structure that can lead to weird cancellations. '''
+            a,b,c,d,e = 0.12, 0.10, 0.10, 0.08, 0.06
+            Lx, Ly, Lz = self.dom_len
+            ax = (x - self.xmin[0]) / Lx
+            ay = (y - self.xmin[1]) / Ly
+            az = (z - self.xmin[2]) / Lz
+            # handy 1D bumps that vanish on faces (α = 0 or 1)
+            Sx = np.sin(np.pi * ax)
+            Sy = np.sin(np.pi * ay)
+            Sz = np.sin(np.pi * az)
+            # Original in-plane mode (keeps side faces fixed) + mild z-coupling gated by Sz1
+            x_new = x + self.warp_factor*Lx*(Sx*Sy + a*Sz * Sx*(2*Sy - Sx))   # breaks ∂x'/∂z=0 but vanishes on all faces
+            # Different in-plane shape + different z-gated coupling to avoid reusing rows/columns
+            y_new = y + self.warp_factor*Ly*(np.exp(1 - ay)*Sx*Sy + b*Sz * Sy*(2*Sx - Sy))  # also vanishes on all faces
+            # z' warp must vanish on ALL faces: gate by Sz1 and also by side-face bumps
+            # Use integer multiples (2π, 3π, …) to keep zeros on ax, ay ∈ {0,1}
+            z_new = z + 0.25*self.warp_factor*Lz*Sz*(c*np.sin(2*np.pi*ax) + d*np.sin(2*np.pi*ay) + e*Sx*Sy)  # cross-term adds variety; still zero on faces
+            return x_new, y_new, z_new
+
+        def warp_asym_der(x,y,z):
+            ''' the derivative of the function warp_asym wrt x (i.e. dnew_x/dx) '''
+            a,b,c,d,e = 0.12, 0.10, 0.10, 0.08, 0.06
+            Lx, Ly, Lz = self.dom_len
+            ax = (x - self.xmin[0]) / Lx
+            ay = (y - self.xmin[1]) / Ly
+            az = (z - self.xmin[2]) / Lz
+            Sx = np.sin(np.pi * ax)
+            Sy = np.sin(np.pi * ay)
+            Sz = np.sin(np.pi * az)
+            Cx = np.cos(np.pi * ax)
+            Cy = np.cos(np.pi * ay)
+            Cz = np.cos(np.pi * az)
+            E  = np.exp(1.0 - ay)
+            pxLx = np.pi / Lx
+            pxLy = np.pi / Ly
+            pxLz = np.pi / Lz
+            Lx_over_Ly = Lx / Ly
+            Lx_over_Lz = Lx / Lz
+            Ly_over_Lx = Ly / Lx
+            Ly_over_Lz = Ly / Lz
+            dxdx = 1.0 + self.warp_factor * (np.pi * Cx * Sy + 2.0 * a * np.pi * Sz * (Sy - Sx) * Cx)
+            dxdy = self.warp_factor * (np.pi * Lx_over_Ly) * Sx * Cy * (1.0 + 2.0 * a * Sz)
+            dxdz = self.warp_factor * (np.pi * Lx_over_Lz) * a * Cz * Sx * (2.0*Sy - Sx)
+            dydx = self.warp_factor * (np.pi * Ly_over_Lx) * Cx * Sy * (E + 2.0 * b * Sz)
+            dydy = 1.0 + self.warp_factor * (E * Sx * (-Sy + np.pi * Cy) + 2.0 * b * np.pi * Sz * (Sx - Sy) * Cy)
+            dydz = self.warp_factor * (np.pi * Ly_over_Lz) * b * Cz * Sy * (2.0*Sx - Sy)
+            B = c*np.sin(2.0*np.pi*ax) + d*np.sin(2.0*np.pi*ay) + e*Sx*Sy
+            dzdx = 0.25 * self.warp_factor * Lz * Sz * (c * (2.0*np.pi / Lx) * np.cos(2.0*np.pi*ax) + e * (np.pi / Lx) * Cx * Sy)
+            dzdy = 0.25 * self.warp_factor * Lz * Sz * (d * (2.0*np.pi / Ly) * np.cos(2.0*np.pi*ay) + e * (np.pi / Ly) * Sx * Cy)
+            dzdz = 1.0 + 0.25 * self.warp_factor * np.pi * Cz * B
+            return dxdx, dxdy, dxdz, dydx, dydy, dydz, dzdx, dzdy, dzdz
+
+        def warp_minimal(x, y, z, a=1.00, b=0.93, c=0.85):
+            """
+            Minimal cross-coupled warp that keeps every cube face fixed.
+            x', y', z' all depend on (x,y,z) via the same interior bump Sx*Sy*Sz,
+            with distinct coefficients (a,b,c) to avoid component-wise cancellations.
+            """
+            Lx, Ly, Lz = self.dom_len
+            ax = (x - self.xmin[0]) / Lx
+            ay = (y - self.xmin[1]) / Ly
+            az = (z - self.xmin[2]) / Lz
+
+            Sx = np.sin(2*np.pi * ax)
+            Sy = np.sin(3*np.pi * ay)
+            Sz = np.sin(np.pi * az)
+            B  = Sx * Sy * Sz       # zero on every face (ax, ay, or az ∈ {0,1})
+
+            x_new = x + self.warp_factor * Lx * (a * B)
+            y_new = y + self.warp_factor * Ly * (b * B)
+            z_new = z + self.warp_factor * Lz * (c * B)
+            return x_new, y_new, z_new
+
+        def warp_minimal_der(x, y, z,  a=1.00, b=0.93, c=0.85):
+            Lx, Ly, Lz = self.dom_len
+            ax = (x - self.xmin[0]) / Lx
+            ay = (y - self.xmin[1]) / Ly
+            az = (z - self.xmin[2]) / Lz
+            Sx = np.sin(2*np.pi * ax);  Cx = 2*np.cos(2*np.pi * ax)
+            Sy = np.sin(3*np.pi * ay);  Cy = 3*np.cos(3*np.pi * ay)
+            Sz = np.sin(np.pi * az);  Cz = np.cos(np.pi * az)
+            # derivatives of B = Sx*Sy*Sz
+            Bx = (np.pi / Lx) * Cx * Sy * Sz
+            By = (np.pi / Ly) * Sx * Cy * Sz
+            Bz = (np.pi / Lz) * Sx * Sy * Cz
+            wf = self.warp_factor
+            dxdx = 1 + wf * Lx * a * Bx
+            dxdy =      wf * Lx * a * By
+            dxdz =      wf * Lx * a * Bz
+            dydx =      wf * Ly * b * Bx
+            dydy = 1 + wf * Ly * b * By
+            dydz =      wf * Ly * b * Bz
+            dzdx =      wf * Lz * c * Bx
+            dzdy =      wf * Lz * c * By
+            dzdz = 1 + wf * Lz * c * Bz
+            return dxdx, dxdy, dxdz, dydx, dydy, dydz, dzdx, dzdy, dzdz
+
+        def warp_metric_paper(x,y,z):
+            ''' the warping i use in the metrics paper '''
+            Lx, Ly, Lz = self.dom_len
+            ax = (x - self.xmin[0]) / Lx
+            ay = (y - self.xmin[1]) / Ly
+            az = (z - self.xmin[2]) / Lz
+            # Define the bump that localizes the warping to the interior (so edges are not affected)
+            alpha = 0.#25 # ~0.25 flattens out the bump
+            Sx = np.sin(np.pi * ax) + alpha*np.sin(3*np.pi*ax)
+            Sy = np.sin(np.pi * ay) + alpha*np.sin(3*np.pi*ay)
+            Sz = np.sin(np.pi * az) + alpha*np.sin(3*np.pi*az)
+            Cy = 0.5*np.exp(1-ay)
+            Cz = np.cos(az-0.5) #1.0 - (az-0.5)**2
+            x_new = x + self.warp_factor * Lx * Sx*Sy*Cz
+            y_new = y + self.warp_factor * Ly * Sx*Sy*Cy
+            z_new = z + self.warp_factor * Lz * 0.25*Sz*(np.sin(2*np.pi*ax)*np.sin(2*np.pi*ay))
+            return x_new, y_new, z_new
+
+        def warp_metric_paper_der(x, y, z):
+            Lx, Ly, Lz = self.dom_len
+            ax = (x - self.xmin[0]) / Lx
+            ay = (y - self.xmin[1]) / Ly
+            az = (z - self.xmin[2]) / Lz
+            alpha = 0.#25
+
+            # Bumps
+            Sx  = np.sin(np.pi*ax) + alpha*np.sin(3*np.pi*ax)
+            Sy  = np.sin(np.pi*ay) + alpha*np.sin(3*np.pi*ay)
+            Sz  = np.sin(np.pi*az) + alpha*np.sin(3*np.pi*az)
+
+            # First derivatives of bumps
+            Sx_x = (np.pi/Lx)*(np.cos(np.pi*ax) + 3*alpha*np.cos(3*np.pi*ax))
+            Sy_y = (np.pi/Ly)*(np.cos(np.pi*ay) + 3*alpha*np.cos(3*np.pi*ay))
+            Sz_z = (np.pi/Lz)*(np.cos(np.pi*az) + 3*alpha*np.cos(3*np.pi*az))
+
+            # Weights and their needed partials
+            Cz     = np.cos(az-0.5) #1.0 - (az - 0.5)**2
+            dCz_dz = -np.sin(az-0.5) #-(2.0/Lz)*(az - 0.5)
+            Cy     = 0.5*np.exp(1.0 - ay)
+            dCy_dy = -(1.0/Ly)*Cy
+
+            # z' additional trigs
+            sin2x = np.sin(2.0*np.pi*ax)
+            cos2x = np.cos(2.0*np.pi*ax)
+            sin2y = np.sin(2.0*np.pi*ay)
+            cos2y = np.cos(2.0*np.pi*ay)
+
+            # x' = x + wf*Lx * Sx*Sy*Cz
+            dxdx = 1.0 + self.warp_factor*Lx*(Sx_x * Sy * Cz)
+            dxdy =        self.warp_factor*Lx*(Sx   * Sy_y * Cz)
+            dxdz =        self.warp_factor*Lx*(Sx   * Sy   * dCz_dz)
+
+            # y' = y + wf*Ly * Sx*Sy*Cy
+            dydx =        self.warp_factor*Ly*(Sx_x * Sy * Cy)
+            dydy = 1.0 +  self.warp_factor*Ly*(Sx   * Sy_y * Cy + Sx*Sy*dCy_dy)
+            dydz = 0.0
+
+            # z' = z + wf*Lz * 0.25 * Sz * sin(2π ax) * sin(2π ay)
+            dzdx = self.warp_factor*Lz*0.25 * ( Sz * (2.0*np.pi/Lx) * cos2x * sin2y )
+            dzdy = self.warp_factor*Lz*0.25 * ( Sz * sin2x * (2.0*np.pi/Ly) * cos2y )
+            dzdz = 1.0 + self.warp_factor*Lz*0.25 * ( Sz_z * sin2x * sin2y )
             return dxdx, dxdy, dxdz, dydx, dydy, dydz, dzdx, dzdy, dzdz
         
         def warp_chan(x,y,z):
@@ -1064,6 +1260,15 @@ class MakeMesh:
         elif self.warp_type == 'chan':
             warp_fun = warp_chan
             warp_der = warp_chan_der
+        elif self.warp_type == 'asym':
+            warp_fun = warp_asym
+            warp_der = warp_asym_der
+        elif self.warp_type == 'asym_minimal':
+            warp_fun = warp_minimal
+            warp_der = warp_minimal_der
+        elif self.warp_type == 'metrics_paper':
+            warp_fun = warp_metric_paper
+            warp_der = warp_metric_paper_der
         else:
             print('WARNING: mesh.warp_type not understood. Reverting to default.')
             warp_fun = warp_cuboid
@@ -1121,10 +1326,12 @@ class MakeMesh:
             self.bdy_jac_exa[:,2,0,:,:] = dznewdx * dxdxref
             self.bdy_jac_exa[:,2,1,:,:] = dznewdy * dydyref
             self.bdy_jac_exa[:,2,2,:,:] = dznewdz * dzdzref
-            #for elem in range(self.nelem[0]*self.nelem[1]*self.nelem[2]):
-                #for i in range(6):
-                    #self.bdy_det_jac_exa[:,i,elem] = np.linalg.det(self.bdy_jac_exa[:,:,:,i,elem])
+            self.bdy_det_jac_exa = np.zeros((self.nen*self.nen,6,self.nelem[0]*self.nelem[1]*self.nelem[2]))
+            for elem in range(self.nelem[0]*self.nelem[1]*self.nelem[2]):
+                for i in range(6):
+                    self.bdy_det_jac_exa[:,i,elem] = np.linalg.det(self.bdy_jac_exa[:,:,:,i,elem])
                     #self.bdy_jac_inv_exa[:,:,:,i,elem] = np.linalg.inv(self.bdy_jac_exa[:,:,:,i,elem])
+            assert np.all(self.bdy_det_jac_exa>0),"Not a valid coordinate transformation. Try using a lower warp_factor."
                     
             ''' Uncomment the below section to debug and test the consistency of the warping '''
 # =============================================================================
@@ -1254,7 +1461,7 @@ class MakeMesh:
 # =============================================================================
 
     def plot(self,plt_save_name=None,markersize=4,fontsize=12,dpi=1000,label=True,
-             label_all_lines=True, nodes=True, bdy_nodes=False,save_format='png'):
+             label_all_lines=True, nodes=True, bdy_nodes=False,save_format='png',lw=1):
         if self.dim == 1:
             fig = plt.figure(figsize=(6,1))
             ax = plt.axes(frameon=False) # turn off the frame
@@ -1295,7 +1502,7 @@ class MakeMesh:
             ax.set_ylim(ymin-self.dom_len[1]/100,ymax+self.dom_len[1]/100)
 
             for line in self.grid_lines:
-                ax.plot(line[0],line[1],color='black',lw=1)
+                ax.plot(line[0],line[1],color='black',lw=lw)
 
             if bdy_nodes:
                 #ax.scatter(self.bdy_xy[:,0,:,:],self.bdy_xy[:,1,:,:],marker='o',color='r',s=4)
@@ -1447,6 +1654,8 @@ class MakeMesh:
             if calc_exact_metrics: 
                 self.metrics_exa = np.zeros((self.nen**2,4,self.nelem[0]*self.nelem[1])) 
                 self.bdy_metrics_exa = np.zeros((self.nen,4,4,self.nelem[0]*self.nelem[1])) 
+                #self.fac_normals_exa = np.zeros((self.nen,4,2,self.nelem[0]*self.nelem[1]))
+                self.bdy_jac_factor = np.zeros((self.nen,4,self.nelem[0]*self.nelem[1]))
                 # nodes, boundary (left, right, lower, upper), d(xi_i)/d(x_j) (dx_r/dx_p, dx_r/dy_p, dy_r/dx_p, dy_r/dy_p), elem
             
                 #self.metrics_exa[:,0,:] = self.det_jac_exa * self.jac_inv_exa[:,0,0,:]
@@ -1468,6 +1677,25 @@ class MakeMesh:
                     self.bdy_metrics_exa[:,f,1,:] = - self.bdy_jac_exa[:,0,1,f,:]
                     self.bdy_metrics_exa[:,f,2,:] = - self.bdy_jac_exa[:,1,0,f,:]
                     self.bdy_metrics_exa[:,f,3,:] = self.bdy_jac_exa[:,0,0,f,:]
+
+                    if f == 0:
+                        nxref = -1
+                        nyref = 0
+                    elif f == 1:
+                        nxref = 1
+                        nyref = 0
+                    elif f == 2:
+                        nxref = 0
+                        nyref = -1
+                    elif f == 3:
+                        nxref = 0
+                        nyref = 1      
+                    x_unnormed = nxref*self.bdy_metrics_exa[:,f,0,:] + nyref*self.bdy_metrics_exa[:,f,2,:]
+                    y_unnormed = nxref*self.bdy_metrics_exa[:,f,1,:] + nyref*self.bdy_metrics_exa[:,f,3,:]
+                    norm = np.sqrt(x_unnormed**2 + y_unnormed**2)
+                    #self.fac_normals_exa[:,f,0,:] = x_unnormed / norm
+                    #self.fac_normals_exa[:,f,1,:] = y_unnormed / norm  
+                    self.bdy_jac_factor[:,f,:] = norm
             
             if metric_method=='exact':
                 self.metrics = np.copy(self.metrics_exa)
@@ -1482,6 +1710,45 @@ class MakeMesh:
                     # metric jacobian (determinant) is given by 
                     # Dx_ref@x_phys*Dy_ref@y_phys - Dy_ref@x_phys*Dx_ref@y_phys  
                     self.det_jac = dxp_dxr*dyp_dyr - dxp_dyr*dyp_dxr 
+            
+            elif metric_method.lower()== 'kopriva' or metric_method.lower()== 'kcw' \
+                or metric_method.lower()== 'kopriva_extrap' or metric_method.lower()== 'kcw_extrap':
+                self.metrics = np.zeros((self.nen**2,4,self.nelem[0]*self.nelem[1]))
+                from Source.Disc.MakeSbpOp import MakeSbpOp
+                sbp_lgl = MakeSbpOp(sbp.p,'lgl',print_progress=False)
+                from Source.Disc.MakeDgOp import MakeDgOp
+                Vlgltosbp = MakeDgOp.VandermondeLagrange1D(sbp.x,sbp_lgl.x)
+                Vsbptolgl = MakeDgOp.VandermondeLagrange1D(sbp_lgl.x,sbp.x)
+                Vlgltosbp = np.kron(Vlgltosbp,Vlgltosbp)
+                Vsbptolgl = np.kron(Vsbptolgl,Vsbptolgl)
+
+                eye = np.eye(self.nen)
+                Dx = np.kron(sbp_lgl.D, eye)
+                Dy = np.kron(eye, sbp_lgl.D)
+
+                if metric_method.lower()== 'kopriva_extrap' or metric_method.lower()== 'kcw_extrap':
+                # The following does NOT produce unique surface values, so we'll need to average
+                    xy_elem = np.einsum('ij,jme->ime', Vsbptolgl, self.xy_elem)
+                    # we need to average now, keeping in mind vertices are shared between more than two elements
+                    xy_elem = self.average_facet_nodes(xy_elem,sbp_lgl.nn,periodic)
+                    x_elem, y_elem = xy_elem[:,0,:], xy_elem[:,1,:]
+                else:
+                    x_unwarped = self.xy_elem_unwarped[:,0,:]
+                    y_unwarped = self.xy_elem_unwarped[:,1,:]
+                    xy_unwarped_lgl = np.zeros_like(self.xy_elem_unwarped)
+                    xy_unwarped_lgl[:,0,:] = Vsbptolgl @ x_unwarped
+                    xy_unwarped_lgl[:,1,:] = Vsbptolgl @ y_unwarped
+                    xy_elem = self.warp_mesh_2d(xy=xy_unwarped_lgl)
+                    x_elem, y_elem = xy_elem[:,0,:], xy_elem[:,1,:]
+                
+                dxp_dxr = Dx @ x_elem
+                dxp_dyr = Dy @ x_elem
+                dyp_dxr = Dx @ y_elem
+                dyp_dyr = Dy @ y_elem    
+                self.metrics[:,0,:] = Vlgltosbp @ dyp_dyr
+                self.metrics[:,1,:] = - Vlgltosbp @ dxp_dyr
+                self.metrics[:,2,:] = - Vlgltosbp @ dyp_dxr
+                self.metrics[:,3,:] = Vlgltosbp @ dxp_dxr 
                 
             else:
                 self.metrics = np.zeros((self.nen**2,4,self.nelem[0]*self.nelem[1])) 
@@ -1689,6 +1956,7 @@ class MakeMesh:
         
             
             if use_optz_metrics:  
+                from scipy.sparse import lil_matrix
                 # overwrite metrics with optimized ones         
                 eye = np.eye(self.nen)
                 txb = np.kron(sbp.tR.reshape((self.nen,1)), eye)
@@ -1697,7 +1965,8 @@ class MakeMesh:
                 tya = np.kron(eye, sbp.tL.reshape((self.nen,1)))
                 if optz_method == 'essbp' or optz_method == 'default' or optz_method == 'alex' or optz_method == 'generalized':
                     # First optimize surface metrics, then do default optimization
-                    A = np.zeros((self.nelem[0]*self.nelem[1],self.nelem[0]*self.nelem[1]))
+                    #A = np.zeros((self.nelem[0]*self.nelem[1],self.nelem[0]*self.nelem[1]))
+                    A = lil_matrix((self.nelem[0]*self.nelem[1],self.nelem[0]*self.nelem[1]), dtype=float)
                     Hperp = np.diag(sbp.H)
                     H2sum = np.sum(Hperp*Hperp)
                     for ix in range(self.nelem[0]):
@@ -1721,6 +1990,7 @@ class MakeMesh:
                                 A[start,start-self.nelem[1]] += -H2sum
                             elif (ix == 0) and periodic[0]:
                                 A[start,(self.nelem[0]-1)*self.nelem[1] + iy] += -H2sum
+                    A = A.tocsr(); A.eliminate_zeros();
           
                     for phys_dir in range(2):
                         if phys_dir == 0: # matrix entries for metric terms
@@ -1739,14 +2009,16 @@ class MakeMesh:
                         if np.max(abs(RHS)) < 2e-16:
                             print('... good enough already. skipping optimization.')
                         else:
-                            if fn.is_pos_def(A):
-                                print('Check: A is SPD')
-                            else:
-                                print('Check: A is NOT SPD')
+                            #if fn.is_pos_def(A):
+                            #    print('Check: A is SPD')
+                            #else:
+                            #    print('Check: A is NOT SPD')
                             if (periodic[0] and periodic[1]):
-                                lam = np.linalg.lstsq(A,RHS,rcond=-1)[0]
+                                #lam = np.linalg.lstsq(A,RHS,rcond=-1)[0]
+                                lam = fn.solve_lin_system(A,RHS,False)
                             else:
-                                lam = np.linalg.solve(A,RHS)
+                                #lam = np.linalg.solve(A,RHS)
+                                lam = fn.solve_lin_system(A,RHS,True)
                             #print('... verify Ax-b=0 solution quality: ', np.max(A@lam - RHS))
                             #print('rank(A) = ', np.linalg.matrix_rank(A))
                             #print('rank([Ab]) = ', np.linalg.matrix_rank(np.c_[A,RHS]))
@@ -1909,6 +2181,8 @@ class MakeMesh:
             if calc_exact_metrics or metric_method.lower()=='exact':
                 self.metrics_exa = np.zeros((self.nen**3,9,self.nelem[0]*self.nelem[1]*self.nelem[2])) 
                 self.bdy_metrics_exa = np.zeros((self.nen**2,6,9,self.nelem[0]*self.nelem[1]*self.nelem[2]))
+                self.bdy_jac_factor = np.zeros((self.nen**2,6,self.nelem[0]*self.nelem[1]*self.nelem[2]))
+                #self.fac_normals_exa = np.zeros((self.nen**2,6,3,self.nelem[0]*self.nelem[1]*self.nelem[2]))
             
                 self.metrics_exa[:,0,:] = self.jac_exa[:,1,1,:] * self.jac_exa[:,2,2,:] - self.jac_exa[:,1,2,:] * self.jac_exa[:,2,1,:]
                 self.metrics_exa[:,1,:] = self.jac_exa[:,0,2,:] * self.jac_exa[:,2,1,:] - self.jac_exa[:,0,1,:] * self.jac_exa[:,2,2,:]
@@ -1950,34 +2224,68 @@ class MakeMesh:
                     #self.bdy_metrics_exa[:,f,6,:] = self.bdy_det_jac_exa[:,f,:] * self.bdy_jac_inv_exa[:,2,0,f,:]
                     #self.bdy_metrics_exa[:,f,7,:] = self.bdy_det_jac_exa[:,f,:] * self.bdy_jac_inv_exa[:,2,1,f,:]
                     #self.bdy_metrics_exa[:,f,8,:] = self.bdy_det_jac_exa[:,f,:] * self.bdy_jac_inv_exa[:,2,2,f,:]
+
+                    if f == 0:
+                        nxref = -1
+                        nyref = 0
+                        nzref = 0
+                    elif f == 1:
+                        nxref = 1
+                        nyref = 0
+                        nzref = 0
+                    elif f == 2:
+                        nxref = 0
+                        nyref = -1
+                        nzref = 0
+                    elif f == 3:
+                        nxref = 0
+                        nyref = 1
+                        nzref = 0
+                    elif f == 2:
+                        nxref = 0
+                        nyref = 0
+                        nzref = -1
+                    elif f == 3:
+                        nxref = 0
+                        nyref = 0
+                        nzref = 1  
+                    x_unnormed = nxref*self.bdy_metrics_exa[:,f,0,:] + nyref*self.bdy_metrics_exa[:,f,3,:] + nzref*self.bdy_metrics_exa[:,f,6,:]
+                    y_unnormed = nxref*self.bdy_metrics_exa[:,f,2,:] + nyref*self.bdy_metrics_exa[:,f,4,:] + nzref*self.bdy_metrics_exa[:,f,7,:]
+                    z_unnormed = nxref*self.bdy_metrics_exa[:,f,3,:] + nyref*self.bdy_metrics_exa[:,f,5,:] + nzref*self.bdy_metrics_exa[:,f,8,:]
+                    norm = np.sqrt(x_unnormed**2 + y_unnormed**2 + y_unnormed**2)
+                    #self.fac_normals_exa[:,f,0,:] = x_unnormed / norm
+                    #self.fac_normals_exa[:,f,1,:] = y_unnormed / norm
+                    #self.fac_normals_exa[:,f,2,:] = z_unnormed / norm
+                    self.bdy_jac_factor[:,f,:] = norm
                 
             if metric_method.lower()=='exact':
                 self.metrics = np.copy(self.metrics_exa)
                 
                 if jac_method.lower()=='direct' or jac_method.lower()=='calculate':
-                    eye = np.eye(self.nen)
-                    Dx = np.kron(np.kron(sbp.D, eye), eye)
-                    Dy = np.kron(np.kron(eye, sbp.D), eye)
-                    Dz = np.kron(np.kron(eye, eye), sbp.D)   
-                    dxp_dxr = Dx @ self.xyz_elem[:,0,:]
-                    dxp_dyr = Dy @ self.xyz_elem[:,0,:]
-                    dxp_dzr = Dz @ self.xyz_elem[:,0,:]
-                    dyp_dxr = Dx @ self.xyz_elem[:,1,:]
-                    dyp_dyr = Dy @ self.xyz_elem[:,1,:]
-                    dyp_dzr = Dz @ self.xyz_elem[:,1,:]
-                    dzp_dxr = Dx @ self.xyz_elem[:,2,:]
-                    dzp_dyr = Dy @ self.xyz_elem[:,2,:]
-                    dzp_dzr = Dz @ self.xyz_elem[:,2,:]
+                    D = sp.lm_to_sp(sbp.D) 
+                    Dx = sp.kron_lm_eye(sp.kron_lm_eye(D, self.nen), self.nen)
+                    Dy = sp.kron_lm_eye(sp.kron_eye_lm(D, self.nen), self.nen)
+                    Dz = sp.kron_eye_lm(sp.kron_eye_lm(D, self.nen), self.nen)
+                    dxp_dxr = sp.lm_gv(Dx, self.xyz_elem[:,0,:])
+                    dxp_dyr = sp.lm_gv(Dy, self.xyz_elem[:,0,:])
+                    dxp_dzr = sp.lm_gv(Dz, self.xyz_elem[:,0,:])
+                    dyp_dxr = sp.lm_gv(Dx, self.xyz_elem[:,1,:])
+                    dyp_dyr = sp.lm_gv(Dy, self.xyz_elem[:,1,:])
+                    dyp_dzr = sp.lm_gv(Dz, self.xyz_elem[:,1,:])
+                    dzp_dxr = sp.lm_gv(Dx, self.xyz_elem[:,2,:])
+                    dzp_dyr = sp.lm_gv(Dy, self.xyz_elem[:,2,:])
+                    dzp_dzr = sp.lm_gv(Dz, self.xyz_elem[:,2,:])
                     # unique (matrix has unique determinant)                            
                     self.det_jac = dxp_dxr*(dyp_dyr*dzp_dzr - dyp_dzr*dzp_dyr) \
                                  - dyp_dxr*(dxp_dyr*dzp_dzr - dxp_dzr*dzp_dyr) \
                                  + dzp_dxr*(dxp_dyr*dyp_dzr - dxp_dzr*dyp_dyr)
             
-            elif metric_method.lower()== 'kopriva':
+            elif metric_method.lower()== 'kopriva' or metric_method.lower()== 'kcw' \
+                or metric_method.lower()== 'kopriva_extrap' or metric_method.lower()== 'kcw_extrap':
                 self.metrics = np.zeros((self.nen**3,9,self.nelem[0]*self.nelem[1]*self.nelem[2]))
-                # do thomas and lombard with lgl operators, then interpolate to lg
+                # do kopriva and yee with lgl operators, then interpolate to lg
                 from Source.Disc.MakeSbpOp import MakeSbpOp
-                sbp_lgl = MakeSbpOp(sbp.p,'lgl')
+                sbp_lgl = MakeSbpOp(sbp.p,'lgl',print_progress=False)
                 # the following bases were outputted with the following:
                 '''
                 basis = []
@@ -1990,79 +2298,96 @@ class MakeMesh:
                             basis.append(fn)
                 print ('= np.vstack((%s)).T' % ', '.join(map(str, basis)))
                 '''
-                ones = np.ones(sbp.nn*sbp.nn*sbp.nn)
-                if sbp.p==1:
-                    xi, eta, zeta = np.array(np.meshgrid(sbp.x, sbp.x, sbp.x)).reshape(3, -1).T[:,[1,0,2]].T
-                    Vsbp = np.vstack((ones, zeta, eta, eta*zeta, xi, xi*zeta, xi*eta, xi*eta*zeta)).T
-                    xi, eta, zeta = np.array(np.meshgrid(sbp_lgl.x, sbp_lgl.x, sbp_lgl.x)).reshape(3, -1).T[:,[1,0,2]].T
-                    Vlgl = np.vstack((ones, zeta, eta, eta*zeta, xi, xi*zeta, xi*eta, xi*eta*zeta)).T
-                elif sbp.p==2:
-                    xi, eta, zeta = np.array(np.meshgrid(sbp.x, sbp.x, sbp.x)).reshape(3, -1).T[:,[1,0,2]].T
-                    Vsbp = np.vstack((ones, zeta, zeta**2, eta, eta*zeta, eta*zeta**2, eta**2, eta**2*zeta, eta**2*zeta**2, xi, xi*zeta, xi*zeta**2, xi*eta, xi*eta*zeta, xi*eta*zeta**2, xi*eta**2, xi*eta**2*zeta, xi*eta**2*zeta**2, xi**2, xi**2*zeta, xi**2*zeta**2, xi**2*eta, xi**2*eta*zeta, xi**2*eta*zeta**2, xi**2*eta**2, xi**2*eta**2*zeta, xi**2*eta**2*zeta**2)).T
-                    xi, eta, zeta = np.array(np.meshgrid(sbp_lgl.x, sbp_lgl.x, sbp_lgl.x)).reshape(3, -1).T[:,[1,0,2]].T
-                    Vlgl = np.vstack((ones, zeta, zeta**2, eta, eta*zeta, eta*zeta**2, eta**2, eta**2*zeta, eta**2*zeta**2, xi, xi*zeta, xi*zeta**2, xi*eta, xi*eta*zeta, xi*eta*zeta**2, xi*eta**2, xi*eta**2*zeta, xi*eta**2*zeta**2, xi**2, xi**2*zeta, xi**2*zeta**2, xi**2*eta, xi**2*eta*zeta, xi**2*eta*zeta**2, xi**2*eta**2, xi**2*eta**2*zeta, xi**2*eta**2*zeta**2)).T
-                elif sbp.p==3:
-                    xi, eta, zeta = np.array(np.meshgrid(sbp.x, sbp.x, sbp.x)).reshape(3, -1).T[:,[1,0,2]].T
-                    Vsbp = np.vstack((ones, zeta, zeta**2, zeta**3, eta, eta*zeta, eta*zeta**2, eta*zeta**3, eta**2, eta**2*zeta, eta**2*zeta**2, eta**2*zeta**3, eta**3, eta**3*zeta, eta**3*zeta**2, eta**3*zeta**3, xi, xi*zeta, xi*zeta**2, xi*zeta**3, xi*eta, xi*eta*zeta, xi*eta*zeta**2, xi*eta*zeta**3, xi*eta**2, xi*eta**2*zeta, xi*eta**2*zeta**2, xi*eta**2*zeta**3, xi*eta**3, xi*eta**3*zeta, xi*eta**3*zeta**2, xi*eta**3*zeta**3, xi**2, xi**2*zeta, xi**2*zeta**2, xi**2*zeta**3, xi**2*eta, xi**2*eta*zeta, xi**2*eta*zeta**2, xi**2*eta*zeta**3, xi**2*eta**2, xi**2*eta**2*zeta, xi**2*eta**2*zeta**2, xi**2*eta**2*zeta**3, xi**2*eta**3, xi**2*eta**3*zeta, xi**2*eta**3*zeta**2, xi**2*eta**3*zeta**3, xi**3, xi**3*zeta, xi**3*zeta**2, xi**3*zeta**3, xi**3*eta, xi**3*eta*zeta, xi**3*eta*zeta**2, xi**3*eta*zeta**3, xi**3*eta**2, xi**3*eta**2*zeta, xi**3*eta**2*zeta**2, xi**3*eta**2*zeta**3, xi**3*eta**3, xi**3*eta**3*zeta, xi**3*eta**3*zeta**2, xi**3*eta**3*zeta**3)).T
-                    xi, eta, zeta = np.array(np.meshgrid(sbp_lgl.x, sbp_lgl.x, sbp_lgl.x)).reshape(3, -1).T[:,[1,0,2]].T
-                    Vlgl = np.vstack((ones, zeta, zeta**2, zeta**3, eta, eta*zeta, eta*zeta**2, eta*zeta**3, eta**2, eta**2*zeta, eta**2*zeta**2, eta**2*zeta**3, eta**3, eta**3*zeta, eta**3*zeta**2, eta**3*zeta**3, xi, xi*zeta, xi*zeta**2, xi*zeta**3, xi*eta, xi*eta*zeta, xi*eta*zeta**2, xi*eta*zeta**3, xi*eta**2, xi*eta**2*zeta, xi*eta**2*zeta**2, xi*eta**2*zeta**3, xi*eta**3, xi*eta**3*zeta, xi*eta**3*zeta**2, xi*eta**3*zeta**3, xi**2, xi**2*zeta, xi**2*zeta**2, xi**2*zeta**3, xi**2*eta, xi**2*eta*zeta, xi**2*eta*zeta**2, xi**2*eta*zeta**3, xi**2*eta**2, xi**2*eta**2*zeta, xi**2*eta**2*zeta**2, xi**2*eta**2*zeta**3, xi**2*eta**3, xi**2*eta**3*zeta, xi**2*eta**3*zeta**2, xi**2*eta**3*zeta**3, xi**3, xi**3*zeta, xi**3*zeta**2, xi**3*zeta**3, xi**3*eta, xi**3*eta*zeta, xi**3*eta*zeta**2, xi**3*eta*zeta**3, xi**3*eta**2, xi**3*eta**2*zeta, xi**3*eta**2*zeta**2, xi**3*eta**2*zeta**3, xi**3*eta**3, xi**3*eta**3*zeta, xi**3*eta**3*zeta**2, xi**3*eta**3*zeta**3)).T
-                elif sbp.p==4:
-                    xi, eta, zeta = np.array(np.meshgrid(sbp.x, sbp.x, sbp.x)).reshape(3, -1).T[:,[1,0,2]].T
-                    Vsbp = np.vstack((ones, zeta, zeta**2, zeta**3, zeta**4, eta, eta*zeta, eta*zeta**2, eta*zeta**3, eta*zeta**4, eta**2, eta**2*zeta, eta**2*zeta**2, eta**2*zeta**3, eta**2*zeta**4, eta**3, eta**3*zeta, eta**3*zeta**2, eta**3*zeta**3, eta**3*zeta**4, eta**4, eta**4*zeta, eta**4*zeta**2, eta**4*zeta**3, eta**4*zeta**4, xi, xi*zeta, xi*zeta**2, xi*zeta**3, xi*zeta**4, xi*eta, xi*eta*zeta, xi*eta*zeta**2, xi*eta*zeta**3, xi*eta*zeta**4, xi*eta**2, xi*eta**2*zeta, xi*eta**2*zeta**2, xi*eta**2*zeta**3, xi*eta**2*zeta**4, xi*eta**3, xi*eta**3*zeta, xi*eta**3*zeta**2, xi*eta**3*zeta**3, xi*eta**3*zeta**4, xi*eta**4, xi*eta**4*zeta, xi*eta**4*zeta**2, xi*eta**4*zeta**3, xi*eta**4*zeta**4, xi**2, xi**2*zeta, xi**2*zeta**2, xi**2*zeta**3, xi**2*zeta**4, xi**2*eta, xi**2*eta*zeta, xi**2*eta*zeta**2, xi**2*eta*zeta**3, xi**2*eta*zeta**4, xi**2*eta**2, xi**2*eta**2*zeta, xi**2*eta**2*zeta**2, xi**2*eta**2*zeta**3, xi**2*eta**2*zeta**4, xi**2*eta**3, xi**2*eta**3*zeta, xi**2*eta**3*zeta**2, xi**2*eta**3*zeta**3, xi**2*eta**3*zeta**4, xi**2*eta**4, xi**2*eta**4*zeta, xi**2*eta**4*zeta**2, xi**2*eta**4*zeta**3, xi**2*eta**4*zeta**4, xi**3, xi**3*zeta, xi**3*zeta**2, xi**3*zeta**3, xi**3*zeta**4, xi**3*eta, xi**3*eta*zeta, xi**3*eta*zeta**2, xi**3*eta*zeta**3, xi**3*eta*zeta**4, xi**3*eta**2, xi**3*eta**2*zeta, xi**3*eta**2*zeta**2, xi**3*eta**2*zeta**3, xi**3*eta**2*zeta**4, xi**3*eta**3, xi**3*eta**3*zeta, xi**3*eta**3*zeta**2, xi**3*eta**3*zeta**3, xi**3*eta**3*zeta**4, xi**3*eta**4, xi**3*eta**4*zeta, xi**3*eta**4*zeta**2, xi**3*eta**4*zeta**3, xi**3*eta**4*zeta**4, xi**4, xi**4*zeta, xi**4*zeta**2, xi**4*zeta**3, xi**4*zeta**4, xi**4*eta, xi**4*eta*zeta, xi**4*eta*zeta**2, xi**4*eta*zeta**3, xi**4*eta*zeta**4, xi**4*eta**2, xi**4*eta**2*zeta, xi**4*eta**2*zeta**2, xi**4*eta**2*zeta**3, xi**4*eta**2*zeta**4, xi**4*eta**3, xi**4*eta**3*zeta, xi**4*eta**3*zeta**2, xi**4*eta**3*zeta**3, xi**4*eta**3*zeta**4, xi**4*eta**4, xi**4*eta**4*zeta, xi**4*eta**4*zeta**2, xi**4*eta**4*zeta**3, xi**4*eta**4*zeta**4)).T
-                    xi, eta, zeta = np.array(np.meshgrid(sbp_lgl.x, sbp_lgl.x, sbp_lgl.x)).reshape(3, -1).T[:,[1,0,2]].T
-                    Vlgl = np.vstack((ones, zeta, zeta**2, zeta**3, zeta**4, eta, eta*zeta, eta*zeta**2, eta*zeta**3, eta*zeta**4, eta**2, eta**2*zeta, eta**2*zeta**2, eta**2*zeta**3, eta**2*zeta**4, eta**3, eta**3*zeta, eta**3*zeta**2, eta**3*zeta**3, eta**3*zeta**4, eta**4, eta**4*zeta, eta**4*zeta**2, eta**4*zeta**3, eta**4*zeta**4, xi, xi*zeta, xi*zeta**2, xi*zeta**3, xi*zeta**4, xi*eta, xi*eta*zeta, xi*eta*zeta**2, xi*eta*zeta**3, xi*eta*zeta**4, xi*eta**2, xi*eta**2*zeta, xi*eta**2*zeta**2, xi*eta**2*zeta**3, xi*eta**2*zeta**4, xi*eta**3, xi*eta**3*zeta, xi*eta**3*zeta**2, xi*eta**3*zeta**3, xi*eta**3*zeta**4, xi*eta**4, xi*eta**4*zeta, xi*eta**4*zeta**2, xi*eta**4*zeta**3, xi*eta**4*zeta**4, xi**2, xi**2*zeta, xi**2*zeta**2, xi**2*zeta**3, xi**2*zeta**4, xi**2*eta, xi**2*eta*zeta, xi**2*eta*zeta**2, xi**2*eta*zeta**3, xi**2*eta*zeta**4, xi**2*eta**2, xi**2*eta**2*zeta, xi**2*eta**2*zeta**2, xi**2*eta**2*zeta**3, xi**2*eta**2*zeta**4, xi**2*eta**3, xi**2*eta**3*zeta, xi**2*eta**3*zeta**2, xi**2*eta**3*zeta**3, xi**2*eta**3*zeta**4, xi**2*eta**4, xi**2*eta**4*zeta, xi**2*eta**4*zeta**2, xi**2*eta**4*zeta**3, xi**2*eta**4*zeta**4, xi**3, xi**3*zeta, xi**3*zeta**2, xi**3*zeta**3, xi**3*zeta**4, xi**3*eta, xi**3*eta*zeta, xi**3*eta*zeta**2, xi**3*eta*zeta**3, xi**3*eta*zeta**4, xi**3*eta**2, xi**3*eta**2*zeta, xi**3*eta**2*zeta**2, xi**3*eta**2*zeta**3, xi**3*eta**2*zeta**4, xi**3*eta**3, xi**3*eta**3*zeta, xi**3*eta**3*zeta**2, xi**3*eta**3*zeta**3, xi**3*eta**3*zeta**4, xi**3*eta**4, xi**3*eta**4*zeta, xi**3*eta**4*zeta**2, xi**3*eta**4*zeta**3, xi**3*eta**4*zeta**4, xi**4, xi**4*zeta, xi**4*zeta**2, xi**4*zeta**3, xi**4*zeta**4, xi**4*eta, xi**4*eta*zeta, xi**4*eta*zeta**2, xi**4*eta*zeta**3, xi**4*eta*zeta**4, xi**4*eta**2, xi**4*eta**2*zeta, xi**4*eta**2*zeta**2, xi**4*eta**2*zeta**3, xi**4*eta**2*zeta**4, xi**4*eta**3, xi**4*eta**3*zeta, xi**4*eta**3*zeta**2, xi**4*eta**3*zeta**3, xi**4*eta**3*zeta**4, xi**4*eta**4, xi**4*eta**4*zeta, xi**4*eta**4*zeta**2, xi**4*eta**4*zeta**3, xi**4*eta**4*zeta**4)).T
-                else:
-                    raise Exception('kopriva metrics only set up for p<=4')
+                # ones = np.ones(sbp.nn*sbp.nn*sbp.nn)
+                # if sbp.p==1:
+                #     xi, eta, zeta = np.array(np.meshgrid(sbp.x, sbp.x, sbp.x)).reshape(3, -1).T[:,[1,0,2]].T
+                #     Vsbp = np.vstack((ones, zeta, eta, eta*zeta, xi, xi*zeta, xi*eta, xi*eta*zeta)).T
+                #     xi, eta, zeta = np.array(np.meshgrid(sbp_lgl.x, sbp_lgl.x, sbp_lgl.x)).reshape(3, -1).T[:,[1,0,2]].T
+                #     Vlgl = np.vstack((ones, zeta, eta, eta*zeta, xi, xi*zeta, xi*eta, xi*eta*zeta)).T
+                # elif sbp.p==2:
+                #     xi, eta, zeta = np.array(np.meshgrid(sbp.x, sbp.x, sbp.x)).reshape(3, -1).T[:,[1,0,2]].T
+                #     Vsbp = np.vstack((ones, zeta, zeta**2, eta, eta*zeta, eta*zeta**2, eta**2, eta**2*zeta, eta**2*zeta**2, xi, xi*zeta, xi*zeta**2, xi*eta, xi*eta*zeta, xi*eta*zeta**2, xi*eta**2, xi*eta**2*zeta, xi*eta**2*zeta**2, xi**2, xi**2*zeta, xi**2*zeta**2, xi**2*eta, xi**2*eta*zeta, xi**2*eta*zeta**2, xi**2*eta**2, xi**2*eta**2*zeta, xi**2*eta**2*zeta**2)).T
+                #     xi, eta, zeta = np.array(np.meshgrid(sbp_lgl.x, sbp_lgl.x, sbp_lgl.x)).reshape(3, -1).T[:,[1,0,2]].T
+                #     Vlgl = np.vstack((ones, zeta, zeta**2, eta, eta*zeta, eta*zeta**2, eta**2, eta**2*zeta, eta**2*zeta**2, xi, xi*zeta, xi*zeta**2, xi*eta, xi*eta*zeta, xi*eta*zeta**2, xi*eta**2, xi*eta**2*zeta, xi*eta**2*zeta**2, xi**2, xi**2*zeta, xi**2*zeta**2, xi**2*eta, xi**2*eta*zeta, xi**2*eta*zeta**2, xi**2*eta**2, xi**2*eta**2*zeta, xi**2*eta**2*zeta**2)).T
+                # elif sbp.p==3:
+                #     xi, eta, zeta = np.array(np.meshgrid(sbp.x, sbp.x, sbp.x)).reshape(3, -1).T[:,[1,0,2]].T
+                #     Vsbp = np.vstack((ones, zeta, zeta**2, zeta**3, eta, eta*zeta, eta*zeta**2, eta*zeta**3, eta**2, eta**2*zeta, eta**2*zeta**2, eta**2*zeta**3, eta**3, eta**3*zeta, eta**3*zeta**2, eta**3*zeta**3, xi, xi*zeta, xi*zeta**2, xi*zeta**3, xi*eta, xi*eta*zeta, xi*eta*zeta**2, xi*eta*zeta**3, xi*eta**2, xi*eta**2*zeta, xi*eta**2*zeta**2, xi*eta**2*zeta**3, xi*eta**3, xi*eta**3*zeta, xi*eta**3*zeta**2, xi*eta**3*zeta**3, xi**2, xi**2*zeta, xi**2*zeta**2, xi**2*zeta**3, xi**2*eta, xi**2*eta*zeta, xi**2*eta*zeta**2, xi**2*eta*zeta**3, xi**2*eta**2, xi**2*eta**2*zeta, xi**2*eta**2*zeta**2, xi**2*eta**2*zeta**3, xi**2*eta**3, xi**2*eta**3*zeta, xi**2*eta**3*zeta**2, xi**2*eta**3*zeta**3, xi**3, xi**3*zeta, xi**3*zeta**2, xi**3*zeta**3, xi**3*eta, xi**3*eta*zeta, xi**3*eta*zeta**2, xi**3*eta*zeta**3, xi**3*eta**2, xi**3*eta**2*zeta, xi**3*eta**2*zeta**2, xi**3*eta**2*zeta**3, xi**3*eta**3, xi**3*eta**3*zeta, xi**3*eta**3*zeta**2, xi**3*eta**3*zeta**3)).T
+                #     xi, eta, zeta = np.array(np.meshgrid(sbp_lgl.x, sbp_lgl.x, sbp_lgl.x)).reshape(3, -1).T[:,[1,0,2]].T
+                #     Vlgl = np.vstack((ones, zeta, zeta**2, zeta**3, eta, eta*zeta, eta*zeta**2, eta*zeta**3, eta**2, eta**2*zeta, eta**2*zeta**2, eta**2*zeta**3, eta**3, eta**3*zeta, eta**3*zeta**2, eta**3*zeta**3, xi, xi*zeta, xi*zeta**2, xi*zeta**3, xi*eta, xi*eta*zeta, xi*eta*zeta**2, xi*eta*zeta**3, xi*eta**2, xi*eta**2*zeta, xi*eta**2*zeta**2, xi*eta**2*zeta**3, xi*eta**3, xi*eta**3*zeta, xi*eta**3*zeta**2, xi*eta**3*zeta**3, xi**2, xi**2*zeta, xi**2*zeta**2, xi**2*zeta**3, xi**2*eta, xi**2*eta*zeta, xi**2*eta*zeta**2, xi**2*eta*zeta**3, xi**2*eta**2, xi**2*eta**2*zeta, xi**2*eta**2*zeta**2, xi**2*eta**2*zeta**3, xi**2*eta**3, xi**2*eta**3*zeta, xi**2*eta**3*zeta**2, xi**2*eta**3*zeta**3, xi**3, xi**3*zeta, xi**3*zeta**2, xi**3*zeta**3, xi**3*eta, xi**3*eta*zeta, xi**3*eta*zeta**2, xi**3*eta*zeta**3, xi**3*eta**2, xi**3*eta**2*zeta, xi**3*eta**2*zeta**2, xi**3*eta**2*zeta**3, xi**3*eta**3, xi**3*eta**3*zeta, xi**3*eta**3*zeta**2, xi**3*eta**3*zeta**3)).T
+                # elif sbp.p==4:
+                #     xi, eta, zeta = np.array(np.meshgrid(sbp.x, sbp.x, sbp.x)).reshape(3, -1).T[:,[1,0,2]].T
+                #     Vsbp = np.vstack((ones, zeta, zeta**2, zeta**3, zeta**4, eta, eta*zeta, eta*zeta**2, eta*zeta**3, eta*zeta**4, eta**2, eta**2*zeta, eta**2*zeta**2, eta**2*zeta**3, eta**2*zeta**4, eta**3, eta**3*zeta, eta**3*zeta**2, eta**3*zeta**3, eta**3*zeta**4, eta**4, eta**4*zeta, eta**4*zeta**2, eta**4*zeta**3, eta**4*zeta**4, xi, xi*zeta, xi*zeta**2, xi*zeta**3, xi*zeta**4, xi*eta, xi*eta*zeta, xi*eta*zeta**2, xi*eta*zeta**3, xi*eta*zeta**4, xi*eta**2, xi*eta**2*zeta, xi*eta**2*zeta**2, xi*eta**2*zeta**3, xi*eta**2*zeta**4, xi*eta**3, xi*eta**3*zeta, xi*eta**3*zeta**2, xi*eta**3*zeta**3, xi*eta**3*zeta**4, xi*eta**4, xi*eta**4*zeta, xi*eta**4*zeta**2, xi*eta**4*zeta**3, xi*eta**4*zeta**4, xi**2, xi**2*zeta, xi**2*zeta**2, xi**2*zeta**3, xi**2*zeta**4, xi**2*eta, xi**2*eta*zeta, xi**2*eta*zeta**2, xi**2*eta*zeta**3, xi**2*eta*zeta**4, xi**2*eta**2, xi**2*eta**2*zeta, xi**2*eta**2*zeta**2, xi**2*eta**2*zeta**3, xi**2*eta**2*zeta**4, xi**2*eta**3, xi**2*eta**3*zeta, xi**2*eta**3*zeta**2, xi**2*eta**3*zeta**3, xi**2*eta**3*zeta**4, xi**2*eta**4, xi**2*eta**4*zeta, xi**2*eta**4*zeta**2, xi**2*eta**4*zeta**3, xi**2*eta**4*zeta**4, xi**3, xi**3*zeta, xi**3*zeta**2, xi**3*zeta**3, xi**3*zeta**4, xi**3*eta, xi**3*eta*zeta, xi**3*eta*zeta**2, xi**3*eta*zeta**3, xi**3*eta*zeta**4, xi**3*eta**2, xi**3*eta**2*zeta, xi**3*eta**2*zeta**2, xi**3*eta**2*zeta**3, xi**3*eta**2*zeta**4, xi**3*eta**3, xi**3*eta**3*zeta, xi**3*eta**3*zeta**2, xi**3*eta**3*zeta**3, xi**3*eta**3*zeta**4, xi**3*eta**4, xi**3*eta**4*zeta, xi**3*eta**4*zeta**2, xi**3*eta**4*zeta**3, xi**3*eta**4*zeta**4, xi**4, xi**4*zeta, xi**4*zeta**2, xi**4*zeta**3, xi**4*zeta**4, xi**4*eta, xi**4*eta*zeta, xi**4*eta*zeta**2, xi**4*eta*zeta**3, xi**4*eta*zeta**4, xi**4*eta**2, xi**4*eta**2*zeta, xi**4*eta**2*zeta**2, xi**4*eta**2*zeta**3, xi**4*eta**2*zeta**4, xi**4*eta**3, xi**4*eta**3*zeta, xi**4*eta**3*zeta**2, xi**4*eta**3*zeta**3, xi**4*eta**3*zeta**4, xi**4*eta**4, xi**4*eta**4*zeta, xi**4*eta**4*zeta**2, xi**4*eta**4*zeta**3, xi**4*eta**4*zeta**4)).T
+                #     xi, eta, zeta = np.array(np.meshgrid(sbp_lgl.x, sbp_lgl.x, sbp_lgl.x)).reshape(3, -1).T[:,[1,0,2]].T
+                #     Vlgl = np.vstack((ones, zeta, zeta**2, zeta**3, zeta**4, eta, eta*zeta, eta*zeta**2, eta*zeta**3, eta*zeta**4, eta**2, eta**2*zeta, eta**2*zeta**2, eta**2*zeta**3, eta**2*zeta**4, eta**3, eta**3*zeta, eta**3*zeta**2, eta**3*zeta**3, eta**3*zeta**4, eta**4, eta**4*zeta, eta**4*zeta**2, eta**4*zeta**3, eta**4*zeta**4, xi, xi*zeta, xi*zeta**2, xi*zeta**3, xi*zeta**4, xi*eta, xi*eta*zeta, xi*eta*zeta**2, xi*eta*zeta**3, xi*eta*zeta**4, xi*eta**2, xi*eta**2*zeta, xi*eta**2*zeta**2, xi*eta**2*zeta**3, xi*eta**2*zeta**4, xi*eta**3, xi*eta**3*zeta, xi*eta**3*zeta**2, xi*eta**3*zeta**3, xi*eta**3*zeta**4, xi*eta**4, xi*eta**4*zeta, xi*eta**4*zeta**2, xi*eta**4*zeta**3, xi*eta**4*zeta**4, xi**2, xi**2*zeta, xi**2*zeta**2, xi**2*zeta**3, xi**2*zeta**4, xi**2*eta, xi**2*eta*zeta, xi**2*eta*zeta**2, xi**2*eta*zeta**3, xi**2*eta*zeta**4, xi**2*eta**2, xi**2*eta**2*zeta, xi**2*eta**2*zeta**2, xi**2*eta**2*zeta**3, xi**2*eta**2*zeta**4, xi**2*eta**3, xi**2*eta**3*zeta, xi**2*eta**3*zeta**2, xi**2*eta**3*zeta**3, xi**2*eta**3*zeta**4, xi**2*eta**4, xi**2*eta**4*zeta, xi**2*eta**4*zeta**2, xi**2*eta**4*zeta**3, xi**2*eta**4*zeta**4, xi**3, xi**3*zeta, xi**3*zeta**2, xi**3*zeta**3, xi**3*zeta**4, xi**3*eta, xi**3*eta*zeta, xi**3*eta*zeta**2, xi**3*eta*zeta**3, xi**3*eta*zeta**4, xi**3*eta**2, xi**3*eta**2*zeta, xi**3*eta**2*zeta**2, xi**3*eta**2*zeta**3, xi**3*eta**2*zeta**4, xi**3*eta**3, xi**3*eta**3*zeta, xi**3*eta**3*zeta**2, xi**3*eta**3*zeta**3, xi**3*eta**3*zeta**4, xi**3*eta**4, xi**3*eta**4*zeta, xi**3*eta**4*zeta**2, xi**3*eta**4*zeta**3, xi**3*eta**4*zeta**4, xi**4, xi**4*zeta, xi**4*zeta**2, xi**4*zeta**3, xi**4*zeta**4, xi**4*eta, xi**4*eta*zeta, xi**4*eta*zeta**2, xi**4*eta*zeta**3, xi**4*eta*zeta**4, xi**4*eta**2, xi**4*eta**2*zeta, xi**4*eta**2*zeta**2, xi**4*eta**2*zeta**3, xi**4*eta**2*zeta**4, xi**4*eta**3, xi**4*eta**3*zeta, xi**4*eta**3*zeta**2, xi**4*eta**3*zeta**3, xi**4*eta**3*zeta**4, xi**4*eta**4, xi**4*eta**4*zeta, xi**4*eta**4*zeta**2, xi**4*eta**4*zeta**3, xi**4*eta**4*zeta**4)).T
+                # else:
+                #     raise Exception('kopriva metrics only set up for p<=4')
                 
-                Vlgltosbp = Vsbp @ np.linalg.inv(Vlgl)
-                Vsbptolgl = Vlgl @ np.linalg.inv(Vsbp)
+                # Vlgltosbp = Vsbp @ np.linalg.inv(Vlgl)
+                # Vsbptolgl = Vlgl @ np.linalg.inv(Vsbp)
+                from Source.Disc.MakeDgOp import MakeDgOp
+                Vlgltosbp = MakeDgOp.VandermondeLagrange1D(sbp.x,sbp_lgl.x)
+                Vsbptolgl = MakeDgOp.VandermondeLagrange1D(sbp_lgl.x,sbp.x)
+                Vlgltosbp = np.kron(np.kron(Vlgltosbp,Vlgltosbp),Vlgltosbp)
+                Vsbptolgl = np.kron(np.kron(Vsbptolgl,Vsbptolgl),Vsbptolgl)
 
-                eye = np.eye(self.nen)
-                Dx = np.kron(np.kron(sbp_lgl.D, eye), eye)
-                Dy = np.kron(np.kron(eye, sbp_lgl.D), eye)
-                Dz = np.kron(np.kron(eye, eye), sbp_lgl.D)  
-                # The following does NOT work (although the interpolation is exact, 
-                # can have different polynomials in neighboring elements, i.e. different boundary values)
-                #x_elem = Vsbptolgl @ self.xyz_elem[:,0,:]
-                #y_elem = Vsbptolgl @ self.xyz_elem[:,1,:]
-                #z_elem = Vsbptolgl @ self.xyz_elem[:,2,:]
-                x_unwarped = self.xyz_elem_unwarped[:,0,:]
-                y_unwarped = self.xyz_elem_unwarped[:,1,:]
-                z_unwarped = self.xyz_elem_unwarped[:,2,:]
-                xyz_unwarped_lgl = np.zeros_like(self.xyz_elem_unwarped)
-                xyz_unwarped_lgl[:,0,:] = Vsbptolgl @ x_unwarped
-                xyz_unwarped_lgl[:,1,:] = Vsbptolgl @ y_unwarped
-                xyz_unwarped_lgl[:,2,:] = Vsbptolgl @ z_unwarped
-                xyz_elem = self.warp_mesh_3d(xyz=xyz_unwarped_lgl)
-                x_elem, y_elem, z_elem = xyz_elem[:,0,:], xyz_elem[:,1,:], xyz_elem[:,2,:]
-                dxp_dxr = Dx @ x_elem
-                dxp_dyr = Dy @ x_elem
-                dxp_dzr = Dz @ x_elem
-                dyp_dxr = Dx @ y_elem
-                dyp_dyr = Dy @ y_elem
-                dyp_dzr = Dz @ y_elem
-                dzp_dxr = Dx @ z_elem
-                dzp_dyr = Dy @ z_elem
-                dzp_dzr = Dz @ z_elem
-                dXp_dxr = fn.lm_gdiag(Dx, x_elem)
-                dXp_dyr = fn.lm_gdiag(Dy, x_elem)
-                dXp_dzr = fn.lm_gdiag(Dz, x_elem)
+                D = sp.lm_to_sp(sbp_lgl.D) 
+                Dx = sp.kron_lm_eye(sp.kron_lm_eye(D, self.nen), self.nen)
+                Dy = sp.kron_lm_eye(sp.kron_eye_lm(D, self.nen), self.nen)
+                Dz = sp.kron_eye_lm(sp.kron_eye_lm(D, self.nen), self.nen) 
+
+                if metric_method.lower()== 'kopriva_extrap' or metric_method.lower()== 'kcw_extrap':
+                # The following does NOT produce unique surface values, so we'll need to average
+                    xyz_elem = np.einsum('ij,jme->ime', Vsbptolgl, self.xyz_elem)
+                    # we need to average now, keeping in mind vertices and edges are shared between more than two elements
+                    xyz_elem = self.average_facet_nodes(xyz_elem,sbp_lgl.nn,periodic)
+                    x_elem, y_elem, z_elem = xyz_elem[:,0,:], xyz_elem[:,1,:], xyz_elem[:,2,:]
+                else:
+                    x_unwarped = self.xyz_elem_unwarped[:,0,:]
+                    y_unwarped = self.xyz_elem_unwarped[:,1,:]
+                    z_unwarped = self.xyz_elem_unwarped[:,2,:]
+                    xyz_unwarped_lgl = np.zeros_like(self.xyz_elem_unwarped)
+                    xyz_unwarped_lgl[:,0,:] = Vsbptolgl @ x_unwarped
+                    xyz_unwarped_lgl[:,1,:] = Vsbptolgl @ y_unwarped
+                    xyz_unwarped_lgl[:,2,:] = Vsbptolgl @ z_unwarped
+                    xyz_elem = self.warp_mesh_3d(xyz=xyz_unwarped_lgl)
+                    x_elem, y_elem, z_elem = xyz_elem[:,0,:], xyz_elem[:,1,:], xyz_elem[:,2,:]
+                dxp_dxr = sp.lm_gv(Dx, x_elem)
+                dxp_dyr = sp.lm_gv(Dy, x_elem)
+                dxp_dzr = sp.lm_gv(Dz, x_elem)
+                dyp_dxr = sp.lm_gv(Dx, y_elem)
+                dyp_dyr = sp.lm_gv(Dy, y_elem)
+                dyp_dzr = sp.lm_gv(Dz, y_elem)
+                dzp_dxr = sp.lm_gv(Dx, z_elem)
+                dzp_dyr = sp.lm_gv(Dy, z_elem)
+                dzp_dzr = sp.lm_gv(Dz, z_elem)
+                dXp_dxr = sp.lm_gdiag(Dx, x_elem)
+                dXp_dyr = sp.lm_gdiag(Dy, x_elem)
+                dXp_dzr = sp.lm_gdiag(Dz, x_elem)
                 dYp_dxr = fn.lm_gdiag(Dx, y_elem)
-                dYp_dyr = fn.lm_gdiag(Dy, y_elem)
-                dYp_dzr = fn.lm_gdiag(Dz, y_elem)
-                dZp_dxr = fn.lm_gdiag(Dx, z_elem)
-                dZp_dyr = fn.lm_gdiag(Dy, z_elem)
-                dZp_dzr = fn.lm_gdiag(Dz, z_elem)
+                dYp_dyr = sp.lm_gdiag(Dy, y_elem)
+                dYp_dzr = sp.lm_gdiag(Dz, y_elem)
+                dZp_dxr = sp.lm_gdiag(Dx, z_elem)
+                dZp_dyr = sp.lm_gdiag(Dy, z_elem)
+                dZp_dzr = sp.lm_gdiag(Dz, z_elem)
 
-                self.metrics[:,0,:] = Vlgltosbp @ ( fn.gm_gv(dZp_dzr,dyp_dyr) - fn.gm_gv(dZp_dyr,dyp_dzr) )
-                self.metrics[:,1,:] = Vlgltosbp @ ( fn.gm_gv(dXp_dzr,dzp_dyr) - fn.gm_gv(dXp_dyr,dzp_dzr) )
-                self.metrics[:,2,:] = Vlgltosbp @ ( fn.gm_gv(dYp_dzr,dxp_dyr) - fn.gm_gv(dYp_dyr,dxp_dzr) )
-                self.metrics[:,3,:] = Vlgltosbp @ ( fn.gm_gv(dZp_dxr,dyp_dzr) - fn.gm_gv(dZp_dzr,dyp_dxr) )
-                self.metrics[:,4,:] = Vlgltosbp @ ( fn.gm_gv(dXp_dxr,dzp_dzr) - fn.gm_gv(dXp_dzr,dzp_dxr) )
-                self.metrics[:,5,:] = Vlgltosbp @ ( fn.gm_gv(dYp_dxr,dxp_dzr) - fn.gm_gv(dYp_dzr,dxp_dxr) )
-                self.metrics[:,6,:] = Vlgltosbp @ ( fn.gm_gv(dZp_dyr,dyp_dxr) - fn.gm_gv(dZp_dxr,dyp_dyr) )
-                self.metrics[:,7,:] = Vlgltosbp @ ( fn.gm_gv(dXp_dyr,dzp_dxr) - fn.gm_gv(dXp_dxr,dzp_dyr) )
-                self.metrics[:,8,:] = Vlgltosbp @ ( fn.gm_gv(dYp_dyr,dxp_dxr) - fn.gm_gv(dYp_dxr,dxp_dyr) )
+                # self.metrics[:,0,:] = Vlgltosbp @ ( fn.gm_gv(dZp_dzr,dyp_dyr) - fn.gm_gv(dZp_dyr,dyp_dzr) )
+                # self.metrics[:,1,:] = Vlgltosbp @ ( fn.gm_gv(dXp_dzr,dzp_dyr) - fn.gm_gv(dXp_dyr,dzp_dzr) )
+                # self.metrics[:,2,:] = Vlgltosbp @ ( fn.gm_gv(dYp_dzr,dxp_dyr) - fn.gm_gv(dYp_dyr,dxp_dzr) )
+                # self.metrics[:,3,:] = Vlgltosbp @ ( fn.gm_gv(dZp_dxr,dyp_dzr) - fn.gm_gv(dZp_dzr,dyp_dxr) )
+                # self.metrics[:,4,:] = Vlgltosbp @ ( fn.gm_gv(dXp_dxr,dzp_dzr) - fn.gm_gv(dXp_dzr,dzp_dxr) )
+                # self.metrics[:,5,:] = Vlgltosbp @ ( fn.gm_gv(dYp_dxr,dxp_dzr) - fn.gm_gv(dYp_dzr,dxp_dxr) )
+                # self.metrics[:,6,:] = Vlgltosbp @ ( fn.gm_gv(dZp_dyr,dyp_dxr) - fn.gm_gv(dZp_dxr,dyp_dyr) )
+                # self.metrics[:,7,:] = Vlgltosbp @ ( fn.gm_gv(dXp_dyr,dzp_dxr) - fn.gm_gv(dXp_dxr,dzp_dyr) )
+                # self.metrics[:,8,:] = Vlgltosbp @ ( fn.gm_gv(dYp_dyr,dxp_dxr) - fn.gm_gv(dYp_dxr,dxp_dyr) )
+                self.metrics[:,0,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dYp_dyr,dzp_dzr) - sp.gm_gv(dZp_dyr,dyp_dzr) + sp.gm_gv(dZp_dzr,dyp_dyr) - sp.gm_gv(dYp_dzr,dzp_dyr)) )
+                self.metrics[:,1,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dZp_dyr,dxp_dzr) - sp.gm_gv(dXp_dyr,dzp_dzr) + sp.gm_gv(dXp_dzr,dzp_dyr) - sp.gm_gv(dZp_dzr,dxp_dyr)) )
+                self.metrics[:,2,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dXp_dyr,dyp_dzr) - sp.gm_gv(dYp_dyr,dxp_dzr) + sp.gm_gv(dYp_dzr,dxp_dyr) - sp.gm_gv(dXp_dzr,dyp_dyr)) )
+                self.metrics[:,3,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dYp_dzr,dzp_dxr) - sp.gm_gv(dZp_dzr,dyp_dxr) + sp.gm_gv(dZp_dxr,dyp_dzr) - sp.gm_gv(dYp_dxr,dzp_dzr)) )
+                self.metrics[:,4,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dZp_dzr,dxp_dxr) - sp.gm_gv(dXp_dzr,dzp_dxr) + sp.gm_gv(dXp_dxr,dzp_dzr) - sp.gm_gv(dZp_dxr,dxp_dzr)) )
+                self.metrics[:,5,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dXp_dzr,dyp_dxr) - sp.gm_gv(dYp_dzr,dxp_dxr) + sp.gm_gv(dYp_dxr,dxp_dzr) - sp.gm_gv(dXp_dxr,dyp_dzr)) )
+                self.metrics[:,6,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dYp_dxr,dzp_dyr) - sp.gm_gv(dZp_dxr,dyp_dyr) + sp.gm_gv(dZp_dyr,dyp_dxr) - sp.gm_gv(dYp_dyr,dzp_dxr)) )
+                self.metrics[:,7,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dZp_dxr,dxp_dyr) - sp.gm_gv(dXp_dxr,dzp_dyr) + sp.gm_gv(dXp_dyr,dzp_dxr) - sp.gm_gv(dZp_dyr,dxp_dxr)) )
+                self.metrics[:,8,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dXp_dxr,dyp_dyr) - sp.gm_gv(dYp_dxr,dxp_dyr) + sp.gm_gv(dYp_dyr,dxp_dxr) - sp.gm_gv(dXp_dyr,dyp_dxr)) ) 
 
                 
             else:
@@ -2071,28 +2396,29 @@ class MakeMesh:
                     print("WARNING: Did not understand metric_method. For 3D, try 'exact', 'VinokurYee', or 'ThomasLombard', or 'direct'.")
                     print("         Defaulting to 'VinokurYee'.")
                     metric_method = 'VinokurYee'
-                eye = np.eye(self.nen)
-                Dx = np.kron(np.kron(sbp.D, eye), eye)
-                Dy = np.kron(np.kron(eye, sbp.D), eye)
-                Dz = np.kron(np.kron(eye, eye), sbp.D)   
-                dxp_dxr = Dx @ self.xyz_elem[:,0,:]
-                dxp_dyr = Dy @ self.xyz_elem[:,0,:]
-                dxp_dzr = Dz @ self.xyz_elem[:,0,:]
-                dyp_dxr = Dx @ self.xyz_elem[:,1,:]
-                dyp_dyr = Dy @ self.xyz_elem[:,1,:]
-                dyp_dzr = Dz @ self.xyz_elem[:,1,:]
-                dzp_dxr = Dx @ self.xyz_elem[:,2,:]
-                dzp_dyr = Dy @ self.xyz_elem[:,2,:]
-                dzp_dzr = Dz @ self.xyz_elem[:,2,:]
-                dXp_dxr = fn.lm_gdiag(Dx, self.xyz_elem[:,0,:])
-                dXp_dyr = fn.lm_gdiag(Dy, self.xyz_elem[:,0,:])
-                dXp_dzr = fn.lm_gdiag(Dz, self.xyz_elem[:,0,:])
-                dYp_dxr = fn.lm_gdiag(Dx, self.xyz_elem[:,1,:])
-                dYp_dyr = fn.lm_gdiag(Dy, self.xyz_elem[:,1,:])
-                dYp_dzr = fn.lm_gdiag(Dz, self.xyz_elem[:,1,:])
-                dZp_dxr = fn.lm_gdiag(Dx, self.xyz_elem[:,2,:])
-                dZp_dyr = fn.lm_gdiag(Dy, self.xyz_elem[:,2,:])
-                dZp_dzr = fn.lm_gdiag(Dz, self.xyz_elem[:,2,:])
+
+                D = sp.lm_to_sp(sbp.D) 
+                Dx = sp.kron_lm_eye(sp.kron_lm_eye(D, self.nen), self.nen)
+                Dy = sp.kron_lm_eye(sp.kron_eye_lm(D, self.nen), self.nen)
+                Dz = sp.kron_eye_lm(sp.kron_eye_lm(D, self.nen), self.nen)
+                dxp_dxr = sp.lm_gv(Dx, self.xyz_elem[:,0,:])
+                dxp_dyr = sp.lm_gv(Dy, self.xyz_elem[:,0,:])
+                dxp_dzr = sp.lm_gv(Dz, self.xyz_elem[:,0,:])
+                dyp_dxr = sp.lm_gv(Dx, self.xyz_elem[:,1,:])
+                dyp_dyr = sp.lm_gv(Dy, self.xyz_elem[:,1,:])
+                dyp_dzr = sp.lm_gv(Dz, self.xyz_elem[:,1,:])
+                dzp_dxr = sp.lm_gv(Dx, self.xyz_elem[:,2,:])
+                dzp_dyr = sp.lm_gv(Dy, self.xyz_elem[:,2,:])
+                dzp_dzr = sp.lm_gv(Dz, self.xyz_elem[:,2,:])
+                dXp_dxr = sp.lm_gdiag(Dx, self.xyz_elem[:,0,:])
+                dXp_dyr = sp.lm_gdiag(Dy, self.xyz_elem[:,0,:])
+                dXp_dzr = sp.lm_gdiag(Dz, self.xyz_elem[:,0,:])
+                dYp_dxr = sp.lm_gdiag(Dx, self.xyz_elem[:,1,:])
+                dYp_dyr = sp.lm_gdiag(Dy, self.xyz_elem[:,1,:])
+                dYp_dzr = sp.lm_gdiag(Dz, self.xyz_elem[:,1,:])
+                dZp_dxr = sp.lm_gdiag(Dx, self.xyz_elem[:,2,:])
+                dZp_dyr = sp.lm_gdiag(Dy, self.xyz_elem[:,2,:])
+                dZp_dzr = sp.lm_gdiag(Dz, self.xyz_elem[:,2,:])
                 
                 if jac_method.lower()=='direct' or jac_method.lower()=='calculate':
                     # unique (matrix has unique determinant)                            
@@ -2101,26 +2427,26 @@ class MakeMesh:
                                  + dzp_dxr*(dxp_dyr*dyp_dzr - dxp_dzr*dyp_dyr)
                 
                 if metric_method.lower() == 'thomaslombard':
-                    self.metrics[:,0,:] = fn.gm_gv(dZp_dzr,dyp_dyr) - fn.gm_gv(dZp_dyr,dyp_dzr)
-                    self.metrics[:,1,:] = fn.gm_gv(dXp_dzr,dzp_dyr) - fn.gm_gv(dXp_dyr,dzp_dzr)
-                    self.metrics[:,2,:] = fn.gm_gv(dYp_dzr,dxp_dyr) - fn.gm_gv(dYp_dyr,dxp_dzr)
-                    self.metrics[:,3,:] = fn.gm_gv(dZp_dxr,dyp_dzr) - fn.gm_gv(dZp_dzr,dyp_dxr)
-                    self.metrics[:,4,:] = fn.gm_gv(dXp_dxr,dzp_dzr) - fn.gm_gv(dXp_dzr,dzp_dxr)
-                    self.metrics[:,5,:] = fn.gm_gv(dYp_dxr,dxp_dzr) - fn.gm_gv(dYp_dzr,dxp_dxr)
-                    self.metrics[:,6,:] = fn.gm_gv(dZp_dyr,dyp_dxr) - fn.gm_gv(dZp_dxr,dyp_dyr)
-                    self.metrics[:,7,:] = fn.gm_gv(dXp_dyr,dzp_dxr) - fn.gm_gv(dXp_dxr,dzp_dyr)
-                    self.metrics[:,8,:] = fn.gm_gv(dYp_dyr,dxp_dxr) - fn.gm_gv(dYp_dxr,dxp_dyr) 
+                    self.metrics[:,0,:] = sp.gm_gv(dZp_dzr,dyp_dyr) - sp.gm_gv(dZp_dyr,dyp_dzr)
+                    self.metrics[:,1,:] = sp.gm_gv(dXp_dzr,dzp_dyr) - sp.gm_gv(dXp_dyr,dzp_dzr)
+                    self.metrics[:,2,:] = sp.gm_gv(dYp_dzr,dxp_dyr) - sp.gm_gv(dYp_dyr,dxp_dzr)
+                    self.metrics[:,3,:] = sp.gm_gv(dZp_dxr,dyp_dzr) - sp.gm_gv(dZp_dzr,dyp_dxr)
+                    self.metrics[:,4,:] = sp.gm_gv(dXp_dxr,dzp_dzr) - sp.gm_gv(dXp_dzr,dzp_dxr)
+                    self.metrics[:,5,:] = sp.gm_gv(dYp_dxr,dxp_dzr) - sp.gm_gv(dYp_dzr,dxp_dxr)
+                    self.metrics[:,6,:] = sp.gm_gv(dZp_dyr,dyp_dxr) - sp.gm_gv(dZp_dxr,dyp_dyr)
+                    self.metrics[:,7,:] = sp.gm_gv(dXp_dyr,dzp_dxr) - sp.gm_gv(dXp_dxr,dzp_dyr)
+                    self.metrics[:,8,:] = sp.gm_gv(dYp_dyr,dxp_dxr) - sp.gm_gv(dYp_dxr,dxp_dyr) 
                                    
                 elif metric_method.lower() == 'vinokuryee':                   
-                    self.metrics[:,0,:] = 0.5*(fn.gm_gv(dYp_dyr,dzp_dzr) - fn.gm_gv(dZp_dyr,dyp_dzr) + fn.gm_gv(dZp_dzr,dyp_dyr) - fn.gm_gv(dYp_dzr,dzp_dyr))
-                    self.metrics[:,1,:] = 0.5*(fn.gm_gv(dZp_dyr,dxp_dzr) - fn.gm_gv(dXp_dyr,dzp_dzr) + fn.gm_gv(dXp_dzr,dzp_dyr) - fn.gm_gv(dZp_dzr,dxp_dyr))
-                    self.metrics[:,2,:] = 0.5*(fn.gm_gv(dXp_dyr,dyp_dzr) - fn.gm_gv(dYp_dyr,dxp_dzr) + fn.gm_gv(dYp_dzr,dxp_dyr) - fn.gm_gv(dXp_dzr,dyp_dyr))
-                    self.metrics[:,3,:] = 0.5*(fn.gm_gv(dYp_dzr,dzp_dxr) - fn.gm_gv(dZp_dzr,dyp_dxr) + fn.gm_gv(dZp_dxr,dyp_dzr) - fn.gm_gv(dYp_dxr,dzp_dzr))
-                    self.metrics[:,4,:] = 0.5*(fn.gm_gv(dZp_dzr,dxp_dxr) - fn.gm_gv(dXp_dzr,dzp_dxr) + fn.gm_gv(dXp_dxr,dzp_dzr) - fn.gm_gv(dZp_dxr,dxp_dzr))
-                    self.metrics[:,5,:] = 0.5*(fn.gm_gv(dXp_dzr,dyp_dxr) - fn.gm_gv(dYp_dzr,dxp_dxr) + fn.gm_gv(dYp_dxr,dxp_dzr) - fn.gm_gv(dXp_dxr,dyp_dzr))
-                    self.metrics[:,6,:] = 0.5*(fn.gm_gv(dYp_dxr,dzp_dyr) - fn.gm_gv(dZp_dxr,dyp_dyr) + fn.gm_gv(dZp_dyr,dyp_dxr) - fn.gm_gv(dYp_dyr,dzp_dxr))
-                    self.metrics[:,7,:] = 0.5*(fn.gm_gv(dZp_dxr,dxp_dyr) - fn.gm_gv(dXp_dxr,dzp_dyr) + fn.gm_gv(dXp_dyr,dzp_dxr) - fn.gm_gv(dZp_dyr,dxp_dxr))
-                    self.metrics[:,8,:] = 0.5*(fn.gm_gv(dXp_dxr,dyp_dyr) - fn.gm_gv(dYp_dxr,dxp_dyr) + fn.gm_gv(dYp_dyr,dxp_dxr) - fn.gm_gv(dXp_dyr,dyp_dxr)) 
+                    self.metrics[:,0,:] = 0.5*(sp.gm_gv(dYp_dyr,dzp_dzr) - sp.gm_gv(dZp_dyr,dyp_dzr) + sp.gm_gv(dZp_dzr,dyp_dyr) - sp.gm_gv(dYp_dzr,dzp_dyr))
+                    self.metrics[:,1,:] = 0.5*(sp.gm_gv(dZp_dyr,dxp_dzr) - sp.gm_gv(dXp_dyr,dzp_dzr) + sp.gm_gv(dXp_dzr,dzp_dyr) - sp.gm_gv(dZp_dzr,dxp_dyr))
+                    self.metrics[:,2,:] = 0.5*(sp.gm_gv(dXp_dyr,dyp_dzr) - sp.gm_gv(dYp_dyr,dxp_dzr) + sp.gm_gv(dYp_dzr,dxp_dyr) - sp.gm_gv(dXp_dzr,dyp_dyr))
+                    self.metrics[:,3,:] = 0.5*(sp.gm_gv(dYp_dzr,dzp_dxr) - sp.gm_gv(dZp_dzr,dyp_dxr) + sp.gm_gv(dZp_dxr,dyp_dzr) - sp.gm_gv(dYp_dxr,dzp_dzr))
+                    self.metrics[:,4,:] = 0.5*(sp.gm_gv(dZp_dzr,dxp_dxr) - sp.gm_gv(dXp_dzr,dzp_dxr) + sp.gm_gv(dXp_dxr,dzp_dzr) - sp.gm_gv(dZp_dxr,dxp_dzr))
+                    self.metrics[:,5,:] = 0.5*(sp.gm_gv(dXp_dzr,dyp_dxr) - sp.gm_gv(dYp_dzr,dxp_dxr) + sp.gm_gv(dYp_dxr,dxp_dzr) - sp.gm_gv(dXp_dxr,dyp_dzr))
+                    self.metrics[:,6,:] = 0.5*(sp.gm_gv(dYp_dxr,dzp_dyr) - sp.gm_gv(dZp_dxr,dyp_dyr) + sp.gm_gv(dZp_dyr,dyp_dxr) - sp.gm_gv(dYp_dyr,dzp_dxr))
+                    self.metrics[:,7,:] = 0.5*(sp.gm_gv(dZp_dxr,dxp_dyr) - sp.gm_gv(dXp_dxr,dzp_dyr) + sp.gm_gv(dXp_dyr,dzp_dxr) - sp.gm_gv(dZp_dyr,dxp_dxr))
+                    self.metrics[:,8,:] = 0.5*(sp.gm_gv(dXp_dxr,dyp_dyr) - sp.gm_gv(dYp_dxr,dxp_dyr) + sp.gm_gv(dYp_dyr,dxp_dxr) - sp.gm_gv(dXp_dyr,dyp_dxr)) 
                     
                 elif metric_method.lower() == 'direct':  
                     self.metrics[:,0,:] = dzp_dzr*dyp_dyr - dzp_dyr*dyp_dzr
@@ -2139,15 +2465,14 @@ class MakeMesh:
                 
             elif bdy_metric_method.lower()=='interpolate' or bdy_metric_method.lower()=='extrapolate' or bdy_metric_method.lower()=='project':
                 self.bdy_metrics = np.zeros((self.nen**2,6,9,self.nelem[0]*self.nelem[1]*self.nelem[2]))
-                eye = np.eye(self.nen)
-                D1 = np.kron(sbp.D,eye)
-                D2 = np.kron(eye,sbp.D)
-                txbT = np.kron(np.kron(sbp.tR.reshape((self.nen,1)), eye), eye).T
-                txaT = np.kron(np.kron(sbp.tL.reshape((self.nen,1)), eye), eye).T
-                tybT = np.kron(np.kron(eye, sbp.tR.reshape((self.nen,1))), eye).T
-                tyaT = np.kron(np.kron(eye, sbp.tL.reshape((self.nen,1))), eye).T
-                tzbT = np.kron(np.kron(eye, eye), sbp.tR.reshape((self.nen,1))).T
-                tzaT = np.kron(np.kron(eye, eye), sbp.tL.reshape((self.nen,1))).T
+                tR = sp.lm_to_sp(sbp.tR.reshape((self.nen,1)))
+                tL = sp.lm_to_sp(sbp.tL.reshape((self.nen,1)))
+                txbT = sp.kron_lm_eye(sp.kron_lm_eye(tR, self.nen), self.nen).T()
+                txaT = sp.kron_lm_eye(sp.kron_lm_eye(tL, self.nen), self.nen).T()
+                tybT = sp.kron_lm_eye(sp.kron_eye_lm(tR, self.nen), self.nen).T()
+                tyaT = sp.kron_lm_eye(sp.kron_eye_lm(tL, self.nen), self.nen).T()
+                tzbT = sp.kron_eye_lm(sp.kron_eye_lm(tR, self.nen), self.nen).T()
+                tzaT = sp.kron_eye_lm(sp.kron_eye_lm(tL, self.nen), self.nen).T()
                 skipx = self.nelem[1]*self.nelem[2]
                 skipz = self.nelem[0]*self.nelem[1]
                 average = True # for testing things when not averaging surface metrics
@@ -2158,8 +2483,8 @@ class MakeMesh:
                 
                     for rowx in range(skipx):
                         for i in range(3): # loop over matrix entries
-                            Lmetrics = txbT @ self.metrics[:,i,rowx::skipx]
-                            Rmetrics = txaT @ self.metrics[:,i,rowx::skipx]
+                            Lmetrics = sp.lm_gv(txbT, self.metrics[:,i,rowx::skipx])
+                            Rmetrics = sp.lm_gv(txaT, self.metrics[:,i,rowx::skipx])
                             if self.nelem[0] != 1:
                                 avgmetrics = (Lmetrics[:,:-1] + Rmetrics[:,1:])/2
                                 maxdiff = max(maxdiff, np.max(abs(avgmetrics-Lmetrics[:,:-1])))
@@ -2178,8 +2503,8 @@ class MakeMesh:
                         start = coly + (coly//self.nelem[2])*(self.nelem[1]-1)*self.nelem[2]
                         end = start + skipx
                         for i in range(3,6): # loop over matrix entries
-                            Lmetrics = tybT @ self.metrics[:,i,start:end:self.nelem[2]]
-                            Rmetrics = tyaT @ self.metrics[:,i,start:end:self.nelem[2]]
+                            Lmetrics = sp.lm_gv(tybT, self.metrics[:,i,start:end:self.nelem[2]])
+                            Rmetrics = sp.lm_gv(tyaT, self.metrics[:,i,start:end:self.nelem[2]])
                             if self.nelem[1] != 1:
                                 avgmetrics = (Lmetrics[:,:-1] + Rmetrics[:,1:])/2
                                 maxdiff = max(maxdiff, np.max(abs(avgmetrics-Lmetrics[:,:-1])))
@@ -2198,8 +2523,8 @@ class MakeMesh:
                         start = colz*self.nelem[2]
                         end = start + self.nelem[2]
                         for i in range(6,9): # loop over matrix entries
-                            Lmetrics = tzbT @ self.metrics[:,i,start:end]
-                            Rmetrics = tzaT @ self.metrics[:,i,start:end]
+                            Lmetrics = sp.lm_gv(tzbT, self.metrics[:,i,start:end])
+                            Rmetrics = sp.lm_gv(tzaT, self.metrics[:,i,start:end])
                             if self.nelem[2] != 1:
                                 avgmetrics = (Lmetrics[:,:-1] + Rmetrics[:,1:])/2
                                 maxdiff = max(maxdiff, np.max(abs(avgmetrics-Lmetrics[:,:-1])))
@@ -2219,14 +2544,14 @@ class MakeMesh:
                     
                 else:
                     for i in range(3):
-                        self.bdy_metrics[:,0,i,:] = txaT @ self.metrics[:,i,:]
-                        self.bdy_metrics[:,1,i,:] = txbT @ self.metrics[:,i,:]
+                        self.bdy_metrics[:,0,i,:] = sp.lm_gv(txaT, self.metrics[:,i,:])
+                        self.bdy_metrics[:,1,i,:] = sp.lm_gv(txbT, self.metrics[:,i,:])
                     for i in range(3,6):
-                        self.bdy_metrics[:,2,i,:] = tyaT @ self.metrics[:,i,:]
-                        self.bdy_metrics[:,3,i,:] = tybT @ self.metrics[:,i,:]
+                        self.bdy_metrics[:,2,i,:] = sp.lm_gv(tyaT, self.metrics[:,i,:])
+                        self.bdy_metrics[:,3,i,:] = sp.lm_gv(tybT, self.metrics[:,i,:])
                     for i in range(6,9):
-                        self.bdy_metrics[:,4,i,:] = tzaT @ self.metrics[:,i,:]
-                        self.bdy_metrics[:,5,i,:] = tzbT @ self.metrics[:,i,:]
+                        self.bdy_metrics[:,4,i,:] = sp.lm_gv(tzaT, self.metrics[:,i,:])
+                        self.bdy_metrics[:,5,i,:] = sp.lm_gv(tzbT, self.metrics[:,i,:])
                         
                 # set unused components to None to avoid mistakes
                 self.ignore_surface_metrics()
@@ -2237,27 +2562,27 @@ class MakeMesh:
                     print("         Defaulting to 'VinokurYee'.")
                     self.bdy_metric_method = 'VinokurYee'
                 self.bdy_metrics = np.zeros((self.nen**2,6,9,self.nelem[0]*self.nelem[1]*self.nelem[2]))
-                eye = np.eye(self.nen)
-                D1 = np.kron(sbp.D,eye)
-                D2 = np.kron(eye,sbp.D)
+                D = sp.lm_to_sp(sbp.D)
+                D1 = sp.kron_lm_eye(D, self.nen)
+                D2 = sp.kron_eye_lm(D, self.nen)
                 if bdy_metric_method.lower() == 'thomaslombard':
                     for f in range(6): # loop over facets (xleft, xright, yleft, yright, zxleft, zright)
                         if (f == 0) or (f == 1):
-                            self.bdy_metrics[:,f,0,:] = fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,2,f,:]),(D1 @ self.bdy_xyz[:,1,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,2,f,:]),(D2 @ self.bdy_xyz[:,1,f,:]))
-                            self.bdy_metrics[:,f,1,:] = fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,0,f,:]),(D1 @ self.bdy_xyz[:,2,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,0,f,:]),(D2 @ self.bdy_xyz[:,2,f,:]))
-                            self.bdy_metrics[:,f,2,:] = fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,1,f,:]),(D1 @ self.bdy_xyz[:,0,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,1,f,:]),(D2 @ self.bdy_xyz[:,0,f,:]))
+                            self.bdy_metrics[:,f,0,:] = sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,2,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,1,f,:])) - sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,2,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,1,f,:]))
+                            self.bdy_metrics[:,f,1,:] = sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,0,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,2,f,:])) - sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,0,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,2,f,:]))
+                            self.bdy_metrics[:,f,2,:] = sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,1,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,0,f,:])) - sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,1,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,0,f,:]))
                             self.bdy_metrics[:,f,3:,:] = None
                         elif (f == 2) or (f == 3):
                             self.bdy_metrics[:,f,:3,:] = None
-                            self.bdy_metrics[:,f,3,:] = fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,2,f,:]),(D2 @ self.bdy_xyz[:,1,f,:])) - fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,2,f,:]),(D1 @ self.bdy_xyz[:,1,f,:]))
-                            self.bdy_metrics[:,f,4,:] = fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,0,f,:]),(D2 @ self.bdy_xyz[:,2,f,:])) - fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,0,f,:]),(D1 @ self.bdy_xyz[:,2,f,:]))
-                            self.bdy_metrics[:,f,5,:] = fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,1,f,:]),(D2 @ self.bdy_xyz[:,0,f,:])) - fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,1,f,:]),(D1 @ self.bdy_xyz[:,0,f,:]))
+                            self.bdy_metrics[:,f,3,:] = sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,2,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,1,f,:])) - sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,2,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,1,f,:]))
+                            self.bdy_metrics[:,f,4,:] = sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,0,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,2,f,:])) - sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,0,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,2,f,:]))
+                            self.bdy_metrics[:,f,5,:] = sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,1,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,0,f,:])) - sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,1,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,0,f,:]))
                             self.bdy_metrics[:,f,6:,:] = None
                         elif (f == 4) or (f == 5):
                             self.bdy_metrics[:,f,:6,:] = None
-                            self.bdy_metrics[:,f,6,:] = fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,2,f,:]),(D1 @ self.bdy_xyz[:,1,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,2,f,:]),(D2 @ self.bdy_xyz[:,1,f,:]))
-                            self.bdy_metrics[:,f,7,:] = fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,0,f,:]),(D1 @ self.bdy_xyz[:,2,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,0,f,:]),(D2 @ self.bdy_xyz[:,2,f,:]))
-                            self.bdy_metrics[:,f,8,:] = fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,1,f,:]),(D1 @ self.bdy_xyz[:,0,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,1,f,:]),(D2 @ self.bdy_xyz[:,0,f,:]))
+                            self.bdy_metrics[:,f,6,:] = sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,2,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,1,f,:])) - sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,2,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,1,f,:]))
+                            self.bdy_metrics[:,f,7,:] = sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,0,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,2,f,:])) - sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,0,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,2,f,:]))
+                            self.bdy_metrics[:,f,8,:] = sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,1,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,0,f,:])) - sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,1,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,0,f,:]))
                 elif bdy_metric_method.lower() == 'thomaslombard_extrap':
                     bdy_xyz = self.extrapolate_xyz(sbp)
                     self.temp = bdy_xyz
@@ -2270,52 +2595,53 @@ class MakeMesh:
                     print('Warning: this method is only meant for testing. Domain boundaries are not averaged!')
                     for f in range(6): # loop over facets (xleft, xright, yleft, yright, zxleft, zright)
                         if (f == 0) or (f == 1):
-                            self.bdy_metrics[:,f,0,:] = fn.gm_gv(fn.lm_gdiag(D2, bdy_xyz[:,2,f,:]),(D1 @ bdy_xyz[:,1,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, bdy_xyz[:,2,f,:]),(D2 @ bdy_xyz[:,1,f,:]))
-                            self.bdy_metrics[:,f,1,:] = fn.gm_gv(fn.lm_gdiag(D2, bdy_xyz[:,0,f,:]),(D1 @ bdy_xyz[:,2,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, bdy_xyz[:,0,f,:]),(D2 @ bdy_xyz[:,2,f,:]))
-                            self.bdy_metrics[:,f,2,:] = fn.gm_gv(fn.lm_gdiag(D2, bdy_xyz[:,1,f,:]),(D1 @ bdy_xyz[:,0,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, bdy_xyz[:,1,f,:]),(D2 @ bdy_xyz[:,0,f,:]))
+                            self.bdy_metrics[:,f,0,:] = sp.gm_gv(sp.lm_gdiag(D2, bdy_xyz[:,2,f,:]),sp.lm_gv(D1, bdy_xyz[:,1,f,:])) - sp.gm_gv(sp.lm_gdiag(D1, bdy_xyz[:,2,f,:]),sp.lm_gv(D2, bdy_xyz[:,1,f,:]))
+                            self.bdy_metrics[:,f,1,:] = sp.gm_gv(sp.lm_gdiag(D2, bdy_xyz[:,0,f,:]),sp.lm_gv(D1, bdy_xyz[:,2,f,:])) - sp.gm_gv(sp.lm_gdiag(D1, bdy_xyz[:,0,f,:]),sp.lm_gv(D2, bdy_xyz[:,2,f,:]))
+                            self.bdy_metrics[:,f,2,:] = sp.gm_gv(sp.lm_gdiag(D2, bdy_xyz[:,1,f,:]),sp.lm_gv(D1, bdy_xyz[:,0,f,:])) - sp.gm_gv(sp.lm_gdiag(D1, bdy_xyz[:,1,f,:]),sp.lm_gv(D2, bdy_xyz[:,0,f,:]))
                             self.bdy_metrics[:,f,3:,:] = None
                         elif (f == 2) or (f == 3):
                             self.bdy_metrics[:,f,:3,:] = None
-                            self.bdy_metrics[:,f,3,:] = fn.gm_gv(fn.lm_gdiag(D1, bdy_xyz[:,2,f,:]),(D2 @ bdy_xyz[:,1,f,:])) - fn.gm_gv(fn.lm_gdiag(D2, bdy_xyz[:,2,f,:]),(D1 @ bdy_xyz[:,1,f,:]))
-                            self.bdy_metrics[:,f,4,:] = fn.gm_gv(fn.lm_gdiag(D1, bdy_xyz[:,0,f,:]),(D2 @ bdy_xyz[:,2,f,:])) - fn.gm_gv(fn.lm_gdiag(D2, bdy_xyz[:,0,f,:]),(D1 @ bdy_xyz[:,2,f,:]))
-                            self.bdy_metrics[:,f,5,:] = fn.gm_gv(fn.lm_gdiag(D1, bdy_xyz[:,1,f,:]),(D2 @ bdy_xyz[:,0,f,:])) - fn.gm_gv(fn.lm_gdiag(D2, bdy_xyz[:,1,f,:]),(D1 @ bdy_xyz[:,0,f,:]))
+                            self.bdy_metrics[:,f,3,:] = sp.gm_gv(sp.lm_gdiag(D1, bdy_xyz[:,2,f,:]),sp.lm_gv(D2, bdy_xyz[:,1,f,:])) - sp.gm_gv(sp.lm_gdiag(D2, bdy_xyz[:,2,f,:]),sp.lm_gv(D1, bdy_xyz[:,1,f,:]))
+                            self.bdy_metrics[:,f,4,:] = sp.gm_gv(sp.lm_gdiag(D1, bdy_xyz[:,0,f,:]),sp.lm_gv(D2, bdy_xyz[:,2,f,:])) - sp.gm_gv(sp.lm_gdiag(D2, bdy_xyz[:,0,f,:]),sp.lm_gv(D1, bdy_xyz[:,2,f,:]))
+                            self.bdy_metrics[:,f,5,:] = sp.gm_gv(sp.lm_gdiag(D1, bdy_xyz[:,1,f,:]),sp.lm_gv(D2, bdy_xyz[:,0,f,:])) - sp.gm_gv(sp.lm_gdiag(D2, bdy_xyz[:,1,f,:]),sp.lm_gv(D1, bdy_xyz[:,0,f,:]))
                             self.bdy_metrics[:,f,6:,:] = None
                         elif (f == 4) or (f == 5):
                             self.bdy_metrics[:,f,:6,:] = None
-                            self.bdy_metrics[:,f,6,:] = fn.gm_gv(fn.lm_gdiag(D2, bdy_xyz[:,2,f,:]),(D1 @ bdy_xyz[:,1,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, bdy_xyz[:,2,f,:]),(D2 @ bdy_xyz[:,1,f,:]))
-                            self.bdy_metrics[:,f,7,:] = fn.gm_gv(fn.lm_gdiag(D2, bdy_xyz[:,0,f,:]),(D1 @ bdy_xyz[:,2,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, bdy_xyz[:,0,f,:]),(D2 @ bdy_xyz[:,2,f,:]))
-                            self.bdy_metrics[:,f,8,:] = fn.gm_gv(fn.lm_gdiag(D2, bdy_xyz[:,1,f,:]),(D1 @ bdy_xyz[:,0,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, bdy_xyz[:,1,f,:]),(D2 @ bdy_xyz[:,0,f,:]))
+                            self.bdy_metrics[:,f,6,:] = sp.gm_gv(sp.lm_gdiag(D2, bdy_xyz[:,2,f,:]),sp.lm_gv(D1, bdy_xyz[:,1,f,:])) - sp.gm_gv(sp.lm_gdiag(D1, bdy_xyz[:,2,f,:]),sp.lm_gv(D2, bdy_xyz[:,1,f,:]))
+                            self.bdy_metrics[:,f,7,:] = sp.gm_gv(sp.lm_gdiag(D2, bdy_xyz[:,0,f,:]),sp.lm_gv(D1, bdy_xyz[:,2,f,:])) - sp.gm_gv(sp.lm_gdiag(D1, bdy_xyz[:,0,f,:]),sp.lm_gv(D2, bdy_xyz[:,2,f,:]))
+                            self.bdy_metrics[:,f,8,:] = sp.gm_gv(sp.lm_gdiag(D2, bdy_xyz[:,1,f,:]),sp.lm_gv(D1, bdy_xyz[:,0,f,:])) - sp.gm_gv(sp.lm_gdiag(D1, bdy_xyz[:,1,f,:]),sp.lm_gv(D2, bdy_xyz[:,0,f,:]))
                 elif bdy_metric_method.lower() == 'vinokuryee':
                     for f in range(6): # loop over facets (xleft, xright, yleft, yright, zxleft, zright)
                         if (f == 0) or (f == 1):
-                            self.bdy_metrics[:,f,0,:] = 0.5*(fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,1,f,:]),(D2 @ self.bdy_xyz[:,2,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,2,f,:]),(D2 @ self.bdy_xyz[:,1,f,:])) \
-                                                            +fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,2,f,:]),(D1 @ self.bdy_xyz[:,1,f,:])) - fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,1,f,:]),(D1 @ self.bdy_xyz[:,2,f,:])))
-                            self.bdy_metrics[:,f,1,:] = 0.5*(fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,2,f,:]),(D2 @ self.bdy_xyz[:,0,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,0,f,:]),(D2 @ self.bdy_xyz[:,2,f,:])) \
-                                                            +fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,0,f,:]),(D1 @ self.bdy_xyz[:,2,f,:])) - fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,2,f,:]),(D1 @ self.bdy_xyz[:,0,f,:])))
-                            self.bdy_metrics[:,f,2,:] = 0.5*(fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,0,f,:]),(D2 @ self.bdy_xyz[:,1,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,1,f,:]),(D2 @ self.bdy_xyz[:,0,f,:])) \
-                                                            +fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,1,f,:]),(D1 @ self.bdy_xyz[:,0,f,:])) - fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,0,f,:]),(D1 @ self.bdy_xyz[:,1,f,:])))
+                            self.bdy_metrics[:,f,0,:] = 0.5*(sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,1,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,2,f,:])) - sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,2,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,1,f,:])) \
+                                                            +sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,2,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,1,f,:])) - sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,1,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,2,f,:])))
+                            self.bdy_metrics[:,f,1,:] = 0.5*(sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,2,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,0,f,:])) - sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,0,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,2,f,:])) \
+                                                            +sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,0,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,2,f,:])) - sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,2,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,0,f,:])))
+                            self.bdy_metrics[:,f,2,:] = 0.5*(sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,0,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,1,f,:])) - sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,1,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,0,f,:])) \
+                                                            +sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,1,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,0,f,:])) - sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,0,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,1,f,:])))
                             self.bdy_metrics[:,f,3:,:] = None
                         elif (f == 2) or (f == 3):
                             self.bdy_metrics[:,f,:3,:] = None
-                            self.bdy_metrics[:,f,3,:] = 0.5*(fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,1,f,:]),(D1 @ self.bdy_xyz[:,2,f,:])) - fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,2,f,:]),(D1 @ self.bdy_xyz[:,1,f,:])) \
-                                                            +fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,2,f,:]),(D2 @ self.bdy_xyz[:,1,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,1,f,:]),(D2 @ self.bdy_xyz[:,2,f,:])))
-                            self.bdy_metrics[:,f,4,:] = 0.5*(fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,2,f,:]),(D1 @ self.bdy_xyz[:,0,f,:])) - fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,0,f,:]),(D1 @ self.bdy_xyz[:,2,f,:])) \
-                                                            +fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,0,f,:]),(D2 @ self.bdy_xyz[:,2,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,2,f,:]),(D2 @ self.bdy_xyz[:,0,f,:])))
-                            self.bdy_metrics[:,f,5,:] = 0.5*(fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,0,f,:]),(D1 @ self.bdy_xyz[:,1,f,:])) - fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,1,f,:]),(D1 @ self.bdy_xyz[:,0,f,:])) \
-                                                            +fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,1,f,:]),(D2 @ self.bdy_xyz[:,0,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,0,f,:]),(D2 @ self.bdy_xyz[:,1,f,:])))
+                            self.bdy_metrics[:,f,3,:] = 0.5*(sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,1,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,2,f,:])) - sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,2,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,1,f,:])) \
+                                                            +sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,2,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,1,f,:])) - sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,1,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,2,f,:])))
+                            self.bdy_metrics[:,f,4,:] = 0.5*(sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,2,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,0,f,:])) - sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,0,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,2,f,:])) \
+                                                            +sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,0,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,2,f,:])) - sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,2,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,0,f,:])))
+                            self.bdy_metrics[:,f,5,:] = 0.5*(sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,0,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,1,f,:])) - sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,1,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,0,f,:])) \
+                                                            +sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,1,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,0,f,:])) - sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,0,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,1,f,:])))
                             self.bdy_metrics[:,f,6:,:] = None
                         elif (f == 4) or (f == 5):
                             self.bdy_metrics[:,f,:6,:] = None
-                            self.bdy_metrics[:,f,6,:] = 0.5*(fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,1,f,:]),(D2 @ self.bdy_xyz[:,2,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,2,f,:]),(D2 @ self.bdy_xyz[:,1,f,:])) \
-                                                            +fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,2,f,:]),(D1 @ self.bdy_xyz[:,1,f,:])) - fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,1,f,:]),(D1 @ self.bdy_xyz[:,2,f,:])))
-                            self.bdy_metrics[:,f,7,:] = 0.5*(fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,2,f,:]),(D2 @ self.bdy_xyz[:,0,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,0,f,:]),(D2 @ self.bdy_xyz[:,2,f,:])) \
-                                                            +fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,0,f,:]),(D1 @ self.bdy_xyz[:,2,f,:])) - fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,2,f,:]),(D1 @ self.bdy_xyz[:,0,f,:])))
-                            self.bdy_metrics[:,f,8,:] = 0.5*(fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,0,f,:]),(D2 @ self.bdy_xyz[:,1,f,:])) - fn.gm_gv(fn.lm_gdiag(D1, self.bdy_xyz[:,1,f,:]),(D2 @ self.bdy_xyz[:,0,f,:])) \
-                                                            +fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,1,f,:]),(D1 @ self.bdy_xyz[:,0,f,:])) - fn.gm_gv(fn.lm_gdiag(D2, self.bdy_xyz[:,0,f,:]),(D1 @ self.bdy_xyz[:,1,f,:])))
+                            self.bdy_metrics[:,f,6,:] = 0.5*(sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,1,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,2,f,:])) - sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,2,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,1,f,:])) \
+                                                            +sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,2,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,1,f,:])) - sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,1,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,2,f,:])))
+                            self.bdy_metrics[:,f,7,:] = 0.5*(sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,2,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,0,f,:])) - sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,0,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,2,f,:])) \
+                                                            +sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,0,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,2,f,:])) - sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,2,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,0,f,:])))
+                            self.bdy_metrics[:,f,8,:] = 0.5*(sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,0,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,1,f,:])) - sp.gm_gv(sp.lm_gdiag(D1, self.bdy_xyz[:,1,f,:]),sp.lm_gv(D2, self.bdy_xyz[:,0,f,:])) \
+                                                            +sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,1,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,0,f,:])) - sp.gm_gv(sp.lm_gdiag(D2, self.bdy_xyz[:,0,f,:]),sp.lm_gv(D1, self.bdy_xyz[:,1,f,:])))
                     self.ignore_surface_metrics()
            
             
             if use_optz_metrics:
+                from scipy.sparse import lil_matrix
                 assert (bdy_metric_method.lower() != 'vinokuryee' and bdy_metric_method.lower() != 'thomaslombard'),'Must use extrapolated or exact boundary metrics for optimization.'
                 # overwrite metrics with optimized ones 
                 eye = np.eye(self.nen)
@@ -2328,7 +2654,8 @@ class MakeMesh:
                 if optz_method == 'essbp' or optz_method == 'default' or optz_method == 'alex' or optz_method == 'generalized':
                     # First optimize surface metrics, then do default optimization
                     
-                    A = np.zeros((self.nelem[0]*self.nelem[1]*self.nelem[2],self.nelem[0]*self.nelem[1]*self.nelem[2]))
+                    #A = np.zeros((self.nelem[0]*self.nelem[1]*self.nelem[2],self.nelem[0]*self.nelem[1]*self.nelem[2]))
+                    A = lil_matrix((self.nelem[0]*self.nelem[1]*self.nelem[2],self.nelem[0]*self.nelem[1]*self.nelem[2]), dtype=float)
                     Hperp = np.diag(np.kron(sbp.H,sbp.H))
                     H2sum = np.sum(Hperp*Hperp)
                     for ix in range(self.nelem[0]):
@@ -2361,7 +2688,8 @@ class MakeMesh:
                                     A[start,start-self.nelem[1]*self.nelem[2]] += -H2sum
                                 elif (ix == 0) and periodic[0]:
                                     A[start,((self.nelem[0]-1)*self.nelem[1] + iy)*self.nelem[2] + iz] += -H2sum
-          
+                    A = A.tocsr(); A.eliminate_zeros();
+                    
                     for phys_dir in range(3):
                         if phys_dir == 0: # matrix entries for metric terms
                             term = 'x'
@@ -2388,18 +2716,20 @@ class MakeMesh:
                             print('... good enough already. skipping optimization.')
                         else:
                             if (periodic[0] and periodic[1] and periodic[2]):
-                                if fn.is_pos_def(A):
-                                    print('Check: A is SPD')
-                                else:
-                                    print('Check: A is NOT SPD')
-                                    #print('size of A is', A.shape)
-                                    #print('rank of A is', int(np.linalg.matrix_rank(A)))
+                                #if fn.is_pos_def(A):
+                                #    print('Check: A is SPD')
+                                #else:
+                                #    print('Check: A is NOT SPD')
+                                #    print('size of A is', A.shape)
+                                #    print('rank of A is', int(np.linalg.matrix_rank(A)))
                                 #print(np.linalg.eigvals(A))
-                                lam = np.linalg.lstsq(A,RHS,rcond=-1)[0]
+                                lam = fn.solve_lin_system(A,RHS,False)
+                                #lam = np.linalg.lstsq(A,RHS,rcond=-1)[0]
                                 #lam2 = np.linalg.solve(A,RHS)
                                 #print('max difference in solve is ', np.max(abs(lam-lam2)))
                             else:
-                                lam = np.linalg.solve(A,RHS)
+                                lam = fn.solve_lin_system(A,RHS,True)
+                                #lam = np.linalg.solve(A,RHS)
                             #print('... verify Ax-b=0 solution quality: ', np.max(A@lam - RHS))
                             #print('rank(A) = ', np.linalg.matrix_rank(A))
                             #print('rank([Ab]) = ', np.linalg.matrix_rank(np.c_[A,RHS]))
@@ -2466,9 +2796,9 @@ class MakeMesh:
                     M = np.hstack((QxT,QyT,QzT))
                     #print('size of M is', M.shape)
                     #print('rank of M is', int(np.linalg.matrix_rank(M)))
-                    Minv = np.linalg.pinv(M, rcond=1e-13)
-                    if np.max(abs(Minv)) > 1e8:
-                        print('WARNING: There may be an error in Minv of metric optimization. Try a higher rcond.')
+                    #Minv = np.linalg.pinv(M, rcond=1e-13)
+                    #if np.max(abs(Minv)) > 1e8:
+                    #    print('WARNING: There may be an error in Minv of metric optimization. Try a higher rcond.')
                     # first for x dimension
                     c = txb @ Hperp @ self.bdy_metrics[:,1,0,:] - txa @ Hperp @ self.bdy_metrics[:,0,0,:] \
                       + tyb @ Hperp @ self.bdy_metrics[:,3,3,:] - tya @ Hperp @ self.bdy_metrics[:,2,3,:] \
@@ -2478,7 +2808,8 @@ class MakeMesh:
                         print('         max value (element) of sum is {0:.2g}'.format(np.max(abs(np.sum(c,axis=0)))))
                         print('         Surface integrals in x do not hold discretely.')
                     aex = np.vstack((self.metrics[:,0,:],self.metrics[:,3,:],self.metrics[:,6,:]))
-                    a = aex - Minv @ ( M @ aex - c )
+                    #a = aex - Minv @ ( M @ aex - c )
+                    a = aex - np.linalg.lstsq(M, M @ aex - c, rcond=1e-13)[0]
                     print('... metric optimization modified x-metrics by a maximum of {0:.2g}'.format(np.max(abs(a - aex))))
                     #print('TEMP: testing free stream - max is {0:.2g}'.format(np.max(abs(M @ a - c ))))
                     self.metrics[:,0,:] = a[:self.nen**3,:]
@@ -2493,7 +2824,8 @@ class MakeMesh:
                         print('         max value (element) of sum is {0:.2g}'.format(np.max(abs(np.sum(c,axis=0)))))
                         print('         Surface integrals in y do not hold discretely.')
                     aex = np.vstack((self.metrics[:,1,:],self.metrics[:,4,:],self.metrics[:,7,:]))
-                    a = aex - Minv @ ( M @ aex - c )
+                    #a = aex - Minv @ ( M @ aex - c )
+                    a = aex - np.linalg.lstsq(M, M @ aex - c, rcond=1e-13)[0]
                     print('... metric optimization modified y-metrics by a maximum of {0:.2g}'.format(np.max(abs(a - aex))))
                     #print('TEMP: testing free stream - max is {0:.2g}'.format(np.max(abs(M @ a - c ))))
                     self.metrics[:,1,:] = a[:self.nen**3,:]
@@ -2508,7 +2840,8 @@ class MakeMesh:
                         print('         max value (element) of sum is {0:.2g}'.format(np.max(abs(np.sum(c,axis=0)))))
                         print('         Surface integrals in y do not hold discretely.')
                     aex = np.vstack((self.metrics[:,2,:],self.metrics[:,5,:],self.metrics[:,8,:]))
-                    a = aex - Minv @ ( M @ aex - c )
+                    #a = aex - Minv @ ( M @ aex - c )
+                    a = aex - np.linalg.lstsq(M, M @ aex - c, rcond=1e-13)[0]
                     print('... metric optimization modified z-metrics by a maximum of {0:.2g}'.format(np.max(abs(a - aex))))
                     #print('TEMP: testing free stream - max is {0:.2g}'.format(np.max(abs(M @ a - c ))))
                     self.metrics[:,2,:] = a[:self.nen**3,:]
@@ -2690,77 +3023,81 @@ class MakeMesh:
                     self.bdy_metrics[:,f,4,:] = None
                     self.bdy_metrics[:,f,5,:] = None
 
-    def extrapolate_xyz(self,sbp):
-        ''' extrapolate the boundary xyz values - for 3D only '''
-        bdy_xyz = np.zeros((self.nen**2,3,6,self.nelem[0]*self.nelem[1]*self.nelem[2]))
-        eye = np.eye(self.nen)
-        txbT = np.kron(np.kron(sbp.tR.reshape((self.nen,1)), eye), eye).T
-        txaT = np.kron(np.kron(sbp.tL.reshape((self.nen,1)), eye), eye).T
-        tybT = np.kron(np.kron(eye, sbp.tR.reshape((self.nen,1))), eye).T
-        tyaT = np.kron(np.kron(eye, sbp.tL.reshape((self.nen,1))), eye).T
-        tzbT = np.kron(np.kron(eye, eye), sbp.tR.reshape((self.nen,1))).T
-        tzaT = np.kron(np.kron(eye, eye), sbp.tL.reshape((self.nen,1))).T
-        skipx = self.nelem[1]*self.nelem[2]
-        skipz = self.nelem[0]*self.nelem[1]
-        average = True # for testing things when not averaging surface metrics
-        print_diff = True
-        maxdiff = 0.
-        
-        if average:
-        
-            for rowx in range(skipx):
-                for i in range(3): # loop over matrix entries
-                    bdy_xyzR = txaT @ self.xyz_elem[:,i,rowx::skipx]
-                    bdy_xyzL = txbT @ self.xyz_elem[:,i,rowx::skipx]
-                    if self.nelem[0] != 1:
-                        avgbdy_xyz = (bdy_xyzL[:,:-1] + bdy_xyzR[:,1:])/2
-                        maxdiff = max(maxdiff, np.max(abs(avgbdy_xyz-bdy_xyzL[:,:-1])))
-                        bdy_xyz[:,i,0,rowx::skipx][:,1:] = avgbdy_xyz
-                        bdy_xyz[:,i,1,rowx::skipx][:,:-1] = avgbdy_xyz 
-                    bdy_xyz[:,i,0,rowx::skipx][:,0] = bdy_xyzR[:,0]
-                    bdy_xyz[:,i,1,rowx::skipx][:,-1] = bdy_xyzL[:,-1]
+    def extrapolate_xyz(self,sbp,nen=None,average=True,print_diff=True):
+        ''' extrapolate the boundary xyz values '''
+        if nen is None: nen = self.nen
+        if self.dim == 1:
+            raise Exception('Extrapolation of xyz values is not supported yet for 1D.')
+        elif self.dim == 2:
+            raise Exception('Extrapolation of xyz values is not supported yet for 2D.')
+        elif self.dim == 3:
+            bdy_xyz = np.zeros((nen**2,3,6,self.nelem[0]*self.nelem[1]*self.nelem[2]))
+            eye = np.eye(nen)
+            txbT = np.kron(np.kron(sbp.tR.reshape((nen,1)), eye), eye).T
+            txaT = np.kron(np.kron(sbp.tL.reshape((nen,1)), eye), eye).T
+            tybT = np.kron(np.kron(eye, sbp.tR.reshape((nen,1))), eye).T
+            tyaT = np.kron(np.kron(eye, sbp.tL.reshape((nen,1))), eye).T
+            tzbT = np.kron(np.kron(eye, eye), sbp.tR.reshape((nen,1))).T
+            tzaT = np.kron(np.kron(eye, eye), sbp.tL.reshape((nen,1))).T
+            skipx = self.nelem[1]*self.nelem[2]
+            skipz = self.nelem[0]*self.nelem[1]
             
-            for coly in range(self.nelem[0]*self.nelem[2]):
-                start = coly + (coly//self.nelem[2])*(self.nelem[1]-1)*self.nelem[2]
-                end = start + skipx
-                for i in range(3): # loop over matrix entries
-                    bdy_xyzL = tybT @ self.xyz_elem[:,i,start:end:self.nelem[2]]
-                    bdy_xyzR = tyaT @ self.xyz_elem[:,i,start:end:self.nelem[2]]
-                    if self.nelem[1] != 1:
-                        avgbdy_xyz = (bdy_xyzL[:,:-1] + bdy_xyzR[:,1:])/2
-                        maxdiff = max(maxdiff, np.max(abs(avgbdy_xyz-bdy_xyzL[:,:-1])))
-                        bdy_xyz[:,i,2,start:end:self.nelem[2]][:,1:] = avgbdy_xyz
-                        bdy_xyz[:,i,3,start:end:self.nelem[2]][:,:-1] = avgbdy_xyz    
-                    bdy_xyz[:,i,2,start:end:self.nelem[2]][:,0] = bdy_xyzR[:,0]
-                    bdy_xyz[:,i,3,start:end:self.nelem[2]][:,-1] = bdy_xyzL[:,-1] 
+            if average:
+                maxdiff = 0.
             
-            for colz in range(skipz):
-                start = colz*self.nelem[2]
-                end = start + self.nelem[2]
-                for i in range(3): # loop over matrix entries
-                    bdy_xyzL = tzbT @ self.xyz_elem[:,i,start:end]
-                    bdy_xyzR = tzaT @ self.xyz_elem[:,i,start:end]
-                    if self.nelem[2] != 1:
-                        avgbdy_xyz = (bdy_xyzL[:,:-1] + bdy_xyzR[:,1:])/2
-                        maxdiff = max(maxdiff, np.max(abs(avgbdy_xyz-bdy_xyzL[:,:-1])))
-                        bdy_xyz[:,i,4,start:end][:,1:] = avgbdy_xyz
-                        bdy_xyz[:,i,5,start:end][:,:-1] = avgbdy_xyz
-                    bdy_xyz[:,i,4,start:end][:,0] = bdy_xyzR[:,0]
-                    bdy_xyz[:,i,5,start:end][:,-1] = bdy_xyzL[:,-1]
+                for rowx in range(skipx):
+                    for i in range(3): # loop over matrix entries
+                        bdy_xyzR = txaT @ self.xyz_elem[:,i,rowx::skipx]
+                        bdy_xyzL = txbT @ self.xyz_elem[:,i,rowx::skipx]
+                        if self.nelem[0] != 1:
+                            avgbdy_xyz = (bdy_xyzL[:,:-1] + bdy_xyzR[:,1:])/2
+                            if print_diff: maxdiff = max(maxdiff, np.max(abs(avgbdy_xyz-bdy_xyzL[:,:-1])))
+                            bdy_xyz[:,i,0,rowx::skipx][:,1:] = avgbdy_xyz
+                            bdy_xyz[:,i,1,rowx::skipx][:,:-1] = avgbdy_xyz 
+                        bdy_xyz[:,i,0,rowx::skipx][:,0] = bdy_xyzR[:,0]
+                        bdy_xyz[:,i,1,rowx::skipx][:,-1] = bdy_xyzL[:,-1]
+                
+                for coly in range(self.nelem[0]*self.nelem[2]):
+                    start = coly + (coly//self.nelem[2])*(self.nelem[1]-1)*self.nelem[2]
+                    end = start + skipx
+                    for i in range(3): # loop over matrix entries
+                        bdy_xyzL = tybT @ self.xyz_elem[:,i,start:end:self.nelem[2]]
+                        bdy_xyzR = tyaT @ self.xyz_elem[:,i,start:end:self.nelem[2]]
+                        if self.nelem[1] != 1:
+                            avgbdy_xyz = (bdy_xyzL[:,:-1] + bdy_xyzR[:,1:])/2
+                            if print_diff: maxdiff = max(maxdiff, np.max(abs(avgbdy_xyz-bdy_xyzL[:,:-1])))
+                            bdy_xyz[:,i,2,start:end:self.nelem[2]][:,1:] = avgbdy_xyz
+                            bdy_xyz[:,i,3,start:end:self.nelem[2]][:,:-1] = avgbdy_xyz    
+                        bdy_xyz[:,i,2,start:end:self.nelem[2]][:,0] = bdy_xyzR[:,0]
+                        bdy_xyz[:,i,3,start:end:self.nelem[2]][:,-1] = bdy_xyzL[:,-1] 
+                
+                for colz in range(skipz):
+                    start = colz*self.nelem[2]
+                    end = start + self.nelem[2]
+                    for i in range(3): # loop over matrix entries
+                        bdy_xyzL = tzbT @ self.xyz_elem[:,i,start:end]
+                        bdy_xyzR = tzaT @ self.xyz_elem[:,i,start:end]
+                        if self.nelem[2] != 1:
+                            avgbdy_xyz = (bdy_xyzL[:,:-1] + bdy_xyzR[:,1:])/2
+                            if print_diff: maxdiff = max(maxdiff, np.max(abs(avgbdy_xyz-bdy_xyzL[:,:-1])))
+                            bdy_xyz[:,i,4,start:end][:,1:] = avgbdy_xyz
+                            bdy_xyz[:,i,5,start:end][:,:-1] = avgbdy_xyz
+                        bdy_xyz[:,i,4,start:end][:,0] = bdy_xyzR[:,0]
+                        bdy_xyz[:,i,5,start:end][:,-1] = bdy_xyzL[:,-1]
+                
+                if print_diff:
+                    print('The boundary xyz extrapolations modified by a max of {0:.2g} in averaging.'.format(maxdiff))
+                
+            else:
+                for i in range(3):
+                    bdy_xyz[:,i,0,:] = txaT @ self.xyz_elem[:,i,:]
+                    bdy_xyz[:,i,1,:] = txbT @ self.xyz_elem[:,i,:]
+                    bdy_xyz[:,i,2,:] = tyaT @ self.xyz_elem[:,i,:]
+                    bdy_xyz[:,i,3,:] = tybT @ self.xyz_elem[:,i,:]
+                    bdy_xyz[:,i,4,:] = tzaT @ self.xyz_elem[:,i,:]
+                    bdy_xyz[:,i,5,:] = tzbT @ self.xyz_elem[:,i,:]
             
-            if print_diff:
-                print('The boundary xyz extrapolations modified by a max of {0:.2g} in averaging.'.format(maxdiff))
-            
-        else:
-            for i in range(3):
-                bdy_xyz[:,i,0,:] = txaT @ self.xyz_elem[:,i,:]
-                bdy_xyz[:,i,1,:] = txbT @ self.xyz_elem[:,i,:]
-                bdy_xyz[:,i,2,:] = tyaT @ self.xyz_elem[:,i,:]
-                bdy_xyz[:,i,3,:] = tybT @ self.xyz_elem[:,i,:]
-                bdy_xyz[:,i,4,:] = tzaT @ self.xyz_elem[:,i,:]
-                bdy_xyz[:,i,5,:] = tzbT @ self.xyz_elem[:,i,:]
-        
-        return bdy_xyz
+            return bdy_xyz
                 
     def check_surface_metrics(self):
         ''' check that the surface metrics on either side of an interface are equal '''
@@ -2873,5 +3210,390 @@ class MakeMesh:
         return np.mean(np.mean(abs(jac-self.jac_exa),axis=0),axis=2)
         
 
+    def average_facet_nodes(self,xyz_elem,nen,periodic):
+        ''' loops over all the elements and averages the vertices, edges, and facets 
+        ASSUMES that the xyz_elem has values located on all boundary nodes (i.e. vertices and edges)'''
+        xyz_elem_new = np.copy(xyz_elem)
+        if self.dim == 1:
+            raise Exception('Averaging of xyz facet values is not supported yet for 1D.')
+        elif self.dim == 2:
+            # the convention is starting at bottom left, y is looped over first, then x. (and rows first then cols)
+            blv = 0 # bottom left vertex index
+            tlv = nen-1 # top left vertex index
+            brv = nen*nen-nen # bottom right vertex index
+            trv = nen*nen-1 # top right vertex index
+            def elem(row, col):
+                return col*self.nelem[1] + row
 
-            
+            # loop over rows, look at bottom left vertex and average over all surrounding elements.
+            for col in range(self.nelem[0]):
+                for row in range(self.nelem[1]):
+                    # average the bottom left vertex
+                    e = elem(row, col)
+                    vtx_val = xyz_elem[blv,:,e]
+                    fix = 0.
+                    vtcs = [[blv,e,fix]]
+                    # element to the left (bottom right vertex)
+                    if col == 0:
+                        if periodic[0]:
+                            e2 = elem(row,self.nelem[0]-1)
+                            fix = np.array([self.dom_len[0],0.])
+                            vtx_val += (xyz_elem[brv,:,e2] - fix)
+                            vtcs.append([brv,e2,fix])
+                    else:
+                        e2 = elem(row,col-1)
+                        vtx_val += xyz_elem[brv,:,e2]
+                        vtcs.append([brv,e2,0.])
+                    # element below (top left vertex)
+                    if row == 0:
+                        if periodic[1]:
+                            e2 = elem(self.nelem[1]-1,col)
+                            fix = np.array([0.,self.dom_len[1]])
+                            vtx_val += (xyz_elem[tlv,:,e2] - fix)
+                            vtcs.append([tlv,e2,fix])
+                    else:
+                        e2 = elem(row-1,col)
+                        vtx_val += xyz_elem[tlv,:,e2]
+                        vtcs.append([tlv,e2,0.])
+                    # element to the bottom-left diagonal (top right vertex)
+                    if row == 0 and col == 0:
+                        if periodic[0] and periodic[1]:
+                            fix = np.array([self.dom_len[0],self.dom_len[1]])
+                            vtx_val += (xyz_elem[trv,:,-1] - fix)
+                            vtcs.append([trv,-1,fix])
+                    elif row == 0:
+                        if periodic[1]:
+                            e2 = elem(self.nelem[1]-1,col-1)
+                            fix = np.array([0.,self.dom_len[1]])
+                            vtx_val += (xyz_elem[trv,:,e2] - fix)
+                            vtcs.append([trv,e2,fix])
+                    elif col == 0:
+                        if periodic[0]:
+                            e2 = elem(row-1,self.nelem[0]-1)
+                            fix = np.array([self.dom_len[0],0.])
+                            vtx_val += (xyz_elem[trv,:,e2] - fix)
+                            vtcs.append([trv,e2,fix])
+                    else:
+                        e2 = elem(row-1,col-1)
+                        vtx_val += xyz_elem[trv,:,e2]
+                        vtcs.append([trv,e2,0.])
+                    # average the vertices
+                    vtx_val /= len(vtcs)
+                    for vtx in vtcs:
+                        #print('nidx:',vtx[0],'eidx:',vtx[1],'fix:',vtx[2],':',xyz_elem[vtx[0],:,vtx[1]]-(vtx_val+vtx[2]))
+                        xyz_elem_new[vtx[0],:,vtx[1]] = vtx_val + vtx[2]
+
+                    # now we average the remaining (non-vertex) facet nodes on the left edge
+                    if col == 0:
+                        if periodic[0]:
+                            e2 = elem(row,self.nelem[0]-1)
+                            fix = np.array([self.dom_len[0],0.])
+                            vtx_val = 0.5*(xyz_elem[blv+1:tlv,:,e] + (xyz_elem[brv+1:trv,:,e2] - fix))
+                            xyz_elem_new[blv+1:tlv,:,e] = vtx_val
+                            xyz_elem_new[brv+1:trv,:,e2] = vtx_val + fix
+                    else:
+                        e2 = elem(row,col-1)
+                        vtx_val = 0.5*(xyz_elem[blv+1:tlv,:,e] + xyz_elem[brv+1:trv,:,e2])
+                        xyz_elem_new[blv+1:tlv,:,e] = vtx_val
+                        xyz_elem_new[brv+1:trv,:,e2] = vtx_val
+
+                    # now we average the remaining (non-vertex) facet nodes on the bottom edge
+                    if row == 0:
+                        if periodic[1]:
+                            e2 = elem(self.nelem[1]-1,col)
+                            fix = np.array([0.,self.dom_len[1]])
+                            vtx_val = 0.5*(xyz_elem[blv+nen:brv:nen,:,e] + (xyz_elem[tlv+nen:trv:nen,:,e2] - fix))
+                            xyz_elem_new[blv+nen:brv:nen,:,e] = vtx_val
+                            xyz_elem_new[tlv+nen:trv:nen,:,e2] = vtx_val + fix
+                    else:
+                        e2 = elem(row-1,col)
+                        vtx_val = 0.5*(xyz_elem[blv+nen:brv:nen,:,e] + xyz_elem[tlv+nen:trv:nen,:,e2])
+                        xyz_elem_new[blv+nen:brv:nen,:,e] = vtx_val
+                        xyz_elem_new[tlv+nen:trv:nen,:,e2] = vtx_val
+
+        elif self.dim == 3:
+            # indexing helpers: node (i,j,k) with k fastest; element (row, col, sli) with sli fastest
+            def node(i, j, k):
+                return i*nen*nen + j*nen + k
+            def elem(row, col, sli):
+                return col*self.nelem[1]*self.nelem[2] + row*self.nelem[2] + sli
+
+            Lx, Ly, Lz = self.dom_len
+
+            for col in range(self.nelem[0]):
+                for row in range(self.nelem[1]):
+                    for sli in range(self.nelem[2]):
+                        e = elem(row, col, sli)
+
+                        # 1) Average the corner at (i,j,k)=(0,0,0) over up to 8 neighbors
+                        vlist = []  # entries: [local_node_idx, elem_index, fix_vector]
+                        # self
+                        vlist.append([node(0,0,0), e, 0.])
+
+                        # enumerate neighbor offsets in {0,-1}^3 excluding (0,0,0)
+                        for dx in (0, -1):
+                            for dy in (0, -1):
+                                for dz in (0, -1):
+                                    if dx == 0 and dy == 0 and dz == 0:
+                                        continue
+                                    nx, ny, nz = col, row, sli
+                                    fx = fy = fz = 0.0
+                                    # handle x neighbor
+                                    if dx == -1:
+                                        if col == 0:
+                                            if not periodic[0]:
+                                                continue
+                                            nx = self.nelem[0]-1
+                                            fx = Lx
+                                        else:
+                                            nx = col-1
+                                    # handle y neighbor
+                                    if dy == -1:
+                                        if row == 0:
+                                            if not periodic[1]:
+                                                continue
+                                            ny = self.nelem[1]-1
+                                            fy = Ly
+                                        else:
+                                            ny = row-1
+                                    # handle z neighbor
+                                    if dz == -1:
+                                        if sli == 0:
+                                            if not periodic[2]:
+                                                continue
+                                            nz = self.nelem[2]-1
+                                            fz = Lz
+                                        else:
+                                            nz = sli-1
+
+                                    e2 = elem(ny, nx, nz)
+                                    i2 = node(nen-1 if dx == -1 else 0,
+                                              nen-1 if dy == -1 else 0,
+                                              nen-1 if dz == -1 else 0)
+                                    vlist.append([i2, e2, np.array([fx, fy, fz])])
+
+                        vtx_val = np.copy(xyz_elem[node(0,0,0),:,e])
+                        for (i2, e2, fix) in vlist[1:]:
+                            vtx_val += (xyz_elem[i2,:,e2] - fix)
+                        vtx_val /= len(vlist)
+                        for (i2, e2, fix) in vlist:
+                            xyz_elem_new[i2,:,e2] = vtx_val + (fix if isinstance(fix, np.ndarray) else 0.)
+
+                        # 2) Average remaining non-vertex nodes on three canonical edges
+                        # Edge along +x from (0,0,0): i=1..nen-2, j=0, k=0. Share with (-y), (-z), (-y,-z)
+                        if self.nelem[1] > 0 and self.nelem[2] > 0:
+                            ii = np.arange(1, nen-1)
+                            idx_self = ii*nen*nen + 0*nen + 0
+                            # neighbors in -y, -z, -y-z
+                            have_y = (row > 0) or periodic[1]
+                            have_z = (sli > 0) or periodic[2]
+
+                            if have_y or have_z:
+                                vals = xyz_elem[idx_self,:,e]
+                                cnt = 1
+
+                                if have_y:
+                                    if row == 0:
+                                        e_y = elem(self.nelem[1]-1, col, sli)
+                                        fy = Ly
+                                    else:
+                                        e_y = elem(row-1, col, sli)
+                                        fy = 0.0
+                                    idx_y = ii*nen*nen + (nen-1)*nen + 0
+                                    vals = vals + (xyz_elem[idx_y,:,e_y] - np.array([0.0, fy, 0.0]))
+                                    cnt += 1
+
+                                if have_z:
+                                    if sli == 0:
+                                        e_z = elem(row, col, self.nelem[2]-1)
+                                        fz = Lz
+                                    else:
+                                        e_z = elem(row, col, sli-1)
+                                        fz = 0.0
+                                    idx_z = ii*nen*nen + 0*nen + (nen-1)
+                                    vals = vals + (xyz_elem[idx_z,:,e_z] - np.array([0.0, 0.0, fz]))
+                                    cnt += 1
+
+                                if have_y and have_z:
+                                    if row == 0:
+                                        ry = self.nelem[1]-1; fy = Ly
+                                    else:
+                                        ry = row-1; fy = 0.0
+                                    if sli == 0:
+                                        rz = self.nelem[2]-1; fz = Lz
+                                    else:
+                                        rz = sli-1; fz = 0.0
+                                    e_yz = elem(ry, col, rz)
+                                    idx_yz = ii*nen*nen + (nen-1)*nen + (nen-1)
+                                    vals = vals + (xyz_elem[idx_yz,:,e_yz] - np.array([0.0, fy, fz]))
+                                    cnt += 1
+
+                                vals /= cnt
+                                # write back to all contributing elements
+                                xyz_elem_new[idx_self,:,e] = vals
+                                if have_y:
+                                    xyz_elem_new[idx_y,:,e_y] = vals + np.array([0.0, fy, 0.0])
+                                if have_z:
+                                    xyz_elem_new[idx_z,:,e_z] = vals + np.array([0.0, 0.0, fz])
+                                if have_y and have_z:
+                                    xyz_elem_new[idx_yz,:,e_yz] = vals + np.array([0.0, fy, fz])
+
+                        # Edge along +y from (0,0,0): j=1..nen-2, i=0, k=0. Share with (-x), (-z), (-x,-z)
+                        if self.nelem[0] > 0 and self.nelem[2] > 0:
+                            jj = np.arange(1, nen-1)
+                            idx_self = 0*nen*nen + jj*nen + 0
+                            have_x = (col > 0) or periodic[0]
+                            have_z = (sli > 0) or periodic[2]
+
+                            if have_x or have_z:
+                                vals = xyz_elem[idx_self,:,e]
+                                cnt = 1
+
+                                if have_x:
+                                    if col == 0:
+                                        e_x = elem(row, self.nelem[0]-1, sli)
+                                        fx = Lx
+                                    else:
+                                        e_x = elem(row, col-1, sli)
+                                        fx = 0.0
+                                    idx_x = (nen-1)*nen*nen + jj*nen + 0
+                                    vals = vals + (xyz_elem[idx_x,:,e_x] - np.array([fx, 0.0, 0.0]))
+                                    cnt += 1
+
+                                if have_z:
+                                    if sli == 0:
+                                        e_z = elem(row, col, self.nelem[2]-1)
+                                        fz = Lz
+                                    else:
+                                        e_z = elem(row, col, sli-1)
+                                        fz = 0.0
+                                    idx_z = 0*nen*nen + jj*nen + (nen-1)
+                                    vals = vals + (xyz_elem[idx_z,:,e_z] - np.array([0.0, 0.0, fz]))
+                                    cnt += 1
+
+                                if have_x and have_z:
+                                    if col == 0:
+                                        cx = self.nelem[0]-1; fx = Lx
+                                    else:
+                                        cx = col-1; fx = 0.0
+                                    if sli == 0:
+                                        cz = self.nelem[2]-1; fz = Lz
+                                    else:
+                                        cz = sli-1; fz = 0.0
+                                    e_xz = elem(row, cx, cz)
+                                    idx_xz = (nen-1)*nen*nen + jj*nen + (nen-1)
+                                    vals = vals + (xyz_elem[idx_xz,:,e_xz] - np.array([fx, 0.0, fz]))
+                                    cnt += 1
+
+                                vals /= cnt
+                                xyz_elem_new[idx_self,:,e] = vals
+                                if have_x:
+                                    xyz_elem_new[idx_x,:,e_x] = vals + np.array([fx, 0.0, 0.0])
+                                if have_z:
+                                    xyz_elem_new[idx_z,:,e_z] = vals + np.array([0.0, 0.0, fz])
+                                if have_x and have_z:
+                                    xyz_elem_new[idx_xz,:,e_xz] = vals + np.array([fx, 0.0, fz])
+
+                        # Edge along +z from (0,0,0): k=1..nen-2, i=0, j=0. Share with (-x), (-y), (-x,-y)
+                        if self.nelem[0] > 0 and self.nelem[1] > 0:
+                            kk = np.arange(1, nen-1)
+                            idx_self = 0*nen*nen + 0*nen + kk
+                            have_x = (col > 0) or periodic[0]
+                            have_y = (row > 0) or periodic[1]
+
+                            if have_x or have_y:
+                                vals = xyz_elem[idx_self,:,e]
+                                cnt = 1
+
+                                if have_x:
+                                    if col == 0:
+                                        e_x = elem(row, self.nelem[0]-1, sli)
+                                        fx = Lx
+                                    else:
+                                        e_x = elem(row, col-1, sli)
+                                        fx = 0.0
+                                    idx_x = (nen-1)*nen*nen + 0*nen + kk
+                                    vals = vals + (xyz_elem[idx_x,:,e_x] - np.array([fx, 0.0, 0.0]))
+                                    cnt += 1
+
+                                if have_y:
+                                    if row == 0:
+                                        e_y = elem(self.nelem[1]-1, col, sli)
+                                        fy = Ly
+                                    else:
+                                        e_y = elem(row-1, col, sli)
+                                        fy = 0.0
+                                    idx_y = 0*nen*nen + (nen-1)*nen + kk
+                                    vals = vals + (xyz_elem[idx_y,:,e_y] - np.array([0.0, fy, 0.0]))
+                                    cnt += 1
+
+                                if have_x and have_y:
+                                    if col == 0:
+                                        cx = self.nelem[0]-1; fx = Lx
+                                    else:
+                                        cx = col-1; fx = 0.0
+                                    if row == 0:
+                                        cy = self.nelem[1]-1; fy = Ly
+                                    else:
+                                        cy = row-1; fy = 0.0
+                                    e_xy = elem(cy, cx, sli)
+                                    idx_xy = (nen-1)*nen*nen + (nen-1)*nen + kk
+                                    vals = vals + (xyz_elem[idx_xy,:,e_xy] - np.array([fx, fy, 0.0]))
+                                    cnt += 1
+
+                                vals /= cnt
+                                xyz_elem_new[idx_self,:,e] = vals
+                                if have_x:
+                                    xyz_elem_new[idx_x,:,e_x] = vals + np.array([fx, 0.0, 0.0])
+                                if have_y:
+                                    xyz_elem_new[idx_y,:,e_y] = vals + np.array([0.0, fy, 0.0])
+                                if have_x and have_y:
+                                    xyz_elem_new[idx_xy,:,e_xy] = vals + np.array([fx, fy, 0.0])
+
+                        # 3) Average remaining (non-edge, non-vertex) nodes on three canonical faces
+                        # Left face i=0 with j=1..nen-2, k=1..nen-2 shared with (-x)
+                        if (col > 0) or periodic[0]:
+                            if col == 0:
+                                e_x = elem(row, self.nelem[0]-1, sli)
+                                fx = Lx
+                            else:
+                                e_x = elem(row, col-1, sli)
+                                fx = 0.0
+                            for j in range(1, nen-1):
+                                ids_self = j*nen + np.arange(1, nen-1)
+                                ids_x = (nen-1)*nen*nen + j*nen + np.arange(1, nen-1)
+                                vals = 0.5*(xyz_elem[ids_self,:,e] + (xyz_elem[ids_x,:,e_x] - np.array([fx, 0.0, 0.0])))
+                                xyz_elem_new[ids_self,:,e] = vals
+                                xyz_elem_new[ids_x,:,e_x] = vals + np.array([fx, 0.0, 0.0])
+
+                        # Bottom face j=0 with i=1..nen-2, k=1..nen-2 shared with (-y)
+                        if (row > 0) or periodic[1]:
+                            if row == 0:
+                                e_y = elem(self.nelem[1]-1, col, sli)
+                                fy = Ly
+                            else:
+                                e_y = elem(row-1, col, sli)
+                                fy = 0.0
+                            for i in range(1, nen-1):
+                                ids_self = i*nen*nen + np.arange(1, nen-1)
+                                ids_y = i*nen*nen + (nen-1)*nen + np.arange(1, nen-1)
+                                vals = 0.5*(xyz_elem[ids_self,:,e] + (xyz_elem[ids_y,:,e_y] - np.array([0.0, fy, 0.0])))
+                                xyz_elem_new[ids_self,:,e] = vals
+                                xyz_elem_new[ids_y,:,e_y] = vals + np.array([0.0, fy, 0.0])
+
+                        # Back face k=0 with i=1..nen-2, j=1..nen-2 shared with (-z)
+                        if (sli > 0) or periodic[2]:
+                            if sli == 0:
+                                e_z = elem(row, col, self.nelem[2]-1)
+                                fz = Lz
+                            else:
+                                e_z = elem(row, col, sli-1)
+                                fz = 0.0
+                            for i in range(1, nen-1):
+                                ids_self = i*nen*nen + np.arange(1, nen-1)*nen + 0
+                                ids_z = i*nen*nen + np.arange(1, nen-1)*nen + (nen-1)
+                                vals = 0.5*(xyz_elem[ids_self,:,e] + (xyz_elem[ids_z,:,e_z] - np.array([0.0, 0.0, fz])))
+                                xyz_elem_new[ids_self,:,e] = vals
+                                xyz_elem_new[ids_z,:,e_z] = vals + np.array([0.0, 0.0, fz])
+
+        return xyz_elem_new
