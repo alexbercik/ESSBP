@@ -2014,6 +2014,96 @@ def norm_gv_neq(q,neq):
             qn[i,e] = np.linalg.norm(q[i::neq,e],axis=0)
     return qn
 
+import scipy.sparse as sp
+def solve_lin_system(A, b, is_spd,
+                    allow_dense_fallback=True):
+    """
+    Direct solver for a sparse system A @ x = b.
+    A should be passed in (scipy) CSR format to exploit storage for CHOLMOD/SPQR.
+
+    if A is SPD: uses CHOLMOD (sksparse.cholmod.cholesky) 
+                exploits symmetry and positive definiteness, with built-in
+                AMD/COLAMD/Metis orderings to reduce fill. Ideal for 
+                diagonally dominant/graph-like matrices.
+        Fallback: SuperLU, i.e. scipy.sparse.linalg.spsolve
+        Fallback (x2): dense SVD, i.e. scipy.linalg.lstsq
+    if A is not SPD (assumed rank-deficient): uses SuiteSparseQR (SPQR min-norm)
+                It is the most robust for rank-deficient systems, and
+                returns the minimum-norm solution.
+        Fallback: dense SVD, i.e. scipy.linalg.lstsq
+
+    CHOLMOD installation:
+        sudo port install SuiteSparse_CHOLMOD
+        export SUITESPARSE_INCLUDE_DIR=/opt/local/include
+        export SUITESPARSE_LIBRARY_DIR=/opt/local/lib
+        pip install --no-binary=:scikit-sparse: scikit-sparse
+    
+    SPQR installation:
+        sudo port install SuiteSparse_SPQR
+        export CFLAGS="-I/opt/local/include"
+        pip install --no-binary=:sparseqr: sparseqr
+        # Alternatively, can use the installation from pyspqr, i.e
+        # pip install pyspqr
+        # then in the code can call 
+        # from pyspqr import solve as spqr_solve
+    """
+    import warnings
+    # Ensure sparse CSC once (best for CHOLMOD/SPQR; fine for SuperLU)
+    A = sp.csc_matrix(A) if not sp.isspmatrix(A) else A.tocsc()
+    b = np.asarray(b)
+    b2 = b.reshape(-1, 1) if b.ndim == 1 else b  # handle multi-RHS
+
+    if is_spd:
+        try:
+            from sksparse.cholmod import cholesky
+            F = cholesky(A)     # sparse Cholesky (fills one triangle)
+            x = F(b2)
+            return x.ravel() if b.ndim == 1 else x
+        except Exception as e:
+            warnings.warn(
+                f"CHOLMOD unavailable or failed; falling back to sparse LU (spsolve). Error: {e}",
+                stacklevel=2,
+            )
+
+        # Direct (sparse) LU fallback (doesn't exploit SPD)
+        try:
+            x = sp.linalg.spsolve(A, b2)
+            return x.ravel() if b.ndim == 1 else x
+        except Exception as e:
+            if not allow_dense_fallback:
+                raise RuntimeError(
+                    f"Sparse LU (spsolve) failed and allow_dense_fallback=False. Original error: {e}"
+                )
+            warnings.warn(
+                f"Sparse LU (spsolve) failed; falling back to dense least-squares (SVD). Error: {e}",
+                stacklevel=2,
+            )
+    
+    else:
+        try:
+            from sparseqr import solve as spqr_solve
+            x = spqr_solve(A, b2)           # sparse RRQR; min-norm if rank-deficient
+            return x.ravel() if b.ndim == 1 else x
+        except Exception as e:
+            if not allow_dense_fallback:
+                raise RuntimeError(
+                    f"SuiteSparseQR unavailable or failed and allow_dense_fallback=False. Original error: {e}",
+                )
+            warnings.warn(
+                f"SuiteSparseQR unavailable or failed; falling back to dense least-squares (SVD). Error: {e}",
+                stacklevel=2,
+            )
+
+    # default dense matrix lstsq fallback
+    A_dense = A.toarray()
+    from scipy.linalg import lstsq
+    # SVD-based dense LS returns min-2-norm solution for rank-deficient systems
+    try:
+        x, _, _, _ = lstsq(A_dense, b2, lapack_driver='gelsd')
+    except TypeError:  # older SciPy
+        x, _, _, _ = lstsq(A_dense, b2)
+    return x.ravel() if b.ndim == 1 else x
+
 """ Old functions (no longer useful)
 
 def ldiag_gdiag2(l,g):
