@@ -2363,7 +2363,7 @@ class MakeMesh:
                 dXp_dxr = sp.lm_gdiag(Dx, x_elem)
                 dXp_dyr = sp.lm_gdiag(Dy, x_elem)
                 dXp_dzr = sp.lm_gdiag(Dz, x_elem)
-                dYp_dxr = fn.lm_gdiag(Dx, y_elem)
+                dYp_dxr = sp.lm_gdiag(Dx, y_elem)
                 dYp_dyr = sp.lm_gdiag(Dy, y_elem)
                 dYp_dzr = sp.lm_gdiag(Dz, y_elem)
                 dZp_dxr = sp.lm_gdiag(Dx, z_elem)
