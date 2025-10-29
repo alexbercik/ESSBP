@@ -191,7 +191,7 @@ class Burgers(PdeBase):
 
         return u
     
-    def set_q0(self, q0_type=None, xy=None):
+    def set_q0(self, q0_type=None, xy=None, **kwargs):
         # overwrite base function from PdeBase
         
         if q0_type is None:
@@ -200,8 +200,8 @@ class Burgers(PdeBase):
 
         if xy is None: xy = self.x_elem
 
-        if ('sinwave' in q0_type) and not ('gassner' in q0_type) \
-            or ('coswave' in q0_type) and not ('gassner' in q0_type):
+        if ('sinwave' in q0_type) and not ('gassner' in q0_type or 'coarse' in q0_type) \
+            or ('coswave' in q0_type) and not ('gassner' in q0_type or 'coarse' in q0_type):
 
             w = 2*np.pi
             if 'shift' in q0_type:
