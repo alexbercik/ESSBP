@@ -220,7 +220,7 @@ class MakeDgOp:
 
     @staticmethod
     def VandermondeLagrange1D(xFlux,xNode,wBary=None):
-        '''
+        """
         Purpose
         -------
         Calculates the Vandermonde Matrix in 1D from a Lagrange basis. Using
@@ -244,7 +244,7 @@ class MakeDgOp:
         Vandermonde matrix where jth column gives the jth lagrange 
         polynomial evaluated at row ith node in xFlux. Acts on a function
         defined by solution nodal values of xNode.
-        '''
+        """
         if xNode.ndim != 1:
             dim = xNode.shape[1]
             assert dim == 1, ("Lagrange Vandermonde only set up for dim=1.")
@@ -343,7 +343,7 @@ class MakeDgOp:
         N = len(x)  # number of nodes
 
         # Initialize the Vandermonde matrix
-        V = np.zeros((p+1, N), dtype=float)
+        V = np.zeros((N, p+1), dtype=float)
 
         # Fill each row with the orthonormal Legendre polynomial of degree n
         # Orthonormal Legendre: \hat{P}_n(x) = sqrt((2n+1)/2) * P_n(x)
@@ -477,7 +477,7 @@ class MakeDgOp:
     
     @staticmethod
     def InnerProduct(weights=None):
-        '''
+        """
         Purpose
         -------
         Defines the discrete inner product between two vectors represented by
@@ -502,7 +502,7 @@ class MakeDgOp:
         ----------
         An SPD matrix which approximates a discrete L2 inner product,
         acting on the left and right to two vectors of size N_\omega
-        '''        
+        """      
         # TO DO: Ensure this works dor dim>1
         if isinstance(weights, np.ndarray)==False:
             raise Exception("Collocation-based inner product not yet set up")
