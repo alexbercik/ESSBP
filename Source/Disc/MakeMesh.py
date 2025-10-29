@@ -2921,10 +2921,10 @@ class MakeMesh:
 
 
         self.det_jac_inv = 1/self.det_jac
-        if np.any(abs(self.det_jac - self.det_jac_exa) > 1e-12):
-            print('WARNING: The Metric Jacobian is not exact. The max difference is {0:.2g}'.format(np.max(abs(self.det_jac - self.det_jac_exa))))
-            if metric_method != 'exact':
-                print("         Consider using exact Metric Jacobian and Invariants (set 'metric_method':'exact' in settings).")
+        #if np.any(abs(self.det_jac - self.det_jac_exa) > 1e-12):
+        #    print('WARNING: The Metric Jacobian is not exact. The max difference is {0:.2g}'.format(np.max(abs(self.det_jac - self.det_jac_exa))))
+        #    if metric_method != 'exact':
+        #        print("         Consider using exact Metric Jacobian and Invariants (set 'metric_method':'exact' in settings).")
         if np.any(self.det_jac < 0):
             print('WARNING: There are negative jacobians at {0} nodes! The min value is {1:.2g}'.format(len(np.argwhere(self.det_jac<0)), np.min(self.det_jac)))
                 
