@@ -493,6 +493,8 @@ class PdeSolver:
                 cons_obj[i] = np.max(np.abs(eigs))
             elif cons_obj_name_i == 'sol_error' or cons_obj_name_i == 'error':
                 cons_obj[i] = self.calc_error(q,t)
+            elif cons_obj_name_i == 'max_error':
+                cons_obj[i] = self.calc_error(q,t,method='max_diff')
             elif cons_obj_name_i == 'time':
                 cons_obj[i] = t
             elif 'zelalem_coeff' in cons_obj_name_i:
@@ -575,7 +577,7 @@ class PdeSolver:
         # determine error to use
         if method == 'SBP' or method == 'Rms' or method == 'L2':
             error = var - var_exa
-        elif method == 'max diff':
+        elif method == 'max_diff':
             error = np.max(abs(var-var_exa))
         elif method == 'Boundary':
             error = abs(var[0]-var[-1])
@@ -770,10 +772,10 @@ class PdeSolver:
                     if not print_nothing: print('WARNING: self.dfdq(q) returned errors. Using complex step.')
         if not exact_dfdq:
             from Source.Methods.Analysis import printProgressBar
-            nen,nelem = q.shape   
-            nn = nelem*nen   
-            assert(self.qshape==q.shape),"ERROR: sizes don't match"
-            A = np.zeros((nn,nn)) 
+            nen,nelem = q.shape
+            nn = nelem*nen
+            assert(self.qshape==q.shape),"ERROR: sizes don't match: {0}, {1}".format(self.qshape, q.shape)
+            A = np.zeros((nn,nn))
             if not finite_diff:
                 try:  
                     for i in range(nen):
@@ -1228,6 +1230,12 @@ class PdeSolver:
                 plt.ylabel(r'$\vert \vert u - u_e \vert \vert_H$',fontsize=16)
                 plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx])  
                 if logscale: plt.yscale('log') 
+
+            elif cons_obj_name_i == 'max_error':
+                plt.title(r'Max Solution Error',fontsize=18)
+                plt.ylabel(r'$\vert \vert u - u_e \vert \vert_\infty$',fontsize=16)
+                plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx])  
+                if logscale: plt.yscale('log') 
                 
             else:
                 print('WARNING: No default plotting set up for '+cons_obj_name_i)
@@ -1257,10 +1265,7 @@ class PdeSolver:
 
         q0 = self.diffeq.set_q0(q0_type=q0_type)
         
-        if self.disc_type == 'fd':
-            rhs = self.diffeq.dqdt(q0,0.)
-            self.dqdt = lambda q, t: self.diffeq.dqdt(q,t) - rhs
-        elif self.disc_type == 'div' or self.disc_type == 'had':
+        if self.disc_type == 'div' and self.dim==1:
             rhs = self.dqdt_1d_div(q0,0.) #TODO: Fix for had and 2D and 3D
             self.dqdt = lambda q, t: self.dqdt_1d_div(q,t) - rhs           
         elif self.disc_type == 'dg':
@@ -1272,11 +1277,13 @@ class PdeSolver:
                 self.dqdt = lambda q: self.dg_dqdt_strong(q) - rhs  
         else:
             raise Exception('Invalid discretization type')
-        
-        self.diffeq.exact_sol = lambda *args: q0
+
+        # set the exact solution to the initial condition
+        self.diffeq.exact_sol = lambda *args, **kwargs: self.diffeq.set_q0(q0_type=q0_type, **kwargs)
         self.diffeq.has_exa_sol = True
         
-    def perturb_q0(self, eigmode=True, randnoise=False, ampli=0.001):
+    def perturb_q0(self, pert=None, eigmode=True, randnoise=False, ampli=0.001, 
+                   return_q0=False, set_q0=True):
         '''
         Modify self.diffeq.set_q0() to add a pertubation according to largest
         real eigenvalue of the approximated spatial operator. This is what is
@@ -1293,38 +1300,48 @@ class PdeSolver:
             Max amplitude of pertubation. The default is 0.001.
         '''
         q0 = self.diffeq.set_q0() # save initial condition
-        pert = np.zeros(q0.shape) # initialize pertubation
-        if eigmode and randnoise: # if we use both, adjust amplitude
-            ampli = ampli/2
-        
-        # This part adds a pertubation based on the largest real eigenmode
-        if eigmode:
-            A = self.calc_LHS(q=q0)
-            eigvals, eigvecs = np.linalg.eig(A)
-            idx = np.argmax(eigvals.real)
-            eigmode = eigvecs[:,idx]
-            #np.savetxt('eigenmode.csv', eigmode.real, delimiter=',')
-            #eigenmode = np.loadtxt('eigmode.csv', delimiter=',')        
-            pert += ampli*np.reshape(eigmode.real,q0.shape,'F')/np.max(np.abs(eigmode.real))
-        
-        # This part adds a random noise pertubation '''
-        if randnoise:
-            pert += ampli*2*(np.random.rand(*q0.shape)-0.5)
+
+        if pert is None:
+            pert = np.zeros(q0.shape) # initialize pertubation
+            if eigmode and randnoise: # if we use both, adjust amplitude
+                ampli = ampli/2
+            
+            # This part adds a pertubation based on the largest real eigenmode
+            if eigmode:
+                A = self.calc_LHS(q=q0)
+                eigvals, eigvecs = np.linalg.eig(A)
+                idx = np.argmax(eigvals.real)
+                eigmode = eigvecs[:,idx]
+                #np.savetxt('eigenmode.csv', eigmode.real, delimiter=',')
+                #eigenmode = np.loadtxt('eigmode.csv', delimiter=',')        
+                pert += ampli*np.reshape(eigmode.real,q0.shape,'F')/np.max(np.abs(eigmode.real))
+            
+            # This part adds a random noise pertubation '''
+            if randnoise:
+                pert += ampli*2*(np.random.rand(*q0.shape)-0.5)
         
         # Now overwrite initial condition function
-        self.diffeq.set_q0 = lambda *args: q0 + pert
-        
-    def plot_sol(self, q=None, **kwargs):
+        if set_q0:
+            self.diffeq.set_q0 = lambda *args, **kwargs: q0 + pert
+
+        if return_q0:
+            return q0 + pert
+    
+    def plot_sol(self, q=None, interpolate=True, **kwargs):
         ''' simply calls the plotting function from diffeq for final sol '''
         if q is None:
             if self.q_sol is None:
                 q = self.diffeq.set_q0()
+                if 'time' not in kwargs: kwargs['time']=0.0
             else:
                 if self.q_sol.ndim == 2: q = self.q_sol
                 elif self.q_sol.ndim == 3: q = self.q_sol[:,:,-1]
-        if 'time' not in kwargs: kwargs['time']=self.t_final
+                if 'time' not in kwargs: kwargs['time']=self.t_final
+        if 'time' not in kwargs: 
+            print('WARNING: No time specified in plot_sol. Using t_final.')
+            kwargs['time']=self.t_final
         if 'plot_exa' not in kwargs: kwargs['plot_exa']=True
-        if self.disc_nodes in ['lgl','lg','nc']:
+        if self.disc_nodes in ['lgl','lg','nc'] and interpolate:
             if self.dim==1:
                 x50 = np.linspace(0,1,50)
                 V = MakeDgOp.VandermondeLagrange1D(x50,self.sbp.x)
@@ -1588,7 +1605,7 @@ class PdeSolver:
             return u_new
         
     def dispersion_analysis(self, plot=True, num_k=10, all_modes=True,
-                            return_omegas=False):
+                            return_omegas=False, entire_2pi=False):
         ''' Perform a dispersion analysis following
           COMPARISON OF GAUSS AND GAUSS–LOBATTO INTEGRATION, Gassner & Kopriva 2011  '''
         assert self.diffeq.diffeq_name == 'LinearConvection'
@@ -1605,8 +1622,12 @@ class PdeSolver:
         D = np.complex128(self.sbp.D)
         diss = np.complex128(Hinv @ self.adiss.dispersion_analysis())
 
-        ks = np.linspace(0, self.nen*np.pi/dx, num_k, endpoint=True)
-        Ks = np.linspace(0, np.pi, num_k, endpoint=True)
+        if entire_2pi:
+            ks = np.linspace(-self.nen*np.pi/dx, self.nen*np.pi/dx, num_k, endpoint=True)
+            Ks = np.linspace(-np.pi, np.pi, num_k, endpoint=True)
+        else:
+            ks = np.linspace(0, self.nen*np.pi/dx, num_k, endpoint=True)
+            Ks = np.linspace(0, np.pi, num_k, endpoint=True)
         if all_modes:
             Omegas = np.zeros((self.nen,num_k),dtype=complex)
         else:
@@ -1622,7 +1643,7 @@ class PdeSolver:
             eigvals = np.linalg.eigvals(A)
             if all_modes:
                 # organize the modes in the same order each time
-                if k==0: 
+                if k==ks[0]: 
                     reorder = eigvals
                 else:
                     reorder = np.zeros(self.nen,dtype=complex)
