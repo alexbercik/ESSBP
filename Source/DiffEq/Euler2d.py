@@ -255,8 +255,9 @@ class Euler(PdeBase):
         vec_shape = np.array(input_vec[0].shape) # (nen,nelem) or (nen,)
         vec_shape[0] *= nvec   # (nen*neq_node,nelem) or (nen*neq_node,)
         vec = np.stack(input_vec).reshape(vec_shape, order='F')
-
-        return vec
+        
+        # Ensure C-contiguous for efficient BLAS operations
+        return np.ascontiguousarray(vec)
 
     @staticmethod
     def prim2cons(rho, u, v, e):

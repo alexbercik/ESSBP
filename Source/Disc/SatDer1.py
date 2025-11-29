@@ -19,20 +19,20 @@ class SatDer1:
         '''
         A non-dissipative central flux in 1D, that calls an external dissipation function.
         '''
-        q_a = self.lm_gv(self.tLT, q)
-        q_b = self.lm_gv(self.tRT, q)
+        q_a = self.lm_gv(self.tLT, q, self.neq_node)
+        q_b = self.lm_gv(self.tRT, q, self.neq_node)
 
         EL = fn.shift_right(E)
-        intL = self.lm_gv(self.ta, EL)
+        intL = self.lm_gv(self.ta, EL, self.neq_node)
         ER = fn.shift_left(E)
-        intR = self.lm_gv(self.tb, ER)
+        intR = self.lm_gv(self.tb, ER, self.neq_node)
         
         if q_bdyL is None:
             qf_L = fn.pad_1dL(q_b, q_b[:,-1])
         else:
             # manually fix boundaries of EL to ensure proper boundary coupling
             if E_bdyL is None: E_bdyL = self.calcEx(q_bdyL)
-            intL[:,0] = self.lm_lv(self.tL, E_bdyL)
+            intL[:,0] = self.lm_lv(self.tL, E_bdyL, self.neq_node)
             qf_L = fn.pad_1dL(q_b, q_bdyL)
         
         if q_bdyR is None:
@@ -43,16 +43,17 @@ class SatDer1:
             qf_L[:,-1] = 0.0
             # but careful I am doing E * flux, must also subtract this from SAT
             E_bdyR = E[-self.neq_node:,-1]
-            intR[:,-1] = self.lm_lv(self.tR, E_bdyR)
+            intR[:,-1] = self.lm_lv(self.tR, E_bdyR, self.neq_node)
         else:
             # manually fix boundaries of ER to ensure proper boundary coupling
             if E_bdyR is None: E_bdyR = self.calcEx(q_bdyR)
-            intR[:,-1] = self.lm_lv(self.tR, E_bdyR)
+            intR[:,-1] = self.lm_lv(self.tR, E_bdyR, self.neq_node)
             qf_R = fn.pad_1dR(q_a, q_bdyR)
 
         diss = self.coeff*self.diss(qf_L,qf_R)
 
-        sat = 0.5*( self.lm_gv(self.Esurf, E) - intR + intL ) - diss
+        Esat = self.lm_gv(self.Esurf, E, self.neq_node)
+        sat = 0.5*( Esat - intR + intL ) - diss
         return sat
     
     def central_div_1d(self, q, E, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None):
@@ -62,19 +63,19 @@ class SatDer1:
         if q_bdyL is None: # periodic
             EL = fn.shift_right(E)
             ER = fn.shift_left(E)
-            intR = self.lm_gv(self.tb, ER)
-            intL = self.lm_gv(self.ta, EL)
+            intR = self.lm_gv(self.tb, ER, self.neq_node)
+            intL = self.lm_gv(self.ta, EL, self.neq_node)
         else:
             EL = fn.shift_right(E)
             ER = fn.shift_left(E)
-            intR = self.lm_gv(self.tb, ER)
-            intL = self.lm_gv(self.ta, EL)
+            intR = self.lm_gv(self.tb, ER, self.neq_node)
+            intL = self.lm_gv(self.ta, EL, self.neq_node)
             # manually fix boundaries of EL, ER to ensure proper boundary coupling
             if E_bdyL is None:
                 E_bdyL = self.calcEx(q_bdyL)
                 E_bdyR = self.calcEx(q_bdyR)
-            intR[:,-1] = self.lm_lv(self.tR, E_bdyR)
-            intL[:,0] = self.lm_lv(self.tL, E_bdyL)
+            intR[:,-1] = self.lm_lv(self.tR, E_bdyR, self.neq_node)
+            intL[:,0] = self.lm_lv(self.tL, E_bdyL, self.neq_node)
         
 # =============================================================================
 #         # This is equivalent to below, but tested to be slightly slower
@@ -89,7 +90,8 @@ class SatDer1:
 # =============================================================================
         
         # This is equivalent to above, but tested to be slightly faster
-        sat = 0.5*( self.lm_gv(self.Esurf, E) - intR + intL )
+        Esat = self.lm_gv(self.Esurf, E, self.neq_node)
+        sat = 0.5*( Esat - intR + intL )
         
         return sat
     
@@ -108,21 +110,22 @@ class SatDer1:
         
 # =============================================================================
 #         # Option 1: equivalent to below, but tested to be slowest of 3
-#         Ephys = self.metrics[idx][:,0,:] * Ex + self.metrics[idx][:,1,:] * Ey
-#         EphysL = self.tLT @ Ephys
-#         EphysR = self.tRT @ Ephys
+#         #Ephys = self.metrics[idx][:,0,:] * Ex + self.metrics[idx][:,1,:] * Ey
+#         #EphysL = self.tLT @ Ephys
+#         #EphysR = self.tRT @ Ephys
 #         EnumL = 0.5*(self.bdy_metrics[idx][:,0,0,:] * (self.tRT @ ExL) \
-#                    + self.bdy_metrics[idx][:,0,1,:] * (self.tRT @ EyL) + EphysL)
+#                    + self.bdy_metrics[idx][:,0,1,:] * (self.tRT @ EyL) )#+ EphysL)
 #         EnumR = 0.5*(self.bdy_metrics[idx][:,1,0,:] * (self.tLT @ ExR) \
-#                    + self.bdy_metrics[idx][:,1,1,:] * (self.tLT @ EyR) + EphysR)
+#                    + self.bdy_metrics[idx][:,1,1,:] * (self.tLT @ EyR) )#+ EphysR)
 #         
-#         sat = self.tR @ (self.Hperp * (EphysR - EnumR)) - self.tL @ (self.Hperp * (EphysL - EnumL))
+#         #sat = self.tR @ (self.Hperp * (EphysR - EnumR)) - self.tL @ (self.Hperp * (EphysL - EnumL))
+#         sat = - self.tR @ (self.Hperp[:,None] * EnumR) + self.tL @ (self.Hperp[:,None] * EnumL)
 # =============================================================================
         
         # Option 2: equivalent to above and below, but tested to be fastest of 3
         sat = 0.5*( #self.gm_gv(self.vol_x_mat[idx], Ex) + self.gm_gv(self.vol_y_mat[idx], Ey) 
-                  - self.gm_gv(self.tbphysx[idx], ExR) - self.gm_gv(self.tbphysy[idx], EyR)
-                  + self.gm_gv(self.taphysx[idx], ExL) + self.gm_gv(self.taphysy[idx], EyL))
+                  - self.gm_gv(self.tbphysx[idx], ExR, self.neq_node) - self.gm_gv(self.tbphysy[idx], EyR, self.neq_node)
+                  + self.gm_gv(self.taphysx[idx], ExL, self.neq_node) + self.gm_gv(self.taphysy[idx], EyL, self.neq_node))
         
 # =============================================================================
 #         # Option 3: equivalent to above, but tested to be slower than 2
@@ -141,8 +144,8 @@ class SatDer1:
         A non-dissipative central flux in 2D, that calls an external dissipation function..
         '''
         
-        q_a = self.lm_gv(self.tLT, q)
-        q_b = self.lm_gv(self.tRT, q)
+        q_a = self.lm_gv(self.tLT, q, self.neq_node)
+        q_b = self.lm_gv(self.tRT, q, self.neq_node)
         if q_bdyL is None: # periodic
             qf_L = fn.pad_1dL(q_b, q_b[:,-1])
             qf_R = fn.pad_1dR(q_a, q_a[:,0])
@@ -155,9 +158,14 @@ class SatDer1:
         
         diss = self.coeff*self.diss(qf_L,qf_R,idx)
         
+        tbx_ExR = self.gm_gv(self.tbphysx[idx], ExR, self.neq_node)
+        tby_EyR = self.gm_gv(self.tbphysy[idx], EyR, self.neq_node)
+        tax_ExL = self.gm_gv(self.taphysx[idx], ExL, self.neq_node)
+        tay_EyL = self.gm_gv(self.taphysy[idx], EyL, self.neq_node)
+
         sat = 0.5*( #self.gm_gv(self.vol_x_mat[idx], Ex) + self.gm_gv(self.vol_y_mat[idx], Ey) 
-                  - self.gm_gv(self.tbphysx[idx], ExR) - self.gm_gv(self.tbphysy[idx], EyR)
-                  + self.gm_gv(self.taphysx[idx], ExL) + self.gm_gv(self.taphysy[idx], EyL)) - diss
+                  - tbx_ExR - tby_EyR
+                  + tax_ExL + tay_EyL) - diss
         """
         # Debugging: ok
         sat2 = 0.5*( fn.gm_gv(self.vol_x_mat[idx], Ex) + fn.gm_gv(self.vol_y_mat[idx], Ey) 
@@ -185,8 +193,8 @@ class SatDer1:
             raise Exception('TODO: adding boundary condition.')
 
         sat = 0.5*( self.gm_gv(self.vol_x_mat[idx], Ex) + self.gm_gv(self.vol_y_mat[idx], Ey) + self.gm_gv(self.vol_z_mat[idx], Ez) 
-                  - self.gm_gv(self.tbphysx[idx], ExR) - self.gm_gv(self.tbphysy[idx], EyR) - self.gm_gv(self.tbphysz[idx], EzR)
-                  + self.gm_gv(self.taphysx[idx], ExL) + self.gm_gv(self.taphysy[idx], EyL) + self.gm_gv(self.taphysz[idx], EzL))
+                  - self.gm_gv(self.tbphysx[idx], ExR, self.neq_node) - self.gm_gv(self.tbphysy[idx], EyR, self.neq_node) - self.gm_gv(self.tbphysz[idx], EzR, self.neq_node)
+                  + self.gm_gv(self.taphysx[idx], ExL, self.neq_node) + self.gm_gv(self.taphysy[idx], EyL, self.neq_node) + self.gm_gv(self.taphysz[idx], EzL, self.neq_node))
         
         return sat
     
@@ -200,8 +208,8 @@ class SatDer1:
         '''
         An upwind dissipative flux in 1D. self.coeff=0 turns off dissipation.
         '''
-        q_a = self.lm_gv(self.tLT, q)
-        q_b = self.lm_gv(self.tRT, q)
+        q_a = self.lm_gv(self.tLT, q, self.neq_node)
+        q_b = self.lm_gv(self.tRT, q, self.neq_node)
         # Here we work in terms of facets, starting from the left-most facet.
         # This is NOT the same as elements. i.e. qR is to the right of the
         # facet and qL is to the left of the facet, opposite of element-wise.
@@ -221,8 +229,8 @@ class SatDer1:
         A_upwind = (A + self.coeff*A_abs)/2
         A_downwind = (A - self.coeff*A_abs)/2
         
-        sat = self.lm_gv(self.tR, fn.gbdiag_gv(A_downwind, qf_jump)[:,1:]) \
-            + self.lm_gv(self.tL, fn.gbdiag_gv(A_upwind, qf_jump)[:,:-1])
+        sat = self.lm_gv(self.tR, fn.gbdiag_gv(A_downwind, qf_jump)[:,1:], self.neq_node) \
+            + self.lm_gv(self.tL, fn.gbdiag_gv(A_upwind, qf_jump)[:,:-1], self.neq_node)
         return sat
 
     
@@ -230,8 +238,8 @@ class SatDer1:
         '''
         An upwind dissipative flux in 2D. self.coeff=0 turns off dissipation.
         '''
-        q_a = self.lm_gv(self.tLT, q)
-        q_b = self.lm_gv(self.tRT, q)
+        q_a = self.lm_gv(self.tLT, q, self.neq_node)
+        q_b = self.lm_gv(self.tRT, q, self.neq_node)
         # Here we work in terms of facets, starting from the left-most facet.
         # This is NOT the same as elements. i.e. qR is to the right of the
         # facet and qL is to the left of the facet, opposite of element-wise.
@@ -256,16 +264,16 @@ class SatDer1:
         A_upwind = (Ax + self.coeff*Ax_abs)/2 * bdy_metricsx[:,None,None,:] + (Ay + self.coeff*Ay_abs)/2 * bdy_metricsy[:,None,None,:]
         A_downwind = (Ax - self.coeff*Ax_abs)/2 * bdy_metricsx[:,None,None,:] + (Ay - self.coeff*Ay_abs)/2 * bdy_metricsy[:,None,None,:]
         
-        sat = self.lm_gv(self.tRHperp * fn.gbdiag_gv(A_downwind, qf_jump)[:,1:]) \
-            + self.lm_gv(self.tLHperp * fn.gbdiag_gv(A_upwind, qf_jump)[:,:-1])
+        sat = self.lm_gv(self.tRHperp, fn.gbdiag_gv(A_downwind, qf_jump)[:,1:], self.neq_node) \
+            + self.lm_gv(self.tLHperp, fn.gbdiag_gv(A_upwind, qf_jump)[:,:-1], self.neq_node)
         return sat
     
     def upwind_div_3d(self, q, Ex, Ey, Ez, idx, q_bdyL=None, q_bdyR=None):
         '''
         An upwind dissipative flux in 3D. self.coeff=0 turns off dissipation.
         '''
-        q_a = self.lm_gv(self.tLT, q)
-        q_b = self.lm_gv(self.tRT, q)
+        q_a = self.lm_gv(self.tLT, q, self.neq_node)
+        q_b = self.lm_gv(self.tRT, q, self.neq_node)
         # Here we work in terms of facets, starting from the left-most facet.
         # This is NOT the same as elements. i.e. qR is to the right of the
         # facet and qL is to the left of the facet, opposite of element-wise.
@@ -297,8 +305,8 @@ class SatDer1:
                    + (Ay - self.coeff*Ay_abs)/2 * bdy_metricsy \
                    + (Az - self.coeff*Az_abs)/2 * bdy_metricsz
         
-        sat = self.lm_gv(self.tRHperp * fn.gbdiag_gv(A_downwind, qf_jump)[:,1:]) \
-            + self.lm_gv(self.tLHperp * fn.gbdiag_gv(A_upwind, qf_jump)[:,:-1])
+        sat = self.lm_gv(self.tRHperp, fn.gbdiag_gv(A_downwind, qf_jump)[:,1:], self.neq_node) \
+            + self.lm_gv(self.tLHperp, fn.gbdiag_gv(A_upwind, qf_jump)[:,:-1], self.neq_node)
         return sat
 
 
@@ -338,11 +346,11 @@ class SatDer1:
             surfa = self.lm_gmT_had_diff(self.ta,Fsurf[:,:,:-1])
             surfb = self.lm_gm_had_diff(self.tb,Fsurf[:,:,1:])
         
-        diss = self.coeff*self.diss(self.lm_gv(self.tRT,qL), self.lm_gv(self.tLT,qR))
+        diss = self.coeff*self.diss(self.lm_gv(self.tRT,qL, self.neq_node), self.lm_gv(self.tLT,qR, self.neq_node))
         sat = vol + surfa - surfb - diss 
         """
-        qa = self.lm_gv(self.tLT,q)
-        qb = self.lm_gv(self.tRT,q)
+        qa = self.lm_gv(self.tLT,q, self.neq_node)
+        qb = self.lm_gv(self.tRT,q, self.neq_node)
 
         if (q_bdyL is None): #and (q_bdyR is None):
             sat = self.Fsat_diff_periodic(q)
@@ -390,13 +398,13 @@ class SatDer1:
             surfb = self.gm_gm_had_diff(self.tbphysx[idx],Fsurfx[:,:,1:]) + \
                     self.gm_gm_had_diff(self.tbphysy[idx],Fsurfy[:,:,1:])
         
-        diss = self.coeff*self.diss(self.lm_gv(self.tRT,qL), self.lm_gv(self.tLT,qR), idx)
+        diss = self.coeff*self.diss(self.lm_gv(self.tRT,qL, self.neq_node), self.lm_gv(self.tLT,qR, self.neq_node), idx)
         sat = surfa - surfb - diss + vol
         """
 
         assert ((q_bdyL is None) and (q_bdyR is None)), 'base_had_2d SAT: Only periodic boundary conditions are implemented.'
-        qa = self.lm_gv(self.tLT,q)
-        qb = self.lm_gv(self.tRT,q)
+        qa = self.lm_gv(self.tLT,q, self.neq_node)
+        qb = self.lm_gv(self.tRT,q, self.neq_node)
         qL = fn.pad_1dL(qb, qb[:,-1])
         qR = fn.pad_1dR(qa, qa[:,0])
 
@@ -443,7 +451,7 @@ class SatDer1:
                     self.gm_gm_had_diff(self.tbphysy[idx],Fsurfy[:,:,1:]) + \
                     self.gm_gm_had_diff(self.tbphysz[idx],Fsurfz[:,:,1:])
         
-        diss = self.coeff*self.diss(self.lm_gv(self.tRT,qL), self.lm_gv(self.tLT,qR), idx)
+        diss = self.coeff*self.diss(self.lm_gv(self.tRT,qL, self.neq_node), self.lm_gv(self.tLT,qR, self.neq_node), idx)
         
         sat = vol + surfa - surfb - diss 
         return sat
@@ -510,13 +518,13 @@ class SatDer1:
             AL = fn.shift_mat_right(A) # move the last elem to the first elem
             AR = fn.shift_mat_left(A) # move the first elem to the last elem
 
-            intR = fn.lm_gm(self.tb, AR) # these should be placed in col R
-            intL = fn.lm_gm(self.ta, AL) # these should be placed in col L
+            intR = fn.lm_gm(self.tb, AR, self.neq_node) # these should be placed in col R
+            intL = fn.lm_gm(self.ta, AL, self.neq_node) # these should be placed in col L
         else:
             AL = fn.shift_mat_right(A) # move the last elem to the first elem
             AR = fn.shift_mat_left(A) # move the first elem to the last elem
-            intR = fn.lm_gm(self.tb, AR)
-            intL = fn.lm_gm(self.ta, AL)
+            intR = fn.lm_gm(self.tb, AR, self.neq_node)
+            intL = fn.lm_gm(self.ta, AL, self.neq_node)
             # manually fix boundaries of AL, AR to ensure proper boundary coupling
             # TODO: assuming dirichlet boundaries (or not depending on solution)
             # else would need to fix boundary intR and intL more smartly
@@ -524,7 +532,7 @@ class SatDer1:
             intL[:,:,0] = 0.
 
         # Note: could also use gm_triblock_flat_periodic or gm_triblock_flat (works for 2D)
-        dfdq = 0.5*(  fn.sparse_block_diag(fn.lm_gm(self.Esurf, A)) \
+        dfdq = 0.5*(  fn.sparse_block_diag(fn.lm_gm(self.Esurf, A, self.neq_node)) \
                     - fn.sparse_block_diag_R_1D(intR) \
                     + fn.sparse_block_diag_L_1D(intL)  )
         return dfdq
@@ -626,10 +634,10 @@ class SatDer1:
         self.coeff=0 is conservative, self.coeff=1 is disspative
         '''        
         
-        sat = self.alpha * self.lm_gv(self.Esurf, E) \
-            + (1 - self.alpha) * 0.5 * q * self.lm_gv(self.Esurf, q)
-        q_a = self.lm_gv(self.tLT, q)
-        q_b = self.lm_gv(self.tRT, q)
+        sat = self.alpha * self.lm_gv(self.Esurf, E, self.neq_node) \
+            + (1 - self.alpha) * 0.5 * q * self.lm_gv(self.Esurf, q, self.neq_node)
+        q_a = self.lm_gv(self.tLT, q, self.neq_node)
+        q_b = self.lm_gv(self.tRT, q, self.neq_node)
         if q_bdyL is None:
             qf_L = fn.pad_1dL(q_b, q_b[:,-1])
             qf_R = fn.pad_1dR(q_a, q_a[:,0])
@@ -644,8 +652,8 @@ class SatDer1:
         qf_avg = self.calc_avgq(qf_L, qf_R)
 
         if extrapolate_flux:
-            E_a = self.lm_gv(self.tLT, E)
-            E_b = self.lm_gv(self.tRT, E)
+            E_a = self.lm_gv(self.tLT, E, self.neq_node)
+            E_b = self.lm_gv(self.tRT, E, self.neq_node)
             if q_bdyL is None:
                 Ef_L = fn.pad_1dL(E_b, E_b[:,-1])
                 Ef_R = fn.pad_1dR(E_a, E_a[:,0])
@@ -657,8 +665,8 @@ class SatDer1:
             f_avg = (qf_avg)**2 / 2
         numflux = f_avg - sigma * fn.cabs(qf_avg) * qf_jump / 2
         
-        sat = sat - self.lm_gv(self.tR, numflux[:,1:]) \
-                  + self.lm_gv(self.tL, numflux[:,:-1])
+        sat = sat - self.lm_gv(self.tR, numflux[:,1:], self.neq_node) \
+                  + self.lm_gv(self.tL, numflux[:,:-1], self.neq_node)
         return sat
             
     def div_1d_burgers_es(self, q, E=None, q_bdyL=None, q_bdyR=None):
@@ -667,8 +675,8 @@ class SatDer1:
         (uses extrapolation of the solution from the coupled elements)
         self.coeff=0 is conservative, self.coeff=1 is disspative
         '''
-        q_a = self.lm_gv(self.tLT, q)
-        q_b = self.lm_gv(self.tRT, q)
+        q_a = self.lm_gv(self.tLT, q, self.neq_node)
+        q_b = self.lm_gv(self.tRT, q, self.neq_node)
         if q_bdyL is None: # periodic
             q_L = fn.shift_right(q_b)
             q_R = fn.shift_left(q_a)
@@ -682,8 +690,8 @@ class SatDer1:
             sigma[-1] = 1
 
         if E is None: E = q**2 / 2.
-        sat = (1./6.) * ( self.lm_gv(self.tR, (4. * self.lm_gv(self.tRT, E) - q_b*q_R - q_R*q_R))
-                        - self.lm_gv(self.tL, (4. * self.lm_gv(self.tLT, E) - q_a*q_L - q_L*q_L)) )
+        sat = (1./6.) * ( self.lm_gv(self.tR, (4. * self.lm_gv(self.tRT, E, self.neq_node) - q_b*q_R - q_R*q_R), self.neq_node)
+                        - self.lm_gv(self.tL, (4. * self.lm_gv(self.tLT, E, self.neq_node) - q_a*q_L - q_L*q_L), self.neq_node) )
         
         if self.coeff != 0.:
             q_Rjump = q_b - q_R
@@ -698,7 +706,7 @@ class SatDer1:
             else:
                 raise Exception(f"maxeig_type {self.maxeig_type} not recognized. Try 'rusanov' or 'lf'.")
             
-            sat -= 0.5*sigma*(self.lm_gv(self.tR, (q_Rlambda * q_Rjump)) + self.lm_gv(self.tL, (q_Llambda * q_Ljump)))
+            sat -= 0.5*sigma*(self.lm_gv(self.tR, (q_Rlambda * q_Rjump), self.neq_node) + self.lm_gv(self.tL, (q_Llambda * q_Ljump), self.neq_node))
         
         return sat
     
@@ -710,10 +718,10 @@ class SatDer1:
         one recovers from the hadamard formulation
         (uses extrapolation of the flux from the coupled elements)
         '''
-        q_a = self.lm_gv(self.tLT, q)
-        q_b = self.lm_gv(self.tRT, q)
-        q2_a = self.lm_gv(self.tLT, q**2)
-        q2_b = self.lm_gv(self.tRT, q**2)
+        q_a = self.lm_gv(self.tLT, q, self.neq_node)
+        q_b = self.lm_gv(self.tRT, q, self.neq_node)
+        q2_a = self.lm_gv(self.tLT, q**2, self.neq_node)
+        q2_b = self.lm_gv(self.tRT, q**2, self.neq_node)
         if q_bdyL is None: # periodic
             q_L = fn.shift_right(q_b)
             q_R = fn.shift_left(q_a)
@@ -723,8 +731,8 @@ class SatDer1:
             raise Exception('TODO: adding boundary condition.')
 
         # this is the correct form you recover from the hadamard form (sec 9.3.2 in SBP book)
-        sat = (1./6.) * ( q * self.lm_gv(self.tR, q_b - q_R) + self.lm_gv(self.tR, q2_b - q2_R)
-                        - q * self.lm_gv(self.tL, q_a - q_L) - self.lm_gv(self.tL, q2_a - q2_L) )
+        sat = (1./6.) * ( q * self.lm_gv(self.tR, q_b - q_R, self.neq_node) + self.lm_gv(self.tR, q2_b - q2_R, self.neq_node)
+                        - q * self.lm_gv(self.tL, q_a - q_L, self.neq_node) - self.lm_gv(self.tL, q2_a - q2_L, self.neq_node) )
         
         # below is the volume term [ E \circ F(u,u) ] 1 you get from the Hadamard form fluxes
         #vol = (1./6.) * ( q**2 * self.tR[:] + q * (self.tR @ q_b) + self.tR @ q2_b  
@@ -752,7 +760,7 @@ class SatDer1:
             else:
                 raise Exception(f"maxeig_type {self.maxeig_type} not recognized. Try 'rusanov' or 'lf'.")
             
-            sat -= 0.5*self.coeff*(self.lm_gv(self.tR, (q_Rlambda * q_Rjump)) + self.lm_gv(self.tL, (q_Llambda * q_Ljump)))
+            sat -= 0.5*self.coeff*(self.lm_gv(self.tR, (q_Rlambda * q_Rjump), self.neq_node) + self.lm_gv(self.tL, (q_Llambda * q_Ljump), self.neq_node))
         
         return sat
 
@@ -831,10 +839,10 @@ class SatDer1:
         #dSatRdqR = 0.5*fn.lm_gm(self.tL, factor_qR + fn.gm_lm(A, dqf_diffdqR) + sigma*(sign_A*factor_qR + fn.gm_lm(A_abs, dqf_diffdqR)))
         #dSatLdqL = 0.5*fn.lm_gm(self.tR, factor_qL + fn.gm_lm(A, dqf_diffdqL) - sigma*(sign_A*factor_qL + fn.gm_lm(A_abs, dqf_diffdqL)))
         #dSatLdqR = 0.5*fn.lm_gm(self.tR, factor_qR + fn.gm_lm(A, dqf_diffdqR) - sigma*(sign_A*factor_qR + fn.gm_lm(A_abs, dqf_diffdqR)))       
-        dSatRdqL = 0.5*fn.lm_gm(self.tL,psigsignA*factor_qL + fn.gm_lm(ApsigmaA_abs, dqf_diffdqL))
-        dSatRdqR = 0.5*fn.lm_gm(self.tL,psigsignA*factor_qR + fn.gm_lm(ApsigmaA_abs,dqf_diffdqR))
-        dSatLdqL = 0.5*fn.lm_gm(self.tR,msigsignA*factor_qL + fn.gm_lm(AmsigmaA_abs, dqf_diffdqL))
-        dSatLdqR = 0.5*fn.lm_gm(self.tR,msigsignA*factor_qR + fn.gm_lm(AmsigmaA_abs, dqf_diffdqR))
+        dSatRdqL = 0.5*fn.lm_gm(self.tL,psigsignA*factor_qL + fn.gm_lm(ApsigmaA_abs, dqf_diffdqL), self.neq_node)
+        dSatRdqR = 0.5*fn.lm_gm(self.tL,psigsignA*factor_qR + fn.gm_lm(ApsigmaA_abs,dqf_diffdqR), self.neq_node)
+        dSatLdqL = 0.5*fn.lm_gm(self.tR,msigsignA*factor_qL + fn.gm_lm(AmsigmaA_abs, dqf_diffdqL), self.neq_node)
+        dSatLdqR = 0.5*fn.lm_gm(self.tR,msigsignA*factor_qR + fn.gm_lm(AmsigmaA_abs, dqf_diffdqR), self.neq_node)
 
         return dSatLdqL, dSatLdqR, dSatRdqL, dSatRdqR
 
