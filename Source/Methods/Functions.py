@@ -20,25 +20,48 @@ def cabs(x):
 
 @njit
 def _gm_gv_unkronned(A, b, neq_node):
-    """Numba-compiled helper for gm_gv when neq_node is provided - optimized using matrix ops"""
-    nen, nen2, nelem = A.shape
-    nen_neq = b.shape[0]
-    block_size = nen * neq_node
-    nblocks = nen_neq // block_size
-    
-    c = np.zeros((nen_neq, nelem), dtype=b.dtype)
-    # Optimize: reshape b per element and use matrix multiplication for BLAS optimization
-    for block in range(nblocks):
-        b_offset = block * block_size
-        c_offset = block * nen * neq_node
-        for e in range(nelem):
-            # Make contiguous copy for reshape, then use A[:,:,e] @ b_reshaped
-            b_slice = np.ascontiguousarray(b[b_offset:b_offset+block_size, e])
-            b_block = b_slice.reshape(nen, neq_node)
-            # Make A[:,:,e] contiguous for BLAS optimization
-            A_e = np.ascontiguousarray(A[:, :, e])
-            c_block = A_e @ b_block  # (nen, neq_node) - BLAS optimized!
-            c[c_offset:c_offset+nen*neq_node, e] = c_block.reshape(nen * neq_node)
+    """
+    Un-kronned helper for gm_gv with a single block and rectangular A.
+
+    Interprets the operation as, per element e:
+        c_e = (A_e ⊗ I_{neq_node}) @ b_e
+
+    Shapes:
+        A: (nen1, nen2, nelem)
+        b: (nen2 * neq_node, nelem)
+        c: (nen1 * neq_node, nelem)
+    """
+    nen1, nen2, nelem = A.shape
+    n_in, nelem_b = b.shape
+
+    if nelem != nelem_b:
+        raise ValueError("Shape mismatch: A.shape[2] != b.shape[1]")
+
+    # Input must be exactly nen2 * neq_node (one block, no repetition)
+    block_size_in = nen2 * neq_node
+    if n_in != block_size_in:
+        raise ValueError(
+            f"b.shape[0]={n_in} must equal nen2*neq_node={block_size_in} "
+            "(single-block A ⊗ I_neq_node)"
+        )
+
+    block_size_out = nen1 * neq_node
+    c = np.zeros((block_size_out, nelem), dtype=b.dtype)
+
+    for e in range(nelem):
+        # b_e: (nen2 * neq_node,) → (nen2, neq_node)
+        b_slice = np.ascontiguousarray(b[:, e])
+        b_block = b_slice.reshape(nen2, neq_node)
+
+        # A_e: (nen1, nen2)
+        A_e = np.ascontiguousarray(A[:, :, e])
+
+        # (nen1, nen2) @ (nen2, neq_node) → (nen1, neq_node)
+        c_block = A_e @ b_block
+
+        # flatten to (nen1 * neq_node,)
+        c[:, e] = c_block.reshape(block_size_out)
+
     return c
 
 @njit
@@ -51,6 +74,56 @@ def _gm_gv_kronned(A, b):
             for e in range(nelem):
                 c[i, e] += A[i, j, e] * b[j, e]
     return c
+
+def gm_gv(A, b, neq_node=None):
+    '''
+    Equivalent to np.einsum('ijk,jk->ik',A,b) where A is a 3-tensor of shape
+    (nen1,nen2,nelem) and b is a 2-tensor of shape (nen2,nelem). This can be 
+    thought of as a global matrix @ global vector.
+    Faster than A[:,:,e]@b[:,e] because A[:,:,e] is not a contigous array
+    
+    If neq_node is provided, A is assumed to be unkronned (shape (nen,nen,nelem))
+    and b is kronned (shape (nen*neq_node,nelem)). The function handles the
+    neq_node dimension manually.
+
+    Parameters
+    ----------
+    A : numpy array of shape (nen1,nen2,nelem) or (nen,nen,nelem) if neq_node provided
+    b : numpy array of shape (nen2,nelem) or (nen*neq_node,nelem) if neq_node provided
+    neq_node : int, optional
+        Number of equations per node. If provided, A is unkronned and b is kronned.
+
+    Returns
+    -------
+    c : numpy array of shape (nen1,nelem) or (nen*neq_node,nelem) if neq_node provided
+    '''
+    # Decide a common dtype once: promote to complex if either is complex
+    if np.iscomplexobj(A) or np.iscomplexobj(b):
+        target_dtype = np.complex128
+    else:
+        target_dtype = np.float64  # or A.dtype/b.dtype if you want to keep other reals
+
+    A_cast = A.astype(target_dtype, copy=False)
+    b_cast = b.astype(target_dtype, copy=False)
+
+    if neq_node is None or neq_node == 1:
+        # Original behavior: both A and b are kronned (or neq_node == 1)
+        nen1, nen2, nelem = np.shape(A_cast)
+        nen2b, nelemb = np.shape(b_cast)
+        assert nen2 == nen2b, f'array shapes do not match, {nen2} != {nen2b}' 
+        assert nelem == nelemb, f'element shapes do not match, {nelem} != {nelemb}'
+        
+        # Use numba-compiled helper for performance
+        return _gm_gv_kronned(A_cast, b_cast)
+    else:
+        # New behavior: A is unkronned, b is kronned (possibly repeated across spatial blocks)
+        nen1, nen2, nelem = np.shape(A_cast)
+        nen_neq, nelemb = np.shape(b_cast)
+        assert nelem == nelemb, f'element shapes do not match, {nelem} != {nelemb}'
+        assert nen_neq == nen2 * neq_node, f'b shape {nen_neq} should be {nen2}*{neq_node}'
+        
+        # Use numba-compiled helper for performance
+        return _gm_gv_unkronned(A_cast, b_cast, neq_node)
 
 # TODO: This is the function to speed up (is approximately 40% of total code runtime)
 def gm_gv(A,b,neq_node=None):
@@ -260,124 +333,159 @@ def lm_gm(A,B,neq_node=None):
 @njit
 def _lm_gv_unkronned(A, b, neq_node):
     """
-    Numba-compiled helper for lm_gv when neq_node is provided - optimized batch BLAS
-    
+    Numba-compiled helper for lm_gv when neq_node is provided.
+
     Dense local matrix-vector multiply where A is 'unkronned' but the input b
     is kronned with size neq_node.
 
     A: (nrows, ncols)
-    b: (nen_neq, nelem), where nen_neq = ncols * neq_node (nblocks = 1)
+    b: (nen_neq, nelem), where nen_neq = ncols * neq_node   (single block)
 
     Returns:
         c: (nrows * neq_node, nelem)
-    
-    Simplified version assuming nblocks = 1 (typical case).
-    This eliminates loop overhead and reduces memory operations.
+
+    Interprets, per column e:
+        c_e = (A ⊗ I_{neq_node}) @ b_e
     """
     nrows, ncols = A.shape
     nen_neq, nelem = b.shape
 
-    # Assert that we have exactly one block (typical case)
-    assert nen_neq == ncols * neq_node, f'b shape {nen_neq} should be {ncols}*{neq_node}'
+    # Single-block assumption: b length matches ncols * neq_node
+    assert nen_neq == ncols * neq_node
 
-    # Make b contiguous once
+    # Make b contiguous once (cheap no-op if already C-contiguous)
     b_contig = np.ascontiguousarray(b)
-    
-    # Reshape directly to (ncols, neq_node * nelem) - no loop needed!
+
+    # Reshape to (ncols, neq_node * nelem): one big GEMM instead of loops
     b_flat = b_contig.reshape(ncols, neq_node * nelem)
 
+    # A and b already share the same dtype (handled in Python wrapper)
     # Single GEMM: (nrows, ncols) @ (ncols, neq_node * nelem)
     c_flat = A @ b_flat  # (nrows, neq_node * nelem)
 
-    # Reshape to output format
+    # Reshape to output format (nrows * neq_node, nelem)
     c = c_flat.reshape(nrows * neq_node, nelem)
 
     return c
 
-def lm_gv(A,b,neq_node=None):
+
+def lm_gv(A, b, neq_node=None):
     '''
-    equivalent to A @ b
-    
-    If neq_node is provided, A is assumed to be unkronned (shape (nen,nen))
-    and b is kronned (shape (nen*neq_node,nelem)). The function handles the
-    neq_node dimension manually.
+    Equivalent to A @ b, but supports an "unkronned" A with a kronned b.
+
+    If neq_node is provided, A is assumed to be unkronned (shape (nrows, ncols))
+    and b is kronned (shape (ncols*neq_node, nelem)). The function applies
+    (A ⊗ I_{neq_node}) to b.
 
     Parameters
     ----------
-    A : numpy array of shape (nen1,nen2) or (nen,nen) if neq_node provided
-    b : numpy array of shape (nen2,nelem) or (nen*neq_node,nelem) if neq_node provided
+    A : numpy array, shape (nrows, ncols)
+    b : numpy array, shape (ncols, nelem) if neq_node is None,
+                          or (ncols*neq_node, nelem) if neq_node is provided
     neq_node : int, optional
         Number of equations per node. If provided, A is unkronned and b is kronned.
 
     Returns
     -------
-    c : numpy array of shape (nen1,nelem) or (nen*neq_node,nelem) if neq_node provided
+    c : numpy array of shape (nrows, nelem) if neq_node is None,
+                         or (nrows*neq_node, nelem) if neq_node is provided
     '''
     if neq_node is None:
-        # Original behavior: both A and b are kronned
-        c = A @ b
-        return c
+        # Plain matrix-matrix multiply (NumPy can handle mixed dtypes here)
+        return A @ b
     else:
-        # New behavior: A is unkronned, b is kronned (possibly repeated across spatial blocks)
-        nrows, ncols = np.shape(A)
-        nen_neq, nelem = np.shape(b)
-        block_size = ncols * neq_node
-        assert nen_neq % block_size == 0, f'b shape {nen_neq} should be a multiple of {ncols}*{neq_node}'
-        
-        # Use numba-compiled helper for performance
-        return _lm_gv_unkronned(A, b, neq_node)
+        nrows, ncols = A.shape
+        nen_neq, nelem = b.shape
+        assert nen_neq == ncols * neq_node, \
+            f'b length {nen_neq} should be ncols*neq_node={ncols*neq_node}'
+
+        # Decide a common dtype once (handles float + complex -> complex, etc.)
+        target_dtype = np.result_type(A.dtype, b.dtype)
+
+        A_cast = A.astype(target_dtype, copy=False)
+        b_cast = b.astype(target_dtype, copy=False)
+
+        # Optionally ensure A is C-contiguous once (good for BLAS)
+        if not A_cast.flags['C_CONTIGUOUS']:
+            A_cast = np.ascontiguousarray(A_cast)
+
+        return _lm_gv_unkronned(A_cast, b_cast, neq_node)
 
 @njit
 def _lm_lv_unkronned(A, b, neq_node):
-    """Numba-compiled helper for lm_lv when neq_node is provided - optimized using matrix ops"""
+    """
+    Numba-compiled helper for lm_lv when neq_node is provided.
+
+    A: (nrows, ncols)
+    b: (nen_neq,), where nen_neq = ncols * neq_node   (single block)
+
+    Returns:
+        c: (nrows * neq_node,)
+
+    Interprets:
+        c = (A ⊗ I_{neq_node}) @ b
+    """
     nrows, ncols = A.shape
-    nen_neq = len(b)
-    
-    # Make contiguous copy for reshape, then use A @ b_reshaped for BLAS optimization
+    nen_neq = b.shape[0]
+
+    # Single-block assumption: length matches ncols * neq_node
+    assert nen_neq == ncols * neq_node
+
+    # Make contiguous for reshape and BLAS
     b_contig = np.ascontiguousarray(b)
+    # (ncols * neq_node,) → (ncols, neq_node)
     b_reshaped = b_contig.reshape(ncols, neq_node)
-    c_reshaped = A @ b_reshaped  # (nrows, neq_node) - BLAS optimized!
+
+    # A and b already have the same dtype (Python wrapper ensures this)
+    # (nrows, ncols) @ (ncols, neq_node) → (nrows, neq_node)
+    c_reshaped = A @ b_reshaped
+
+    # Flatten to (nrows * neq_node,)
     return c_reshaped.reshape(nrows * neq_node)
 
-def lm_lv(A,b,neq_node=None):
+
+def lm_lv(A, b, neq_node=None):
     '''
-    equivalent to A @ b
-    
-    If neq_node is provided, A is assumed to be unkronned (shape (nen,nen))
-    and b is kronned (shape (nen*neq_node)). The function handles the
-    neq_node dimension manually.
+    Equivalent to A @ b.
+
+    If neq_node is provided, A is assumed to be unkronned (shape (nrows, ncols))
+    and b is kronned (shape (ncols*neq_node,)). The function applies
+    (A ⊗ I_{neq_node}) to b.
 
     Parameters
     ----------
-    A : numpy array of shape (nen1,nen2) or (nen,nen) if neq_node provided
-    b : numpy array of shape (nen2) or (nen*neq_node) if neq_node provided
+    A : numpy array, shape (nrows, ncols)
+    b : numpy array, shape (ncols,) if neq_node is None or 1,
+                          or (ncols*neq_node,) if neq_node > 1
     neq_node : int, optional
-        Number of equations per node. If provided, A is unkronned and b is kronned.
+        Number of equations per node. If provided and > 1, A is unkronned
+        and b is kronned.
 
     Returns
     -------
-    c : numpy array of shape (nen1) or (nen*neq_node) if neq_node provided
+    c : numpy array of shape (nrows,) if neq_node is None or 1,
+                         or (nrows*neq_node,) if neq_node > 1
     '''
-    # Optimize: neq_node == 1 is equivalent to None (no kronning needed)
+    # Optimize: neq_node == 1 is equivalent to "no kron" – just A @ b
     if neq_node is None or neq_node == 1:
-        # Original behavior: both A and b are kronned (or neq_node == 1)
-        c = A @ b
-        return c
+        return A @ b
     else:
-        # New behavior: A is unkronned, b is kronned
-        nrows, ncols = np.shape(A)
-        nen_neq = len(b)
-        assert nen_neq == ncols * neq_node, f'b shape {nen_neq} should be {ncols}*{neq_node}'
-        
-        # Use numba-compiled helper for performance
-        return _lm_lv_unkronned(A, b, neq_node)
+        nrows, ncols = A.shape
+        nen_neq = b.shape[0]
+        assert nen_neq == ncols * neq_node, \
+            f'b length {nen_neq} should be ncols*neq_node={ncols*neq_node}'
 
-@njit
-def _lm_lm_unkronned(A, B):
-    """Numba-compiled helper for lm_lm when neq_node is provided (both unkronned)"""
-    # For unkronned operators, just do regular matrix multiply
-    C = A @ B
-    return C
+        # Promote dtype once (handles float + complex -> complex, etc.)
+        target_dtype = np.result_type(A.dtype, b.dtype)
+
+        A_cast = A.astype(target_dtype, copy=False)
+        b_cast = b.astype(target_dtype, copy=False)
+
+        if not A_cast.flags['C_CONTIGUOUS']:
+            A_cast = np.ascontiguousarray(A_cast)
+
+        return _lm_lv_unkronned(A_cast, b_cast, neq_node)
+
 
 def lm_lm(A,B,neq_node=None):
     '''
@@ -397,20 +505,8 @@ def lm_lm(A,B,neq_node=None):
     -------
     C : numpy array of shape (nen1,nen3) or (nen*neq_node,nen*neq_node) if neq_node provided
     '''
-    # Optimize: neq_node == 1 is equivalent to None (no kronning needed)
-    if neq_node is None or neq_node == 1:
-        # Original behavior: both A and B are kronned (or neq_node == 1)
-        C = A @ B
-        return C
-    else:
-        # New behavior: A and B are unkronned, result should be unkronned too
-        # (This is used in operator construction, not matrix-vector ops)
-        nen1, nen2 = np.shape(A)
-        nen2b, nen3 = np.shape(B)
-        assert nen1 == nen2 == nen2b == nen3, f'For unkronned operators, A and B must be square and same size'
-        
-        # Use numba-compiled helper for performance
-        return _lm_lm_unkronned(A, B)
+    C = A @ B
+    return C
 
 @njit
 def gs_lm(A,B):
