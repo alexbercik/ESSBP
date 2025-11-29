@@ -35,6 +35,7 @@ class Burgers(PdeBase):
     tb = None # breaking time
     xb = None # breaking location
     x0b = None # initial x0 of the breaking characteristic
+    tfix_initial_time = None
 
     def __init__(self, para=None, q0_type='SinWave',
                  use_split_form=False, split_alpha=2/3):
@@ -142,6 +143,9 @@ class Burgers(PdeBase):
 
         if x is None:
             x = self.x_elem
+
+        if self.tb is None:
+            self.tb = self.calc_breaking_time(print_res=False)
         
         if guess is not None:
             assert(guess.shape == x.shape),'guess must be the same shape as x'
@@ -225,7 +229,28 @@ class Burgers(PdeBase):
                 self.x0b = 0.25 * self.dom_len + self.xmin
                 self.xb = self.eq_x(self.x0b, self.tb)
 
-            q0 = self.u0(xy)
+            if 't05' in q0_type:
+                if self.tfix_initial_time is None:
+                    self.tfix_initial_time = self.tb*0.5
+
+                if xy.ndim >1: 
+                    reshape=True
+                    orig_shape = xy.shape
+                    xtmp = xy.flatten('F')
+                else:
+                    xtmp = xy
+
+                q0 = np.empty_like(xtmp) 
+                for i in range(len(xtmp)):
+                    x0 = self.find_x0(xtmp[i],self.tfix_initial_time)
+                    q0[i] = self.u0(x0)# initiate u
+
+                if reshape:
+                    q0 = np.reshape(q0,orig_shape,'F')
+                self.tb = None
+            
+            else:
+                q0 = self.u0(xy)
         
         else:
             print("WARNING: Defaulting to standard ICs. Will not be able to use exact_sol()" \
