@@ -2280,8 +2280,7 @@ class MakeMesh:
                                  - dyp_dxr*(dxp_dyr*dzp_dzr - dxp_dzr*dzp_dyr) \
                                  + dzp_dxr*(dxp_dyr*dyp_dzr - dxp_dzr*dyp_dyr)
             
-            elif metric_method.lower()== 'kopriva' or metric_method.lower()== 'kcw' \
-                or metric_method.lower()== 'kopriva_extrap' or metric_method.lower()== 'kcw_extrap':
+            elif ('kopriva' in metric_method.lower()) or ('kcw' in metric_method.lower()):
                 self.metrics = np.zeros((self.nen**3,9,self.nelem[0]*self.nelem[1]*self.nelem[2]))
                 # do kopriva and yee with lgl operators, then interpolate to lg
                 from Source.Disc.MakeSbpOp import MakeSbpOp
@@ -2335,7 +2334,7 @@ class MakeMesh:
                 Dy = sp.kron_lm_eye(sp.kron_eye_lm(D, self.nen), self.nen)
                 Dz = sp.kron_eye_lm(sp.kron_eye_lm(D, self.nen), self.nen) 
 
-                if metric_method.lower()== 'kopriva_extrap' or metric_method.lower()== 'kcw_extrap':
+                if 'extrap' in metric_method.lower():
                 # The following does NOT produce unique surface values, so we'll need to average
                     xyz_elem = np.einsum('ij,jme->ime', Vsbptolgl, self.xyz_elem)
                     # we need to average now, keeping in mind vertices and edges are shared between more than two elements
@@ -2370,24 +2369,26 @@ class MakeMesh:
                 dZp_dyr = sp.lm_gdiag(Dy, z_elem)
                 dZp_dzr = sp.lm_gdiag(Dz, z_elem)
 
-                # self.metrics[:,0,:] = Vlgltosbp @ ( fn.gm_gv(dZp_dzr,dyp_dyr) - fn.gm_gv(dZp_dyr,dyp_dzr) )
-                # self.metrics[:,1,:] = Vlgltosbp @ ( fn.gm_gv(dXp_dzr,dzp_dyr) - fn.gm_gv(dXp_dyr,dzp_dzr) )
-                # self.metrics[:,2,:] = Vlgltosbp @ ( fn.gm_gv(dYp_dzr,dxp_dyr) - fn.gm_gv(dYp_dyr,dxp_dzr) )
-                # self.metrics[:,3,:] = Vlgltosbp @ ( fn.gm_gv(dZp_dxr,dyp_dzr) - fn.gm_gv(dZp_dzr,dyp_dxr) )
-                # self.metrics[:,4,:] = Vlgltosbp @ ( fn.gm_gv(dXp_dxr,dzp_dzr) - fn.gm_gv(dXp_dzr,dzp_dxr) )
-                # self.metrics[:,5,:] = Vlgltosbp @ ( fn.gm_gv(dYp_dxr,dxp_dzr) - fn.gm_gv(dYp_dzr,dxp_dxr) )
-                # self.metrics[:,6,:] = Vlgltosbp @ ( fn.gm_gv(dZp_dyr,dyp_dxr) - fn.gm_gv(dZp_dxr,dyp_dyr) )
-                # self.metrics[:,7,:] = Vlgltosbp @ ( fn.gm_gv(dXp_dyr,dzp_dxr) - fn.gm_gv(dXp_dxr,dzp_dyr) )
-                # self.metrics[:,8,:] = Vlgltosbp @ ( fn.gm_gv(dYp_dyr,dxp_dxr) - fn.gm_gv(dYp_dxr,dxp_dyr) )
-                self.metrics[:,0,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dYp_dyr,dzp_dzr) - sp.gm_gv(dZp_dyr,dyp_dzr) + sp.gm_gv(dZp_dzr,dyp_dyr) - sp.gm_gv(dYp_dzr,dzp_dyr)) )
-                self.metrics[:,1,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dZp_dyr,dxp_dzr) - sp.gm_gv(dXp_dyr,dzp_dzr) + sp.gm_gv(dXp_dzr,dzp_dyr) - sp.gm_gv(dZp_dzr,dxp_dyr)) )
-                self.metrics[:,2,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dXp_dyr,dyp_dzr) - sp.gm_gv(dYp_dyr,dxp_dzr) + sp.gm_gv(dYp_dzr,dxp_dyr) - sp.gm_gv(dXp_dzr,dyp_dyr)) )
-                self.metrics[:,3,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dYp_dzr,dzp_dxr) - sp.gm_gv(dZp_dzr,dyp_dxr) + sp.gm_gv(dZp_dxr,dyp_dzr) - sp.gm_gv(dYp_dxr,dzp_dzr)) )
-                self.metrics[:,4,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dZp_dzr,dxp_dxr) - sp.gm_gv(dXp_dzr,dzp_dxr) + sp.gm_gv(dXp_dxr,dzp_dzr) - sp.gm_gv(dZp_dxr,dxp_dzr)) )
-                self.metrics[:,5,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dXp_dzr,dyp_dxr) - sp.gm_gv(dYp_dzr,dxp_dxr) + sp.gm_gv(dYp_dxr,dxp_dzr) - sp.gm_gv(dXp_dxr,dyp_dzr)) )
-                self.metrics[:,6,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dYp_dxr,dzp_dyr) - sp.gm_gv(dZp_dxr,dyp_dyr) + sp.gm_gv(dZp_dyr,dyp_dxr) - sp.gm_gv(dYp_dyr,dzp_dxr)) )
-                self.metrics[:,7,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dZp_dxr,dxp_dyr) - sp.gm_gv(dXp_dxr,dzp_dyr) + sp.gm_gv(dXp_dyr,dzp_dxr) - sp.gm_gv(dZp_dyr,dxp_dxr)) )
-                self.metrics[:,8,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dXp_dxr,dyp_dyr) - sp.gm_gv(dYp_dxr,dxp_dyr) + sp.gm_gv(dYp_dyr,dxp_dxr) - sp.gm_gv(dXp_dyr,dyp_dxr)) ) 
+                if 'tl' in metric_method.lower():
+                    self.metrics[:,0,:] = Vlgltosbp @ ( sp.gm_gv(dZp_dzr,dyp_dyr) - sp.gm_gv(dZp_dyr,dyp_dzr) )
+                    self.metrics[:,1,:] = Vlgltosbp @ ( sp.gm_gv(dXp_dzr,dzp_dyr) - sp.gm_gv(dXp_dyr,dzp_dzr) )
+                    self.metrics[:,2,:] = Vlgltosbp @ ( sp.gm_gv(dYp_dzr,dxp_dyr) - sp.gm_gv(dYp_dyr,dxp_dzr) )
+                    self.metrics[:,3,:] = Vlgltosbp @ ( sp.gm_gv(dZp_dxr,dyp_dzr) - sp.gm_gv(dZp_dzr,dyp_dxr) )
+                    self.metrics[:,4,:] = Vlgltosbp @ ( sp.gm_gv(dXp_dxr,dzp_dzr) - sp.gm_gv(dXp_dzr,dzp_dxr) )
+                    self.metrics[:,5,:] = Vlgltosbp @ ( sp.gm_gv(dYp_dxr,dxp_dzr) - sp.gm_gv(dYp_dzr,dxp_dxr) )
+                    self.metrics[:,6,:] = Vlgltosbp @ ( sp.gm_gv(dZp_dyr,dyp_dxr) - sp.gm_gv(dZp_dxr,dyp_dyr) )
+                    self.metrics[:,7,:] = Vlgltosbp @ ( sp.gm_gv(dXp_dyr,dzp_dxr) - sp.gm_gv(dXp_dxr,dzp_dyr) )
+                    self.metrics[:,8,:] = Vlgltosbp @ ( sp.gm_gv(dYp_dyr,dxp_dxr) - sp.gm_gv(dYp_dxr,dxp_dyr) )
+                else:
+                    self.metrics[:,0,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dYp_dyr,dzp_dzr) - sp.gm_gv(dZp_dyr,dyp_dzr) + sp.gm_gv(dZp_dzr,dyp_dyr) - sp.gm_gv(dYp_dzr,dzp_dyr)) )
+                    self.metrics[:,1,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dZp_dyr,dxp_dzr) - sp.gm_gv(dXp_dyr,dzp_dzr) + sp.gm_gv(dXp_dzr,dzp_dyr) - sp.gm_gv(dZp_dzr,dxp_dyr)) )
+                    self.metrics[:,2,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dXp_dyr,dyp_dzr) - sp.gm_gv(dYp_dyr,dxp_dzr) + sp.gm_gv(dYp_dzr,dxp_dyr) - sp.gm_gv(dXp_dzr,dyp_dyr)) )
+                    self.metrics[:,3,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dYp_dzr,dzp_dxr) - sp.gm_gv(dZp_dzr,dyp_dxr) + sp.gm_gv(dZp_dxr,dyp_dzr) - sp.gm_gv(dYp_dxr,dzp_dzr)) )
+                    self.metrics[:,4,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dZp_dzr,dxp_dxr) - sp.gm_gv(dXp_dzr,dzp_dxr) + sp.gm_gv(dXp_dxr,dzp_dzr) - sp.gm_gv(dZp_dxr,dxp_dzr)) )
+                    self.metrics[:,5,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dXp_dzr,dyp_dxr) - sp.gm_gv(dYp_dzr,dxp_dxr) + sp.gm_gv(dYp_dxr,dxp_dzr) - sp.gm_gv(dXp_dxr,dyp_dzr)) )
+                    self.metrics[:,6,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dYp_dxr,dzp_dyr) - sp.gm_gv(dZp_dxr,dyp_dyr) + sp.gm_gv(dZp_dyr,dyp_dxr) - sp.gm_gv(dYp_dyr,dzp_dxr)) )
+                    self.metrics[:,7,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dZp_dxr,dxp_dyr) - sp.gm_gv(dXp_dxr,dzp_dyr) + sp.gm_gv(dXp_dyr,dzp_dxr) - sp.gm_gv(dZp_dyr,dxp_dxr)) )
+                    self.metrics[:,8,:] = Vlgltosbp @ ( 0.5*(sp.gm_gv(dXp_dxr,dyp_dyr) - sp.gm_gv(dYp_dxr,dxp_dyr) + sp.gm_gv(dYp_dyr,dxp_dxr) - sp.gm_gv(dXp_dyr,dyp_dxr)) ) 
 
                 
             else:
@@ -2908,6 +2909,14 @@ class MakeMesh:
                 self.det_jac = ( Dx @ ( self.xyz_elem[:,0,:] * self.metrics[:,0,:] + self.xyz_elem[:,1,:] * self.metrics[:,1,:] + self.xyz_elem[:,2,:] * self.metrics[:,2,:] ) \
                                + Dy @ ( self.xyz_elem[:,0,:] * self.metrics[:,3,:] + self.xyz_elem[:,1,:] * self.metrics[:,4,:] + self.xyz_elem[:,2,:] * self.metrics[:,5,:] ) \
                                + Dz @ ( self.xyz_elem[:,0,:] * self.metrics[:,6,:] + self.xyz_elem[:,1,:] * self.metrics[:,7,:] + self.xyz_elem[:,2,:] * self.metrics[:,8,:] ))/3
+            elif jac_method=='dengv2':
+                eye = np.eye(self.nen)
+                Dx = np.kron(np.kron(sbp.D, eye), eye)
+                Dy = np.kron(np.kron(eye, sbp.D), eye)
+                Dz = np.kron(np.kron(eye, eye), sbp.D)            
+                self.det_jac = ( (Dx @ self.xyz_elem[:,0,:]) * self.metrics[:,0,:] + (Dx @ self.xyz_elem[:,1,:]) * self.metrics[:,1,:] + (Dx @ self.xyz_elem[:,2,:]) * self.metrics[:,2,:]  \
+                               + (Dy @ self.xyz_elem[:,0,:]) * self.metrics[:,3,:] + (Dy @ self.xyz_elem[:,1,:]) * self.metrics[:,4,:] + (Dy @ self.xyz_elem[:,2,:]) * self.metrics[:,5,:]  \
+                               + (Dz @ self.xyz_elem[:,0,:]) * self.metrics[:,6,:] + (Dz @ self.xyz_elem[:,1,:]) * self.metrics[:,7,:] + (Dz @ self.xyz_elem[:,2,:]) * self.metrics[:,8,:] )/3
             elif jac_method=='match' or jac_method=='backout':
                 self.det_jac = np.sqrt( self.metrics[:,8,:] * (self.metrics[:,0,:] * self.metrics[:,4,:] - self.metrics[:,1,:] * self.metrics[:,3,:]) \
                                        -self.metrics[:,7,:] * (self.metrics[:,0,:] * self.metrics[:,5,:] - self.metrics[:,2,:] * self.metrics[:,3,:]) \
