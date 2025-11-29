@@ -26,14 +26,21 @@ lm_float_spec = [
 # will only ever use real matrices. No need for multiple typedispatch.
 @jitclass(lm_float_spec)
 class lmCSR:
-    def __init__(self, data, indices, indptr):
+    def __init__(self, data, indices, indptr, ncols=None):
         self.data = data
         self.indices = indices
         self.indptr = indptr
         self.nrows = len(indptr) - 1
-        self.ncols = np.max(indices) + 1
+        if ncols is None:
+            self.ncols = np.max(indices) + 1
+        else:
+            self.ncols = ncols
         self.nnz = len(data)
         self.tol = global_tol # tolerance for zero values
+
+    @property
+    def shape(self):
+        return (self.nrows, self.ncols)
 
 
     def dense(self, nrows=0, ncols=0):
@@ -85,6 +92,40 @@ class lmCSR:
                 result[i] += self.data[jj] * vec[self.indices[jj]]
         return result
     
+    def mult_lv_neq(self, vec, neq_node):
+        """
+        Local matrix-vector multiply where this CSR operator is unkronned but
+        the input vector is kronned with size neq_node.
+        
+        Simplified version assuming nblocks = 1 (typical case: nen_neq = ncols * neq_node).
+        """
+        assert neq_node > 1, "Use mult_lv for neq_node <= 1."
+        nrows = self.nrows
+        ncols = self.ncols
+        nen_neq = len(vec)
+        
+        # Assert that we have exactly one block (typical case)
+        assert nen_neq == ncols * neq_node, f'vec shape {nen_neq} should be {ncols}*{neq_node}'
+        
+        vec_contig = np.ascontiguousarray(vec)
+        vec_reshaped = vec_contig.reshape(ncols, neq_node)
+        result = np.zeros((nrows, neq_node), dtype=vec.dtype)
+        
+        # No block loop needed - process directly
+        for row in range(nrows):
+            start = self.indptr[row]
+            end = self.indptr[row + 1]
+            if start == end:
+                continue
+            target = result[row]
+            for jj in range(start, end):
+                col = self.indices[jj]
+                val = self.data[jj]
+                source = vec_reshaped[col]
+                for q in range(neq_node):
+                    target[q] += val * source[q]
+        return result.reshape(nrows * neq_node)
+
     def mult_gv(self, vec):
         # Perform sparse matrix-vector multiplication in CSR format
         _, nelem = np.shape(vec)
@@ -105,7 +146,7 @@ class lmCSR:
         new_data = np.zeros(self.nnz, dtype=np.float64)
         for i in range(self.nnz):
             new_data[i] = self.data[i] * H[self.indices[i]]
-        lm = lmCSR(new_data, self.indices, self.indptr)
+        lm = lmCSR(new_data, self.indices, self.indptr, ncols)
         return lm
     
     def mult_gdiag(self, H):
@@ -119,7 +160,7 @@ class lmCSR:
             # Scale each non-zero element in `data` by the corresponding H element for this `e`
             for i in range(self.nnz):
                 new_data[i] = self.data[i] * H[self.indices[i], e]
-            lm = lmCSR(new_data, self.indices, self.indptr)
+            lm = lmCSR(new_data, self.indices, self.indptr, ncols)
             gm_list.append(lm)
         return gm_list
     
@@ -134,7 +175,7 @@ class lmCSR:
             row_scale = H[row]
             for i in range(self.indptr[row], self.indptr[row + 1]):
                 new_data[i] = self.data[i] * row_scale
-        lm = lmCSR(new_data, self.indices, self.indptr)
+        lm = lmCSR(new_data, self.indices, self.indptr, self.ncols)
         return lm
     
     def premult_gdiag(self, H):
@@ -151,7 +192,7 @@ class lmCSR:
                 row_scale = H[row, e]
                 for i in range(self.indptr[row], self.indptr[row + 1]):
                     new_data[i] = self.data[i] * row_scale
-            lm = lmCSR(new_data, self.indices, self.indptr)
+            lm = lmCSR(new_data, self.indices, self.indptr, self.ncols)
             gm_list.append(lm)
         return gm_list
 
@@ -188,7 +229,7 @@ class lmCSR:
                 indicesT[dest] = row
                 next_position[col] += 1
 
-        lm = lmCSR(dataT, indicesT, indptrT)
+        lm = lmCSR(dataT, indicesT, indptrT, ncols)
         return lm
     
     def kron_eye_lm(self, n, ncols=0):
@@ -212,7 +253,7 @@ class lmCSR:
             for k in range(self.nrows + 1):
                 indptr[i * self.nrows + k] = self.indptr[k] + i * self.nnz
         
-        lm = lmCSR(data, indices, indptr)
+        lm = lmCSR(data, indices, indptr, ncols*n)
         return lm
     
     def kron_lm_eye(self, n):
@@ -238,7 +279,7 @@ class lmCSR:
                 # Update indptr for the next row in the expanded matrix
                 indptr[i * n + k + 1] = data_index
 
-        lm = lmCSR(data, indices, indptr)
+        lm = lmCSR(data, indices, indptr, self.ncols*n)
         return lm
     
     def kron_ldiag_lm(self, H, ncols=0):
@@ -262,7 +303,7 @@ class lmCSR:
             for k in range(self.nrows + 1):
                 indptr[i * self.nrows + k] = self.indptr[k] + i * self.nnz
         
-        lm = lmCSR(data, indices, indptr)
+        lm = lmCSR(data, indices, indptr, ncols*n)
         return lm
     
     def kron_lm_ldiag(self, H):
@@ -288,11 +329,11 @@ class lmCSR:
                 # Update indptr for the next row in the expanded matrix
                 indptr[i * n + k + 1] = data_index
 
-        lm = lmCSR(data, indices, indptr)
+        lm = lmCSR(data, indices, indptr, self.ncols*n)
         return lm
     
     def copy(self):
-        return lmCSR(self.data.copy(), self.indices.copy(), self.indptr.copy())
+        return lmCSR(self.data.copy(), self.indices.copy(), self.indptr.copy(), self.ncols)
     
 
 
@@ -344,7 +385,7 @@ def lm_to_sp(A):
 
     lm = lmCSR(np.array(data, dtype=np.float64), 
             np.array(indices, dtype=np.int64), 
-            np.array(indptr, dtype=np.int64) )
+            np.array(indptr, dtype=np.int64), ncols)
     return lm
 
 
@@ -440,8 +481,36 @@ def get_gm_max_numcols(csr_list):
     return max_value
 
 @njit
-def lm_lv(csr, vec):
-    return csr.mult_lv(vec)
+def lm_lv(csr, vec, neq_node=None):
+    '''
+    Perform local matrix-vector multiplication using a CSR matrix.
+    
+    If neq_node is provided, csr is an unkronned operator (nrows=nen, ncols=nen)
+    and vec is kronned (shape (nen*neq_node)). The function handles the
+    neq_node dimension manually.
+    
+    Parameters
+    ----------
+    csr : CSR matrix
+        Sparse matrix in CSR format
+    vec : numpy array of shape (ncols) or (nen*neq_node) if neq_node provided
+        The vector for multiplication
+    neq_node : int, optional
+        Number of equations per node. If provided, csr is unkronned and vec is kronned.
+        When neq_node == 1, behaves the same as neq_node is None (uses class method).
+    
+    Returns
+    -------
+    c : numpy array of shape (nrows) or (nen*neq_node) if neq_node provided
+        Result of the matrix-vector multiplication
+    '''
+    # Optimize: neq_node == 1 is equivalent to None (no kronning needed)
+    if neq_node is None or neq_node == 1:
+        # Original behavior: both csr and vec are kronned (or neq_node == 1)
+        return csr.mult_lv(vec)
+    else:
+        # New behavior: csr is unkronned, vec is kronned (possibly repeated across spatial blocks)
+        return csr.mult_lv_neq(vec, neq_node)
 
 @njit
 def lm_lm(csr1, csr2):
@@ -511,7 +580,7 @@ def lm_lm(csr1, csr2):
 
     # Convert lists to arrays for CSR format
     lm = lmCSR(np.array(data, dtype=np.float64), 
-            np.array(indices, dtype=np.int64), indptr )
+            np.array(indices, dtype=np.int64), indptr, csr2.ncols)
     return lm
 
 @njit
@@ -594,36 +663,96 @@ def lm_dgm(csr, mat):
     return result
 
 @njit
-def gm_gv(csr_list, b):
+def gm_gv(csr_list, b, neq_node=None):
     '''
     Perform global matrix-vector multiplication using a list of CSR matrices.
+    
+    If neq_node is provided, csr_list contains unkronned operators (nrows=nen, ncols=nen)
+    and b is kronned (shape (nen*neq_node, nelem)). The function handles the
+    neq_node dimension manually.
 
     Parameters
     ----------
     csr_list : List of CSR matrices
         Each element in the list is a tuple (data, indices, indptr) representing a sparse matrix in CSR format
-    b : numpy array of shape (ncols, nelem)
+    b : numpy array of shape (ncols, nelem) or (nen*neq_node, nelem) if neq_node provided
         The global vector for multiplication
+    neq_node : int, optional
+        Number of equations per node. If provided, csr_list contains unkronned operators and b is kronned.
+        When neq_node == 1, behaves the same as neq_node is None (uses class methods).
 
     Returns
     -------
-    c : numpy array of shape (nrows, nelem)
+    c : numpy array of shape (nrows, nelem) or (nen*neq_node, nelem) if neq_node provided
         Result of the matrix-vector multiplication
     '''
-    nelem = len(csr_list)  # Number of elements (same as the third dimension of the original tensor)
-    
-    # Initialize result array
-    c = np.zeros((csr_list[0].nrows, nelem), dtype=b.dtype)
-    
-    # Perform sparse matrix-vector multiplication for each element
-    for e in range(nelem):
-        c[:, e] = csr_list[e].mult_lv(b[:, e])
-    
-    return c
+    # Optimize: neq_node == 1 is equivalent to None (no kronning needed)
+    if neq_node is None or neq_node == 1:
+        # Original behavior: both csr_list and b are kronned (or neq_node == 1)
+        nelem = len(csr_list)  # Number of elements (same as the third dimension of the original tensor)
+        
+        # Initialize result array
+        c = np.zeros((csr_list[0].nrows, nelem), dtype=b.dtype)
+        
+        # Perform sparse matrix-vector multiplication for each element
+        for e in range(nelem):
+            c[:, e] = csr_list[e].mult_lv(b[:, e])
+        
+        return c
+    else:
+        # New behavior: csr_list contains unkronned operators, b is kronned
+        nelem = len(csr_list)
+        nen = csr_list[0].nrows
+        nen_neq, nelemb = np.shape(b)
+        assert nen_neq == nen * neq_node, f'b shape {nen_neq} should be {nen}*{neq_node}'
+        assert nelem == nelemb, f'element shapes do not match, {nelem} != {nelemb}'
+        
+        c = np.zeros((nen_neq, nelem), dtype=b.dtype)
+        for e in range(nelem):
+            csr = csr_list[e]
+            c[:, e] = csr.mult_lv_neq(b[:, e], neq_node)
+        return c
 
 @njit
-def lm_gv(csr, b):
-    return csr.mult_gv(b)
+def lm_gv(csr, b, neq_node=None):
+    '''
+    Perform local matrix-vector multiplication using a CSR matrix.
+    
+    If neq_node is provided, csr is an unkronned operator (nrows=nen, ncols=nen)
+    and b is kronned (shape (nen*neq_node, nelem)). The function handles the
+    neq_node dimension manually.
+    
+    Parameters
+    ----------
+    csr : CSR matrix
+        Sparse matrix in CSR format
+    b : numpy array of shape (ncols, nelem) or (nen*neq_node, nelem) if neq_node provided
+        The global vector for multiplication
+    neq_node : int, optional
+        Number of equations per node. If provided, csr is unkronned and b is kronned.
+        When neq_node == 1, behaves the same as neq_node is None (uses class method).
+    
+    Returns
+    -------
+    c : numpy array of shape (nrows, nelem) or (nen*neq_node, nelem) if neq_node provided
+        Result of the matrix-vector multiplication
+    '''
+    # Optimize: neq_node == 1 is equivalent to None (no kronning needed)
+    if neq_node is None or neq_node == 1:
+        # Original behavior: both csr and b are kronned (or neq_node == 1)
+        return csr.mult_gv(b)
+    else:
+        # New behavior: csr is unkronned, b is kronned (possibly repeated across spatial blocks)
+        ncols = csr.ncols
+        nen_neq, nelem = np.shape(b)
+        block_size = ncols * neq_node
+        assert nen_neq % block_size == 0, f'b shape {nen_neq} should be a multiple of {ncols}*{neq_node}'
+        nblocks = nen_neq // block_size
+        
+        c = np.zeros((csr.nrows * nblocks * neq_node, nelem), dtype=b.dtype)
+        for e in range(nelem):
+            c[:, e] = csr.mult_lv_neq(b[:, e], neq_node)
+        return c
 
 @njit
 def lm_ldiag(csr, H):
@@ -739,12 +868,12 @@ def add_lm_lm(csr1, csr2):
 
     data = np.array(data, dtype=np.float64)
     indices = np.array(indices, dtype=np.int64)
-    lm = lmCSR(data, indices, indptr)
+    lm = lmCSR(data, indices, indptr, max(csr1.ncols, csr2.ncols))
     return lm
 
 @njit
 def subtract_lm_lm(csr1, csr2):
-    lm = lmCSR((-1.)*csr2.data, csr2.indices, csr2.indptr)
+    lm = lmCSR((-1.)*csr2.data, csr2.indices, csr2.indptr, csr2.ncols)
     return add_lm_lm(csr1, lm)
 
 @njit
@@ -831,7 +960,7 @@ def scalar_gm(val, csr_list):
 
     for e in range(len(csr_list)):
         csr = csr_list[e]
-        gm_list.append(lmCSR(val*csr.data, csr.indices, csr.indptr))
+        gm_list.append(lmCSR(val*csr.data, csr.indices, csr.indptr, csr.ncols))
     
     return gm_list
 
@@ -1771,7 +1900,7 @@ def build_F_vol_sca(q, flux, sparsity):
                     if add_entry_T: colptrs[j] += 1
 
 
-        F_vol.append(lmCSR(new_data, indices, indptr))
+        F_vol.append(lmCSR(new_data, indices, indptr, nen))
     return F_vol
 
 @njit 
@@ -1802,10 +1931,10 @@ def build_F_sca(q1, q2, flux, sparsity):
 
                     colptr += 1
 
-        F.append(lmCSR(new_data, indices, indptr))
+        F.append(lmCSR(new_data, indices, indptr, nen))
     return F
 
-#@njit 
+@njit 
 def build_F_vol_sys(neq, q, flux, sparsity_unkronned, sparsity):
     ''' Builds a sparsified Flux differencing matrix (used for Hadamard form) given a 
     solution vector q, the number of equations per node, a 2-point flux function, and 
@@ -2349,7 +2478,7 @@ def kron_lm_lm(Dx, Dy):
     # Convert lists to arrays for CSR format
     lm = lmCSR(np.array(data, dtype=np.float64), 
             np.array(indices, dtype=np.int64), 
-            np.array(indptr, dtype=np.int64) )
+            np.array(indptr, dtype=np.int64), Dx.ncols*Dy.ncols)
     return lm
 
 @njit

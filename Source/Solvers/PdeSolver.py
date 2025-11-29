@@ -13,6 +13,7 @@ from matplotlib import rc
 rc('text', usetex=True)
 from os import path
 from socket import gethostname
+from gc import collect
 
 
 from Source.TimeMarch.TimeMarching import TimeMarching
@@ -45,7 +46,7 @@ class PdeSolver:
                  cons_obj_name=None,         # Other
                  bool_plot_sol=False, print_sol_norm=False,
                  print_residual=False, check_resid_conv=False,
-                 sparse=None, sat_sparse=None):
+                 sparse=None, sat_sparse=None, print_progress=None):
         '''
         Parameters
         ----------
@@ -149,6 +150,9 @@ class PdeSolver:
         # Do not set up SATs, etc. only Mesh setup.
         self.settings.setdefault('skew_sym', True)
         # determines whether to use a split-form or divergence form for metrics
+        if print_progress is not None:
+            assert isinstance(print_progress, bool), 'print_progress must be a boolean'
+            self.print_progress = print_progress
 
         # Time marching
         self.tm_method = tm_method.lower()
@@ -379,6 +383,8 @@ class PdeSolver:
                 print('WARNING: Free Stream is not preserved. Check Metrics and/or SAT discretization.')
                 print('         Free Stream is violated by a maximum of {0:.2g}'.format(np.max(abs(test))))
 
+        # free memory using garbage collector
+        collect()
         if self.print_progress: print('---------- Solver succesfully initialized. ----------')
 
     def solve(self, q0=None):
@@ -807,12 +813,14 @@ class PdeSolver:
         return A
 
     
-    def check_eigs(self, q=None, plot_eigs=True, returnA=False, returneigs=False, plot_maxvec=False, 
+    def check_eigs(self, q=None, plot_eigs=True, returnA=False, returneigs=False, 
+                   returnvecs=False, plot_maxvec=False, 
                    exact_dfdq=False, finite_diff=False, step=5.0e-6, istep=1e-15, tol=1.0e-10, 
                    savefile=None, print_nothing=False, colour_by_k=False, normalize=False,
                    ymin=None, ymax=None, xmin=None, xmax=None, print_error=False,
                    time=None, display_time=False, display_maxreal=False,
-                   title=None, save_format='png', dpi=600, overwrite=False, **kargs):
+                   title=None, save_format='png', dpi=600, overwrite=False,
+                   sparse_solver=False, sparse_largestRe_only=True, **kargs):
         '''
         Call on self.diffeq.dqdt to check the stability of the spatial operator
         at a particular state q using central finite differences (approximate!).
@@ -868,10 +876,47 @@ class PdeSolver:
                 end_time = start_time + datetime.timedelta(seconds=time_est)
                 print('HEADS UP: Large matrix size. This may take a while.')
                 print(f"Estimating eigenvalue solve will take {int(time_est)} seconds, i.e. finish around {end_time.strftime('%H:%M:%S')}" )
-        if ((colour_by_k) and self.dim==1 and self.neq_node==1 and plot_eigs) or plot_maxvec:
-            eigs, eigvecs = np.linalg.eig(A)
+            if nen1 >= 50000:
+                print('WARNING: Extremely large matrix size. Consider using a sparse solver.')
+        
+        if sparse_solver:
+            colour_by_k = False
+            plot_eigs = False
+            import scipy.sparse as sp
+            if not print_nothing: print('... converting to sparse matrix.')
+            A_sparse = sp.csr_matrix(A)
+            # Free dense matrix A if not needed for return
+            if not returnA:
+                del A
+            A = A_sparse
+            if not print_nothing: print('... finding largest positive real eigenvalue.')
+            if returnvecs:
+                eigs, eigvecs = sp.linalg.eigs(A, k=10, which="LR", return_eigenvectors=True)
+            else:
+                eigs = sp.linalg.eigs(A, k=1, which="LR", return_eigenvectors=False)
+            if not sparse_largestRe_only:
+                if not print_nothing: print('... finding spectral radius.')
+                if returnvecs:
+                    eigs2, eigvecs2 = sp.linalg.eigs(A, k=1, which="LM", return_eigenvectors=True)
+                    eigvecs = np.concatenate((eigvecs, eigvecs2), axis=1)
+                else:
+                    eigs2 = sp.linalg.eigs(A, k=10, which="LM", return_eigenvectors=False)
+                eigs = np.concatenate((eigs, eigs2))
+            # Free sparse matrix A if not needed for return
+            if not returnA:
+                del A
+
         else:
-            eigs = np.linalg.eigvals(A)
+
+            if ((colour_by_k) and self.dim==1 and self.neq_node==1 and plot_eigs) or plot_maxvec or returnvecs:
+                eigs, eigvecs = np.linalg.eig(A)
+            else:
+                eigs = np.linalg.eigvals(A)
+            
+            # Explicitly free memory for matrix A if not needed for return
+            if not returnA:
+                del A
+
         if not print_nothing: 
             print('Max real component =',np.max(eigs.real))
             if max(eigs.real) < tol:
@@ -985,7 +1030,7 @@ class PdeSolver:
 
         if plot_maxvec:
             #TODO: assumes 1D, also not well suited to neq_node>1
-            num_vecs = 5
+            num_vecs = min(5, len(eigs))
             # Find the indices of the {num_vecs} largest eigenvalues
             largest_indices = np.argsort(eigs)[-num_vecs:][::-1]
             for i, idx in enumerate(largest_indices):
@@ -1014,12 +1059,22 @@ class PdeSolver:
                 plt.show()
 
         
-        if returnA and returneigs:
+        if returnA and returneigs and returnvecs:
+            return A, eigs, eigvecs
+        elif returnA and returneigs:
             return A, eigs
+        elif returnA and returnvecs:
+            return A, eigvecs
+        elif returneigs and returnvecs:
+            return eigs, eigvecs
         elif returnA:
             return A
         elif returneigs:
             return eigs
+        elif returnvecs:
+            return eigvecs
+        else:
+            return None
         
     # Define a function to compute eigenvalues and eigenvectors, and plot the results
     def plot_eigvecs(self, matrix=None, plot_type="real", 
@@ -1475,10 +1530,12 @@ class PdeSolver:
             q = self.diffeq.set_q0()
         dqdt = self.dqdt(q,0.)
         result = self.energy_der(q,dqdt)
+        result2 = self.entropy_der(q,dqdt)
         if print_result:
             print('Derivative of energy stability is {0:.5g}'.format(result))
+            print('Derivative of entropy stability is {0:.5g}'.format(result2))
         else:
-            return result
+            return result, result2
     
     def calc_cons_obj_rate(self, q=None, t=None, cons_obj_name=None, order=2):
         ''' calculate the rate of change (in time) of the conservation objectives '''

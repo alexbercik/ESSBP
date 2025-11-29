@@ -373,7 +373,7 @@ class PdeBase:
                  show_fig=True, ymin=None, ymax=None, display_time=False, 
                  title=None, plot_mesh=False, save_format='png', dpi=300,
                  plot_only_exa=False, var2plot_name=None, legendloc=None, legend=True,
-                 show_negative=False, time_round=2, **kwargs):
+                 show_negative=False, time_round=2, figsize=None, **kwargs):
         '''
         Purpose
         ----------
@@ -399,8 +399,9 @@ class PdeBase:
                 assert np.ndim(x) == 2, 'x must be a 2D array.'
 
             num_sol = self.var2plot(q,var2plot_name)
-            
-            fig = plt.figure(figsize=self.plt_fig_size)
+
+            if figsize is None: figsize=self.plt_fig_size 
+            fig = plt.figure(figsize=figsize)
             ax = plt.axes() 
 
             if plot_exa and self.has_exa_sol:

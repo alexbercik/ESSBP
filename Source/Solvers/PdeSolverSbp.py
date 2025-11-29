@@ -7,6 +7,7 @@ Created on Thu Oct  1 11:28:38 2020
 """
 
 import numpy as np
+import gc
 
 from Source.Disc.MakeMesh import MakeMesh
 from Source.Disc.MakeSbpOp import MakeSbpOp
@@ -109,19 +110,15 @@ class PdeSolverSbp(PdeSolver):
         if self.settings['skew_sym']: form = 'skew_sym'
         else: form = 'div'
         
-        self.sbp.ref_2_phys(self.mesh, self.neq_node, form, self.disc_type, self.sparse, self.sat_sparse, self.calc_nd_ops)
+        self.sbp.ref_2_phys(self.mesh, self.neq_node, form, self.disc_type, self.sparse, self.sat_sparse)
         self.H_phys, self.H_inv_phys = self.sbp.H_phys, self.sbp.H_inv_phys
-        self.H_phys_unkronned, self.H_inv_phys_unkronned = self.sbp.H_phys_unkronned, self.sbp.H_inv_phys_unkronned
         self.Dx, self.Volx = self.sbp.Dx, self.sbp.Volx
-        if self.calc_nd_ops: self.Dx_nd = self.sbp.Dx_nd
         if self.dim > 1:
             self.Dy, self.Voly = self.sbp.Dy, self.sbp.Voly
-            if self.calc_nd_ops: self.Dy_nd = self.sbp.Dy_nd
         if self.dim > 2:
             self.Dz, self.Volz = self.sbp.Dz, self.sbp.Volz
-            if self.calc_nd_ops: self.Dz_nd = self.sbp.Dz_nd
 
-        self.volume = np.sum(self.H_phys_unkronned)
+        self.volume = np.sum(self.H_phys)
         # no need to save tL, tR, Dx_unkronned, etc.
         # but if there is, we can access them from self.sat
 
@@ -182,7 +179,7 @@ class PdeSolverSbp(PdeSolver):
         if self.use_diffeq_dExdx:
             dExdx = self.diffeq.dExdx(q,E)
         else:
-            dExdx = self.gm_gv(self.Dx, E)
+            dExdx = self.gm_gv(self.Dx, E, self.neq_node)
         
         if self.periodic:
             sat = self.sat.calc(q,E)
@@ -195,17 +192,18 @@ class PdeSolverSbp(PdeSolver):
         else:
             raise Exception('Not coded up yet')
     
-        dqdt = - dExdx + self.diffeq.calcG(q,t) + (self.H_inv_phys * sat) + self.dissipation(q)
-        return dqdt
+        sat_term = fn.gdiag_gv(self.H_inv_phys, sat, self.neq_node)
+        dqdt = - dExdx + self.diffeq.calcG(q,t) + sat_term + self.dissipation(q)
+        return np.ascontiguousarray(dqdt)
         
     def dqdt_2d_div(self, q, t):
         ''' the main dqdt function for divergence form in 2D '''
         Ex = self.diffeq.calcEx(q)
-        #dExdx = self.gm_gv(self.Dx, Ex)
-        dExdx = self.gm_gv(self.Volx, Ex)
+        #dExdx = self.gm_gv(self.Dx, Ex, self.neq_node)
+        dExdx = self.gm_gv(self.Volx, Ex, self.neq_node)
         Ey = self.diffeq.calcEy(q)
-        #dEydy = self.gm_gv(self.Dy, Ey)
-        dEydy = self.gm_gv(self.Voly, Ey)
+        #dEydy = self.gm_gv(self.Dy, Ey, self.neq_node)
+        dEydy = self.gm_gv(self.Voly, Ey, self.neq_node)
 
         satx, saty = np.zeros_like(q), np.zeros_like(q)
         if self.periodic[0]:   # x sat (in ref space) 
@@ -224,17 +222,18 @@ class PdeSolverSbp(PdeSolver):
         else:
             raise Exception('Not coded up yet')
         
-        dqdt = - dExdx - dEydy + self.H_inv_phys * (satx + saty) + self.diffeq.calcG(q,t) + self.dissipation(q)
-        return dqdt
+        sat_term = fn.gdiag_gv(self.H_inv_phys, (satx + saty), self.neq_node)
+        dqdt = - dExdx - dEydy + sat_term + self.diffeq.calcG(q,t) + self.dissipation(q)
+        return np.ascontiguousarray(dqdt)
 
     def dqdt_3d_div(self, q, t):
         ''' the main dqdt function for divergence form in 3D '''
         Ex = self.diffeq.calcEx(q)
-        dExdx = self.gm_gv(self.Dx, Ex)
+        dExdx = self.gm_gv(self.Dx, Ex, self.neq_node)
         Ey = self.diffeq.calcEy(q)
-        dEydy = self.gm_gv(self.Dy, Ey)
+        dEydy = self.gm_gv(self.Dy, Ey, self.neq_node)
         Ez = self.diffeq.calcEz(q)
-        dEzdz = self.gm_gv(self.Dz, Ez)
+        dEzdz = self.gm_gv(self.Dz, Ez, self.neq_node)
         satx, saty, satz = np.zeros_like(q), np.zeros_like(q), np.zeros_like(q)
         
         skipx = self.nelem[1]*self.nelem[2]
@@ -259,8 +258,9 @@ class PdeSolverSbp(PdeSolver):
         else:
             raise Exception('Not coded up yet')
         
-        dqdt = - dExdx - dEydy - dEzdz + self.H_inv_phys * (satx + saty + satz) + self.diffeq.calcG(q,t) + self.dissipation(q)
-        return dqdt
+        sat_term = fn.gdiag_gv(self.H_inv_phys, (satx + saty + satz), self.neq_node)
+        dqdt = - dExdx - dEydy - dEzdz + sat_term + self.diffeq.calcG(q,t) + self.dissipation(q)
+        return np.ascontiguousarray(dqdt)
         
     def dqdt_1d_had(self, q, t):
         ''' the main dqdt function for hadamard form in 1D '''
@@ -281,8 +281,9 @@ class PdeSolverSbp(PdeSolver):
         else:
             raise Exception('Not coded up yet')
         
-        dqdt += (self.H_inv_phys * sat) + self.diffeq.calcG(q,t) + self.dissipation(q)
-        return dqdt
+        sat_term = fn.gdiag_gv(self.H_inv_phys, sat, self.neq_node)
+        dqdt += sat_term + self.diffeq.calcG(q,t) + self.dissipation(q)
+        return np.ascontiguousarray(dqdt)
         
     def dqdt_2d_had(self, q, t):
         ''' the main dqdt function for hadamard form in 2D '''
@@ -314,8 +315,9 @@ class PdeSolverSbp(PdeSolver):
         else:
             raise Exception('Not coded up yet')
         
-        dqdt += (self.H_inv_phys * (satx + saty)) + self.diffeq.calcG(q,t) + self.dissipation(q)
-        return dqdt
+        sat_term = fn.gdiag_gv(self.H_inv_phys, (satx + saty), self.neq_node)
+        dqdt += sat_term + self.diffeq.calcG(q,t) + self.dissipation(q)
+        return np.ascontiguousarray(dqdt)
         
     def dqdt_3d_had(self, q, t):
         ''' the main dqdt function for hadamard form in 3D '''
@@ -347,8 +349,9 @@ class PdeSolverSbp(PdeSolver):
         else:
             raise Exception('Not coded up yet')
         
-        dqdt = - dExdx - dEydy - dEzdz + self.H_inv_phys * (satx + saty + satz) + self.diffeq.calcG(q,t) + self.dissipation(q)
-        return dqdt
+        sat_term = fn.gdiag_gv(self.H_inv_phys, (satx + saty + satz), self.neq_node)
+        dqdt = - dExdx - dEydy - dEzdz + sat_term + self.diffeq.calcG(q,t) + self.dissipation(q)
+        return np.ascontiguousarray(dqdt)
     
 
     def dfdq_1d_div(self, q, t):
@@ -372,8 +375,9 @@ class PdeSolverSbp(PdeSolver):
         else:
             raise Exception('Not coded up yet')
         
+        H_inv_kron = fn.repeat_neq_gv(self.H_inv_phys, self.neq_node)
         dfdq = fn.sp_block_diag(vol) + self.diffeq.dGdq(q) \
-            + self.H_inv_phys.flatten('f')[:, np.newaxis] * sat
+            + H_inv_kron.flatten('f')[:, np.newaxis] * sat
         return dfdq
     
     def dfdq_2d_div(self, q, t):
@@ -402,58 +406,81 @@ class PdeSolverSbp(PdeSolver):
         ''' compute the global SBP energy of global solution vector q '''
         if (nen == self.neq_node) or (nen is None):
             H_phys = self.H_phys
+            local_neq = self.neq_node
         elif nen == 1:
-            H_phys = self.H_phys_unkronned
+            H_phys = self.H_phys
+            local_neq = 1
         else:
             raise Exception('Something went wrong, nen = ',nen)
-        if q.ndim == 2: energy = np.tensordot(q, H_phys * q) #todo: I think np.sum(q*H_phys*q) works too?
-        elif q.ndim == 3: energy = np.sum(q * H_phys[:,:,np.newaxis] * q, axis=(0, 1))  
-        else: raise Exception('Something went wrong, q.ndim = ',q.ndim)
+        if q.ndim == 2:
+            energy = fn.norm_gv_neq(H_phys, q, local_neq)
+        elif q.ndim == 3:
+            energy = fn.norm_gv_neq_3d(H_phys, q, local_neq)
+        else:
+            raise Exception('Something went wrong, q.ndim = ',q.ndim)
         return energy
 
     def sbp_conservation(self,q):
         ''' compute the global SBP conservation of global solution vector q '''
-        if q.ndim == 2: cons = np.sum(self.H_phys * q)
-        elif q.ndim == 3: cons = np.sum(self.H_phys[:,:,np.newaxis] * q, axis=(0,1))
-        else: raise Exception('Something went wrong, q.ndim = ',q.ndim)
+        H_phys = self.H_phys
+        if q.ndim == 2:
+            cons = fn.sum_gv_neq(H_phys, q, self.neq_node)
+        elif q.ndim == 3:
+            cons = fn.sum_gv_neq_3d(H_phys, q, self.neq_node)
+        else:
+            raise Exception('Something went wrong, q.ndim = ',q.ndim)
         return cons
     
     def sbp_conservation_der(self,dqdt):
         ''' compute the derivative of the global SBP conservation. '''
-        if dqdt.ndim == 2: cons = np.sum(self.H_phys * dqdt)
-        elif dqdt.ndim == 3: cons = np.sum(self.H_phys[:,:,np.newaxis] * dqdt, axis=(0,1))
-        else: raise Exception('Something went wrong, dqdt.ndim = ',dqdt.ndim)
+        H_phys = self.H_phys
+        if dqdt.ndim == 2:
+            cons = fn.sum_gv_neq(H_phys, dqdt, self.neq_node)
+        elif dqdt.ndim == 3:
+            cons = fn.sum_gv_neq_3d(H_phys, dqdt, self.neq_node)
+        else:
+            raise Exception('Something went wrong, dqdt.ndim = ',dqdt.ndim)
         return cons
     
     def sbp_energy_der(self,q,dqdt):
         ''' compute the derivative of the global SBP energy . '''
-        if q.ndim == 2: energy = np.tensordot(q, self.H_phys * dqdt)
-        elif q.ndim == 3: energy = np.sum(q * self.H_phys[:,:,np.newaxis] * dqdt, axis=(0,1))
-        else: raise Exception('Something went wrong, q.ndim = ',q.ndim)
+        H_phys = self.H_phys
+        local_neq = self.neq_node
+        if q.ndim == 2:
+            energy = fn.inner_product_gv_neq(H_phys, q, dqdt, local_neq)
+        elif q.ndim == 3:
+            energy = fn.inner_product_gv_neq_3d(H_phys, q, dqdt, local_neq)
+        else:
+            raise Exception('Something went wrong, q.ndim = ',q.ndim)
         return 2 * energy
     
     def sbp_entropy(self,q):
         ''' compute the global SBP entropy of global solution vector q '''
         s = self.diffeq.entropy(q)
-        if q.ndim == 2: ent = np.sum(self.H_phys_unkronned * s)
-        elif q.ndim == 3: ent = np.sum(self.H_phys_unkronned[:,:,np.newaxis] * s, axis=(0,1))
+        if q.ndim == 2: ent = np.sum(self.H_phys * s)
+        elif q.ndim == 3: ent = np.sum(self.H_phys[:,:,np.newaxis] * s, axis=(0,1))
         else: raise Exception('Something went wrong, q.ndim = ',q.ndim)
         return ent
     
     def sbp_entropy_der(self,q,dqdt):
         ''' compute the derivative of the global SBP entropy . '''
         w = self.diffeq.entropy_var(q)
-        if q.ndim == 2: entropy = np.tensordot(w, self.H_phys * dqdt)
-        elif q.ndim == 3: entropy = np.sum(w * self.H_phys[:,:,np.newaxis] * dqdt, axis=(0,1))
-        else: raise Exception('Something went wrong, q.ndim = ',q.ndim)
+        H_phys = self.H_phys
+        local_neq = self.neq_node
+        if q.ndim == 2:
+            entropy = fn.inner_product_gv_neq(H_phys, w, dqdt, local_neq)
+        elif q.ndim == 3:
+            entropy = fn.inner_product_gv_neq_3d(H_phys, w, dqdt, local_neq)
+        else:
+            raise Exception('Something went wrong, q.ndim = ',q.ndim)
         return entropy
     
     def sbp_kinetic_energy(self,q):
         ''' compute the global SBP kinetic energy of global solution vector q '''
         # NOTE: Need to think hard for the case where H is not diagonal
         k = self.diffeq.kinetic_energy(q)
-        if q.ndim == 2: energy = np.sum(self.H_phys_unkronned * k) / self.volume
-        elif q.ndim == 3: energy = np.sum(self.H_phys_unkronned[:,:,np.newaxis] * k, axis=(0,1)) / self.volume
+        if q.ndim == 2: energy = np.sum(self.H_phys * k) / self.volume
+        elif q.ndim == 3: energy = np.sum(self.H_phys[:,:,np.newaxis] * k, axis=(0,1)) / self.volume
         else: raise Exception('Something went wrong, q.ndim = ',q.ndim)
         return energy
     
@@ -461,8 +488,8 @@ class PdeSolverSbp(PdeSolver):
         ''' compute the global SBP enstrophy of global solution vector q '''
         # NOTE: Need to think hard for the case where H is not diagonal
         s = self.diffeq.enstropy(q)
-        if q.ndim == 2: ent = np.sum(self.H_phys_unkronned * s)
-        elif q.ndim == 3: ent = np.sum(self.H_phys_unkronned[:,:,np.newaxis] * s, axis=(0,1))
+        if q.ndim == 2: ent = np.sum(self.H_phys * s)
+        elif q.ndim == 3: ent = np.sum(self.H_phys[:,:,np.newaxis] * s, axis=(0,1))
         else: raise Exception('Something went wrong, q.ndim = ',q.ndim)
         return ent
 
@@ -691,7 +718,7 @@ class PdeSolverSbp(PdeSolver):
         if q == None:
             q = self.diffeq.set_q0()
         dqdt = self.dqdt(q,t)
-        cons = np.sum(self.H_phys * dqdt)
+        cons = fn.sum_gv_neq(self.H_phys, dqdt, self.neq_node)
         
         Esurfxref = self.satx.tR @ np.diag(self.satx.Hperp[:,0]) @ self.satx.tRT \
             - self.satx.tL @ np.diag(self.satx.Hperp[:,0]) @ self.satx.tLT
@@ -861,8 +888,8 @@ class PdeSolverSbp(PdeSolver):
                     coeff = fn.repeat_nen_gv(coeff, self.nen)
             elif eps_type == 3 or eps_type == 31:
                 "difference between conservative and nonconservative forms"
-                dEdx1 = self.gm_gv(self.Dx, self.diffeq.calcEx(q))
-                dEdx2 = self.diffeq.nonconservative_coeff(q) * self.gm_gv(self.Dx, q)   
+                dEdx1 = self.gm_gv(self.Dx, self.diffeq.calcEx(q), self.neq_node)
+                dEdx2 = self.diffeq.nonconservative_coeff(q) * self.gm_gv(self.Dx, q, self.neq_node)   
                 if eps_type == 3:
                     # take the norm in case we have system
                     denom = np.linalg.norm(dEdx1 + dEdx2, axis=0)
@@ -870,8 +897,8 @@ class PdeSolverSbp(PdeSolver):
                                         out=np.zeros_like(denom, dtype=float), where=denom!=0)
                 else:
                     # returns shape (neq,nelem)
-                    denom = fn.norm_gv_neq(dEdx1 + dEdx2, self.neq_node)
-                    coeff = np.divide(fn.norm_gv_neq(dEdx1 - dEdx2, self.neq_node), denom,
+                    denom = fn.block_norm_gv_neq(dEdx1 + dEdx2, self.neq_node)
+                    coeff = np.divide(fn.block_norm_gv_neq(dEdx1 - dEdx2, self.neq_node), denom,
                                         out=np.zeros_like(denom, dtype=float), where=denom!=0)
                     coeff = fn.repeat_nen_gv(coeff, self.nen)
             elif eps_type == 4 or eps_type == 41:
@@ -899,8 +926,8 @@ class PdeSolverSbp(PdeSolver):
                                         out=np.zeros_like(denom, dtype=float), where=denom!=0)
                 else:
                     # returns shape (neq,nelem)
-                    denom = fn.norm_gv_neq(vp + vp1, self.neq_node)
-                    coeff = np.divide(fn.norm_gv_neq(vp - vp1, self.neq_node), denom,
+                    denom = fn.block_norm_gv_neq(vp + vp1, self.neq_node)
+                    coeff = np.divide(fn.block_norm_gv_neq(vp - vp1, self.neq_node), denom,
                                         out=np.zeros_like(denom, dtype=float), where=denom!=0)
                     coeff = fn.repeat_nen_gv(coeff, self.nen)
 

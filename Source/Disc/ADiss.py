@@ -468,31 +468,31 @@ class ADiss():
             if self.sparse: Ds.prune()
             DsT = self.lm_to_lmT(Ds,self.nen,self.nen)
             
-            self.rhs_D = self.kron_neq_lm(Ds,self.neq_node) 
+            self.rhs_D = Ds  # Store unkronned version 
             if self.use_H:
                 H = np.diag(self.solver.sbp.H)
             else:
                 H = np.ones(self.nen)
-            self.lhs_D = self.gdiag_lm(-(self.solver.H_inv_phys * self.dxi**(2*self.s-1)),self.kron_neq_lm(self.lm_ldiag(DsT, H),self.neq_node))
+            self.lhs_D = self.gdiag_lm(-(self.solver.H_inv_phys * self.dxi**(2*self.s-1)),self.lm_ldiag(DsT, H))  # Store unkronned version
         elif self.type == 'dcp' or self.type == 'entdcp' or self.type == 'dcp2':
             if self.type == 'dcp2':
                 Ds, B = make_dcp_diss_op2(self.solver.disc_nodes, self.s, self.nen, self.bdy_fix)
             else:
                 Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen, self.bdy_fix)
             if self.sparse: Ds = sp.lm_to_sp(Ds)
-            self.rhs_D = self.kron_neq_lm(Ds,self.neq_node) 
+            self.rhs_D = Ds  # Store unkronned version 
             DsT = self.lm_to_lmT(Ds,self.nen,self.nen)
             if self.use_H:
                 Hundvd = np.diag(self.solver.sbp.H) / self.solver.sbp.dx
-                self.lhs_D = self.gdiag_lm(-self.solver.H_inv_phys,self.kron_neq_lm(self.lm_ldiag(DsT, B * Hundvd), self.neq_node))
+                self.lhs_D = self.gdiag_lm(-self.solver.H_inv_phys,self.lm_ldiag(DsT, B * Hundvd))  # Store unkronned version
             else:
-                self.lhs_D = self.gdiag_lm(-self.solver.H_inv_phys,self.kron_neq_lm(self.lm_ldiag(DsT, B), self.neq_node))
+                self.lhs_D = self.gdiag_lm(-self.solver.H_inv_phys,self.lm_ldiag(DsT, B))  # Store unkronned version
         elif self.type == 'upwind':
             if self.solver.disc_nodes.lower() == 'upwind':
                 ### OPTION 1: USE UPWIND DISSIPATION OPERATOR FROM CENTRAL SBP OPERATOR
                 Ddiss = self.solver.sbp.Ddiss
                 if self.sparse: Ddiss = sp.lm_to_sp(Ddiss)
-                self.Ddiss = self.gdiag_lm( self.repeat_neq_gv(-self.solver.mesh.det_jac_inv), self.kron_neq_lm(Ddiss,self.neq_node))
+                self.Ddiss = self.gdiag_lm(-self.solver.mesh.det_jac_inv, Ddiss)  # Store unkronned version
             else:
                 if self.solver.disc_nodes.lower() == 'lgl' or self.solver.disc_nodes.lower() == 'lg':
                     ### OPTION 2: USE UPWIND DISSIPATION DEFINED BY ELEMENT-TYPE
@@ -505,7 +505,7 @@ class ADiss():
                     Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen, False)
                     DsTDs = Ds.T @ Ds
                     if self.sparse: Ds = sp.lm_to_sp(DsTDs)
-                    self.Ddiss = self.gdiag_lm(-self.solver.H_inv_phys,self.kron_neq_lm(DsTDs,self.neq_node))
+                    self.Ddiss = self.gdiag_lm(-self.solver.H_inv_phys,DsTDs)  # Store unkronned version
                 else:
                     ### OPTION 3: USE UPWIND DISSIPATION OPERATOR FOR CLASSICAL SBP (MATTSSON)
                     from Source.Disc.UpwindOp import UpwindOp
@@ -517,7 +517,7 @@ class ADiss():
                     if np.any(abs(H - self.solver.sbp.H) > 1e-14):
                         print('WARNING: H of sbp operator does not match H of dissipation operator! Not provably stable.')
                     if self.sparse: Ddiss = sp.lm_to_sp(Ddiss)
-                    self.Ddiss = self.gdiag_lm( self.repeat_neq_gv(-self.solver.mesh.det_jac_inv), self.kron_neq_lm(Ddiss,self.neq_node))
+                    self.Ddiss = self.gdiag_lm(-self.solver.mesh.det_jac_inv, Ddiss)  # Store unkronned version
         elif self.type == 'upwindlgl':
             assert (self.solver.disc_nodes.lower() == 'lgl'), 'upwindLGL dissipation only implemented for LGL.'
             assert (self.s == self.solver.p), 'upwindLGL dissipation only implemented for s=p.'
@@ -532,7 +532,7 @@ class ADiss():
             if np.any(abs(H - self.solver.sbp.H) > 1e-14):
                 print('WARNING: H of sbp operator does not match H of dissipation operator! Not provably stable.')
             if self.sparse: Ddiss = sp.lm_to_sp(Ddiss)
-            self.Ddiss = self.gdiag_lm( self.repeat_neq_gv(-self.solver.mesh.det_jac_inv), self.kron_neq_lm(Ddiss,self.neq_node))
+            self.Ddiss = self.gdiag_lm(-self.solver.mesh.det_jac_inv, self.kron_neq_lm(Ddiss,self.neq_node))
         elif self.type == 'zelalem' or self.type == 'entzelalem':
             if self.solver.disc_nodes.lower() in ['lgl', 'lg']:
                 if self.D_type == 'sbp':
@@ -555,13 +555,13 @@ class ADiss():
             else:
                 Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen, self.bdy_fix)
             if self.sparse: Ds = sp.lm_to_sp(Ds)
-            self.rhs_D = self.kron_neq_lm(Ds,self.neq_node) 
+            self.rhs_D = Ds  # Store unkronned version 
             DsT = self.lm_to_lmT(Ds,self.nen,self.nen)
             if self.use_H:
                 Hundvd = np.diag(self.solver.sbp.H) / self.solver.sbp.dx
-                self.lhs_D = self.gdiag_lm(-self.solver.H_inv_phys,self.kron_neq_lm(self.lm_ldiag(DsT, B * Hundvd), self.neq_node))
+                self.lhs_D = self.gdiag_lm(-self.solver.H_inv_phys,self.lm_ldiag(DsT, B * Hundvd))  # Store unkronned version
             else:
-                self.lhs_D = self.gdiag_lm(-self.solver.H_inv_phys,self.kron_neq_lm(self.lm_ldiag(DsT, B), self.neq_node))
+                self.lhs_D = self.gdiag_lm(-self.solver.H_inv_phys,self.lm_ldiag(DsT, B))  # Store unkronned version
         elif self.type == 'ranocha':
             # TODO: I have a feeling this is wrong, becuase it doesn't work as well as it should
             # NOTE: For now using the same central operator for FD, but might want to use a different approximation...
@@ -576,13 +576,13 @@ class ADiss():
                 x = self.solver.sbp.x
                 B = 1. - (2.*x - 1.)**2
             if self.sparse: D = sp.lm_to_sp(D)
-            self.rhs_D = self.kron_neq_lm(D,self.neq_node) 
+            self.rhs_D = D  # Store unkronned version 
             DT = self.lm_to_lmT(D,self.nen,self.nen)
             if self.use_H:
                 Hinv_undvd = self.solver.sbp.dx / np.diag(self.solver.sbp.H)
-                self.lhs_D = self.kron_neq_lm(self.ldiag_lm(Hinv_undvd, self.lm_ldiag(DT, B)), self.neq_node)
+                self.lhs_D = self.ldiag_lm(Hinv_undvd, self.lm_ldiag(DT, B))  # Store unkronned version
             else:
-                self.lhs_D = self.kron_neq_lm(self.lm_ldiag(DT, B), self.neq_node)
+                self.lhs_D = self.lm_ldiag(DT, B)  # Store unkronned version
         elif self.type == 'filter' or self.type == 'entfilter':
             # Currently not dimensionally consistent. Where would I put the variable coefficient?
             assert self.solver.disc_nodes.lower() in ['lgl', 'lg'], 'Filter dissipation only implemented for LGL and LG.'
@@ -611,8 +611,8 @@ class ADiss():
                 FilterRHS = sp.lm_to_sp(FilterRHS)
                 FilterLHS = sp.lm_to_sp(FilterLHS) 
 
-            self.FilterRHS = self.kron_neq_lm(FilterRHS, self.neq_node)
-            self.FilterLHS = self.gdiag_lm(-self.solver.H_inv_phys, self.kron_neq_lm(FilterLHS, self.neq_node))
+            self.FilterRHS = FilterRHS  # Store unkronned version
+            self.FilterLHS = self.gdiag_lm(-self.solver.H_inv_phys, FilterLHS)  # Store unkronned version
             
 
 
@@ -629,10 +629,10 @@ class ADiss():
                 D.updateD2()
                 D.updateB1()
                 D.updateB2()
-                self.rhs_D1 = fn.kron_neq_lm(D.D1,self.neq_node) 
-                self.rhs_D2 = fn.kron_neq_lm(D.D2,self.neq_node)
-                self.lhs_D1 = fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D.D1.T @ D.B1 @ Hundvd, self.neq_node))
-                self.lhs_D2 = 0.25*fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D.D2.T @ D.B2 @ Hundvd, self.neq_node))
+                self.rhs_D1 = D.D1  # Store unkronned version
+                self.rhs_D2 = D.D2  # Store unkronned version
+                self.lhs_D1 = fn.gdiag_lm(-self.solver.H_inv_phys, D.D1.T @ D.B1 @ Hundvd)  # Store unkronned version
+                self.lhs_D2 = 0.25*fn.gdiag_lm(-self.solver.H_inv_phys, D.D2.T @ D.B2 @ Hundvd)  # Store unkronned version
                 if self.sparse:
                     self.rhs_D1 = sp.lm_to_sp(self.rhs_D1)
                     self.rhs_D2 = sp.lm_to_sp(self.rhs_D2)
@@ -646,12 +646,12 @@ class ADiss():
                 D.updateB3()
                 D.updateB4()
                 D2 = D.D1 @ D.D1
-                self.rhs_D2 = fn.kron_neq_lm(D2,self.neq_node) 
-                self.rhs_D3 = fn.kron_neq_lm(D.D3,self.neq_node)
-                self.rhs_D4 = fn.kron_neq_lm(D.D4,self.neq_node)
-                self.lhs_D2 = fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D2.T @ D.B1 @ Hundvd, self.neq_node))
-                self.lhs_D3 = 0.5 * fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D.D3.T @ D.B3 @ Hundvd, self.neq_node))
-                self.lhs_D4 = 0.0625 * fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D.D4.T @ D.B4 @ Hundvd, self.neq_node))
+                self.rhs_D2 = D2  # Store unkronned version
+                self.rhs_D3 = D.D3  # Store unkronned version
+                self.rhs_D4 = D.D4  # Store unkronned version
+                self.lhs_D2 = fn.gdiag_lm(-self.solver.H_inv_phys, D2.T @ D.B1 @ Hundvd)  # Store unkronned version
+                self.lhs_D3 = 0.5 * fn.gdiag_lm(-self.solver.H_inv_phys, D.D3.T @ D.B3 @ Hundvd)  # Store unkronned version
+                self.lhs_D4 = 0.0625 * fn.gdiag_lm(-self.solver.H_inv_phys, D.D4.T @ D.B4 @ Hundvd)  # Store unkronned version
                 if self.sparse:
                     self.rhs_D2 = sp.lm_to_sp(self.rhs_D2)
                     self.rhs_D3 = sp.lm_to_sp(self.rhs_D3)
@@ -669,14 +669,14 @@ class ADiss():
                 D.updateB5()
                 D.updateB6()
                 D3 = D.D1 @ D.D1 @ D.D1
-                self.rhs_D3 = fn.kron_neq_lm(D3,self.neq_node) 
-                self.rhs_D4 = fn.kron_neq_lm(D.D4,self.neq_node)
-                self.rhs_D5 = fn.kron_neq_lm(D.D5,self.neq_node)
-                self.rhs_D6 = fn.kron_neq_lm(D.D6,self.neq_node)
-                self.lhs_D3 = fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D3.T @ D.B1 @ Hundvd, self.neq_node))
-                self.lhs_D4 = 0.75 * fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D.D4.T @ D.B4 @ Hundvd, self.neq_node))
-                self.lhs_D5 = 0.3125 * fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D.D5.T @ D.B5 @ Hundvd, self.neq_node))
-                self.lhs_D6 = (1./96.) * fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D.D6.T @ D.B6 @ Hundvd, self.neq_node))
+                self.rhs_D3 = D3  # Store unkronned version
+                self.rhs_D4 = D.D4  # Store unkronned version
+                self.rhs_D5 = D.D5  # Store unkronned version
+                self.rhs_D6 = D.D6  # Store unkronned version
+                self.lhs_D3 = fn.gdiag_lm(-self.solver.H_inv_phys, D3.T @ D.B1 @ Hundvd)  # Store unkronned version
+                self.lhs_D4 = 0.75 * fn.gdiag_lm(-self.solver.H_inv_phys, D.D4.T @ D.B4 @ Hundvd)  # Store unkronned version
+                self.lhs_D5 = 0.3125 * fn.gdiag_lm(-self.solver.H_inv_phys, D.D5.T @ D.B5 @ Hundvd)  # Store unkronned version
+                self.lhs_D6 = (1./96.) * fn.gdiag_lm(-self.solver.H_inv_phys, D.D6.T @ D.B6 @ Hundvd)  # Store unkronned version
                 if self.sparse:
                     self.rhs_D3 = sp.lm_to_sp(self.rhs_D3)
                     self.rhs_D4 = sp.lm_to_sp(self.rhs_D4)
@@ -698,16 +698,16 @@ class ADiss():
                 D.updateB7()
                 D.updateB8()
                 D4 = D.D1 @ D.D1 @ D.D1 @ D.D1
-                self.rhs_D4 = fn.kron_neq_lm(D4,self.neq_node) 
-                self.rhs_D5 = fn.kron_neq_lm(D.D5,self.neq_node)
-                self.rhs_D6 = fn.kron_neq_lm(D.D6,self.neq_node)
-                self.rhs_D7 = fn.kron_neq_lm(D.D7,self.neq_node)
-                self.rhs_D8 = fn.kron_neq_lm(D.D8,self.neq_node)
-                self.lhs_D4 = fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D4.T @ D.B1 @ Hundvd, self.neq_node))
-                self.lhs_D5 = fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D.D5.T @ D.B5 @ Hundvd, self.neq_node))
-                self.lhs_D6 = 0.875 * fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D.D6.T @ D.B6 @ Hundvd, self.neq_node))
-                self.lhs_D7 = 0.0875 * fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D.D7.T @ D.B7 @ Hundvd, self.neq_node))
-                self.lhs_D8 = 0.00171875 * fn.gdiag_lm(-self.solver.H_inv_phys,fn.kron_neq_lm(D.D8.T @ D.B8 @ Hundvd, self.neq_node))
+                self.rhs_D4 = D4  # Store unkronned version
+                self.rhs_D5 = D.D5  # Store unkronned version
+                self.rhs_D6 = D.D6  # Store unkronned version
+                self.rhs_D7 = D.D7  # Store unkronned version
+                self.rhs_D8 = D.D8  # Store unkronned version
+                self.lhs_D4 = fn.gdiag_lm(-self.solver.H_inv_phys, D4.T @ D.B1 @ Hundvd)  # Store unkronned version
+                self.lhs_D5 = fn.gdiag_lm(-self.solver.H_inv_phys, D.D5.T @ D.B5 @ Hundvd)  # Store unkronned version
+                self.lhs_D6 = 0.875 * fn.gdiag_lm(-self.solver.H_inv_phys, D.D6.T @ D.B6 @ Hundvd)  # Store unkronned version
+                self.lhs_D7 = 0.0875 * fn.gdiag_lm(-self.solver.H_inv_phys, D.D7.T @ D.B7 @ Hundvd)  # Store unkronned version
+                self.lhs_D8 = 0.00171875 * fn.gdiag_lm(-self.solver.H_inv_phys, D.D8.T @ D.B8 @ Hundvd)  # Store unkronned version
                 if self.sparse:
                     self.rhs_D4 = sp.lm_to_sp(self.rhs_D4)
                     self.rhs_D5 = sp.lm_to_sp(self.rhs_D5)
@@ -742,19 +742,19 @@ class ADiss():
             DsT = self.lm_to_lmT(Ds,self.nen,self.nen)
             H = np.diag(self.solver.sbp.H)
 
-            self.rhs_Dxi = self.kron_neq_lm(self.kron_lm_eye(Ds, self.nen),self.neq_node) 
-            self.rhs_Deta = self.kron_neq_lm(self.kron_eye_lm(Ds, self.nen, self.nen),self.neq_node) 
+            self.rhs_Dxi = self.kron_lm_eye(Ds, self.nen)  # Store unkronned version (directionally kronned but not neq_node kronned)
+            self.rhs_Deta = self.kron_eye_lm(Ds, self.nen, self.nen)  # Store unkronned version
             DsTxi = self.kron_lm_eye(self.lm_ldiag(DsT, H), self.nen)
             DsTeta = self.kron_eye_lm(self.lm_ldiag(DsT, self.solver.sbp.H), self.nen, self.nen)
-            self.lhs_Dxi = self.kron_neq_gm(self.gdiag_lm(-(self.solver.H_inv_phys * self.dxi**(2*self.s-1)),DsTxi),self.neq_node) 
-            self.lhs_Deta = self.kron_neq_gm(self.gdiag_lm(-(self.solver.H_inv_phys * self.deta**(2*self.s-1)),DsTeta),self.neq_node) 
+            self.lhs_Dxi = self.gdiag_lm(-(self.solver.H_inv_phys * self.dxi**(2*self.s-1)),DsTxi)  # Store unkronned version
+            self.lhs_Deta = self.gdiag_lm(-(self.solver.H_inv_phys * self.deta**(2*self.s-1)),DsTeta)  # Store unkronned version 
         elif self.type == 'dcp' or self.type == 'entdcp':                
             Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen, self.bdy_fix)
             if self.sparse: Ds = sp.lm_to_sp(Ds)
 
             DsT = self.lm_to_lmT(Ds,self.nen,self.nen)
-            self.rhs_Dxi = self.kron_neq_lm(self.kron_lm_eye(Ds, self.nen),self.neq_node) 
-            self.rhs_Deta = self.kron_neq_lm(self.kron_eye_lm(Ds,self.nen,self.nen),self.neq_node) 
+            self.rhs_Dxi = self.kron_lm_eye(Ds, self.nen)  # Store unkronned version (directionally kronned but not neq_node kronned)
+            self.rhs_Deta = self.kron_eye_lm(Ds,self.nen,self.nen)  # Store unkronned version 
             if self.use_H:
                 H = np.diag(self.solver.sbp.H)
                 Hundvd = H / self.solver.sbp.dx
@@ -773,15 +773,15 @@ class ADiss():
                     DsTB = self.lm_ldiag(DsT, B)
                     DsTxi = self.kron_lm_ldiag(DsTB, H) 
                     DsTeta = self.kron_ldiag_lm(H, DsTB, self.nen)
-            self.lhs_Dxi = self.gdiag_lm(-self.solver.H_inv_phys,self.kron_neq_lm(DsTxi,self.neq_node))
-            self.lhs_Deta = self.gdiag_lm(-self.solver.H_inv_phys,self.kron_neq_lm(DsTeta,self.neq_node))
+            self.lhs_Dxi = self.gdiag_lm(-self.solver.H_inv_phys,DsTxi)  # Store unkronned version
+            self.lhs_Deta = self.gdiag_lm(-self.solver.H_inv_phys,DsTeta)  # Store unkronned version
         elif self.type == 'upwind':
             if self.solver.disc_nodes.lower() == 'upwind':
                 ### OPTION 1: USE UPWIND DISSIPATION DEFINED BY CENTRAL OPERATOR
                 Ddiss = self.solver.sbp.Ddiss
                 if self.sparse: Ddiss = sp.lm_to_sp(Ddiss)
-                self.Dxidiss = self.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), self.kron_neq_lm(self.kron_lm_eye(Ddiss, self.nen),self.neq_node)) 
-                self.Detadiss = self.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), self.kron_neq_lm(self.kron_eye_lm(Ddiss, self.nen, self.nen),self.neq_node))
+                self.Dxidiss = self.gdiag_lm(-self.solver.mesh.det_jac_inv, self.kron_lm_eye(Ddiss, self.nen))  # Store unkronned version
+                self.Detadiss = self.gdiag_lm(-self.solver.mesh.det_jac_inv, self.kron_eye_lm(Ddiss, self.nen, self.nen))  # Store unkronned version
             else:
                 if self.solver.disc_nodes.lower() == 'lgl' or self.solver.disc_nodes.lower() == 'lg':
                     ### OPTION 2: USE UPWIND DISSIPATION DEFINED BY ELEMENT-TYPE
@@ -798,8 +798,8 @@ class ADiss():
                     DsTDs = Ds.T @ Ds
                     if self.sparse: DsTDs = sp.lm_to_sp(DsTDs)
                     H = np.diag(self.solver.sbp.H)
-                    self.Dxidiss = self.gdiag_lm(-self.solver.H_inv_phys,self.kron_neq_lm(self.kron_lm_ldiag(DsTDs, H),self.neq_node))
-                    self.Detadiss = self.gdiag_lm(-self.solver.H_inv_phys,self.kron_neq_lm(self.kron_ldiag_lm(H, DsTDs, self.nen),self.neq_node))
+                    self.Dxidiss = self.gdiag_lm(-self.solver.H_inv_phys,self.kron_lm_ldiag(DsTDs, H))  # Store unkronned version
+                    self.Detadiss = self.gdiag_lm(-self.solver.H_inv_phys,self.kron_ldiag_lm(H, DsTDs, self.nen))  # Store unkronned version
                 else:
                     ### OPTION 3: USE UPWIND DISSIPATION DEFINED BY CLASSICAL NODES (MATTSSON)
                     from Source.Disc.UpwindOp import UpwindOp
@@ -844,30 +844,30 @@ class ADiss():
         if self.dim == 1:
             maxeig = self.maxeig_dExdq(q)
             A = self.repeat_neq_gv(maxeig)
-            diss = self.gm_gv(self.Ddiss, A * q)
+            diss = self.gm_gv(self.Ddiss, A * q, self.neq_node)
         elif self.dim == 2:
             maxeig = self.maxeig_dEndq(q,self.dxidx)
             A = self.repeat_neq_gv(maxeig)
-            diss = self.gm_gv(self.Dxidiss, A * q) # xi part
+            diss = self.gm_gv(self.Dxidiss, A * q, self.neq_node) # xi part
             maxeig = self.maxeig_dEndq(q,self.detadx)
             A = self.repeat_neq_gv(maxeig)
-            diss += self.gm_gv(self.Detadiss, A * q) # eta part
+            diss += self.gm_gv(self.Detadiss, A * q, self.neq_node) # eta part
         elif self.dim == 3:
             maxeig = self.maxeig_dEndq(q,self.dxidx)
             A = self.repeat_neq_gv(maxeig)
-            diss = self.gm_gv(self.Dxidiss, A * q) # xi part
+            diss = self.gm_gv(self.Dxidiss, A * q, self.neq_node) # xi part
             maxeig = self.maxeig_dEndq(q,self.detadx)
             A = self.repeat_neq_gv(maxeig)
-            diss += self.gm_gv(self.Detadiss, A * q) # eta part
+            diss += self.gm_gv(self.Detadiss, A * q, self.neq_node) # eta part
             maxeig = self.maxeig_dEndq(q,self.dzetadx)
             A = self.repeat_neq_gv(maxeig)
-            diss += self.gm_gv(self.Dzetadiss, A * q) # zeta part
+            diss += self.gm_gv(self.Dzetadiss, A * q, self.neq_node) # zeta part
         return self.coeff*diss
     
     def dissipation_upwind_burgers(self, q):
         ''' dissipation function for fully upwind burgers flux-vector splitting '''
         if self.dim == 1:
-            diss = self.gm_gv(self.Ddiss, 0.5 * abs(q) * q)
+            diss = self.gm_gv(self.Ddiss, 0.5 * abs(q) * q, self.neq_node)
         else:
             raise Exception('Burgers dissipation only implemented for 1D.')
         return self.coeff*diss
@@ -876,12 +876,12 @@ class ADiss():
         ''' dissipation function for upwind steger warming flux-vector splitting'''
         if self.dim == 1:
             fdiss = self.stegerwarming(q)
-            diss = self.gm_gv(self.Ddiss, fdiss)
+            diss = self.gm_gv(self.Ddiss, fdiss, self.neq_node)
         elif self.dim == 2:
             fdiss = self.stegerwarming(q,self.dxidx)
-            diss = self.gm_gv(self.Dxidiss, fdiss) # xi part
+            diss = self.gm_gv(self.Dxidiss, fdiss, self.neq_node) # xi part
             fdiss = self.stegerwarming(q,self.detadx)
-            diss += self.gm_gv(self.Detadiss, fdiss) # eta part
+            diss += self.gm_gv(self.Detadiss, fdiss, self.neq_node) # eta part
         elif self.dim == 3:
             diss = 0.
         return self.coeff*diss
@@ -890,9 +890,9 @@ class ADiss():
         ''' dissipation function for upwind steger warming flux-vector splitting'''
         if self.dim == 2:
             fdiss = self.DrikakisTsangaris(q,self.dxidx)
-            diss = self.gm_gv(self.Dxidiss, fdiss) # xi part
+            diss = self.gm_gv(self.Dxidiss, fdiss, self.neq_node) # xi part
             fdiss = self.DrikakisTsangaris(q,self.detadx)
-            diss += self.gm_gv(self.Detadiss, fdiss) # eta part
+            diss += self.gm_gv(self.Detadiss, fdiss, self.neq_node) # eta part
         else:
             raise Exception('TODO: DrikakisTsangaris dissipation only implemented for 2D.')
         return self.coeff*diss
@@ -910,23 +910,23 @@ class ADiss():
             if self.s % 2 == 1 and self.avg_half_nodes:
                 maxeig[:-self.nen:self.nen] = 0.5*(maxeig[:-self.nen:self.nen] + maxeig[self.nen::self.nen])
             A = self.repeat_neq_gv(maxeig)
-            diss = self.gm_gv(self.lhs_Dxi, A * self.lm_gv(self.rhs_Dxi, q)) # xi part
+            diss = self.gm_gv(self.lhs_Dxi, A * self.lm_gv(self.rhs_Dxi, q, self.neq_node), self.neq_node) # xi part
             maxeig = self.maxeig_dEndq(q,self.detadx)
             if self.s % 2 == 1 and self.avg_half_nodes:
                 for xi_idx in range(self.nen):
                     maxeig[xi_idx*self.nen:(xi_idx+1)*self.nen-1] = 0.5*(maxeig[xi_idx*self.nen:(xi_idx+1)*self.nen-1] + maxeig[xi_idx*self.nen+1:(xi_idx+1)*self.nen])
             A = self.repeat_neq_gv(maxeig)
-            diss += self.gm_gv(self.lhs_Deta, A * self.lm_gv(self.rhs_Deta, q)) # eta part
+            diss += self.gm_gv(self.lhs_Deta, A * self.lm_gv(self.rhs_Deta, q, self.neq_node), self.neq_node) # eta part
         elif self.dim == 3:
             maxeig = self.maxeig_dEndq(q,self.dxidx)
             A = self.repeat_neq_gv(maxeig)
-            diss = self.gm_gv(self.lhs_Dxi, A * self.lm_gv(self.rhs_Dxi, q)) # xi part
+            diss = self.gm_gv(self.lhs_Dxi, A * self.lm_gv(self.rhs_Dxi, q, self.neq_node), self.neq_node) # xi part
             maxeig = self.maxeig_dEndq(q,self.detadx)
             A = self.repeat_neq_gv(maxeig)
-            diss += self.gm_gv(self.lhs_Deta, A * self.lm_gv(self.rhs_Deta, q)) # eta part
+            diss += self.gm_gv(self.lhs_Deta, A * self.lm_gv(self.rhs_Deta, q, self.neq_node), self.neq_node) # eta part
             maxeig = self.maxeig_dEndq(q,self.dzetadx)
             A = self.repeat_neq_gv(maxeig)
-            diss += self.gm_gv(self.lhs_Dzeta, A * self.lm_gv(self.rhs_Dzeta, q)) # zeta part
+            diss += self.gm_gv(self.lhs_Dzeta, A * self.lm_gv(self.rhs_Dzeta, q, self.neq_node), self.neq_node) # zeta part
         return self.coeff*diss
     
     def dissipation_dcp_matrix(self, q):
@@ -936,17 +936,17 @@ class ADiss():
             A = self.dExdq_abs(q)
             if self.s % 2 == 1 and self.avg_half_nodes:
                 A[:-1] = 0.5*(A[:-1] + A[1:])
-            diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(A, self.lm_gv(self.rhs_D, q)))
+            diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(A, self.lm_gv(self.rhs_D, q, self.neq_node)), self.neq_node)
         elif self.dim == 2:
             A = self.dEndq_abs(q,self.dxidx)
             if self.s % 2 == 1 and self.avg_half_nodes:
                 A[:-self.nen:self.nen] = 0.5*(A[:-self.nen:self.nen] + A[self.nen::self.nen])
-            diss = self.gm_gv(self.lhs_Dxi, fn.gbdiag_gv(A, self.lm_gv(self.rhs_Dxi, q)))
+            diss = self.gm_gv(self.lhs_Dxi, fn.gbdiag_gv(A, self.lm_gv(self.rhs_Dxi, q, self.neq_node)), self.neq_node)
             A = self.dEndq_abs(q,self.detadx)
             if self.s % 2 == 1 and self.avg_half_nodes:
                 for xi_idx in range(self.nen):
                     A[xi_idx*self.nen:(xi_idx+1)*self.nen-1] = 0.5*(A[xi_idx*self.nen:(xi_idx+1)*self.nen-1] + A[xi_idx*self.nen+1:(xi_idx+1)*self.nen])
-            diss += self.gm_gv(self.lhs_Deta, fn.gbdiag_gv(A, self.lm_gv(self.rhs_Deta, q)))
+            diss += self.gm_gv(self.lhs_Deta, fn.gbdiag_gv(A, self.lm_gv(self.rhs_Deta, q, self.neq_node)), self.neq_node)
         elif self.dim == 3:
             raise Exception('TODO')
         return self.coeff*diss
@@ -957,23 +957,23 @@ class ADiss():
             maxeig = self.maxeig_dExdq(q)
             A = self.repeat_neq_gv(maxeig)
             if self.s == 1:
-                diss = self.gm_gv(self.lhs_D1, A * self.lm_gv(self.rhs_D1, q)) + \
-                       self.gm_gv(self.lhs_D2, A * self.lm_gv(self.rhs_D2, q))
+                diss = self.gm_gv(self.lhs_D1, A * self.lm_gv(self.rhs_D1, q, self.neq_node), self.neq_node) + \
+                       self.gm_gv(self.lhs_D2, A * self.lm_gv(self.rhs_D2, q, self.neq_node), self.neq_node)
             elif self.s == 2:
-                diss = self.gm_gv(self.lhs_D2, A * self.lm_gv(self.rhs_D2, q)) + \
-                       self.gm_gv(self.lhs_D3, A * self.lm_gv(self.rhs_D3, q)) + \
-                       self.gm_gv(self.lhs_D4, A * self.lm_gv(self.rhs_D4, q))
+                diss = self.gm_gv(self.lhs_D2, A * self.lm_gv(self.rhs_D2, q, self.neq_node), self.neq_node) + \
+                       self.gm_gv(self.lhs_D3, A * self.lm_gv(self.rhs_D3, q, self.neq_node), self.neq_node) + \
+                       self.gm_gv(self.lhs_D4, A * self.lm_gv(self.rhs_D4, q, self.neq_node), self.neq_node)
             elif self.s == 3:
-                diss = self.gm_gv(self.lhs_D3, A * self.lm_gv(self.rhs_D3, q)) + \
-                       self.gm_gv(self.lhs_D4, A * self.lm_gv(self.rhs_D4, q)) + \
-                       self.gm_gv(self.lhs_D5, A * self.lm_gv(self.rhs_D5, q)) + \
-                       self.gm_gv(self.lhs_D6, A * self.lm_gv(self.rhs_D6, q))
+                diss = self.gm_gv(self.lhs_D3, A * self.lm_gv(self.rhs_D3, q, self.neq_node), self.neq_node) + \
+                       self.gm_gv(self.lhs_D4, A * self.lm_gv(self.rhs_D4, q, self.neq_node), self.neq_node) + \
+                       self.gm_gv(self.lhs_D5, A * self.lm_gv(self.rhs_D5, q, self.neq_node), self.neq_node) + \
+                       self.gm_gv(self.lhs_D6, A * self.lm_gv(self.rhs_D6, q, self.neq_node), self.neq_node)
             elif self.s == 4:
-                diss = self.gm_gv(self.lhs_D4, A * self.lm_gv(self.rhs_D4, q)) + \
-                       self.gm_gv(self.lhs_D5, A * self.lm_gv(self.rhs_D5, q)) + \
-                       self.gm_gv(self.lhs_D6, A * self.lm_gv(self.rhs_D6, q)) + \
-                       self.gm_gv(self.lhs_D7, A * self.lm_gv(self.rhs_D7, q)) + \
-                       self.gm_gv(self.lhs_D8, A * self.lm_gv(self.rhs_D8, q))
+                diss = self.gm_gv(self.lhs_D4, A * self.lm_gv(self.rhs_D4, q, self.neq_node), self.neq_node) + \
+                       self.gm_gv(self.lhs_D5, A * self.lm_gv(self.rhs_D5, q, self.neq_node), self.neq_node) + \
+                       self.gm_gv(self.lhs_D6, A * self.lm_gv(self.rhs_D6, q, self.neq_node), self.neq_node) + \
+                       self.gm_gv(self.lhs_D7, A * self.lm_gv(self.rhs_D7, q, self.neq_node), self.neq_node) + \
+                       self.gm_gv(self.lhs_D8, A * self.lm_gv(self.rhs_D8, q, self.neq_node), self.neq_node)
             else:
                 raise ValueError('only s=1,2,3,4 coded up for baseline dissipation.')
         elif self.dim == 2:
@@ -992,21 +992,21 @@ class ADiss():
             if self.s % 2 == 1 and self.avg_half_nodes:
                 AP[:-1] = 0.5*(AP[:-1] + AP[1:])
             AP = self.repeat_neq_gv(AP)
-            diss = self.gm_gv(self.lhs_D, AP * self.lm_gv(self.rhs_D, w))
+            diss = self.gm_gv(self.lhs_D, AP * self.lm_gv(self.rhs_D, w, self.neq_node), self.neq_node)
         elif self.dim == 2:
             maxeig = self.maxeig_dEndq(q,self.dxidx) 
             AP = maxeig*rho_dqdw
             if self.s % 2 == 1 and self.avg_half_nodes:
                 AP[:-self.nen:self.nen] = 0.5*(AP[:-self.nen:self.nen] + AP[self.nen::self.nen])
             AP = self.repeat_neq_gv(AP)
-            diss = self.gm_gv(self.lhs_Dxi, AP * self.lm_gv(self.rhs_Dxi, w)) # xi part
+            diss = self.gm_gv(self.lhs_Dxi, AP * self.lm_gv(self.rhs_Dxi, w, self.neq_node), self.neq_node) # xi part
             maxeig = self.maxeig_dEndq(q,self.detadx) 
             AP = maxeig*rho_dqdw
             if self.s % 2 == 1 and self.avg_half_nodes:
                 for xi_idx in range(self.nen):
                     AP[xi_idx*self.nen:(xi_idx+1)*self.nen-1] = 0.5*(AP[xi_idx*self.nen:(xi_idx+1)*self.nen-1] + AP[xi_idx*self.nen+1:(xi_idx+1)*self.nen])
             AP = self.repeat_neq_gv(AP)  
-            diss += self.gm_gv(self.lhs_Deta, AP * self.lm_gv(self.rhs_Deta, w)) # eta part
+            diss += self.gm_gv(self.lhs_Deta, AP * self.lm_gv(self.rhs_Deta, w, self.neq_node), self.neq_node) # eta part
         elif self.dim == 3:
             raise Exception('TODO')
 
@@ -1020,23 +1020,23 @@ class ADiss():
             maxeig = self.maxeig_dEndq(q,self.dxidx)
             AP = self.repeat_neq_gv(maxeig*rho_dqdw,self.neq_node)
             if self.s == 1:
-                diss = self.gm_gv(self.lhs_D1, AP * self.lm_gv(self.rhs_D1, w)) + \
-                       self.gm_gv(self.lhs_D2, AP * self.lm_gv(self.rhs_D2, w))
+                diss = self.gm_gv(self.lhs_D1, AP * self.lm_gv(self.rhs_D1, w, self.neq_node), self.neq_node) + \
+                       self.gm_gv(self.lhs_D2, AP * self.lm_gv(self.rhs_D2, w, self.neq_node), self.neq_node)
             elif self.s == 2:
-                diss = self.gm_gv(self.lhs_D2, AP * self.lm_gv(self.rhs_D2, w)) + \
-                       self.gm_gv(self.lhs_D3, AP * self.lm_gv(self.rhs_D3, w)) + \
-                       self.gm_gv(self.lhs_D4, AP * self.lm_gv(self.rhs_D4, w))
+                diss = self.gm_gv(self.lhs_D2, AP * self.lm_gv(self.rhs_D2, w, self.neq_node), self.neq_node) + \
+                       self.gm_gv(self.lhs_D3, AP * self.lm_gv(self.rhs_D3, w, self.neq_node), self.neq_node) + \
+                       self.gm_gv(self.lhs_D4, AP * self.lm_gv(self.rhs_D4, w, self.neq_node), self.neq_node)
             elif self.s == 3:
-                diss = self.gm_gv(self.lhs_D3, AP * self.lm_gv(self.rhs_D3, w)) + \
-                       self.gm_gv(self.lhs_D4, AP * self.lm_gv(self.rhs_D4, w)) + \
-                       self.gm_gv(self.lhs_D5, AP * self.lm_gv(self.rhs_D5, w)) + \
-                       self.gm_gv(self.lhs_D6, AP * self.lm_gv(self.rhs_D6, w))
+                diss = self.gm_gv(self.lhs_D3, AP * self.lm_gv(self.rhs_D3, w, self.neq_node), self.neq_node) + \
+                       self.gm_gv(self.lhs_D4, AP * self.lm_gv(self.rhs_D4, w, self.neq_node), self.neq_node) + \
+                       self.gm_gv(self.lhs_D5, AP * self.lm_gv(self.rhs_D5, w, self.neq_node), self.neq_node) + \
+                       self.gm_gv(self.lhs_D6, AP * self.lm_gv(self.rhs_D6, w, self.neq_node), self.neq_node)
             elif self.s == 4:
-                diss = self.gm_gv(self.lhs_D4, AP * self.lm_gv(self.rhs_D4, w)) + \
-                       self.gm_gv(self.lhs_D5, AP * self.lm_gv(self.rhs_D5, w)) + \
-                       self.gm_gv(self.lhs_D6, AP * self.lm_gv(self.rhs_D6, w)) + \
-                       self.gm_gv(self.lhs_D7, AP * self.lm_gv(self.rhs_D7, w)) + \
-                       self.gm_gv(self.lhs_D8, AP * self.lm_gv(self.rhs_D8, w))
+                diss = self.gm_gv(self.lhs_D4, AP * self.lm_gv(self.rhs_D4, w, self.neq_node), self.neq_node) + \
+                       self.gm_gv(self.lhs_D5, AP * self.lm_gv(self.rhs_D5, w, self.neq_node), self.neq_node) + \
+                       self.gm_gv(self.lhs_D6, AP * self.lm_gv(self.rhs_D6, w, self.neq_node), self.neq_node) + \
+                       self.gm_gv(self.lhs_D7, AP * self.lm_gv(self.rhs_D7, w, self.neq_node), self.neq_node) + \
+                       self.gm_gv(self.lhs_D8, AP * self.lm_gv(self.rhs_D8, w, self.neq_node), self.neq_node)
             else:
                 raise ValueError('only s=1,2,3,4 coded up for baseline dissipation.')
         elif self.dim == 2:
@@ -1055,19 +1055,19 @@ class ADiss():
             AP = fn.gdiag_gbdiag(maxeig, dqdw)
             if self.s % 2 == 1 and self.avg_half_nodes:
                 AP[:-1] = 0.5*(AP[:-1] + AP[1:])
-            diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_D, w)))
+            diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_D, w, self.neq_node)), self.neq_node)
         elif self.dim == 2:
             maxeig = self.repeat_neq_gv(self.maxeig_dEndq(q,self.dxidx))
             AP = fn.gdiag_gbdiag(maxeig, dqdw)
             if self.s % 2 == 1 and self.avg_half_nodes:
                 AP[:-self.nen:self.nen] = 0.5*(AP[:-self.nen:self.nen] + AP[self.nen::self.nen])
-            diss = self.gm_gv(self.lhs_Dxi, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_Dxi, w)))
+            diss = self.gm_gv(self.lhs_Dxi, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_Dxi, w, self.neq_node)), self.neq_node)
             maxeig = self.repeat_neq_gv(self.maxeig_dEndq(q,self.detadx))
             AP = fn.gdiag_gbdiag(maxeig, dqdw)
             if self.s % 2 == 1 and self.avg_half_nodes:
                 for xi_idx in range(self.nen):
                     AP[xi_idx*self.nen:(xi_idx+1)*self.nen-1] = 0.5*(AP[xi_idx*self.nen:(xi_idx+1)*self.nen-1] + AP[xi_idx*self.nen+1:(xi_idx+1)*self.nen])
-            diss += self.gm_gv(self.lhs_Deta, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_Deta, w)))
+            diss += self.gm_gv(self.lhs_Deta, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_Deta, w, self.neq_node)), self.neq_node)
         elif self.dim == 3:
             raise Exception('TODO')
         return self.coeff*diss
@@ -1112,26 +1112,26 @@ class ADiss():
             AP = self.dExdw_abs(q)
             if self.s % 2 == 1 and self.avg_half_nodes:
                 AP[:-1] = 0.5*(AP[:-1] + AP[1:])
-            diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_D, w)))
+            diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_D, w, self.neq_node)), self.neq_node)
         elif self.dim == 2:
             AP = self.dEndw_abs(q,self.dxidx)
             if self.s % 2 == 1 and self.avg_half_nodes:
                 AP[:-self.nen:self.nen] = 0.5*(AP[:-self.nen:self.nen] + AP[self.nen::self.nen])
-            diss = self.gm_gv(self.lhs_Dxi, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_Dxi, w)))
+            diss = self.gm_gv(self.lhs_Dxi, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_Dxi, w, self.neq_node)), self.neq_node)
             AP = self.dEndw_abs(q,self.detadx)
             if self.s % 2 == 1 and self.avg_half_nodes:
                 for xi_idx in range(self.nen):
                     AP[xi_idx*self.nen:(xi_idx+1)*self.nen-1] = 0.5*(AP[xi_idx*self.nen:(xi_idx+1)*self.nen-1] + AP[xi_idx*self.nen+1:(xi_idx+1)*self.nen])
-            diss += self.gm_gv(self.lhs_Deta, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_Deta, w)))
+            diss += self.gm_gv(self.lhs_Deta, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_Deta, w, self.neq_node)), self.neq_node)
         elif self.dim == 3:
             if self.avg_half_nodes:
                 raise Exception('TODO')
             AP = self.dEndw_abs(q,self.dxidx)
-            diss = self.gm_gv(self.lhs_Dxi, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_Dxi, w)))
+            diss = self.gm_gv(self.lhs_Dxi, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_Dxi, w, self.neq_node)), self.neq_node)
             AP = self.dEndw_abs(q,self.detadx)
-            diss += self.gm_gv(self.lhs_Deta, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_Deta, w)))
+            diss += self.gm_gv(self.lhs_Deta, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_Deta, w, self.neq_node)), self.neq_node)
             AP = self.dEndw_abs(q,self.dzetadx)
-            diss += self.gm_gv(self.lhs_Dzeta, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_Dzeta, w)))
+            diss += self.gm_gv(self.lhs_Dzeta, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_Dzeta, w, self.neq_node)), self.neq_node)
         return self.coeff*diss
     
     def dissipation_entB_matrixmatrix(self, q):
@@ -1175,7 +1175,7 @@ class ADiss():
                 A = self.repeat_neq_gv(maxeig)
             else:
                 A = 1
-            diss = self.gm_gv(self.lhs_D, A * self.lm_gv(self.rhs_D, q))
+            diss = self.gm_gv(self.lhs_D, A * self.lm_gv(self.rhs_D, q, self.neq_node), self.neq_node)
             if self.eps_type == 0:
                 # plain idea - low order dissipation, should scale as h**(s-1)
                 # TODO: scaling does not come from h**s, but from Jacobian...
@@ -1206,7 +1206,7 @@ class ADiss():
                 A = self.dExdq_abs(q)
                 if self.s % 2 == 1 and self.avg_half_nodes:
                     A[:-1] = 0.5*(A[:-1] + A[1:])
-                diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(A, self.lm_gv(self.rhs_D, q)))
+                diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(A, self.lm_gv(self.rhs_D, q, self.neq_node)), self.neq_node)
             else:
                 diss = self.gm_gv(self.lhs_D, self.lm_gv(self.rhs_D, q))
 
@@ -1247,7 +1247,7 @@ class ADiss():
                 AP = fn.gdiag_gbdiag(maxeig, dqdw)
                 if self.s % 2 == 1 and self.avg_half_nodes:
                     AP[:-1] = 0.5*(AP[:-1] + AP[1:])
-                diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_D, w)))
+                diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_D, w, self.neq_node)), self.neq_node)
             else:
                 diss = self.gm_gv(self.lhs_D, self.lm_gv(self.rhs_D, w))
 
@@ -1282,7 +1282,7 @@ class ADiss():
                 AP = self.dExdw_abs(q)
                 if self.s % 2 == 1 and self.avg_half_nodes:
                     AP[:-1] = 0.5*(AP[:-1] + AP[1:])
-                diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_D, w)))
+                diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_D, w, self.neq_node)), self.neq_node)
             else:
                 diss = self.gm_gv(self.lhs_D, self.lm_gv(self.rhs_D, w))
 

@@ -18,35 +18,84 @@ def cabs(x):
     res = sgn * x
     return res
 
-# TODO: This is the function to speed up (is approximately 40% of total code runtime)
 @njit
-def gm_gv(A,b):
+def _gm_gv_unkronned(A, b, neq_node):
+    """Numba-compiled helper for gm_gv when neq_node is provided - optimized using matrix ops"""
+    nen, nen2, nelem = A.shape
+    nen_neq = b.shape[0]
+    block_size = nen * neq_node
+    nblocks = nen_neq // block_size
+    
+    c = np.zeros((nen_neq, nelem), dtype=b.dtype)
+    # Optimize: reshape b per element and use matrix multiplication for BLAS optimization
+    for block in range(nblocks):
+        b_offset = block * block_size
+        c_offset = block * nen * neq_node
+        for e in range(nelem):
+            # Make contiguous copy for reshape, then use A[:,:,e] @ b_reshaped
+            b_slice = np.ascontiguousarray(b[b_offset:b_offset+block_size, e])
+            b_block = b_slice.reshape(nen, neq_node)
+            # Make A[:,:,e] contiguous for BLAS optimization
+            A_e = np.ascontiguousarray(A[:, :, e])
+            c_block = A_e @ b_block  # (nen, neq_node) - BLAS optimized!
+            c[c_offset:c_offset+nen*neq_node, e] = c_block.reshape(nen * neq_node)
+    return c
+
+@njit
+def _gm_gv_kronned(A, b):
+    """Numba-compiled helper for gm_gv original behavior (kronned)"""
+    nen1, nen2, nelem = A.shape
+    c = np.zeros((nen1, nelem), dtype=b.dtype)
+    for i in range(nen1):
+        for j in range(nen2):
+            for e in range(nelem):
+                c[i, e] += A[i, j, e] * b[j, e]
+    return c
+
+# TODO: This is the function to speed up (is approximately 40% of total code runtime)
+def gm_gv(A,b,neq_node=None):
     '''
     Equivalent to np.einsum('ijk,jk->ik',A,b) where A is a 3-tensor of shape
     (nen1,nen2,nelem) and b is a 2-tensor of shape (nen2,nelem). This can be 
     thought of as a global matrix @ global vector.
     Faster than A[:,:,e]@b[:,e] because A[:,:,e] is not a contigous array
+    
+    If neq_node is provided, A is assumed to be unkronned (shape (nen,nen,nelem))
+    and b is kronned (shape (nen*neq_node,nelem)). The function handles the
+    neq_node dimension manually.
 
     Parameters
     ----------
-    A : numpy array of shape (nen1,nen2,nelem)
-    b : numpy array of shape (nen2,nelem)
+    A : numpy array of shape (nen1,nen2,nelem) or (nen,nen,nelem) if neq_node provided
+    b : numpy array of shape (nen2,nelem) or (nen*neq_node,nelem) if neq_node provided
+    neq_node : int, optional
+        Number of equations per node. If provided, A is unkronned and b is kronned.
 
     Returns
     -------
-    c : numpy array of shape (nen1,nelem)
+    c : numpy array of shape (nen1,nelem) or (nen*neq_node,nelem) if neq_node provided
     '''
-    nen1,nen2,nelem = np.shape(A)
-    nen2b,nelemb = np.shape(b)
-    assert nen2==nen2b, f'array shapes do not match, {nen2} != {nen2b}' 
-    assert nelem==nelemb, f'element shapes do not match, {nelem} != {nelemb}'
-
-    c = np.zeros((nen1,nelem),dtype=b.dtype)
-    for i in range(nen1):
-        for j in range(nen2):
-            for e in range(nelem):
-                c[i,e] += A[i,j,e]*b[j,e]
-    return c
+    # Optimize: neq_node == 1 is equivalent to None (no kronning needed)
+    if neq_node is None or neq_node == 1:
+        # Original behavior: both A and b are kronned (or neq_node == 1)
+        nen1,nen2,nelem = np.shape(A)
+        nen2b,nelemb = np.shape(b)
+        assert nen2==nen2b, f'array shapes do not match, {nen2} != {nen2b}' 
+        assert nelem==nelemb, f'element shapes do not match, {nelem} != {nelemb}'
+        
+        # Use numba-compiled helper for performance
+        return _gm_gv_kronned(A, b)
+    else:
+        # New behavior: A is unkronned, b is kronned (possibly repeated across spatial blocks)
+        nen, nen2, nelem = np.shape(A)
+        nen_neq, nelemb = np.shape(b)
+        assert nen == nen2, f'A must be square (unkronned), got shape {np.shape(A)}'
+        assert nelem == nelemb, f'element shapes do not match, {nelem} != {nelemb}'
+        block_size = nen * neq_node
+        assert nen_neq % block_size == 0, f'b shape {nen_neq} should be a multiple of {nen}*{neq_node}'
+        
+        # Use numba-compiled helper for performance
+        return _gm_gv_unkronned(A, b, neq_node)
 
 @njit
 def gm_gm(A,B):
@@ -134,85 +183,234 @@ def gm_lv(A,b):
     return c
 
 @njit
-def lm_gm(A,B):
+def _lm_gm_unkronned(A, B, neq_node):
+    """Numba-compiled helper for lm_gm when neq_node is provided"""
+    nen1, nen2 = A.shape
+    nen2b, nen3, nelem = B.shape
+    # B is kronned, so nen2b = nen2 * neq_node
+    assert nen2b == nen2 * neq_node, f'B shape {nen2b} should be {nen2}*{neq_node}'
+    assert nen3 % neq_node == 0, f'B third dimension {nen3} should be a multiple of {neq_node}'
+    nen3_unkronned = nen3 // neq_node
+    
+    c = np.zeros((nen1 * neq_node, nen3, nelem), dtype=B.dtype)
+    for i in range(nen1):
+        qidx = i * neq_node
+        for j in range(nen2):
+            colidx = j * neq_node
+            a_val = A[i, j]
+            for l in range(nen3_unkronned):
+                lidx = l * neq_node
+                for e in range(nelem):
+                    # Apply A[i,j] to each neq chunk (block diagonal structure)
+                    for n in range(neq_node):
+                        c[qidx + n, lidx + n, e] += a_val * B[colidx + n, lidx + n, e]
+    return c
+
+@njit
+def _lm_gm_kronned(A, B):
+    """Numba-compiled helper for lm_gm original behavior (both kronned)"""
+    nen1, nen2 = A.shape
+    nen2b, nen3, nelem = B.shape
+    assert nen2 == nen2b, f'array shapes do not match, {nen2} != {nen2b}'
+    
+    c = np.zeros((nen1, nen3, nelem), dtype=B.dtype)
+    for i in range(nen1):
+        for j in range(nen2):
+            for l in range(nen3):
+                for e in range(nelem):
+                    c[i, l, e] += A[i, j] * B[j, l, e]
+    return c
+
+def lm_gm(A,B,neq_node=None):
     '''
     NOTE: NOT equivalent to A @ B 
     That returns the elementwise transpose of the desired result.
     Equivalent to np.einsum('ij,jlk->ilk',A,B) where A is a 2-tensor of shape
     (nen1,nen2) and B is a 3-tensor of shape (nen2,nen3,nelem). This can be 
     thought of as a local matrix @ global matrix.
+    
+    If neq_node is provided, A is assumed to be unkronned (shape (nen,nen))
+    and B is kronned (shape (nen*neq_node,nen*neq_node,nelem)). The function handles the
+    neq_node dimension manually.
+    
+    If neq_node is None, both A and B are expected to have matching dimensions
+    (either both kronned or both unkronned spatial operators). The function works
+    the same way in both cases.
 
     Parameters
     ----------
-    A : numpy array of shape (nen1,nen2)
-    B : numpy array of shape (nen2,nen3,nelem)
+    A : numpy array of shape (nen1,nen2) or (nen,nen) if neq_node provided
+    B : numpy array of shape (nen2,nen3,nelem) or (nen*neq_node,nen*neq_node,nelem) if neq_node provided
+    neq_node : int, optional
+        Number of equations per node. If provided, A is unkronned and B is kronned.
 
     Returns
     -------
-    c : numpy array of shape (nen1,nen3,nelem)
+    c : numpy array of shape (nen1,nen3,nelem) or (nen*neq_node,nen*neq_node,nelem) if neq_node provided
     '''
-    nen1,nen2 = np.shape(A)
-    nen2b,nen3,nelem = np.shape(B)
-    assert nen2==nen2b, f'array shapes do not match, {nen2} != {nen2b}' 
+    # Optimize: neq_node == 1 is equivalent to None (no kronning needed)
+    if neq_node is None or neq_node == 1:
+        # Both A and B are either both kronned or both unkronned (spatial operators)
+        # The logic is the same in both cases - just matrix multiplication
+        return _lm_gm_kronned(A, B)
+    else:
+        # New behavior: A is unkronned, B is kronned
+        return _lm_gm_unkronned(A, B, neq_node)
 
-    c = np.zeros((nen1,nen3,nelem),dtype=B.dtype)
-    for i in range(nen1):
-        for j in range(nen2):
-            for l in range(nen3):
-                for e in range(nelem):
-                    c[i,l,e] += A[i,j]*B[j,l,e]
+@njit
+def _lm_gv_unkronned(A, b, neq_node):
+    """
+    Numba-compiled helper for lm_gv when neq_node is provided - optimized batch BLAS
+    
+    Dense local matrix-vector multiply where A is 'unkronned' but the input b
+    is kronned with size neq_node.
+
+    A: (nrows, ncols)
+    b: (nen_neq, nelem), where nen_neq = ncols * neq_node (nblocks = 1)
+
+    Returns:
+        c: (nrows * neq_node, nelem)
+    
+    Simplified version assuming nblocks = 1 (typical case).
+    This eliminates loop overhead and reduces memory operations.
+    """
+    nrows, ncols = A.shape
+    nen_neq, nelem = b.shape
+
+    # Assert that we have exactly one block (typical case)
+    assert nen_neq == ncols * neq_node, f'b shape {nen_neq} should be {ncols}*{neq_node}'
+
+    # Make b contiguous once
+    b_contig = np.ascontiguousarray(b)
+    
+    # Reshape directly to (ncols, neq_node * nelem) - no loop needed!
+    b_flat = b_contig.reshape(ncols, neq_node * nelem)
+
+    # Single GEMM: (nrows, ncols) @ (ncols, neq_node * nelem)
+    c_flat = A @ b_flat  # (nrows, neq_node * nelem)
+
+    # Reshape to output format
+    c = c_flat.reshape(nrows * neq_node, nelem)
+
     return c
 
-#@njit
-def lm_gv(A,b):
+def lm_gv(A,b,neq_node=None):
     '''
     equivalent to A @ b
+    
+    If neq_node is provided, A is assumed to be unkronned (shape (nen,nen))
+    and b is kronned (shape (nen*neq_node,nelem)). The function handles the
+    neq_node dimension manually.
 
     Parameters
     ----------
-    A : numpy array of shape (nen1,nen2)
-    b : numpy array of shape (nen2,nelem)
+    A : numpy array of shape (nen1,nen2) or (nen,nen) if neq_node provided
+    b : numpy array of shape (nen2,nelem) or (nen*neq_node,nelem) if neq_node provided
+    neq_node : int, optional
+        Number of equations per node. If provided, A is unkronned and b is kronned.
 
     Returns
     -------
-    c : numpy array of shape (nen1,nelem)
+    c : numpy array of shape (nen1,nelem) or (nen*neq_node,nelem) if neq_node provided
     '''
-    c = A @ b
-    return c
+    if neq_node is None:
+        # Original behavior: both A and b are kronned
+        c = A @ b
+        return c
+    else:
+        # New behavior: A is unkronned, b is kronned (possibly repeated across spatial blocks)
+        nrows, ncols = np.shape(A)
+        nen_neq, nelem = np.shape(b)
+        block_size = ncols * neq_node
+        assert nen_neq % block_size == 0, f'b shape {nen_neq} should be a multiple of {ncols}*{neq_node}'
+        
+        # Use numba-compiled helper for performance
+        return _lm_gv_unkronned(A, b, neq_node)
 
-#@njit
-def lm_lv(A,b):
+@njit
+def _lm_lv_unkronned(A, b, neq_node):
+    """Numba-compiled helper for lm_lv when neq_node is provided - optimized using matrix ops"""
+    nrows, ncols = A.shape
+    nen_neq = len(b)
+    
+    # Make contiguous copy for reshape, then use A @ b_reshaped for BLAS optimization
+    b_contig = np.ascontiguousarray(b)
+    b_reshaped = b_contig.reshape(ncols, neq_node)
+    c_reshaped = A @ b_reshaped  # (nrows, neq_node) - BLAS optimized!
+    return c_reshaped.reshape(nrows * neq_node)
+
+def lm_lv(A,b,neq_node=None):
     '''
     equivalent to A @ b
+    
+    If neq_node is provided, A is assumed to be unkronned (shape (nen,nen))
+    and b is kronned (shape (nen*neq_node)). The function handles the
+    neq_node dimension manually.
 
     Parameters
     ----------
-    A : numpy array of shape (nen1,nen2)
-    b : numpy array of shape (nen2)
+    A : numpy array of shape (nen1,nen2) or (nen,nen) if neq_node provided
+    b : numpy array of shape (nen2) or (nen*neq_node) if neq_node provided
+    neq_node : int, optional
+        Number of equations per node. If provided, A is unkronned and b is kronned.
 
     Returns
     -------
-    c : numpy array of shape (nen1)
+    c : numpy array of shape (nen1) or (nen*neq_node) if neq_node provided
     '''
-    c = A @ b
-    return c
+    # Optimize: neq_node == 1 is equivalent to None (no kronning needed)
+    if neq_node is None or neq_node == 1:
+        # Original behavior: both A and b are kronned (or neq_node == 1)
+        c = A @ b
+        return c
+    else:
+        # New behavior: A is unkronned, b is kronned
+        nrows, ncols = np.shape(A)
+        nen_neq = len(b)
+        assert nen_neq == ncols * neq_node, f'b shape {nen_neq} should be {ncols}*{neq_node}'
+        
+        # Use numba-compiled helper for performance
+        return _lm_lv_unkronned(A, b, neq_node)
 
-#@njit
-def lm_lm(A,B):
-    '''
-    equivalent to A @ B
-
-    Parameters
-    ----------
-    A : numpy array of shape (nen1,nen2)
-    b : numpy array of shape (nen2,nen2)
-
-    Returns
-    -------
-    C : numpy array of shape (nen1,nelem)
-    '''
+@njit
+def _lm_lm_unkronned(A, B):
+    """Numba-compiled helper for lm_lm when neq_node is provided (both unkronned)"""
+    # For unkronned operators, just do regular matrix multiply
     C = A @ B
     return C
+
+def lm_lm(A,B,neq_node=None):
+    '''
+    equivalent to A @ B
+    
+    If neq_node is provided, both A and B are assumed to be unkronned (shape (nen,nen)).
+    The function handles the neq_node dimension manually.
+
+    Parameters
+    ----------
+    A : numpy array of shape (nen1,nen2) or (nen,nen) if neq_node provided
+    B : numpy array of shape (nen2,nen3) or (nen,nen) if neq_node provided
+    neq_node : int, optional
+        Number of equations per node. If provided, A and B are unkronned.
+
+    Returns
+    -------
+    C : numpy array of shape (nen1,nen3) or (nen*neq_node,nen*neq_node) if neq_node provided
+    '''
+    # Optimize: neq_node == 1 is equivalent to None (no kronning needed)
+    if neq_node is None or neq_node == 1:
+        # Original behavior: both A and B are kronned (or neq_node == 1)
+        C = A @ B
+        return C
+    else:
+        # New behavior: A and B are unkronned, result should be unkronned too
+        # (This is used in operator construction, not matrix-vector ops)
+        nen1, nen2 = np.shape(A)
+        nen2b, nen3 = np.shape(B)
+        assert nen1 == nen2 == nen2b == nen3, f'For unkronned operators, A and B must be square and same size'
+        
+        # Use numba-compiled helper for performance
+        return _lm_lm_unkronned(A, B)
 
 @njit
 def gs_lm(A,B):
@@ -244,7 +442,7 @@ def gs_lm(A,B):
     return c
 
 @njit
-def gdiag_lm(H, D):
+def gdiag_lm(H, D, neq_node=None):
     '''
     Takes a global array of shape (nen1, nelem) that simulates a global diagonal
     matrix of shape (nen1, nen1, nelem), and a local matrix of shape (nen1, nen2) 
@@ -261,17 +459,27 @@ def gdiag_lm(H, D):
     ''' 
     nen1, nelem = H.shape
     nen1b, nen2 = D.shape
-    assert nen1==nen1b, f'array shapes do not match, {nen1} != {nen1b}' 
-    
-    c = np.zeros((nen1, nen2, nelem), dtype=D.dtype)
-    
-    # Optimized loop ordering for better performance
-    for e in range(nelem):
-        for j in range(nen2):
-            for i in range(nen1):
-                c[i, j, e] = H[i, e] * D[i, j]
-                
-    return c
+    # Optimize: neq_node == 1 is equivalent to None (no kronning needed)
+    if neq_node is None or neq_node == 1:
+        assert nen1==nen1b, f'array shapes do not match, {nen1} != {nen1b}'
+        c = np.zeros((nen1, nen2, nelem), dtype=D.dtype)
+        for e in range(nelem):
+            for j in range(nen2):
+                for i in range(nen1):
+                    c[i, j, e] = H[i, e] * D[i, j]
+        return c
+    else:
+        assert nen1b == nen1 * neq_node, f'array shapes do not match, {nen1 * neq_node} != {nen1b}'
+        c = np.zeros((nen1b, nen2, nelem), dtype=D.dtype)
+        for e in range(nelem):
+            for j in range(nen2):
+                for row in range(nen1):
+                    h_val = H[row, e]
+                    row_offset = row * neq_node
+                    for i in range(neq_node):
+                        idx = row_offset + i
+                        c[idx, j, e] = h_val * D[idx, j]
+        return c
 
 @njit
 def lm_gdiag(D, H):
@@ -361,7 +569,7 @@ def gm_gdiag(D,H):
 
 
 @njit
-def gdiag_gv(H,q):
+def gdiag_gv(H,q,neq_node=None):
     '''
     NOTE: Faster to directly use H * q
     Takes a global array of shape (nen,nelem) that simulates a global diagonal
@@ -379,11 +587,22 @@ def gdiag_gv(H,q):
     ''' 
     nen,nelem = np.shape(H)
     nenb,nelemb = np.shape(q)
-    assert nen==nenb, f'array shapes do not match, {nen} != {nenb}' 
     assert nelem==nelemb, f'element shapes do not match, {nelem} != {nelemb}'
-
-    c = H * q
-    return c
+    # Optimize: neq_node == 1 is equivalent to None (no kronning needed)
+    if neq_node is None or neq_node == 1:
+        assert nen==nenb, f'array shapes do not match, {nen} != {nenb}'
+        return H * q
+    else:
+        assert nenb == nen * neq_node, f'array shapes do not match, {nen * neq_node} != {nenb}'
+        c = np.zeros_like(q)
+        for e in range(nelem):
+            for row in range(nen):
+                h_val = H[row, e]
+                row_offset = row * neq_node
+                for i in range(neq_node):
+                    idx = row_offset + i
+                    c[idx, e] = h_val * q[idx, e]
+        return c
 
 @njit
 def ldiag_gv(H,q):
@@ -1923,6 +2142,129 @@ def VolxVoly_had_Fvol_diff(Volx,Voly,q,flux,neq):
     return c
 
 @njit
+def inner_product_gv_neq(H_phys, a, b, neq_node):
+    '''Compute a^T @ H @ b with unkronned diagonal H and kronned vectors.'''
+    nen = H_phys.shape[0]
+    nen_neq, nelem = a.shape
+    assert nen_neq == nen * neq_node, "Vector shape mismatch with neq_node"
+    result = 0.0
+    for e in range(nelem):
+        for row in range(nen):
+            h_val = H_phys[row, e]
+            row_offset = row * neq_node
+            for i in range(neq_node):
+                idx = row_offset + i
+                result += h_val * a[idx, e] * b[idx, e]
+    return result
+
+@njit
+def norm_gv_neq(H_phys, q, neq_node):
+    '''Compute q^T @ H @ q with unkronned diagonal H and kronned q.'''
+    return inner_product_gv_neq(H_phys, q, q, neq_node)
+
+@njit
+def sum_gv_neq(H_phys, q, neq_node):
+    '''Compute Σ H_phys * q with unkronned diagonal H and kronned q.'''
+    nen = H_phys.shape[0]
+    nen_neq, nelem = q.shape
+    assert nen_neq == nen * neq_node, "Vector shape mismatch with neq_node"
+    total = 0.0
+    for e in range(nelem):
+        for row in range(nen):
+            h_val = H_phys[row, e]
+            row_offset = row * neq_node
+            for i in range(neq_node):
+                idx = row_offset + i
+                total += h_val * q[idx, e]
+    return total
+
+def sum_gv_neq_3d(H_phys, q, neq_node):
+    '''Vectorized version for 3D q: Compute Σ H_phys * q for each time slice.
+    
+    Parameters
+    ----------
+    H_phys : (nen, nelem) array
+    q : (nen_neq, nelem, nt) array
+    neq_node : int
+    
+    Returns
+    -------
+    result : (nt,) array
+    '''
+    nen, nelem = H_phys.shape
+    nen_neq, nelem_q, nt = q.shape
+    assert nen_neq == nen * neq_node, "Vector shape mismatch with neq_node"
+    assert nelem == nelem_q, "Element count mismatch"
+    
+    # Reshape q to (nen, neq_node, nelem, nt) for efficient broadcasting
+    q_reshaped = q.reshape(nen, neq_node, nelem, nt)
+    # Broadcast H_phys: (nen, nelem) -> (nen, 1, nelem, 1) for broadcasting
+    H_broadcast = H_phys[:, None, :, None]
+    # Multiply and sum over spatial dimensions: result is (nt,)
+    return np.sum(H_broadcast * q_reshaped, axis=(0, 1, 2))
+
+def norm_gv_neq_3d(H_phys, q, neq_node):
+    '''Vectorized version for 3D q: Compute q^T @ H @ q for each time slice.
+    
+    Parameters
+    ----------
+    H_phys : (nen, nelem) array
+    q : (nen_neq, nelem, nt) array
+    neq_node : int
+    
+    Returns
+    -------
+    result : (nt,) array
+    '''
+    return inner_product_gv_neq_3d(H_phys, q, q, neq_node)
+
+def inner_product_gv_neq_3d(H_phys, a, b, neq_node):
+    '''Vectorized version for 3D arrays: Compute a^T @ H @ b for each time slice.
+    
+    Parameters
+    ----------
+    H_phys : (nen, nelem) array
+    a : (nen_neq, nelem, nt) array
+    b : (nen_neq, nelem, nt) array
+    neq_node : int
+    
+    Returns
+    -------
+    result : (nt,) array
+    '''
+    nen, nelem = H_phys.shape
+    nen_neq, nelem_a, nt_a = a.shape
+    nen_neq_b, nelem_b, nt_b = b.shape
+    assert nen_neq == nen * neq_node, "Vector shape mismatch with neq_node"
+    assert nen_neq == nen_neq_b, "Vector shapes must match"
+    assert nelem == nelem_a == nelem_b, "Element counts must match"
+    assert nt_a == nt_b, "Time slice counts must match"
+    
+    # Reshape to (nen, neq_node, nelem, nt) for efficient broadcasting
+    a_reshaped = a.reshape(nen, neq_node, nelem, nt_a)
+    b_reshaped = b.reshape(nen, neq_node, nelem, nt_b)
+    # Broadcast H_phys: (nen, nelem) -> (nen, 1, nelem, 1)
+    H_broadcast = H_phys[:, None, :, None]
+    # Multiply: (nen, neq_node, nelem, nt) for each
+    # Sum over spatial dimensions: result is (nt,)
+    return np.sum(H_broadcast * a_reshaped * b_reshaped, axis=(0, 1, 2))
+
+@njit
+def block_norm_gv_neq(q, neq):
+    '''Return per-equation L2 norm over spatial nodes for kronned q.'''
+    nen_neq, nelem = q.shape
+    nen = nen_neq // neq
+    qn = np.zeros((neq, nelem), dtype=q.dtype)
+    for e in range(nelem):
+        for i in range(neq):
+            acc = 0.0
+            for row in range(nen):
+                val = q[row * neq + i, e]
+                acc += val * val
+            qn[i, e] = np.sqrt(acc)
+    return qn
+
+@njit
 def Sat2d_had_Fsat_diff_periodic(tax,tay,tbx,tby,q,flux,neq):
     '''
     A specialized function to compute the hadamard product between the Volx and Voly
@@ -2001,18 +2343,6 @@ def Sat2d_had_Fsat_diff_periodic(tax,tay,tbx,tby,q,flux,neq):
                     c[qidx:qidx+neq, eb] -= fy * tby_val
     
     return c
-
-@njit
-def norm_gv_neq(q,neq):
-    ''' take array of shape (nen*neq_node,nelem) and return (neq_node,nelem)
-        where each neq_node is like running np.linalg.norm(q,axis=0) for each neq. '''
-    nen_neq, nelem = q.shape
-    nen = nen_neq // neq
-    qn = np.zeros((neq,nelem),dtype=q.dtype) 
-    for e in range(nelem):
-        for i in range(neq):
-            qn[i,e] = np.linalg.norm(q[i::neq,e],axis=0)
-    return qn
 
 import scipy.sparse as sp
 def solve_lin_system(A, b, is_spd,

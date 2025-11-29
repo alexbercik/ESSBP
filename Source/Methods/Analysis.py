@@ -538,10 +538,12 @@ def run_convergence(solver, schedule_in=None, error_type='SBP',
             # was specifying a specific nens, but wanted to do element refinement
             solver.nen = nens[1]
             schedule = [x for x in schedule if not ('nen' in x)]
+            runs_nen = [nens[1]]
         elif len(nelems) == 2:
             # was specifying a specific nelems, but wanted to do node refinement
             solver.nelem = nelems[1]
             schedule = [x for x in schedule if not ('nelem' in x)]
+            runs_nelem = [nelems[1]]
         else:
             print('WARNING: Can not do a refinement specifying both nen and nelem.')
             print('     ... Using only nelem values, and atempting to taking nen for each run or for each p.')

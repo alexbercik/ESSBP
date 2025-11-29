@@ -129,8 +129,14 @@ class TimeMarchingRk:
         E. Hairer, S. P. Norsett G. Wanner, 
         “Solving Ordinary Differential Equations I: Nonstiff Problems”, Sec. II.'''
 
+        # Optimize closure to minimize memory capture
+        # Capture only what's needed instead of entire self
+        # Note: This still captures self.dqdt which references the solver,
+        # but it's slightly better than capturing self directly
+        dqdt_func = self.dqdt
+        qshape = self.qshape
         def f(t, y):
-            return self.dqdt(y.reshape(self.qshape,order='F'), t).flatten('F')
+            return dqdt_func(y.reshape(qshape,order='F'), t).flatten('F')
 
         tm_solver = DOP853(f, t0, q.flatten('F'), t_bound=self.t_final, 
                            first_step=dt, rtol=self.rtol, atol=self.atol)
