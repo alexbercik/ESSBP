@@ -203,30 +203,25 @@ class Sat(SatDer1, SatDer2):
             
             ''' save useful matrices so as not to calculate on each loop '''
             self.Esurf = solver.sbp.Esurf
-            if self.disc_type == 'div':
-                # 1D div SAT: use backend lm_lm (sparse or dense)
-                self.ta = self.lm_lm(self.tL, self.tRT)
-                self.tb = self.lm_lm(self.tR, self.tLT)
-                if hasattr(self.ta, 'ncols'):
-                    self.ta.ncols = self.nen
-                if hasattr(self.tb, 'ncols'):
-                    self.tb.ncols = self.nen
-            elif self.disc_type == 'had':
-                # 1D had SAT: always form dense ta/tb using dense lm_lm
-                # TODO: make this sparse when needed
-                def _to_dense(op):
-                    return op if isinstance(op, np.ndarray) else op.dense()
-                self.ta = fn.lm_lm(_to_dense(solver.sbp.ta), _to_dense(solver.sbp.tbT))
-                self.tb = fn.lm_lm(_to_dense(solver.sbp.tb), _to_dense(solver.sbp.taT))
-            # NOTE: metrics and bdy_metrics = 1 for 1D
-
-            # For 1D had, ta/tb are dense; use dense SAT builders regardless of sat_sparse
+            self.ta = self.lm_lm(self.tL, self.tRT)
+            self.tb = self.lm_lm(self.tR, self.tLT)
+            #if hasattr(self.ta, 'ncols'):
+            #    self.ta.ncols = self.nen
+            #if hasattr(self.tb, 'ncols'):
+            #    self.tb.ncols = self.nen
             if self.disc_type == 'had':
-                self.Fsat_diff_periodic = lambda q: fn.Sat1d_had_Fsat_diff_periodic(self.ta, self.tb,
-                                                                                    q, self.calc_had_flux, self.neq_node)
-                self.Fsat_diff_dirichlet = lambda q, qL, qR: fn.Sat1d_had_Fsat_diff_dirichlet(self.ta, self.tb,
-                                                                                    q, qL, qR, self.calc_had_flux, self.neq_node)
-
+                if self.sparse:
+                    self.Fsat_diff_periodic = lambda q: sp.Sat1d_had_Fsat_diff_periodic(self.ta, self.tb,
+                                                                                        q, self.calc_had_flux, self.neq_node)
+                    self.Fsat_diff_dirichlet = lambda q, qL, qR: sp.Sat1d_had_Fsat_diff_dirichlet(self.ta, self.tb,
+                                                                                        q, qL, qR, self.calc_had_flux, self.neq_node)
+                else:
+                    self.Fsat_diff_periodic = lambda q: fn.Sat1d_had_Fsat_diff_periodic(self.ta, self.tb,
+                                                                                        q, self.calc_had_flux, self.neq_node)
+                    self.Fsat_diff_dirichlet = lambda q, qL, qR: fn.Sat1d_had_Fsat_diff_dirichlet(self.ta, self.tb,
+                                                                                        q, qL, qR, self.calc_had_flux, self.neq_node)
+            
+            # NOTE: metrics and bdy_metrics = 1 for 1D
 
                 #taphysT_pad = [self.taT]*self.nelem
                 #taphysT_pad.append(sp.lm_to_lmT(self.tb,nrows,nrows))

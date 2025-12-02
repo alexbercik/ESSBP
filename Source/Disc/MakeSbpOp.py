@@ -453,14 +453,10 @@ class MakeSbpOp:
 
             # 1D SAT lifting operators: keep original vector structure
             if sat_sparse:
-                tR = sp.lm_to_sp(self.tR.reshape(self.nn, 1))
-                tL = sp.lm_to_sp(self.tL.reshape(self.nn, 1))
-                self.tb = tR
-                self.ta = tL
-                self.tbT = tR.T(self.nn, 1)
-                self.taT = tL.T(self.nn, 1)
-                self.tbT.ncols = self.nn
-                self.taT.ncols = self.nn
+                self.tb = sp.lm_to_sp(self.tR.reshape(self.nn, 1))
+                self.ta = sp.lm_to_sp(self.tL.reshape(self.nn, 1))
+                self.tbT = self.tb.T(1)
+                self.taT = self.ta.T(1)
                 self.Esurf = sp.lm_to_sp(self.E)
             else:
                 self.tb = self.tR.reshape(self.nn, 1)
@@ -473,6 +469,7 @@ class MakeSbpOp:
             if sparse:
                 D = sp.lm_to_sp(self.D)
                 Dx = sp.gdiag_lm(mesh.det_jac_inv, D)
+                del D
                 self.Dx = Dx  # Store unkronned version
                 if disc_type == 'div':
                     self.Volx = sp.prune_gm(sp.subtract_gm_gm(Dx, sp.gdiag_lm(0.5*self.H_inv_phys, self.Esurf)))
@@ -486,6 +483,8 @@ class MakeSbpOp:
                     self.Volx = Volx  # Store unkronned version
                 elif disc_type == 'had':
                     self.Volx = 2.*Dx - fn.gdiag_lm(self.H_inv_phys, self.E) # Already unkronned
+                del Volx
+            del Dx
             
 
         
@@ -496,25 +495,29 @@ class MakeSbpOp:
             self.H_phys = np.kron(H,H)[:,None] * mesh.det_jac
             self.H_inv_phys = 1/self.H_phys
 
-            if sat_sparse:
-                # using a sparse sat, so want to save certain SAT matrices
-                tR = sp.lm_to_sp(self.tR.reshape(self.nn,1))
-                tL = sp.lm_to_sp(self.tL.reshape(self.nn,1))
-                tRT = tR.T(self.nn,1)
-                tLT = tL.T(self.nn,1)
+            # ------------------------------------------------------------------
+            # 2D SAT helpers
+            # ------------------------------------------------------------------
+            def _build_sat_sparse_2d():
+                """Build sparse SAT lifting operators and Ex/Ey surf operators.
+                    - Sets self.txb, self.txa, self.tyb, self.tya and their transposes
+                    - Sets self.Exsurf, self.Eysurf (sparse lm operators)
+
+                Returns:
+                    Exsurf, Eysurf (for local use)
+                """
+                tR = sp.lm_to_sp(self.tR.reshape(self.nn, 1))
+                tL = sp.lm_to_sp(self.tL.reshape(self.nn, 1))
+                tRT = tR.T(self.nn, 1)
+                tLT = tL.T(self.nn, 1)
                 self.txb = sp.kron_lm_eye(tR, self.nn)
                 self.txa = sp.kron_lm_eye(tL, self.nn)
                 self.tyb = sp.kron_eye_lm(tR, self.nn, 1)
                 self.tya = sp.kron_eye_lm(tL, self.nn, 1)
-                self.txbT = sp.kron_lm_eye(tRT, self.nn)
-                self.txaT = sp.kron_lm_eye(tLT, self.nn)
-                self.tybT = sp.kron_eye_lm(tRT, self.nn, self.nn)
-                self.tyaT = sp.kron_eye_lm(tLT, self.nn, self.nn)
-                self.txbT.ncols = self.nn*self.nn #TODO: do i also need to set the nrows?
-                self.txaT.ncols = self.nn*self.nn
-                self.tybT.ncols = self.nn*self.nn
-                self.tyaT.ncols = self.nn*self.nn
-                # Free intermediate matrices no longer needed
+                self.txbT = self.txb.T
+                self.txaT = self.txa.T
+                self.tybT = self.tyb.T
+                self.tyaT = self.tya.T
                 del tR, tL, tRT, tLT
 
                 # Create Exsurf with intermediate cleanup
@@ -524,9 +527,9 @@ class MakeSbpOp:
                 temp_txa_Hperp = sp.lm_ldiag(self.txa, -self.Hperp)
                 temp_txa_term = sp.lm_lm(temp_txa_Hperp, self.txaT)
                 del temp_txa_Hperp  # Free intermediate
-                self.Exsurf = sp.add_lm_lm(temp_txb_term, temp_txa_term)
+                Exsurf_loc = sp.add_lm_lm(temp_txb_term, temp_txa_term)
                 del temp_txb_term, temp_txa_term  # Free intermediates
-                
+
                 # Create Eysurf with intermediate cleanup
                 temp_tyb_Hperp = sp.lm_ldiag(self.tyb, self.Hperp)
                 temp_tyb_term = sp.lm_lm(temp_tyb_Hperp, self.tybT)
@@ -534,86 +537,37 @@ class MakeSbpOp:
                 temp_tya_Hperp = sp.lm_ldiag(self.tya, -self.Hperp)
                 temp_tya_term = sp.lm_lm(temp_tya_Hperp, self.tyaT)
                 del temp_tya_Hperp  # Free intermediate
-                self.Eysurf = sp.add_lm_lm(temp_tyb_term, temp_tya_term)
+                Eysurf_loc = sp.add_lm_lm(temp_tyb_term, temp_tya_term)
                 del temp_tyb_term, temp_tya_term  # Free intermediates
-                
-                # Force garbage collection to free memory immediately
-                import gc
-                gc.collect()
-                # Note: Exsurf/Eysurf are kept because:
-                # 1. They're needed by Sat.py (accessed via solver.sbp.Exsurf/Eysurf)
-                # 2. They're needed by property methods Dx_nd/Dy_nd (if calc_nd_ops=True, but default is False)
 
-            # calculate and save the important volume operators
-            if sparse:
-                D = sp.lm_to_sp(self.D)
-                Dx = sp.kron_lm_eye(D, self.nn)
-                Dy = sp.kron_eye_lm(D, self.nn, self.nn)
-                # Free intermediate D after creating Dx, Dy (no longer needed)
-                del D
+                # Store on self for SAT usage
+                self.Exsurf = Exsurf_loc
+                self.Eysurf = Eysurf_loc
+                return Exsurf_loc, Eysurf_loc
 
-                if form == 'skew_sym':
-                    xm = 0 # l=x, m=x
-                    ym = 2 # l=y, m=x
-                    tempx = sp.add_gm_gm( sp.lm_gdiag(Dx,mesh.metrics[:,xm,:]), sp.gdiag_lm(mesh.metrics[:,xm,:],Dx) )
-                    tempy = sp.add_gm_gm( sp.lm_gdiag(Dy,mesh.metrics[:,ym,:]), sp.gdiag_lm(mesh.metrics[:,ym,:],Dy) )
-                    tempxy = sp.add_gm_gm(tempx, tempy)
-                    Dx_phys = sp.gdiag_gm(0.5/mesh.det_jac, tempxy)
-                    del tempx, tempy, tempxy  # Free intermediate array
-                    Ex_phys1 = sp.add_gm_gm(sp.lm_gdiag(self.Exsurf,mesh.metrics[:,xm,:]), sp.lm_gdiag(self.Eysurf,mesh.metrics[:,ym,:]))
-                    if disc_type == 'div':
-                        temp_volx = sp.gdiag_gm(0.5*self.H_inv_phys, Ex_phys1)
-                        Volx = sp.prune_gm(sp.subtract_gm_gm(Dx_phys, temp_volx))
-                        self.Volx = Volx  # Store unkronned version
-                        del temp_volx, Volx  # Free intermediate array
-                    elif disc_type == 'had':
-                        temp_volx1 = sp.scalar_gm(2.,Dx_phys)
-                        temp_volx2 = sp.gdiag_gm(self.H_inv_phys, Ex_phys1)
-                        self.Volx = sp.prune_gm(sp.subtract_gm_gm(temp_volx1, temp_volx2)) # Already unkronned
-                        del temp_volx1, temp_volx2  # Free intermediate arrays
-                    self.Dx = Dx_phys  # Store unkronned version (directionally kronned but not neq_node kronned)
+            def _build_sat_dense_2d(store_on_self):
+                """Build dense SAT lifting operators and Ex/Ey surf operators.
 
-                    xm = 1 # l=x, m=y
-                    ym = 3 # l=y, m=y
-                    tempx = sp.add_gm_gm( sp.lm_gdiag(Dx,mesh.metrics[:,xm,:]), sp.gdiag_lm(mesh.metrics[:,xm,:],Dx) )
-                    tempy = sp.add_gm_gm( sp.lm_gdiag(Dy,mesh.metrics[:,ym,:]), sp.gdiag_lm(mesh.metrics[:,ym,:],Dy) )
-                    tempxy = sp.add_gm_gm(tempx, tempy)
-                    # Free intermediate arrays
-                    del tempx, tempy
-                    Dy_phys = sp.gdiag_gm(0.5/mesh.det_jac, tempxy)
-                    del tempxy  # Free intermediate array
-                    # Use unkronned Exsurf/Eysurf for Ey_phys1 (same as for Ex_phys1)
-                    Ey_phys1 = sp.add_gm_gm(sp.lm_gdiag(self.Exsurf,mesh.metrics[:,xm,:]), sp.lm_gdiag(self.Eysurf,mesh.metrics[:,ym,:]))
-                    if disc_type == 'div':
-                        temp_voly = sp.gdiag_gm(0.5*self.H_inv_phys, Ey_phys1)
-                        Voly = sp.prune_gm(sp.subtract_gm_gm(Dy_phys, temp_voly))
-                        del temp_voly  # Free intermediate array
-                        self.Voly = Voly  # Store unkronned version
-                        del Voly  # Free intermediate array
-                    elif disc_type == 'had':
-                        temp_voly1 = sp.scalar_gm(2.,Dy_phys)
-                        temp_voly2 = sp.gdiag_gm(self.H_inv_phys, Ey_phys1)
-                        self.Voly = sp.prune_gm(sp.subtract_gm_gm(temp_voly1, temp_voly2)) # Already unkronned
-                        del temp_voly1, temp_voly2  # Free intermediate arrays
-                    self.Dy = Dy_phys  # Store unkronned version (directionally kronned but not neq_node kronned)
-                    # Note: Exsurf/Eysurf are kept because they're needed by Sat.py and property methods (Dx_nd, Dy_nd)
-                    # Only Ey_phys1 can be freed here (Ex_phys1 was already freed after Volx creation)
-                    del Ey_phys1
-                else:
-                    #TODO
-                    raise Exception('Not implemented in sparse yet')
-            
-            else:
-                # need to compute / recompute some things first
-                tR = self.tR.reshape(self.nn,1)
-                tL = self.tL.reshape(self.nn,1)
+                Parameters
+                ----------
+                store_on_self : bool
+                    If True, store SAT/Ex/Ey on self (for dense SAT usage).
+
+                Returns
+                -------
+                Exsurf, Eysurf : numpy arrays
+                """
+                tR = self.tR.reshape(self.nn, 1)
+                tL = self.tL.reshape(self.nn, 1)
                 txb = fn.kron_neq_lm(tR, self.nn)
                 txa = fn.kron_neq_lm(tL, self.nn)
                 tyb = np.kron(np.eye(self.nn), tR)
                 tya = np.kron(np.eye(self.nn), tL)
-                Exsurf = fn.lm_ldiag(txb, self.Hperp) @ txb.T - fn.lm_ldiag(txa, self.Hperp) @ txa.T
-                Eysurf = fn.lm_ldiag(tyb, self.Hperp) @ tyb.T - fn.lm_ldiag(tya, self.Hperp) @ tya.T
-                if (not sat_sparse):
+
+                Exsurf_loc = fn.lm_ldiag(txb, self.Hperp) @ txb.T - fn.lm_ldiag(txa, self.Hperp) @ txa.T
+                Eysurf_loc = fn.lm_ldiag(tyb, self.Hperp) @ tyb.T - fn.lm_ldiag(tya, self.Hperp) @ tya.T
+
+                if store_on_self:
                     # save the dense SAT matrices (store unkronned as main operators)
                     self.txb = txb
                     self.txa = txa
@@ -623,8 +577,92 @@ class MakeSbpOp:
                     self.txaT = txa.T
                     self.tybT = tyb.T
                     self.tyaT = tya.T
-                    self.Exsurf = Exsurf 
-                    self.Eysurf = Eysurf 
+                    self.Exsurf = Exsurf_loc
+                    self.Eysurf = Eysurf_loc
+
+                return Exsurf_loc, Eysurf_loc
+
+            # ------------------------------------------------------------------
+            # 2D volume operators
+            # ------------------------------------------------------------------
+            if sparse:
+                # Build SAT/Ex/Ey suitable for sparse volume operators
+                if sat_sparse:
+                    Exsurf, Eysurf = _build_sat_sparse_2d()
+                else:
+                    # We still need Ex/Ey for the skew‑symmetrized volume operator,
+                    # but we do not want to overwrite any existing dense SAT data.
+                    Exsurf, Eysurf = _build_sat_dense_2d(store_on_self=False)
+
+                D = sp.lm_to_sp(self.D)
+                Dx = sp.kron_lm_eye(D, self.nn)
+                Dy = sp.kron_eye_lm(D, self.nn, self.nn)
+                # Free intermediate D after creating Dx, Dy (no longer needed)
+                del D
+
+                if form == 'skew_sym':
+                    xm = 0 # l=x, m=x
+                    ym = 2 # l=y, m=x
+                    tempx = sp.add_gm_gm(sp.lm_gdiag(Dx, mesh.metrics[:, xm, :]),
+                                         sp.gdiag_lm(mesh.metrics[:, xm, :], Dx))
+                    tempy = sp.add_gm_gm(sp.lm_gdiag(Dy, mesh.metrics[:, ym, :]),
+                                         sp.gdiag_lm(mesh.metrics[:, ym, :], Dy))
+                    tempxy = sp.add_gm_gm(tempx, tempy)
+                    Dx_phys = sp.gdiag_gm(0.5/mesh.det_jac, tempxy)
+                    del tempx, tempy, tempxy  # Free intermediate array
+
+                    Ex_phys = sp.add_gm_gm(sp.lm_gdiag(Exsurf, mesh.metrics[:, xm, :]),
+                                            sp.lm_gdiag(Eysurf, mesh.metrics[:, ym, :]))
+                    if disc_type == 'div':
+                        temp_volx = sp.gdiag_gm(0.5*self.H_inv_phys, Ex_phys)
+                        Volx = sp.prune_gm(sp.subtract_gm_gm(Dx_phys, temp_volx))
+                        self.Volx = Volx  # Store unkronned version
+                        del temp_volx, Volx  # Free intermediate array
+                    elif disc_type == 'had':
+                        temp_volx1 = sp.scalar_gm(2., Dx_phys)
+                        temp_volx2 = sp.gdiag_gm(self.H_inv_phys, Ex_phys)
+                        self.Volx = sp.prune_gm(sp.subtract_gm_gm(temp_volx1, temp_volx2)) 
+                        del temp_volx1, temp_volx2  # Free intermediate arrays
+                    self.Dx = Dx_phys  
+                    del Ex_phys, Dx_phys
+
+                    xm = 1 # l=x, m=y
+                    ym = 3 # l=y, m=y
+                    tempx = sp.add_gm_gm(sp.lm_gdiag(Dx, mesh.metrics[:, xm, :]),
+                                         sp.gdiag_lm(mesh.metrics[:, xm, :], Dx))
+                    tempy = sp.add_gm_gm(sp.lm_gdiag(Dy, mesh.metrics[:, ym, :]),
+                                         sp.gdiag_lm(mesh.metrics[:, ym, :], Dy))
+                    tempxy = sp.add_gm_gm(tempx, tempy)
+                    del tempx, tempy
+                    Dy_phys = sp.gdiag_gm(0.5/mesh.det_jac, tempxy)
+                    del tempxy  # Free intermediate array
+
+                    Ey_phys = sp.add_gm_gm(sp.lm_gdiag(Exsurf, mesh.metrics[:, xm, :]),
+                                            sp.lm_gdiag(Eysurf, mesh.metrics[:, ym, :]))
+                    if disc_type == 'div':
+                        temp_voly = sp.gdiag_gm(0.5*self.H_inv_phys, Ey_phys)
+                        Voly = sp.prune_gm(sp.subtract_gm_gm(Dy_phys, temp_voly))
+                        del temp_voly  # Free intermediate array
+                        self.Voly = Voly  # Store unkronned version
+                        del Voly  # Free intermediate array
+                    elif disc_type == 'had':
+                        temp_voly1 = sp.scalar_gm(2., Dy_phys)
+                        temp_voly2 = sp.gdiag_gm(self.H_inv_phys, Ey_phys)
+                        self.Voly = sp.prune_gm(sp.subtract_gm_gm(temp_voly1, temp_voly2))
+                        del temp_voly1, temp_voly2  # Free intermediate arrays
+                    self.Dy = Dy_phys 
+
+                    del Ey_phys, Dy_phys
+                else:
+                    #TODO
+                    raise Exception('Not implemented in sparse yet')
+
+                del Dx, Dy, Exsurf, Eysurf
+            
+            else:
+                # Dense volume operators: always build dense SAT/Ex/Ey.
+                # If sat_sparse is False we also store the dense SAT data on self
+                Exsurf, Eysurf = _build_sat_dense_2d(store_on_self=not sat_sparse)
 
                 Dx = fn.kron_neq_lm(self.D, self.nn)
                 Dy = np.kron(np.eye(self.nn), self.D)
@@ -632,38 +670,47 @@ class MakeSbpOp:
                 if form == 'skew_sym':
                     xm = 0 # l=x, m=x
                     ym = 2 # l=y, m=x
-                    Dx_phys = fn.gdiag_gm(0.5/mesh.det_jac, fn.lm_gdiag(Dx,mesh.metrics[:,xm,:]) + fn.gdiag_lm(mesh.metrics[:,xm,:],Dx) \
-                                                          + fn.lm_gdiag(Dy,mesh.metrics[:,ym,:]) + fn.gdiag_lm(mesh.metrics[:,ym,:],Dy) )
-                    Ex_phys1 = fn.lm_gdiag(Exsurf,mesh.metrics[:,xm,:]) + fn.lm_gdiag(Eysurf,mesh.metrics[:,ym,:])
+                    Dx_phys = fn.gdiag_gm(
+                        0.5/mesh.det_jac,
+                        fn.lm_gdiag(Dx, mesh.metrics[:, xm, :]) + fn.gdiag_lm(mesh.metrics[:, xm, :], Dx)
+                        + fn.lm_gdiag(Dy, mesh.metrics[:, ym, :]) + fn.gdiag_lm(mesh.metrics[:, ym, :], Dy)
+                    )
+                    Ex_phys = fn.lm_gdiag(Exsurf, mesh.metrics[:, xm, :]) + fn.lm_gdiag(Eysurf, mesh.metrics[:, ym, :])
                     if disc_type == 'div':
-                        Volx = Dx_phys - fn.gdiag_gm(0.5*self.H_inv_phys, Ex_phys1)
-                        self.Volx = Volx  # Store unkronned version
-                        del Ex_phys1  # Free intermediate array (no longer needed after Volx creation)
+                        self.Volx = Dx_phys - fn.gdiag_gm(0.5*self.H_inv_phys, Ex_phys)
                     elif disc_type == 'had':
-                        self.Volx = 2.*Dx_phys - fn.gdiag_gm(self.H_inv_phys, Ex_phys1) # Already unkronned
-                        del Ex_phys1  # Free intermediate array (no longer needed after Volx creation)
-                    self.Dx = Dx_phys  # Store unkronned version (directionally kronned but not neq_node kronned)
-                    
+                        self.Volx = 2.*Dx_phys - fn.gdiag_gm(self.H_inv_phys, Ex_phys) 
+                    self.Dx = Dx_phys 
+                    del Ex_phys, Dx_phys
                     xm = 1 # l=x, m=x
                     ym = 3 # l=y, m=x
-                    Dy_phys = fn.gdiag_gm(0.5/mesh.det_jac, fn.lm_gdiag(Dx,mesh.metrics[:,xm,:]) + fn.gdiag_lm(mesh.metrics[:,xm,:],Dx) \
-                                                          + fn.lm_gdiag(Dy,mesh.metrics[:,ym,:]) + fn.gdiag_lm(mesh.metrics[:,ym,:],Dy) )
-                    Ey_phys1 = fn.lm_gdiag(Exsurf,mesh.metrics[:,xm,:]) + fn.lm_gdiag(Eysurf,mesh.metrics[:,ym,:])
+                    Dy_phys = fn.gdiag_gm(
+                        0.5/mesh.det_jac,
+                        fn.lm_gdiag(Dx, mesh.metrics[:, xm, :]) + fn.gdiag_lm(mesh.metrics[:, xm, :], Dx)
+                        + fn.lm_gdiag(Dy, mesh.metrics[:, ym, :]) + fn.gdiag_lm(mesh.metrics[:, ym, :], Dy)
+                    )
+                    Ey_phys = fn.lm_gdiag(Exsurf, mesh.metrics[:, xm, :]) + fn.lm_gdiag(Eysurf, mesh.metrics[:, ym, :])
                     if disc_type == 'div':
-                        Voly = Dy_phys - fn.gdiag_gm(0.5*self.H_inv_phys, Ey_phys1)
-                        self.Voly = Voly  # Store unkronned version
-                        del Ey_phys1  # Free intermediate array (no longer needed after Voly creation)
+                        self.Voly = Dy_phys - fn.gdiag_gm(0.5*self.H_inv_phys, Ey_phys)
                     elif disc_type == 'had':
-                        self.Voly = 2.*Dy_phys - fn.gdiag_gm(self.H_inv_phys, Ey_phys1) # Already unkronned
-                        del Ey_phys1  # Free intermediate array (no longer needed after Voly creation)
-                    self.Dy = Dy_phys  # Store unkronned version (directionally kronned but not neq_node kronned)
+                        self.Voly = 2.*Dy_phys - fn.gdiag_gm(self.H_inv_phys, Ey_phys) 
+                    self.Dy = Dy_phys 
+                    del Ey_phys, Dy_phys
                 
                 elif form == 'div': # not provably stable
-                    self.Dx = fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,0,:]) + fn.lm_gdiag(Dy,mesh.metrics[:,2,:])))
-                    self.Dy = fn.gdiag_gm(mesh.det_jac_inv, (fn.lm_gdiag(Dx,mesh.metrics[:,1,:]) + fn.lm_gdiag(Dy,mesh.metrics[:,3,:])))
+                    self.Dx = fn.gdiag_gm(
+                        mesh.det_jac_inv,
+                        (fn.lm_gdiag(Dx, mesh.metrics[:, 0, :]) + fn.lm_gdiag(Dy, mesh.metrics[:, 2, :]))
+                    )
+                    self.Dy = fn.gdiag_gm(
+                        mesh.det_jac_inv,
+                        (fn.lm_gdiag(Dx, mesh.metrics[:, 1, :]) + fn.lm_gdiag(Dy, mesh.metrics[:, 3, :]))
+                    )
                 
                 else:
                     raise Exception('Physical operator form not understood.')
+
+                del Dx, Dy, Exsurf, Eysurf
 
         
         elif mesh.dim == 3:
