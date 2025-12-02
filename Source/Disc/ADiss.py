@@ -466,7 +466,7 @@ class ADiss():
             for i in range(1,self.s):
                 Ds = self.lm_lm(Ds1, Ds)
             if self.sparse: Ds.prune()
-            DsT = self.lm_to_lmT(Ds,self.nen,self.nen)
+            DsT = self.lm_to_lmT(Ds,self.nen)
             
             self.rhs_D = Ds  # Store unkronned version 
             if self.use_H:
@@ -481,7 +481,7 @@ class ADiss():
                 Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen, self.bdy_fix)
             if self.sparse: Ds = sp.lm_to_sp(Ds)
             self.rhs_D = Ds  # Store unkronned version 
-            DsT = self.lm_to_lmT(Ds,self.nen,self.nen)
+            DsT = self.lm_to_lmT(Ds,self.nen)
             if self.use_H:
                 Hundvd = np.diag(self.solver.sbp.H) / self.solver.sbp.dx
                 self.lhs_D = self.gdiag_lm(-self.solver.H_inv_phys,self.lm_ldiag(DsT, B * Hundvd))  # Store unkronned version
@@ -556,7 +556,7 @@ class ADiss():
                 Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen, self.bdy_fix)
             if self.sparse: Ds = sp.lm_to_sp(Ds)
             self.rhs_D = Ds  # Store unkronned version 
-            DsT = self.lm_to_lmT(Ds,self.nen,self.nen)
+            DsT = self.lm_to_lmT(Ds,self.nen)
             if self.use_H:
                 Hundvd = np.diag(self.solver.sbp.H) / self.solver.sbp.dx
                 self.lhs_D = self.gdiag_lm(-self.solver.H_inv_phys,self.lm_ldiag(DsT, B * Hundvd))  # Store unkronned version
@@ -577,7 +577,7 @@ class ADiss():
                 B = 1. - (2.*x - 1.)**2
             if self.sparse: D = sp.lm_to_sp(D)
             self.rhs_D = D  # Store unkronned version 
-            DT = self.lm_to_lmT(D,self.nen,self.nen)
+            DT = self.lm_to_lmT(D,self.nen)
             if self.use_H:
                 Hinv_undvd = self.solver.sbp.dx / np.diag(self.solver.sbp.H)
                 self.lhs_D = self.ldiag_lm(Hinv_undvd, self.lm_ldiag(DT, B))  # Store unkronned version
@@ -739,7 +739,7 @@ class ADiss():
             for i in range(1,self.s):
                 Ds = self.lm_lm(Ds1, Ds)
             if self.sparse: Ds.prune()
-            DsT = self.lm_to_lmT(Ds,self.nen,self.nen)
+            DsT = self.lm_to_lmT(Ds,self.nen)
             H = np.diag(self.solver.sbp.H)
 
             self.rhs_Dxi = self.kron_lm_eye(Ds, self.nen)  # Store unkronned version (directionally kronned but not neq_node kronned)
@@ -752,7 +752,7 @@ class ADiss():
             Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen, self.bdy_fix)
             if self.sparse: Ds = sp.lm_to_sp(Ds)
 
-            DsT = self.lm_to_lmT(Ds,self.nen,self.nen)
+            DsT = self.lm_to_lmT(Ds,self.nen)
             self.rhs_Dxi = self.kron_lm_eye(Ds, self.nen)  # Store unkronned version (directionally kronned but not neq_node kronned)
             self.rhs_Deta = self.kron_eye_lm(Ds,self.nen,self.nen)  # Store unkronned version 
             if self.use_H:
@@ -904,7 +904,7 @@ class ADiss():
             if self.s % 2 == 1 and self.avg_half_nodes:
                 maxeig[:-1] = 0.5*(maxeig[:-1] + maxeig[1:])
             A = self.repeat_neq_gv(maxeig)
-            diss = self.gm_gv(self.lhs_D, A * self.lm_gv(self.rhs_D, q))
+            diss = self.gm_gv(self.lhs_D, A * self.lm_gv(self.rhs_D, q, self.neq_node), self.neq_node)
         elif self.dim == 2:
             maxeig = self.maxeig_dEndq(q,self.dxidx)
             if self.s % 2 == 1 and self.avg_half_nodes:

@@ -196,14 +196,9 @@ class lmCSR:
             gm_list.append(lm)
         return gm_list
 
-    def T(self,nrows=0,ncols=0):
+    def T(self,ncols=0):
         # transpose a CSR matrix
-        # nrows (optional) = number of rows in the original CSR matrix
         # ncols (optional) = number of columns in the original CSR matrix
-        if nrows == 0: 
-            nrows = self.nrows
-        else:
-            assert (nrows == self.nrows), f'Number of rows in CSR matrix {self.nrows} does not match inputted nrows {nrows}'
         if ncols == 0: ncols = self.ncols
         
         # Count non-zeros per column (to allocate space)
@@ -221,7 +216,7 @@ class lmCSR:
         next_position = np.zeros(ncols, dtype=np.int64)
 
         # Populate transposed data and indices
-        for row in range(nrows):
+        for row in range(self.nrows):
             for i in range(self.indptr[row], self.indptr[row + 1]):
                 col = self.indices[i]
                 dest = indptrT[col] + next_position[col]
@@ -229,7 +224,7 @@ class lmCSR:
                 indicesT[dest] = row
                 next_position[col] += 1
 
-        lm = lmCSR(dataT, indicesT, indptrT, ncols)
+        lm = lmCSR(dataT, indicesT, indptrT, self.nrows)
         return lm
     
     def kron_eye_lm(self, n, ncols=0):
@@ -619,8 +614,8 @@ def gm_to_gmT(csr_list, nrows=0, ncols=0):
     return c
 
 @njit
-def lm_to_lmT(csr, nrows=0, ncols=0):
-    return csr.T(nrows,ncols)
+def lm_to_lmT(csr, ncols=0):
+    return csr.T(ncols)
 
 @njit
 def lm_lmT(csr1, csr2):
