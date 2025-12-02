@@ -50,7 +50,7 @@ class lmCSR:
         else:
             assert nrows == len(self.indptr) - 1, f'Number of rows in CSR matrix {len(self.indptr) - 1} does not match given nrows {nrows}'
         if ncols == 0:
-            ncols = np.max(self.indices) + 1
+            ncols = self.ncols
         A = np.zeros((nrows, ncols), dtype=self.data.dtype)
         
         for i in range(nrows):

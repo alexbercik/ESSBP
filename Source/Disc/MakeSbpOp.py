@@ -479,11 +479,9 @@ class MakeSbpOp:
                 Dx = fn.gdiag_lm(mesh.det_jac_inv, self.D)
                 self.Dx = Dx  # Store unkronned version
                 if disc_type == 'div':
-                    Volx = Dx - fn.gdiag_lm(0.5*self.H_inv_phys, self.E)
-                    self.Volx = Volx  # Store unkronned version
+                    self.Volx = Dx - fn.gdiag_lm(0.5*self.H_inv_phys, self.E)
                 elif disc_type == 'had':
                     self.Volx = 2.*Dx - fn.gdiag_lm(self.H_inv_phys, self.E) # Already unkronned
-                del Volx
             del Dx
             
 

@@ -1516,7 +1516,7 @@ class PdeSolver:
     def check_conservation(self, q=None, print_result=True):
         ''' check conservation '''
         if q is None:
-            q = self.diffeq.set_q0()
+            q = self.diffeq.set_q0() + 0.01*np.random.rand(*self.qshape)
         dqdt = self.dqdt(q,0.)
         result = self.conservation_der(dqdt)
         if print_result:
@@ -1527,7 +1527,7 @@ class PdeSolver:
     def check_stability(self, q=None, print_result=True):
         ''' check stability '''
         if q is None:
-            q = self.diffeq.set_q0()
+            q = self.diffeq.set_q0() + 0.01*np.random.rand(*self.qshape)
         dqdt = self.dqdt(q,0.)
         result = self.energy_der(q,dqdt)
         result2 = self.entropy_der(q,dqdt)

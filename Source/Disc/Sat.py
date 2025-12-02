@@ -58,7 +58,7 @@ class Sat(SatDer1, SatDer2):
 
         if solver.disc_nodes.lower() == 'circulant': 
             print('... setting SATs to trivially return 0.')
-            self.calc = lambda *x: 0
+            self.calc = lambda *x: np.zeros_like(x[0])
             return
 
         assert isinstance(self.diss_type,str), 'SAT: diss_type must be a str, {0}'.format(self.diss_type)
@@ -211,9 +211,10 @@ class Sat(SatDer1, SatDer2):
             #    self.tb.ncols = self.nen
             if self.disc_type == 'had':
                 if self.sparse:
-                    self.Fsat_diff_periodic = lambda q: sp.Sat1d_had_Fsat_diff_periodic(self.ta, self.tb,
+                    self.taT = sp.lm_to_lmT(self.ta, self.nen)
+                    self.Fsat_diff_periodic = lambda q: sp.Sat1d_had_Fsat_diff_periodic(self.taT, self.tb,
                                                                                         q, self.calc_had_flux, self.neq_node)
-                    self.Fsat_diff_dirichlet = lambda q, qL, qR: sp.Sat1d_had_Fsat_diff_dirichlet(self.ta, self.tb,
+                    self.Fsat_diff_dirichlet = lambda q, qL, qR: sp.Sat1d_had_Fsat_diff_dirichlet(self.taT, self.tb,
                                                                                         q, qL, qR, self.calc_had_flux, self.neq_node)
                 else:
                     self.Fsat_diff_periodic = lambda q: fn.Sat1d_had_Fsat_diff_periodic(self.ta, self.tb,
