@@ -506,16 +506,16 @@ class MakeSbpOp:
                 """
                 tR = sp.lm_to_sp(self.tR.reshape(self.nn, 1))
                 tL = sp.lm_to_sp(self.tL.reshape(self.nn, 1))
-                tRT = tR.T(self.nn, 1)
-                tLT = tL.T(self.nn, 1)
+                tRT = tR.T(1)
+                tLT = tL.T(1)
                 self.txb = sp.kron_lm_eye(tR, self.nn)
                 self.txa = sp.kron_lm_eye(tL, self.nn)
                 self.tyb = sp.kron_eye_lm(tR, self.nn, 1)
                 self.tya = sp.kron_eye_lm(tL, self.nn, 1)
-                self.txbT = self.txb.T
-                self.txaT = self.txa.T
-                self.tybT = self.tyb.T
-                self.tyaT = self.tya.T
+                self.txbT = self.txb.T(self.nn)
+                self.txaT = self.txa.T(self.nn)
+                self.tybT = self.tyb.T(self.nn)
+                self.tyaT = self.tya.T(self.nn)
                 del tR, tL, tRT, tLT
 
                 # Create Exsurf with intermediate cleanup
@@ -724,8 +724,8 @@ class MakeSbpOp:
             # using a sparse sat, so want to save certain SAT matrices
             tR = sp.lm_to_sp(self.tR.reshape(self.nn, 1))
             tL = sp.lm_to_sp(self.tL.reshape(self.nn, 1))
-            tRT = tR.T(self.nn, 1)
-            tLT = tL.T(self.nn, 1)
+            tRT = tR.T(1)
+            tLT = tL.T(1)
             self.txb = sp.kron_lm_eye(sp.kron_lm_eye(tR, self.nn), self.nn)
             self.txa = sp.kron_lm_eye(sp.kron_lm_eye(tL, self.nn), self.nn)
             self.tyb = sp.kron_lm_eye(sp.kron_eye_lm(tR, self.nn, 1), self.nn)
