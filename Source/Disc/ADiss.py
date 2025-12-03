@@ -551,7 +551,7 @@ class ADiss():
                 Ds = Ds / (self.solver.sbp.nn-1) # make undivided
                 for i in range(1,self.s):
                     Ds = fn.lm_lm(self.solver.sbp.D, Ds)
-                B = np.ones(self.nen) # can play with later
+                B = np.ones(self.nen) # can play with later: Though taylor series shows that actually B=1 may actually be the best...
             else:
                 Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen, self.bdy_fix)
             if self.sparse: Ds = sp.lm_to_sp(Ds)
@@ -830,6 +830,52 @@ class ADiss():
             if self.sparse: Ddiss = sp.lm_to_sp(Ddiss)
             self.Dxidiss = self.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), self.kron_neq_lm(self.kron_lm_eye(Ddiss, self.nen),self.neq_node)) 
             self.Detadiss = self.gdiag_lm( fn.repeat_neq_gv(-self.solver.mesh.det_jac_inv,self.neq_node), self.kron_neq_lm(self.kron_eye_lm(Ddiss, self.nen, self.nen),self.neq_node))
+        elif self.type == 'zelalem' or self.type == 'entzelalem':
+            if self.solver.disc_nodes.lower() in ['lgl', 'lg']:
+                if self.D_type == 'sbp':
+                    Ds = self.solver.sbp.D
+                elif self.D_type == '1st':
+                    nn = self.solver.sbp.nn
+                    x = self.solver.sbp.x
+                    Ds = np.zeros((nn,nn))
+                    h = 1/(x[1] - x[0])
+                    Ds[0,0], Ds[0,1] = -h, h
+                    for i in range(1,nn):
+                        h = 1/(x[i] - x[i-1])
+                        Ds[i,i-1], Ds[i,i] = -h, h 
+                else:
+                    raise Exception('Something went wrong')
+                Ds = Ds / (self.solver.sbp.nn-1) # make undivided
+                for i in range(1,self.s):
+                    Ds = fn.lm_lm(self.solver.sbp.D, Ds)
+                B = np.ones(self.nen) # can play with later
+            else:
+                Ds, B = make_dcp_diss_op(self.solver.disc_nodes, self.s, self.nen, self.bdy_fix)
+            if self.sparse: Ds = sp.lm_to_sp(Ds)
+            DsT = self.lm_to_lmT(Ds,self.nen)
+            self.rhs_Dxi = self.kron_lm_eye(Ds, self.nen)  # Store unkronned version (directionally kronned but not neq_node kronned)
+            self.rhs_Deta = self.kron_eye_lm(Ds,self.nen,self.nen)  # Store unkronned version 
+
+            if self.use_H:
+                H = np.diag(self.solver.sbp.H)
+                Hundvd = H / self.solver.sbp.dx
+                DsTBH = self.lm_ldiag(DsT, B * Hundvd)
+                DsTxi = self.kron_lm_ldiag(DsTBH, H)
+                DsTeta = self.kron_ldiag_lm(H, DsTBH, self.nen)
+            else:
+                if self.use_noH:
+                    # uses no H at all
+                    DsTB = self.lm_ldiag(DsT, B * self.solver.sbp.dx)
+                    DsTxi = self.kron_lm_eye(DsTB, self.nen)
+                    DsTeta = self.kron_eye_lm(DsTB, self.nen, self.nen)
+                else:
+                    # uses divided H in the perpendicular direction
+                    H = np.diag(self.solver.sbp.H)
+                    DsTB = self.lm_ldiag(DsT, B)
+                    DsTxi = self.kron_lm_ldiag(DsTB, H) 
+                    DsTeta = self.kron_ldiag_lm(H, DsTB, self.nen)
+            self.lhs_Dxi = self.gdiag_lm(-self.solver.H_inv_phys,DsTxi)  # Store unkronned version
+            self.lhs_Deta = self.gdiag_lm(-self.solver.H_inv_phys,DsTeta)  # Store unkronned version
 
         else:
             raise Exception('ADiss: diss_type ' + self.type + ' not set up yet')
@@ -1278,14 +1324,6 @@ class ADiss():
         ''' dissipation function for zelalem's idea, scalar functions or systems'''
         w = self.entropy_var(q)
         if self.dim == 1:
-            if self.use_A:
-                AP = self.dExdw_abs(q)
-                if self.s % 2 == 1 and self.avg_half_nodes:
-                    AP[:-1] = 0.5*(AP[:-1] + AP[1:])
-                diss = self.gm_gv(self.lhs_D, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_D, w, self.neq_node)), self.neq_node)
-            else:
-                diss = self.gm_gv(self.lhs_D, self.lm_gv(self.rhs_D, w))
-
             if self.eps_type == 0:
                 # plain idea - low order dissipation, should scale as h**(s-1)
                 # TODO: scaling does not come from h**s, but from Jacobian...
@@ -1303,11 +1341,41 @@ class ADiss():
                 # self.eps_type = 3: diff between cons. and non-cons. flux derivative, with normalization of neq_node
                 # self.eps_type = 21: boundary solution jumps, without normalization of neq_node
                 # self.eps_type = 31: diff between cons. and non-cons. flux derivative, without normalization of neq_node
-                
-            return coeff*diss
+
+            if self.use_A:
+                AP = self.dExdw_abs(q)
+                if self.s % 2 == 1 and self.avg_half_nodes:
+                    AP[:-1] = 0.5*(AP[:-1] + AP[1:])
+                diss = coeff * self.gm_gv(self.lhs_D, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_D, w, self.neq_node)), self.neq_node)
+            else:
+                diss = coeff * self.gm_gv(self.lhs_D, self.lm_gv(self.rhs_D, w))
+
+        elif self.dim == 2:
+            if self.eps_type == 0:
+                coeff = self.coeff
+            elif self.eps_type == 1:
+                coeff = self.dx**(self.solver.p-self.s+1) * self.coeff
+            else:
+                coeffxi, coeffeta = self.solver.zelalem_diss_coeff(q)
+                coeffxi, coeffeta = self.coeff * coeffxi, self.coeff * coeffeta
+
+            if self.use_A:
+                AP = self.dEndw_abs(q,self.dxidx)
+                if self.s % 2 == 1 and self.avg_half_nodes:
+                    AP[:-self.nen:self.nen] = 0.5*(AP[:-self.nen:self.nen] + AP[self.nen::self.nen])
+                diss = coeffxi *self.gm_gv(self.lhs_Dxi, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_Dxi, w, self.neq_node)), self.neq_node)
+                AP = self.dEndw_abs(q,self.detadx)
+                if self.s % 2 == 1 and self.avg_half_nodes:
+                    for xi_idx in range(self.nen):
+                        AP[xi_idx*self.nen:(xi_idx+1)*self.nen-1] = 0.5*(AP[xi_idx*self.nen:(xi_idx+1)*self.nen-1] + AP[xi_idx*self.nen+1:(xi_idx+1)*self.nen])
+                diss += coeffeta * self.gm_gv(self.lhs_Deta, fn.gbdiag_gv(AP, self.lm_gv(self.rhs_Deta, w, self.neq_node)), self.neq_node)
+            else:
+                diss = coeffxi * self.gm_gv(self.lhs_Dxi, self.lm_gv(self.rhs_Dxi, w, self.neq_node))
+                diss += coeffeta * self.gm_gv(self.lhs_Deta, self.lm_gv(self.rhs_Deta, w, self.neq_node))
 
         else:
-            raise Exception('TODO')
+            raise Exception('TODO')  
+        return diss
         
     def dissipation_ranocha_scalar(self, q):
         ''' dissipation function for Ranocha's dissipation, scalar functions or systems'''

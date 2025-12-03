@@ -909,16 +909,16 @@ class PdeSolverSbp(PdeSolver):
                     from Source.Disc.MakeDgOp import MakeDgOp
                     sbpp1 = MakeSbpOp(self.p+1, self.disc_nodes, 0, print_progress=False)
                     Vp1top = MakeDgOp.VandermondeLagrange1D(self.sbp.x, sbpp1.x)
-                    self.Vptop1 = fn.kron_neq_lm(MakeDgOp.VandermondeLagrange1D(sbpp1.x, self.sbp.x), self.neq_node)
-                    self.Vp1top_Dp1 = fn.kron_neq_lm(Vp1top @ sbpp1.D, self.neq_node)
-                    self.Dp = fn.kron_neq_lm(self.sbp.D, self.neq_node)
+                    self.Vptop1 = MakeDgOp.VandermondeLagrange1D(sbpp1.x, self.sbp.x)
+                    self.Vp1top_Dp1 = Vp1top @ sbpp1.D
+                    self.Dp = self.sbp.D
                     if self.sparse:
                         self.Vptop1 = sp.lm_to_sp(self.Vptop1)
                         self.Vp1top_Dp1 = sp.lm_to_sp(self.Vp1top_Dp1)
                         self.Dp = sp.lm_to_sp(self.Dp)
-                # TODO: could generalize this to residual? can't use q otherwise pointless
-                vp = self.lm_gv(self.Dp, self.diffeq.calcEx(q))
-                vp1 = self.lm_gv(self.Vp1top_Dp1, self.diffeq.calcEx(self.lm_gv(self.Vptop1, q)))
+                # TODO: could generalize this to residual? otherwise can't use q for linear problems
+                vp = self.lm_gv(self.Dp, self.diffeq.calcEx(q), self.neq_node)
+                vp1 = self.lm_gv(self.Vp1top_Dp1, self.diffeq.calcEx(self.lm_gv(self.Vptop1, q, self.neq_node)), self.neq_node)
                 if eps_type == 4:
                     # take the norm in case we have system
                     denom = np.linalg.norm(vp + vp1, axis=0)
@@ -934,10 +934,56 @@ class PdeSolverSbp(PdeSolver):
             else:
                 raise Exception('Desired type not implemented yet')
             #TODO: use something based on entropy flux like in "Entropy correction with SIAC filters, Picklo & Edoh"
+            return coeff
+
         elif self.dim == 2:
-            raise Exception('Not implemented yet')
+            if eps_type == 4 or eps_type == 41:
+                "difference between degree p and degree p+1 flux derivatives"
+                if self.Vptop1 is None:
+                    # have not set up the p+1 derivative yet
+                    assert self.disc_nodes in ['lgl','lg','nc'], 'ERROR: Interpolation only implemented for element-type.'
+                    from Source.Disc.MakeDgOp import MakeDgOp
+                    sbpp1 = MakeSbpOp(self.p+1, self.disc_nodes, 0, print_progress=False)
+                    Vp1top = MakeDgOp.VandermondeLagrange1D(self.sbp.x, sbpp1.x)
+                    Vptop1 = MakeDgOp.VandermondeLagrange1D(sbpp1.x, self.sbp.x)
+                    self.Vptop1 = np.kron(Vptop1, Vptop1)
+                    self.Vp1top_Dp1xi = np.kron(Vp1top @ sbpp1.D, Vp1top)
+                    self.Vp1top_Dp1eta = np.kron(Vp1top, Vp1top @ sbpp1.D)
+                    self.Dpxi = np.kron(self.sbp.D, np.eye(self.nen))
+                    self.Dpeta = np.kron(np.eye(self.nen), self.sbp.D)
+                    if self.sparse:
+                        self.Vptop1 = sp.lm_to_sp(self.Vptop1)
+                        self.Vp1top_Dp1xi = sp.lm_to_sp(self.Vp1top_Dp1xi)
+                        self.Vp1top_Dp1eta = sp.lm_to_sp(self.Vp1top_Dp1eta)
+                        self.Dpxi = sp.lm_to_sp(self.Dpxi)
+                        self.Dpeta = sp.lm_to_sp(self.Dpeta)
+                # TODO: could generalize this to residual? otherwise can't use q for linear problems
+                vpxi = self.lm_gv(self.Dpxi, self.diffeq.calcEx(q), self.neq_node)
+                vp1xi = self.lm_gv(self.Vp1top_Dp1xi, self.diffeq.calcEx(self.lm_gv(self.Vptop1, q, self.neq_node)), self.neq_node)
+                vpeta = self.lm_gv(self.Dpeta, self.diffeq.calcEy(q), self.neq_node)
+                vp1eta = self.lm_gv(self.Vp1top_Dp1eta, self.diffeq.calcEy(self.lm_gv(self.Vptop1, q, self.neq_node)), self.neq_node)
+                if eps_type == 4:
+                    # take the norm in case we have system
+                    denomxi = np.linalg.norm(vpxi + vp1xi, axis=0)
+                    denometa = np.linalg.norm(vpeta + vp1eta, axis=0)
+                    coeffxi = np.divide(np.linalg.norm(vpxi - vp1xi, axis=0), denomxi,
+                                        out=np.zeros_like(denomxi, dtype=float), where=denomxi!=0)
+                    coeffeta = np.divide(np.linalg.norm(vpeta - vp1eta, axis=0), denometa,
+                                        out=np.zeros_like(denometa, dtype=float), where=denometa!=0)
+                else:
+                    # returns shape (neq,nelem)
+                    denomxi = fn.block_norm_gv_neq(vpxi + vp1xi, self.neq_node)
+                    denometa = fn.block_norm_gv_neq(vpeta + vp1eta, self.neq_node)
+                    coeffxi = np.divide(fn.block_norm_gv_neq(vpxi - vp1xi, self.neq_node), denomxi,
+                                        out=np.zeros_like(denomxi, dtype=float), where=denomxi!=0)
+                    coeffeta = np.divide(fn.block_norm_gv_neq(vpeta - vp1eta, self.neq_node), denometa,
+                                        out=np.zeros_like(denometa, dtype=float), where=denometa!=0)
+                    coeffxi = fn.repeat_nen_gv(coeffxi, self.nen)
+                    coeffeta = fn.repeat_nen_gv(coeffeta, self.nen)
+            else:
+                raise Exception('Desired type not implemented yet')
+
+            return coeffxi, coeffeta
         elif self.dim == 3:
             raise Exception('Not implemented yet')
-        
-        return coeff
         
