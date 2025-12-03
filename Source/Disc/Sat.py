@@ -301,8 +301,8 @@ class Sat(SatDer1, SatDer2):
 
                 if self.sparse:
                     nrows = self.nen*self.nen
-                    self.taphysxT = [sp.gm_to_gmT(gm_mat,nrows,nrows) for gm_mat in taphysx]
-                    self.taphysyT = [sp.gm_to_gmT(gm_mat,nrows,nrows) for gm_mat in taphysy]
+                    self.taphysxT = [sp.gm_to_gmT(gm_mat,nrows) for gm_mat in taphysx]
+                    self.taphysyT = [sp.gm_to_gmT(gm_mat,nrows) for gm_mat in taphysy]
                     self.Fsat_diff_periodic = lambda q, idx: sp.Sat2d_had_Fsat_diff_periodic(self.taphysxT[idx],self.taphysyT[idx],
                                                                                             self.tbphysx[idx],self.tbphysy[idx],
                                                                                             q, self.calc_had_flux, self.neq_node)

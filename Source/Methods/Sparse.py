@@ -600,7 +600,7 @@ def lm_gm(csr, csr_list):
     return c
 
 @njit
-def gm_to_gmT(csr_list, nrows=0, ncols=0):
+def gm_to_gmT(csr_list, ncols=0):
     '''
     Take the tanspose of a list of CSR matrices.
 
@@ -610,7 +610,7 @@ def gm_to_gmT(csr_list, nrows=0, ncols=0):
         Each element in the list is a tuple (data, indices, indptr) representing a sparse matrix in CSR format
 
     '''
-    c = [csr.T(nrows,ncols) for csr in csr_list]
+    c = [csr.T(ncols) for csr in csr_list]
     return c
 
 @njit
