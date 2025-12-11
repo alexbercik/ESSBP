@@ -87,6 +87,9 @@ class SbpQuadRule:
                 if self.quad_rule.lower() == 'lg':
                     self.xq, self.wq, self.pquad = self.quad_rule_1D(pquad_min, 'lg', self.nmin, self.nn)
                     self.xqf, self.wqf, self.pfquad = self.quad_rule_0D()
+                elif self.quad_rule.lower() == 'lg_exp':
+                    self.xq, self.wq, self.pquad = self.quad_rule_lg_exp(self.nn)
+                    self.xqf, self.wqf, self.pfquad = self.quad_rule_0D()
                 else: raise Exception('Invalid choice for quad_rule in Rd family')
             elif self.dim == 2:
                 self.xq, self.wq,self.pquad = self.quad_rule_2d_Rd(self.p)
@@ -722,3 +725,18 @@ class SbpQuadRule:
             raise Exception('The requested degree for the DD Rd quad is not available')
 
         return xq, wq, pquad, xqf, wqf, pquadf
+
+    def quad_rule_lg_exp(n):
+        '''
+        Here n is the number of nodes. There are 2n basis functions,
+        {1, log(x), x, x*log(x), x^2, x^2*log(x), ... x^(n-1), x^(n-1)*log(x)}
+        '''
+        if n == 3:
+            pquad = 2
+            wq = np.array([0.2985307764787258, 0.4438168260729103, 0.25765239744836466])
+            xq = np.array([0.12241831729870471, 0.5237495117347201, 0.8965781844636949])
+        else:
+            raise Exception('The requested n for the exp quad is not available')
+        
+        return xq, wq, pquad
+

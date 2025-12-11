@@ -44,6 +44,7 @@ class BasisFun:
 
         ''' Build the Vandermonde matrix and its derivative '''
 
+        #TODO: remove indices? Don't know what it's for.
         if self.basis_type == "monomial":
             self.van, self.van_der, self.indices = self.basis_monomial(self.xy, self.p)
         elif self.basis_type == 'legendre':
@@ -51,6 +52,8 @@ class BasisFun:
         elif self.basis_type == "lagrange":
             raise Exception("Error, not yet available")
             # self.van, self.van_der, self.indices = self.basis_lagrange(self.xy, self.p)
+        elif self.basis_type == 'lg_exp':
+            self.van, self.van_der, self.indices = self.basis_lg_exp(self.xy)
         else:
             raise Exception("Error, not yet available")
 
@@ -154,6 +157,8 @@ class BasisFun:
         elif basis == 'lagrange':
             raise Exception('The requested basis type is not available')
             # van, van_der, indices = BasisFun.basis_lagrange(xy, p)
+        elif basis == 'lg_exp':
+            van, van_der, indices = BasisFun.basis_lg_exp(xy)
         else:
             raise Exception('The requested basis type is not available')
 
@@ -356,6 +361,31 @@ class BasisFun:
                     van_der[0,:,idx] = leg_der_1d_x[0,:,a] * leg_1d_y[:, b] * leg_1d_z[:, c]
                     van_der[1,:,idx] = leg_1d_x[:, a] * leg_der_1d_y[0,:,b] * leg_1d_z[:, c]
                     van_der[2,:,idx] = leg_1d_x[:, a] * leg_1d_y[:, b] * leg_der_1d_z[0,:,c]
+
+        return van, van_der, indices
+
+    @staticmethod
+    def basis_lg_exp(xy):
+        ''' See the function basis_function '''
+        #TODO: Generalize. Use Legendre? Make exp function more orthogonal for better conditioning?
+        # Common data
+        [nn, dim] = np.shape(xy)
+        assert dim == 1, "Only 1D supported for lg_exp basis"
+        assert nn == 3, "Only 3 nodes supported for lg_exp basis"
+        n_p = nn # cardinality
+
+        # Initiate matrices
+        van = np.zeros((nn, n_p))
+        van_der = np.zeros((dim, nn, n_p))
+        indices = np.zeros((dim, n_p), dtype=int) # ignore
+
+        d = 0
+        van[:,0] = 1
+        van_der[d,:,0] = 0
+        van[:,1] = xy[:,0]
+        van_der[d,:,1] = np.ones(nn)
+        van[:,2] = np.exp(xy[:,0])
+        van_der[d,:,2] = np.exp(xy[:,0])
 
         return van, van_der, indices
 

@@ -19,12 +19,9 @@ def cabs(x):
     return res
 
 @njit
-def _gm_gv_unkronned(A, b, neq_node):
+def _gm_gv_unkronned_real(A, b, neq_node):
     """
-    Un-kronned helper for gm_gv with a single block and rectangular A.
-
-    Interprets the operation as, per element e:
-        c_e = (A_e ⊗ I_{neq_node}) @ b_e
+    Fast path for real inputs: uses BLAS-backed matmul inside njit.
 
     Shapes:
         A: (nen1, nen2, nelem)
@@ -37,7 +34,6 @@ def _gm_gv_unkronned(A, b, neq_node):
     if nelem != nelem_b:
         raise ValueError("Shape mismatch: A.shape[2] != b.shape[1]")
 
-    # Input must be exactly nen2 * neq_node (one block, no repetition)
     block_size_in = nen2 * neq_node
     if n_in != block_size_in:
         raise ValueError(
@@ -49,17 +45,44 @@ def _gm_gv_unkronned(A, b, neq_node):
     c = np.zeros((block_size_out, nelem), dtype=b.dtype)
 
     for e in range(nelem):
-        # b_e: (nen2 * neq_node,) → (nen2, neq_node)
-        b_slice = np.ascontiguousarray(b[:, e])
-        b_block = b_slice.reshape(nen2, neq_node)
-
-        # A_e: (nen1, nen2)
+        b_block = np.ascontiguousarray(b[:, e]).reshape(nen2, neq_node)
         A_e = np.ascontiguousarray(A[:, :, e])
-
-        # (nen1, nen2) @ (nen2, neq_node) → (nen1, neq_node)
         c_block = A_e @ b_block
+        c[:, e] = c_block.reshape(block_size_out)
 
-        # flatten to (nen1 * neq_node,)
+    return c
+
+
+@njit
+def _gm_gv_unkronned_complex(A, b, neq_node):
+    """
+    Fast path for real inputs: uses BLAS-backed matmul inside njit.
+
+    Shapes:
+        A: (nen1, nen2, nelem)
+        b: (nen2 * neq_node, nelem)
+        c: (nen1 * neq_node, nelem)
+    """
+    nen1, nen2, nelem = A.shape
+    n_in, nelem_b = b.shape
+
+    if nelem != nelem_b:
+        raise ValueError("Shape mismatch: A.shape[2] != b.shape[1]")
+
+    block_size_in = nen2 * neq_node
+    if n_in != block_size_in:
+        raise ValueError(
+            f"b.shape[0]={n_in} must equal nen2*neq_node={block_size_in} "
+            "(single-block A ⊗ I_neq_node)"
+        )
+
+    block_size_out = nen1 * neq_node
+    c = np.zeros((block_size_out, nelem), dtype=b.dtype)
+
+    for e in range(nelem):
+        b_block = np.ascontiguousarray(b[:, e]).reshape(nen2, neq_node)
+        A_e = np.ascontiguousarray(A[:, :, e])
+        c_block = A_e @ b_block
         c[:, e] = c_block.reshape(block_size_out)
 
     return c
@@ -123,52 +146,10 @@ def gm_gv(A, b, neq_node=None):
         assert nen_neq == nen2 * neq_node, f'b shape {nen_neq} should be {nen2}*{neq_node}'
         
         # Use numba-compiled helper for performance
-        return _gm_gv_unkronned(A_cast, b_cast, neq_node)
-
-# TODO: This is the function to speed up (is approximately 40% of total code runtime)
-def gm_gv(A,b,neq_node=None):
-    '''
-    Equivalent to np.einsum('ijk,jk->ik',A,b) where A is a 3-tensor of shape
-    (nen1,nen2,nelem) and b is a 2-tensor of shape (nen2,nelem). This can be 
-    thought of as a global matrix @ global vector.
-    Faster than A[:,:,e]@b[:,e] because A[:,:,e] is not a contigous array
-    
-    If neq_node is provided, A is assumed to be unkronned (shape (nen,nen,nelem))
-    and b is kronned (shape (nen*neq_node,nelem)). The function handles the
-    neq_node dimension manually.
-
-    Parameters
-    ----------
-    A : numpy array of shape (nen1,nen2,nelem) or (nen,nen,nelem) if neq_node provided
-    b : numpy array of shape (nen2,nelem) or (nen*neq_node,nelem) if neq_node provided
-    neq_node : int, optional
-        Number of equations per node. If provided, A is unkronned and b is kronned.
-
-    Returns
-    -------
-    c : numpy array of shape (nen1,nelem) or (nen*neq_node,nelem) if neq_node provided
-    '''
-    # Optimize: neq_node == 1 is equivalent to None (no kronning needed)
-    if neq_node is None or neq_node == 1:
-        # Original behavior: both A and b are kronned (or neq_node == 1)
-        nen1,nen2,nelem = np.shape(A)
-        nen2b,nelemb = np.shape(b)
-        assert nen2==nen2b, f'array shapes do not match, {nen2} != {nen2b}' 
-        assert nelem==nelemb, f'element shapes do not match, {nelem} != {nelemb}'
-        
-        # Use numba-compiled helper for performance
-        return _gm_gv_kronned(A, b)
-    else:
-        # New behavior: A is unkronned, b is kronned (possibly repeated across spatial blocks)
-        nen, nen2, nelem = np.shape(A)
-        nen_neq, nelemb = np.shape(b)
-        assert nen == nen2, f'A must be square (unkronned), got shape {np.shape(A)}'
-        assert nelem == nelemb, f'element shapes do not match, {nelem} != {nelemb}'
-        block_size = nen * neq_node
-        assert nen_neq % block_size == 0, f'b shape {nen_neq} should be a multiple of {nen}*{neq_node}'
-        
-        # Use numba-compiled helper for performance
-        return _gm_gv_unkronned(A, b, neq_node)
+        if target_dtype == np.float64:
+            return _gm_gv_unkronned_real(A_cast, b_cast, neq_node)
+        else:
+            return _gm_gv_unkronned_complex(A_cast, b_cast, neq_node)
 
 @njit
 def gm_gm(A,B):

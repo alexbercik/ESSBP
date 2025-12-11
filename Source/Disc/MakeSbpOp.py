@@ -259,6 +259,12 @@ class MakeSbpOp:
             elif self.sbp_type == 'nc':
                 self.sbp_fam = 'R0'
                 self.quad = SbpQuadRule(p, sbp_fam='R0', nn=self.nn, quad_rule='nc')
+            elif self.sbp_type == 'lg_exp':
+                if self.nn == 0: self.nn = p + 1
+                if self.p != self.nn-1: self.p = self.nn-1
+                self.sbp_fam = 'Rd'
+                self.quad = SbpQuadRule(p, sbp_fam='Rd', nn=self.nn, quad_rule='lg_exp')
+                self.basis_type = 'lg_exp'
             else:
                 raise Exception('Misunderstood SBP type.')
                 
@@ -275,7 +281,8 @@ class MakeSbpOp:
             self.van = elem_basis.van
             self.van_der = elem_basis.van_der[0]
             self.tL = self.construct_tL(self.nn,self.van,self.p)   # interpolation vector for left node
-            self.tR = np.flip(self.tL)                             # interpolation vector for right node
+            self.tR = self.construct_tR(self.nn,self.van,self.p)
+            #self.tR = np.flip(self.tL)                             # interpolation vector for right node
             self.E = np.outer(self.tR, self.tR) - np.outer(self.tL, self.tL) # surface integral
             self.D, self.Q, self.S = self.construct_op(self.p, self.nn, self.van, self.van_der, self.E, self.H)
 
@@ -313,6 +320,30 @@ class MakeSbpOp:
             tL = np.linalg.lstsq(van.T, van_f.T, rcond=None)[0]
 
         return tL
+
+    def construct_tR(self,nn,van,p):
+        '''
+        Returns
+        -------
+        tR : numpy array
+            This is the right int/ext operator tR.
+        '''
+
+        # Refer to Section 2.3 of André Marchildon's SBP thesis for more
+        # information on the construction of the operator rr that ensures
+        # symmetrical contributions across symmetry lines or planes. Also
+        # refer to Appendix C for the required equations.
+
+        if self.sbp_fam != 'Rd': 
+            tL = np.zeros(nn)
+            tL[-1] = 1
+
+        else:
+            # This is simplified code from Andre assuming everything 1D, facet 0D
+            van_f = BasisFun.facet_vandermonde(np.array([[1.]]), p, False, self.basis_type)[1].flatten()
+            tR = np.linalg.lstsq(van.T, van_f.T, rcond=None)[0]
+
+        return tR
 
     @staticmethod
     def construct_op(p, nn, van, van_der, E, H):
