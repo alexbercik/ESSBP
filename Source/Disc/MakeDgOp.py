@@ -18,7 +18,6 @@ sys.path.append(root_folder_path)
 import numpy as np
 
 from Source.Disc.SbpQuadRule import SbpQuadRule
-from Source.Disc.RefSimplexElem import RefSimplexElem
 from Source.Disc.MakeSbpOp import MakeSbpOp
 
 class MakeDgOp:
@@ -71,7 +70,6 @@ class MakeDgOp:
         ############################ FACET NODES #############################
         # Define facet nodes. Once again, collocate for DGSEM
         # TODO: temporarily adding this in
-        #ref_elem = RefSimplexElem(self.dim)
         # vert: each row is the cartesian coordinate for one vertex
         self.vert = np.array([[0],[1]]) #ref_elem.vert
         # normal: each row gives an outward (not unit) normal vector for a facet
@@ -220,7 +218,7 @@ class MakeDgOp:
 
     @staticmethod
     def VandermondeLagrange1D(xFlux,xNode,wBary=None):
-        """
+        r"""
         Purpose
         -------
         Calculates the Vandermonde Matrix in 1D from a Lagrange basis. Using
@@ -477,7 +475,7 @@ class MakeDgOp:
     
     @staticmethod
     def InnerProduct(weights=None):
-        """
+        r"""
         Purpose
         -------
         Defines the discrete inner product between two vectors represented by

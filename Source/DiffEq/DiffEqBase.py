@@ -373,7 +373,7 @@ class PdeBase:
                  show_fig=True, ymin=None, ymax=None, display_time=False, 
                  title=None, plot_mesh=False, save_format='png', dpi=300,
                  plot_only_exa=False, var2plot_name=None, legendloc=None, legend=True,
-                 show_negative=False, time_round=2, figsize=None, **kwargs):
+                 show_negative=False, time_round=2, figsize=None, ymin_negative=None, **kwargs):
         '''
         Purpose
         ----------
@@ -489,13 +489,14 @@ class PdeBase:
                     ax.set_yticks(edge_verticesy)
 
             if show_negative:
+                if ymin_negative is None: ymin_negative = ymin
                 # to really make it obvious, add squares where solution is less than ymin
                 square_size = 0.005*np.sqrt((self.xmax[0] - self.xmin[0])**2 +
                                            (self.xmax[1] - self.xmin[1])**2 )  # physical size of the square
                 import matplotlib.patches as patches
                 for i in range(len(x)):
                     for j in range(len(y)):
-                        if num_sol[i, j] < ymin:
+                        if num_sol[i, j] < ymin_negative:
                             # You may need to adjust x[j] and y[i] depending on mesh alignment
                             ax.add_patch(patches.Rectangle(
                                         (x[i,j] - square_size/2, y[i,j] - square_size/2),
@@ -546,6 +547,95 @@ class PdeBase:
                  show_fig=show_fig, ymin=ymin, ymax=ymax, display_time=display_time, 
                  title=title, plot_mesh=plot_mesh, save_format=save_format, dpi=dpi,
                  plot_only_exa=True)
+
+    def plot_slice(self, q, x=None, xslice=None, yslice=None, 
+                 time=None,savefile=None, show_fig=True, ymin=None, ymax=None, display_time=False, 
+                 title=None, save_format='png', dpi=300, show_plot=True,
+                 var2plot_name=None, legendloc=None, legend=True,
+                 time_round=2, figsize=None, return_slice=False,**kwargs):
+        '''
+        Purpose
+        ----------
+        Used to plot the solution: Note assumes an unwarped grid!
+        
+        '''
+
+        if var2plot_name is None:
+            var2plot_name = self.var2plot_name
+        if legendloc is None:
+            legendloc = 'best'
+
+        if x is None: 
+            xy = np.copy(self.xy_elem)
+            nen = self.nen
+        else:
+            xy = np.copy(x)
+            nen = int(np.sqrt(xy.shape[0]))
+
+        # Now find the closest x or y to slice
+        n_idcs_expected = int(np.sqrt(xy[:,0,:].size))
+        if yslice is None:
+            slice_idx = np.unravel_index(np.argmin(np.abs(xy[:,0,:] - xslice)), xy[:,0,:].shape)
+            xslice = xy[slice_idx[0],0,slice_idx[1]]
+            print(f'Slicing at x={xslice}')
+            idcs = np.argwhere(np.abs(xy[:,0,:] - xslice)<1e-10)
+            xy = xy[idcs[:,0],1,idcs[:,1]]
+        else:
+            slice_idx = np.unravel_index(np.argmin(np.abs(xy[:,1,:] - yslice)), xy[:,1,:].shape)
+            yslice = xy[slice_idx[0],1,slice_idx[1]]
+            print(f'Slicing at y={yslice}')
+            idcs = np.argwhere(np.abs(xy[:,1,:] - yslice)<1e-10)
+            xy = xy[idcs[:,0],0,idcs[:,1]]
+
+        n_idcs = idcs.shape[0]
+        if n_idcs != n_idcs_expected:
+            # This may happen, for example, if you choose a slice along a boundary with doubled nodes
+            raise Exception(f'Expected {n_idcs_expected} nodes within 1e-10 of the slice at x={xslice} or y={yslice}, but found {n_idcs}')
+    
+        num_sol = self.var2plot(q,var2plot_name)[idcs[:,0],idcs[:,1]]
+
+        #ax.plot(xy, num_sol, linestyle='', marker='.')
+        order = np.argsort(xy)
+        x_sorted = xy[order]
+        y_sorted = num_sol[order]
+        if show_plot:
+            if figsize is None: figsize=self.plt_fig_size 
+            fig = plt.figure(figsize=figsize)
+            ax = plt.axes()
+            ax.plot(x_sorted, y_sorted, **self.plt_style_sol[0])
+            plt.xlabel(r'$x$',fontsize=self.plt_label_font_size)
+            if var2plot_name is None:
+                plt.ylabel(r'$u$',fontsize=self.plt_label_font_size,rotation=0,labelpad=15)
+            else:
+                plt.ylabel(var2plot_name,fontsize=self.plt_label_font_size,rotation=0,labelpad=15)
+
+            if display_time and (time is not None):
+                # define matplotlib.patch.Patch properties
+                # TODO: Add a check to see whether to set alpha or not
+                props = dict(boxstyle='round', facecolor='white', alpha=0.5)
+                ax.text(0.05, 0.95, f'$t={round(time,time_round)}$', transform=ax.transAxes, 
+                        fontsize=self.plt_label_font_size, verticalalignment='top', bbox=props)
+            
+            if plt.title is not None:
+                plt.title(title,fontsize=self.plt_label_font_size+1)
+
+            plt.tight_layout()
+            
+            if savefile is not None:
+                filename = savefile+'.'+save_format
+                if path.exists(filename):
+                    print('WARNING: File name already exists. Using a temporary name instead.')
+                    plt.savefig(filename+'_RENAMEME', format=save_format, dpi=dpi)
+                else: 
+                    plt.savefig(filename, format=save_format, dpi=dpi)
+                
+            if show_fig:
+                plt.show()
+            plt.close()
+        if return_slice:
+            return x_sorted, y_sorted
+
+        
             
 
     ''' Terms for the first derivative: E '''
