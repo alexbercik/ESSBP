@@ -26,6 +26,7 @@ from scipy.linalg import null_space
 from Source.Disc.BasisFun import BasisFun
 from Source.Disc.SbpQuadRule import SbpQuadRule
 from Source.Disc.CSbpOp import CSbpOp, HGTLOp, HGTOp, MattOp, HGTLOp_DDRF, HGTLOp_DDRF2
+from Source.Disc.GlaubitzOp import GlaubitzOp
 import Source.Methods.Functions as fn
 import Source.Methods.Sparse as sp
 from Source.Disc.MakeMesh import MakeMesh
@@ -248,6 +249,20 @@ class MakeSbpOp:
             self.E = np.zeros((self.nn,self.nn))
             self.tL, self.tR = np.zeros(self.nn), np.zeros(self.nn)
             print_progress = False
+        
+        elif sbp_type.lower()=='glaubitz_exp':
+            self.bdy_nodes = True
+            if self.p is None or self.p < 1:
+                raise Exception('p must be set for glaubitz_exp. Set it according to equivalent polynomial basis.')
+            self.nb = self.p + 1 # assume equivalent polynomial basis first to set nb, then fix it
+            self.p = self.nb - 2 # nb-1 polynomial basis vectors, up to degree nb-2
+            self.dx = 1.
+            self.H, self.D, self.Q, self.E, self.S, self.x = GlaubitzOp(self.nb,'exp')
+            self.nn = len(self.x)
+            self.tL, self.tR = np.zeros(self.nn), np.zeros(self.nn)
+            self.tL[0] , self.tR[-1] = 1 , 1
+            #TODO: Should I add the basis?
+            
 
         else:
             ''' Build Element-type SBP Operators '''
@@ -276,7 +291,7 @@ class MakeSbpOp:
                     print('WARNING: lg_exp - no nn set. Assuming nn = p + 1 = {0}'.format(p + 1))
                     self.nn = self.p + 1
                 self.nb = self.nn
-                self.p = self.nb - 1
+                self.p = self.nb - 2 # nb-1 polynomial basis vectors, up to degree nb-2
                 self.quad = SbpQuadRule(p, sbp_fam='Rd', nn=self.nn, quad_rule='lg_exp')
                 self.basis_type = 'exponential'
             else:
@@ -296,7 +311,7 @@ class MakeSbpOp:
             self.van_der = self.basis._Vx
             self.tL, self.tR = self.construct_tL_tR()   # boundary interpolation vectors
             self.E = np.outer(self.tR, self.tR) - np.outer(self.tL, self.tL) # surface integral
-            self.D, self.Q, self.S = self.construct_op(self.p, self.nn, self.van, self.van_der, self.E, self.H)
+            self.D, self.Q, self.S = self.construct_op(self.nb, self.nn, self.van, self.van_der, self.E, self.H)
 
         ''' Test the operators '''
         if print_progress: 
@@ -337,7 +352,7 @@ class MakeSbpOp:
         return tL, tR
 
     @staticmethod
-    def construct_op(p, nn, van, van_der, E, H):
+    def construct_op(nb, nn, van, van_der, E, H):
         '''
         Returns
         -------
@@ -356,10 +371,12 @@ class MakeSbpOp:
         use_optz_method = False
         # Slightly more accurate to set as False for 1D operators 
         # (roundoff error, the actual operators are the same)
-        
-        n_p = p + 1 # for 1D
 
         if use_optz_method:
+
+            n_p = nb # TODO not sure if this is correct, previously was below
+            #n_p = p + 1 # for 1D
+
             n_dof = int(np.round(nn*(nn-1)/2))
             n_ind_eq = int(np.round(n_p * (n_p-1)/2 + n_p*(nn-n_p)))
 
@@ -409,7 +426,7 @@ class MakeSbpOp:
             dd = np.linalg.solve(H, qq)
 
         else:
-            num_w_col = nn - n_p
+            num_w_col = nn - nb
 
             if num_w_col > 0:
                 # Create square invertible matrix by appending self.van with its nullspace
