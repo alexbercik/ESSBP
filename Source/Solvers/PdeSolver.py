@@ -947,22 +947,27 @@ class PdeSolver:
                         new_x = x[mask] # Apply mask to remove duplicates
                         new_y = y[mask]
                         return new_x, new_y
-                    if self.disc_nodes == 'lgl':
-                        # evaluate eigenvectors at equispaced nc nodes so fft works
+                    if self.sbp.basis is not None:
                         nc_nodes = np.linspace(0,1,self.nen,endpoint=True)
-                        elem_nodes = np.reshape(self.sbp.x,(self.nen,1))
-                        wBary = MakeDgOp.BaryWeights(elem_nodes)
-                        V_to_nc = MakeDgOp.VandermondeLagrange1D(nc_nodes,elem_nodes,wBary)
                         for elem in range(self.nelem):
-                            eigvecs[elem*self.nen:(elem+1)*self.nen] = V_to_nc @ eigvecs[elem*self.nen:(elem+1)*self.nen]
-                    elif self.disc_nodes == 'lg':
-                        # evaluate eigenvectors at equispaced nodes (not nc) so fft works
-                        nc_nodes = np.linspace(0,1,self.nen,endpoint=False)
-                        elem_nodes = np.reshape(self.sbp.x,(self.nen,1))
-                        wBary = MakeDgOp.BaryWeights(elem_nodes)
-                        V_to_nc = MakeDgOp.VandermondeLagrange1D(nc_nodes,elem_nodes,wBary)
-                        for elem in range(self.nelem):
-                            eigvecs[elem*self.nen:(elem+1)*self.nen] = V_to_nc @ eigvecs[elem*self.nen:(elem+1)*self.nen]
+                            eigvecs[elem*self.nen:(elem+1)*self.nen] = self.sbp.basis.eval_nodal_vec(eigvecs[elem*self.nen:(elem+1)*self.nen], nc_nodes)
+
+                    # if self.disc_nodes == 'lgl':
+                    #     # evaluate eigenvectors at equispaced nc nodes so fft works
+                    #     nc_nodes = np.linspace(0,1,self.nen,endpoint=True)
+                    #     elem_nodes = np.reshape(self.sbp.x,(self.nen,1))
+                    #     wBary = MakeDgOp.BaryWeights(elem_nodes)
+                    #     V_to_nc = MakeDgOp.VandermondeLagrange1D(nc_nodes,elem_nodes,wBary)
+                    #     for elem in range(self.nelem):
+                    #         eigvecs[elem*self.nen:(elem+1)*self.nen] = V_to_nc @ eigvecs[elem*self.nen:(elem+1)*self.nen]
+                    # elif self.disc_nodes == 'lg':
+                    #     # evaluate eigenvectors at equispaced nodes (not nc) so fft works
+                    #     nc_nodes = np.linspace(0,1,self.nen,endpoint=False)
+                    #     elem_nodes = np.reshape(self.sbp.x,(self.nen,1))
+                    #     wBary = MakeDgOp.BaryWeights(elem_nodes)
+                    #     V_to_nc = MakeDgOp.VandermondeLagrange1D(nc_nodes,elem_nodes,wBary)
+                    #     for elem in range(self.nelem):
+                    #         eigvecs[elem*self.nen:(elem+1)*self.nen] = V_to_nc @ eigvecs[elem*self.nen:(elem+1)*self.nen]
 
                     
                     new_x, new_eigvecs = remove_duplicates_and_average(self.mesh.x, eigvecs)
@@ -1396,26 +1401,76 @@ class PdeSolver:
             print('WARNING: No time specified in plot_sol. Using t_final.')
             kwargs['time']=self.t_final
         if 'plot_exa' not in kwargs: kwargs['plot_exa']=True
-        if self.disc_nodes in ['lgl','lg','nc'] and interpolate:
+        if self.sbp.basis is not None and interpolate:
+            x50 = np.linspace(0,1,50)
+            q = self.sbp.basis.eval_nodal_vec(q, x50, neq_node=self.neq_node, dim=self.dim)
+            # the following is not strictly correct if nonpolynommial grid warping, but is good enough
             if self.dim==1:
-                x50 = np.linspace(0,1,50)
-                V = MakeDgOp.VandermondeLagrange1D(x50,self.sbp.x)
-                x = V @ self.mesh.x_elem # strictly not correct if nonpolynommial grid warping, but good enough
-                from Source.Methods.Functions import kron_neq_lm
-                q = kron_neq_lm(V,self.neq_node) @ q
+                x = self.sbp.basis.eval_nodal_vec(self.mesh.x_elem, x50)
                 self.diffeq.plot_sol(q, x, **kwargs)
             elif self.dim==2:
-                x50 = np.linspace(0,1,50)
-                V = MakeDgOp.VandermondeLagrange1D(x50,self.sbp.x)
-                V = np.kron(V,V)
-                xy = np.zeros((int(len(x50)**2),2,self.nelem[0]*self.nelem[1]))
-                xy[:,0,:] = V @ self.mesh.xy_elem[:,0,:]
-                xy[:,1,:] = V @ self.mesh.xy_elem[:,1,:]
-                from Source.Methods.Functions import kron_neq_lm
-                q = kron_neq_lm(V,self.neq_node) @ q
+                xy = self.sbp.basis.eval_nodal_vec(self.mesh.xy_elem, x50)
                 self.diffeq.plot_sol(q, xy, **kwargs)
+        # if self.disc_nodes in ['lgl','lg','nc'] and interpolate:
+        #     if self.dim==1:
+        #         x50 = np.linspace(0,1,50)
+        #         V = MakeDgOp.VandermondeLagrange1D(x50,self.sbp.x)
+        #         x = V @ self.mesh.x_elem # strictly not correct if nonpolynommial grid warping, but good enough
+        #         from Source.Methods.Functions import kron_neq_lm
+        #         q = kron_neq_lm(V,self.neq_node) @ q
+        #         self.diffeq.plot_sol(q, x, **kwargs)
+        #     elif self.dim==2:
+        #         x50 = np.linspace(0,1,50)
+        #         V = MakeDgOp.VandermondeLagrange1D(x50,self.sbp.x)
+        #         V = np.kron(V,V)
+        #         xy = np.zeros((int(len(x50)**2),2,self.nelem[0]*self.nelem[1]))
+        #         xy[:,0,:] = V @ self.mesh.xy_elem[:,0,:]
+        #         xy[:,1,:] = V @ self.mesh.xy_elem[:,1,:]
+        #         from Source.Methods.Functions import kron_neq_lm
+        #         q = kron_neq_lm(V,self.neq_node) @ q
+        #         self.diffeq.plot_sol(q, xy, **kwargs)
         else:
             self.diffeq.plot_sol(q, **kwargs)
+
+    def plot_slice(self, q, xslice=None, yslice=None, interpolate=True, **kwargs):
+        ''' plot a slice of the solution either in x or in y direction '''
+        assert self.dim == 2, 'ERROR: Only implemented for 2D problems'
+        if xslice is None and yslice is None:
+            raise Exception('ERROR: Either xslice or yslice must be provided')
+        if xslice is not None and yslice is not None:
+            raise Exception('ERROR: Either xslice or yslice must be provided, not both')
+        if q is None:
+            if self.q_sol is None:
+                q = self.diffeq.set_q0()
+                if 'time' not in kwargs: kwargs['time']=0.0
+            else:
+                if self.q_sol.ndim == 2: q = self.q_sol
+                elif self.q_sol.ndim == 3: q = self.q_sol[:,:,-1]
+                if 'time' not in kwargs: kwargs['time']=self.t_final
+        if 'time' not in kwargs: 
+            print('WARNING: No time specified in plot_sol. Using t_final.')
+            kwargs['time']=self.t_final
+        if self.sbp.basis is not None and interpolate:
+            x50 = np.linspace(0,1,50)
+            q = self.sbp.basis.eval_nodal_vec(q, x50, neq_node=self.neq_node, dim=self.dim)
+            # the following is not strictly correct if nonpolynommial grid warping, but is good enough
+            xy = self.sbp.basis.eval_nodal_vec(self.mesh.xy_elem, x50)
+            res = self.diffeq.plot_slice(q, x=xy, xslice=xslice, yslice=yslice, **kwargs)
+        # if self.disc_nodes in ['lgl','lg','nc'] and interpolate:
+        #     x50 = np.linspace(0,1,50)
+        #     V = MakeDgOp.VandermondeLagrange1D(x50,self.sbp.x)
+        #     V = np.kron(V,V)
+        #     xy = np.zeros((int(len(x50)**2),2,self.nelem[0]*self.nelem[1]))
+        #     xy[:,0,:] = V @ self.mesh.xy_elem[:,0,:]
+        #     xy[:,1,:] = V @ self.mesh.xy_elem[:,1,:]
+        #     from Source.Methods.Functions import kron_neq_lm
+        #     q = kron_neq_lm(V,self.neq_node) @ q
+        #     res = self.diffeq.plot_slice(q, x=xy, xslice=xslice, yslice=yslice, **kwargs)
+        else:
+            res = self.diffeq.plot_slice(q, xslice=xslice, yslice=yslice, **kwargs)
+        if res is not None:
+            return res
+        
 
     def plot_sol_error(self, q=None, x=None, idx=-1, time=None, savefile=None, display_time=False,
                    title=None, logscale=True, linear_thresh=None, max_thresh=None, show_fig=True,
