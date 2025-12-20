@@ -30,14 +30,14 @@ p = [2,3,4] #[3,4,5,6,7,8] # polynomial degree, as a list
 had_flux = 'ranocha' # 2-point numerical flux used in hadamard form
 rk8_atol = 1e-7 # absolute tolerance for RK8
 rk8_rtol = 1e-7 # relative tolerance for RK8
-tm_nframes = 300 # number of solution snapshots to save simulation
+tm_nframes = 10 # number of solution snapshots to save simulation
 cons_obj_name=('time','entropy') # note: what to track? make sure to include 'time'
 
 nthreads = 1 # number of threads for batch runs
 include_upwind = True # include upwind operators as a reference (only relevant for lg and lgl)
-include_bothdiss = False # include both cons. and ent. volume dissipation on entropy-stable schemes?
+include_bothdiss = True # include both cons. and ent. volume dissipation on entropy-stable schemes?
 include_energy = True # include energy-stable schemes?
-loaddata = False # skip the actual simulation and just try to load and display the data
+loaddata = True # skip the actual simulation and just try to load and display the data
 use_scalar_sat = False # use a scalar rusanov sat instead of the matrix dissipation
 verbose_output = False 
 nondimensionalize = False
@@ -121,6 +121,7 @@ else:
              'div_nodiss', 
              'div_cons1_mat','div_cons02_mat',
              'div_cons1_sca','div_cons02_sca']
+#cases = ['had_ent1_matmat','had_ent02_matmat']
 ncases = len(cases)
 
 if use_scalar_sat: cases = [case + '_lfsat' for case in cases]
@@ -213,6 +214,7 @@ def run_simulation(case, p, nelem, nen, savefile_dir, op, para, q0_type, test_ca
 
                         # Set up the differential equation and solver
                         diffeq = Euler(para, q0_type, test_case, bc, nondimensionalize)
+                        diffeq.use_alternative_dEndw_abs()
                         solver = PdeSolverSbp(diffeq, settings, tm_method2, dt2, tf,
                                             p=p, disc_type=disc_type,   
                                             surf_diss=surf_diss, vol_diss=vol_diss, had_flux=had_flux,
@@ -329,7 +331,12 @@ if __name__ == '__main__':
                             savefile_base = os.path.join(savefile_dir, f"{op}_p{p_}_nelem{nelem_}_{case}")
                             savefile = savefile_base + extension
                         else:
-                            savefile_base = os.path.join(savefile_dir, f"{op}_p{p_}_nen{nen_}_nelem{nelem_}_{case}")
+                            if case == 'upwind' and op == 'csbp':
+                                savefile_base = os.path.join(savefile_dir, f"upwind_p{int(2*p_)}_nen{nen_}_nelem{nelem_}_upwind")
+                            elif case == 'upwind02' and op == 'csbp':
+                                savefile_base = os.path.join(savefile_dir, f"upwind_p{int(2*p_+1)}_nen{nen_}_nelem{nelem_}_upwind")
+                            else:
+                                savefile_base = os.path.join(savefile_dir, f"{op}_p{p_}_nen{nen_}_nelem{nelem_}_{case}")
                             savefile = savefile_base + extension
                         
                         if os.path.exists(savefile):

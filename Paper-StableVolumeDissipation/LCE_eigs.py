@@ -15,8 +15,8 @@ from Source.Methods.Analysis import plot_eigs
 
 ''' Set default parameters for simultation '''
 
-savefile = None # use a string like 'eigs.png' or 'eigs.pdf' to save the plot, None for no save
-p = 2 # SBP polynomial degree
+savefile = None #'app_LCEeigs_0005_CSBPp2lf1e80n.pdf' # use a string like 'eigs.png' or 'eigs.pdf' to save the plot, None for no save
+p = 4 # SBP polynomial degree
 s = p+1 # dissipation order
 coeff = 3.125*5**(-s) # volume dissipation coefficient
 nelem = 1 # number of elements
@@ -28,8 +28,8 @@ nenFD = 120 # if using element-type, number of nodes for finite difference compa
 
 plot_convex_hull = False # plot convex hull of eigenvalues?
 plot_individual_eigs = True # plot individual eigenvalues?
-include_upwind_2p = True # include upwind 2*p for comparison?
-include_upwind_2p1 = True # include upwind 2*p+1 for comparison?
+include_upwind_2p = False # include upwind 2*p for comparison?
+include_upwind_2p1 = False # include upwind 2*p+1 for comparison?
 include_nodiss = True # include surface dissipation only for comparison?
 normalize = True # plot h*lambda instead of lambda?
 
@@ -124,12 +124,16 @@ else:
 
 xlim=(-3.5,0.2) # normally use (-4.1,0.2) for large, (-3.5,0.2) for small, (-2.3,1.9) for main body
 ylim=None # normally use (-1.5,1.5) for large, (-0.8,0.8) for small, (-1.2,1.2) for main body
+if savefile is not None:
+    save_format = savefile[-3:]
+else:
+    save_format = None
 plot_eigs(As,plot_convex_hull,plot_individual_eigs,labels=labels,savefile=savefile,
           line_width=2,equal_axes=True,title_size=16,legend_size=14,markersize=50, 
           markeredge=1.4, tick_size=12, colors=colors, linestyles=linestyles, markers=markers,
           legend_loc='upper left', #legend_anchor=(0.0, 0.88), legend_anchor_type=('data','fig'),
           legend_alpha=0.9, left_space_pct=None, xlabel=xlabel, ylabel=ylabel,
-          xlim=xlim, ylim=ylim,save_format=savefile[-3:])
+          xlim=xlim, ylim=ylim,save_format=save_format)
 
 # Quick sanity check
 import numpy as np

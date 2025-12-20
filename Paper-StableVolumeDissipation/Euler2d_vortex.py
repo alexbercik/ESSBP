@@ -15,24 +15,24 @@ from Source.Solvers.PdeSolverSbp import PdeSolverSbp
 from Source.Methods.Analysis import run_convergence, plot_conv
 
 # Simultation parameters
-savefile_in = 'Vortex_Results/Euler2dVortex_CSBPp4Had_data.npz' # input .npz data file
-savefile_out = None # use a string like 'CSBPp4' to save, None for no save. Note: '.png' added automatically at end
+savefile_in = 'Vortex_Results/Euler2dVortex_CSBPp4Div_data.npz' # input .npz data file
+savefile_out = None #'Vortex_CSBPp4Div' # use a string like 'CSBPp4' to save, None for no save. Note: '.png' added automatically at end
 tm_method = 'rk8'
 cfl = 1.0 # if rk4, sets timestep. If rk8, sets max timestep (adaptive).
-tf = 20.0 # final time. For vortex, one period is t=20
+tf = 20. # final time. For vortex, one period is t=20
 op = 'csbp' # 'lg', 'lgl', 'csbp', 'hgtl', 'hgt', 'mattsson', 'upwind'
 nelem = [3] # number of elements in each direction, as a list
-nen = [20,40,80,160] # number of nodes per element in each direction, as a list
+nen = [20,30,40,60,80] # number of nodes per element in each direction, as a list
 p = 4 # polynomial degree
 s = p+1 # dissipation degree
 # trad: p+1, elem: p
-disc_type = 'had' # 'div' for divergence form, 'had' for entropy-stable form
+disc_type = 'div' # 'div' for divergence form, 'had' for entropy-stable form
 had_flux = 'ranocha' # 2-point numerical flux used in hadamard form
 vars2plot = ['p'] #['rho', 'entropy','q','p'] # can be any of these 4
 
 nthreads = 1 # number of threads for batch runs
-include_upwind = False # include upwind operators as a reference
-include_bothdiss = True # include both cons. and ent. volume dissipation
+include_upwind = True # include upwind operators as a reference
+include_bothdiss = False # include both cons. and ent. volume dissipation
 savedata = False # save results of simulation? (ignored if reading in data)
 loaddata = True # skip the actual simulation and just try to load and plot the data
 plot = True
@@ -40,10 +40,12 @@ verbose_output = False # will always be false for nthreads > 1
 put_legend_behind = True
 shorten_legend = False
 file_format = '.pdf'
+legend_loc = 'lower left'
+show_conv_vals = True # show convergence values in the plot?
 
 # Problem parameters
 para = [287,1.4] # [R, gamma]
-test_case = 'vortex' # density_wave, vortex
+test_case = 'vortex_lowma' # density_wave, vortex
 q0_type = 'vortex' # initial condition 
 xmin = (-5.,-5.)
 xmax = (5.,5.)
@@ -299,7 +301,7 @@ if __name__ == '__main__':
 
             #figsize=(6,4)
             figsize=(5,4.5)
-            loc = 'lower left' #'best' #'lower left' #'best'
+            loc = legend_loc #'lower left' #'best' #'lower left' #'best'
 
             if op in ['csbp', 'hgtl', 'hgt', 'mattsson']:
                 xlim = (50,600)
@@ -318,7 +320,7 @@ if __name__ == '__main__':
                     ylim=ylim,xlim=xlim, grid=True, legendloc=loc,
                     figsize=figsize, convunc=False, extra_xticks=True, scalar_xlabel=False,
                     serif=True, colors=colors, markers=markers, legendsize=12, legendreorder=reorder,
-                    title_size=16, tick_size=13, put_legend_behind=put_legend_behind)
+                    title_size=16, tick_size=13, put_legend_behind=put_legend_behind, showslope=show_conv_vals)
             
 
 ###### this is the code I ran to generate the comparison plots

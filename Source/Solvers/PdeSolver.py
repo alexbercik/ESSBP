@@ -820,7 +820,7 @@ class PdeSolver:
                    ymin=None, ymax=None, xmin=None, xmax=None, print_error=False,
                    time=None, display_time=False, display_maxreal=False,
                    title=None, save_format='png', dpi=600, overwrite=False,
-                   sparse_solver=False, sparse_largestRe_only=True, **kargs):
+                   sparse_solver=False, sparse_largestRe_only=True, figsize=(6,4), **kargs):
         '''
         Call on self.diffeq.dqdt to check the stability of the spatial operator
         at a particular state q using central finite differences (approximate!).
@@ -994,7 +994,7 @@ class PdeSolver:
             else:
                 avg_k=None
 
-            plt.figure()
+            plt.figure(figsize=figsize)
             X = [x.real for x in eigs]
             Y = [x.imag for x in eigs]
             if avg_k is None:
@@ -1083,12 +1083,11 @@ class PdeSolver:
         
     # Define a function to compute eigenvalues and eigenvectors, and plot the results
     def plot_eigvecs(self, matrix=None, plot_type="real", 
-                     plot_positive_eigs=True, plot_maxabs_eigs=False,
+                     test_type='max real',
                      threshold=1e-5, num_eigvecs = 5,
                      include_pairs=True, return_eigs=False):
         assert self.dim==1, 'ERROR: Only implemented for 1D problems'
-        assert (plot_positive_eigs and not plot_maxabs_eigs) or  \
-                (not plot_positive_eigs and plot_maxabs_eigs), 'ERROR: Choose one of plot_positive_eigs or plot_maxabs_eigs'      
+        assert test_type in ['max real', 'max abs', 'min real'], 'ERROR: Choose one of test_type = "max real" or "max abs" or "min real"'     
         
         if matrix is None:
             matrix = self.calc_LHS()
@@ -1099,12 +1098,15 @@ class PdeSolver:
         # Compute eigenvalues and eigenvectors
         eigenvalues, eigenvectors = np.linalg.eig(matrix)
 
-        if plot_positive_eigs:
+        if test_type == 'max real':
             # Organize eigenvalues and eigenvectors by descending real part of eigenvalues
             sorted_indices = np.argsort(-np.real(eigenvalues))
-        else:
+        elif test_type == 'max abs':
             # Organize eigenvalues and eigenvectors by descending magnitude of eigenvalues
             sorted_indices = np.argsort(-np.abs(eigenvalues))
+        elif test_type == 'min real':
+            # Organize eigenvalues and eigenvectors by ascending real part of eigenvalues
+            sorted_indices = np.argsort(np.real(eigenvalues))
         eigenvalues = eigenvalues[sorted_indices]
         eigenvectors = eigenvectors[:, sorted_indices]
 
@@ -1115,11 +1117,17 @@ class PdeSolver:
         for idx, eigenvalue in enumerate(eigenvalues):
             if idx in processed_indices:
                 continue
-            
+
             # Check for positive real part above threshold OR
             # maximum 5 eigenvalues by magnitude
-            if (plot_positive_eigs and np.real(eigenvalue) > threshold) \
-                or (plot_maxabs_eigs and idx < num_eigvecs):
+            if test_type == 'max real':
+                passed_test = (np.real(eigenvalue) > threshold) and (idx < num_eigvecs)
+            elif test_type == 'max abs':
+                passed_test = idx < num_eigvecs
+            elif test_type == 'min real':
+                passed_test = idx < num_eigvecs
+            
+            if (passed_test):
                 eigenvector = eigenvectors[:, idx]
 
                 # Separate components of the eigenvector based on plot type
@@ -1156,7 +1164,7 @@ class PdeSolver:
                 # Check for and include the complex pair if applicable
                 if include_pairs and np.iscomplex(eigenvalue):
                     for jdx, other_eigenvalue in enumerate(eigenvalues):
-                        if jdx != idx and np.isclose(eigenvalue.conj(), other_eigenvalue):
+                        if jdx != idx and np.isclose(eigenvalue.conj(), other_eigenvalue, rtol=1e-3):
                             processed_indices.add(jdx)
                             paired_eigenvector = eigenvectors[:, jdx]
 
