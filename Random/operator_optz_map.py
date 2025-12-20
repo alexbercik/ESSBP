@@ -113,7 +113,7 @@ def get_ops(warp_factors):
 
             with contextlib.redirect_stdout(None):
                 solver = PdeSolverSbp(diffeq, settings, 
-                    tm_method, dt, tf, None, 
+                    tm_method, dt, tf, 
                     p, disc_type, surf_type, vol_diss, None,
                     ne, nn, op, bc, xmin, xmax)
                 solver.solve()

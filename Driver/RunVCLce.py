@@ -52,7 +52,6 @@ had_flux = 'central_fix' # 2-point numerical flux used in hadamard form
 vol_diss = None
 
 # Initial solution
-q0 = None # can overwrite q0_type from DiffEq
 q0_type = 'GaussWave' # 'GaussWave', 'SinWave'
 a_type = 'shifted Gaussian'
 
@@ -84,7 +83,6 @@ diffeq.extrapolate_bdy_flux = extrapolate_bdy_flux
 
 solver1D = solver_c(diffeq, settings,                     # Diffeq
                   tm_method, dt, tf,                    # Time marching
-                  q0,                                   # Initial solution
                   p, disc_type,             # Discretization
                   surf_type, vol_diss, had_flux,
                   nelem, nen, disc_nodes,
@@ -110,7 +108,6 @@ title=r'Variable Coefficient Advection Eqn, $\alpha=2/3$'
 
 solver = PdeSolver(diffeq,                              # Diffeq
                   tm_method, dt, tf,                    # Time marching
-                  q0,                                   # Initial solution
                   p, disc_type, nn,                     # Discretization
                   nelem, nen, sat_flux_type,
                   isperiodic, xmin, xmax,               # Domain

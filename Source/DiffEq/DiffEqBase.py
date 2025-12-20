@@ -86,7 +86,11 @@ class PdeBase:
                          'node size': 4,        # markersize used on nodes
                          'node color': 'black'} # marker colour used for nodes
     plt_contour_settings = {'levels': 100,          # number of distinct contours
-                            'cmap': 'inferno'} #'jet'}          # colourmap
+                            'cmap': 'inferno', #'jet'}  # colourmap
+                            'rotation': 90,
+                            'cbar_nticks': None,
+                            'cbar_font_size': 12,
+                            'cbar_tick_size': 12} 
 
     # Parameters for the initial solution
     q0_max_q = 1.0                 # Max value in the vector q0
@@ -373,7 +377,8 @@ class PdeBase:
                  show_fig=True, ymin=None, ymax=None, display_time=False, 
                  title=None, plot_mesh=False, save_format='png', dpi=300,
                  plot_only_exa=False, var2plot_name=None, legendloc=None, legend=True,
-                 show_negative=False, time_round=2, figsize=None, ymin_negative=None, **kwargs):
+                 show_negative=False, time_round=2, figsize=None, ymin_negative=None,
+                 label_axes=True, **kwargs):
         '''
         Purpose
         ----------
@@ -446,13 +451,11 @@ class PdeBase:
             num_sol = fn.reshape_to_meshgrid_2D(self.var2plot(q,var2plot_name),nen,self.nelem[0],self.nelem[1])
 
             cmap = plt.get_cmap(self.plt_contour_settings['cmap'])
-            if show_negative:
-                cmap.set_bad(color='white')  
-                cmap.set_under(color='white') 
-                if ymin is None: ymin = 0.0
+            cmap.set_bad(color='white')  
+            if ymin is None: ymin = 0.0
             
             CS = ax.contourf(x,y,num_sol,levels=self.plt_contour_settings['levels'],
-                                 vmin=ymin, vmax=ymax,cmap=cmap)
+                                 vmin=ymin, vmax=ymax, cmap=cmap)
             ax.set_aspect('equal', adjustable='box') # adjusts the shape of the figure to make data in x and y scale equally
             
             if ymin is not None or ymax is not None:
@@ -460,11 +463,21 @@ class PdeBase:
                 if ymax is None: ymax = np.max(num_sol)
                 norm = mcolors.Normalize(vmin=ymin, vmax=ymax)
                 mappable = cm.ScalarMappable(norm=norm, cmap=cmap)
-                cbar = fig.colorbar(mappable, ax=ax, shrink=0.79, aspect=18)
+                if label_axes:
+                    cbar = fig.colorbar(mappable, ax=ax, shrink=0.79, aspect=18)
+                else:
+                    cbar = fig.colorbar(mappable, ax=ax, shrink=0.87, aspect=18)
             else:
-                cbar = fig.colorbar(CS, ax=ax, shrink=0.79, aspect=18)
+                if label_axes:
+                    cbar = fig.colorbar(CS, ax=ax, shrink=0.79, aspect=18)
+                else:
+                    cbar = fig.colorbar(CS, ax=ax, shrink=0.87, aspect=18)
             if var2plot_name is not None:
-                cbar.ax.set_ylabel(var2plot_name)     
+                cbar.ax.set_ylabel(var2plot_name, rotation=self.plt_contour_settings['rotation'],
+                                   fontsize=self.plt_contour_settings['cbar_font_size'])
+            if self.plt_contour_settings['cbar_nticks'] is not None:
+                cbar.set_ticks(np.linspace(ymin,ymax,self.plt_contour_settings['cbar_nticks'])) 
+            cbar.ax.tick_params(labelsize=self.plt_contour_settings['cbar_tick_size'])   
                 
             if plot_mesh:
                 #ax = plt.axes(frameon=False) # turn off the frame
@@ -489,7 +502,8 @@ class PdeBase:
                     ax.set_yticks(edge_verticesy)
 
             if show_negative:
-                if ymin_negative is None: ymin_negative = ymin
+                if ymin_negative is None: 
+                    ymin_negative = ymin
                 # to really make it obvious, add squares where solution is less than ymin
                 square_size = 0.005*np.sqrt((self.xmax[0] - self.xmin[0])**2 +
                                            (self.xmax[1] - self.xmin[1])**2 )  # physical size of the square
@@ -497,14 +511,21 @@ class PdeBase:
                 for i in range(len(x)):
                     for j in range(len(y)):
                         if num_sol[i, j] < ymin_negative:
+                            print(f'Adding square at {x[i,j]}, {y[i,j]}')
+                            print(f'num_sol[i,j] = {num_sol[i,j]}')
+                            print(f'ymin_negative = {ymin_negative}')
                             # You may need to adjust x[j] and y[i] depending on mesh alignment
                             ax.add_patch(patches.Rectangle(
                                         (x[i,j] - square_size/2, y[i,j] - square_size/2),
                                         square_size, square_size,
                                         facecolor='white', edgecolor='none'))
-            
-            plt.xlabel(r'$x$',fontsize=self.plt_label_font_size)
-            plt.ylabel(r'$y$',fontsize=self.plt_label_font_size,rotation=0,labelpad=15)
+
+            if label_axes:
+                plt.xlabel(r'$x$',fontsize=self.plt_label_font_size)
+                plt.ylabel(r'$y$',fontsize=self.plt_label_font_size,rotation=0,labelpad=15)
+            else:
+                ax.set_xticks([])
+                ax.set_yticks([])
         
         elif self.dim == 3:
             # TODO: add option for plotting cross sections?

@@ -16,32 +16,36 @@ from Source.Methods.Analysis import run_convergence, plot_conv
 
 ''' Set parameters for simultation 
 '''
-savefile = None # use a string like 'conv.png' or 'conv.pdf' to save the plot, None for no save
+savefile = 'LCEconv_p4lf1e_comparison_t1.pdf' # use a string like 'conv.png' or 'conv.pdf' to save the plot, None for no save
 cfl = 0.01
 tm_method = 'rk8' # if rk4, use cfl=0.01 at least. if rk8, can use cfl=0.1 (it is adaptive anyway)
-tf = 1.0 # final time
-nelem = [1] # number of elements, as a list (multiple if element-refinement)
+tf = 1 # final time
+nelem = [1] #4, 8,16,32,64] # number of elements, as a list (multiple if element-refinement)
+# SEp4: [8,16,32,64,128], SEp8: [5,7,10,14,20]
 nen = [40,60,80,120,160,240] # number of nodes per element, as a list (multiple if traditional-refinement)
 op = 'csbp'
 p = 4 # polynomial degree
 s = p+1 # dissipation degree
 eps = 3.125/5**s # volume dissipation coefficient for CSBP, HGTL, HGT, Mattsson (LGL/LG will be set automatically)
-include_upwind = True # include upwind flux dissipation in the convergence test?
+include_upwind = False # include upwind flux dissipation in the convergence test?
 compare_formulations = False # compare different Artificial Dissipation formulations? (e.g. including H, B)
-compare_operators = False # compare different operators? (e.g. CSBP, HGT, Mattsson)
+compare_operators = True # compare different operators? (e.g. CSBP, HGT, Mattsson)
 bdy_fix = True # include B? Only needed if compare_formulations = False
 useH = False # include H? Only needed if compare_formulations = False
 include_spectral_p = True # if lgl/lg, plot dissipation against higher order? i.e. against p baseline
 include_spectral_pm1 = True # if lgl/lg, plot dissipation against same order? i.e. against p-1 baseline
 compare_spectral_equalp = True # if lgl/lg, plot FD dissipation against same order? i.e. against p-1 baseline
 put_legend_behind = False
+yfix = True
+extra_coeff_vals = False
+show_conv_vals = True # show convergence values in the plot?
 
 # set up the differential equation, plus more less important settings
 print_sanity_check = False
-q0_type = 'GaussWave_sbpbook' #'GaussWave_sbpbook' # initial condition 
+q0_type = 'GaussWave_sbpbook'#, 'morlet_wavelet' # initial condition 
 a = 1.0 # wave speed 
 diffeq = LinearConv(a, q0_type)
-settings = {} # additional settings for mesh type, etc. Not needed.
+settings = {} #{'warp_factor':[0.05,1.5,50],'warp_type': 'corners_periodic','jac_method':'exact'} # additional settings for mesh type, etc. Not needed.
 
 assert not (compare_formulations and compare_operators), 'Can only compare one thing at a time'
 if compare_operators: 
@@ -56,13 +60,14 @@ tot_errors = []
 tot_labels = []
 for op in ops:
     # set some default values
-    if op in ['csbp', 'hgtl', 'hgt', 'mattsson']:
+    if op in ['csbp', 'hgtl', 'hgt', 'mattsson','circulant']:
         #eps = 0.2*3.125/5**s
         dx = 1./((nen[0]-1)*nelem[0])
         if op == 'csbp': op_name = 'CSBP'
         elif op == 'hgtl': op_name = 'HGTL'
         elif op == 'hgt': op_name = 'HGT'
         elif op == 'mattsson': op_name = 'Mattsson'
+        elif op == 'circulant': op_name = 'Circulant'
     elif op in ['lg', 'lgl']:
         #eps = 0.1*2.25**(-p)
         if p == 2: eps = 0.02
@@ -107,10 +112,18 @@ for op in ops:
                                         {'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':0.2*eps}]]
                 labels1 = [f'$p={p}$, $\\varepsilon={eps:g}$',f'$p={p}$, $\\varepsilon={0.2*eps:g}$']
         else:
-            schedule1 = [['disc_nodes',op],['nen',*nen],['p',p],['nelem',*nelem],['surf_diss',{'diss_type':'lf'}],
-                        ['vol_diss',{'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':eps},
-                            {'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':0.2*eps}]]
-            labels1 = [f'$\\varepsilon={eps:g}$', f'$\\varepsilon={0.2*eps:g}$']
+            if extra_coeff_vals:
+                schedule1 = [['disc_nodes',op],['nen',*nen],['p',p],['nelem',*nelem],['surf_diss',{'diss_type':'lf'}],
+                            ['vol_diss',{'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':eps},
+                                {'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':0.2*eps},
+                                {'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':0.04*eps},
+                                {'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':0.008*eps}]]
+                labels1 = [f'$\\varepsilon={eps:g}$', f'$\\varepsilon={0.2*eps:g}$', f'$\\varepsilon={0.04*eps:g}$', f'$\\varepsilon={0.008*eps:g}$']
+            else:
+                schedule1 = [['disc_nodes',op],['nen',*nen],['p',p],['nelem',*nelem],['surf_diss',{'diss_type':'lf'}],
+                            ['vol_diss',{'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':eps},
+                                {'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':0.2*eps}]]
+                labels1 = [f'$\\varepsilon={eps:g}$', f'$\\varepsilon={0.2*eps:g}$']
     else:
         if op in ['lg','lgl']:
             if compare_spectral_equalp:
@@ -162,6 +175,10 @@ for op in ops:
         else:
             schedule3 = []
             labels3 = []
+    elif op == 'circulant':
+        schedule3 = [['disc_nodes',op],['nen',*nen],['nelem',*nelem],['p',p],['vol_diss',{'diss_type':'nd'}],
+                ['surf_diss',{'diss_type':'nd'}]]
+        labels3 = [f'$\\varepsilon=0$']
     else:
         schedule3 = [['disc_nodes',op],['nen',*nen],['nelem',*nelem],['p',p],['vol_diss',{'diss_type':'nd'}],
                 ['surf_diss',{'diss_type':'nd'},{'diss_type':'lf'}]]
@@ -172,7 +189,7 @@ for op in ops:
     solver = PdeSolverSbp(diffeq, settings, tm_method, dt, tf,
                         p=p, surf_diss='lf', vol_diss=None,
                         nelem=nelem[0], nen=nen[0], disc_nodes=op,
-                        bc='periodic')
+                        bc='periodic', sparse=True)
     solver.tm_atol = 1e-13
     solver.tm_rtol = 1e-13
 
@@ -262,8 +279,8 @@ elif compare_operators:
 else:
     #colors = ['tab:red', 'tab:orange', 'tab:green', 'tab:blue', 'k',  'm', 'tab:brown']
     #markers = ['o', '^', 's', 'd', 'x', '+', 'v']
-    colors = ['tab:blue', 'darkgoldenrod', 'k',  'm', 'tab:brown']
-    markers = ['s', 'v', 'x', '+', 'v']
+    colors = ['tab:blue', 'darkgoldenrod', 'k',  'm', 'tab:brown', 'tab:green']
+    markers = ['s', 'v', 'x', '+', 'v', '>']
 if p==1 or p==2: loc = 'lower left'
 elif p==3: loc = 'lower left'
 elif p==4: loc = 'lower left' #'upper right'
@@ -278,7 +295,7 @@ else:
     #figsize=(6,4)
     #ylim=(2e-11,3e-2)
     ylim=(5e-11,1.5e-2) # this is used for the main body
-    #ylim=(5e-11,3e-2)
+    #ylim=(5e-11,3e-2) # this is used for the appendix
     figsize=(5,4.5)
     legendanc = None
 if np.min(tot_dofs) == 80 and np.max(tot_dofs) == 640: 
@@ -288,11 +305,16 @@ else:
     xlim=None
     xtick=False
 if op in ['lg','lgl']:
-    ylim=(4e-11,1e-2)
-    xlim=(34,750)
+    ylim=(3e-10,1e-2) #(3e-10,1e-2) #(4e-11,1e-2)
+    xlim=(12,400) #(34,750)
     xtick=True
+#colors = ['tab:green', 'tab:orange', 'k',  'm']
+#reorder = [2,3,0,1,4,5]
+if not yfix:
+    ylim = (None, None)
+reorder=None
 plot_conv(tot_dofs, tot_errors, tot_labels, 1,
           title=title, savefile=savefile, xlabel=xlabel, ylabel=ylabel, put_legend_behind=put_legend_behind,
           ylim=ylim,xlim=xlim, grid=True, legendloc=loc, legend_anchor=legendanc, title_size=18,
-          figsize=figsize, convunc=False, extra_xticks=xtick, scalar_xlabel=False,
-          serif=True, colors=colors, markers=markers, tick_size=13, legendsize=13)
+          figsize=figsize, convunc=False, showslope=show_conv_vals, extra_xticks=xtick, scalar_xlabel=False,
+          serif=True, colors=colors, markers=markers, tick_size=13, legendsize=13, legendreorder=reorder)

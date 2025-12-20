@@ -20,17 +20,17 @@ plt.rcParams['font.family'] = 'serif'
 
 ''' Set parameters for simultation 
 '''
-savefile = None # use a string like 'CSBPp4' to save the plot, None for no save. Note: '.png' added automatically at end
-tm_method = 'rk4' # for evenly spaced time steps, use 'rk4' with cfl=0.001. For quicker runs, use rk8
+savefile = None #'Burgers_CSBPp2nen40' #'burgers_csbp_p2' #'burgers_lglp6_5elem' #'burgers_csbp_pos' # use a string like 'CSBPp4' to save the plot, None for no save. Note: '.png' added automatically at end
+tm_method = 'rk8' # for evenly spaced time steps, use 'rk4' with cfl=0.001. For quicker runs, use rk8
 cfl = 0.001
 tf = 1./(2*np.pi) # final time
-nelem = 5 # number of elements
-nen = 0 # number of nodes per element
-p = 6 # polynomial degree
-op = 'lgl' # operator type
+nelem = 1 # number of elements
+nen = 40 # number of nodes per element
+p = 4 # polynomial degree
+op = 'csbp' # operator type
 coeff_fix = 1.0 # additional coefficient by which to modify 3.125/5**s and 0.625/5**s
 maxeig = 'rusanov' # maxeig for entropy-conservative SATs, e.g. 'rusanov', 'lf'
-q0_type = 'sinwave' # initial condition 
+q0_type = 'sinwave_shifted' # initial condition 
 q0_amplitude = 1. # amplitude of initial condition
 xmin = 0.
 xmax = 1.
@@ -47,18 +47,22 @@ plot_errors = False # plot the solution errors at the end?
 show_dissipation = False # show the dissipation plots?
 plot_markers = True # plot markers on the line plots?
 file_format = '.pdf' # ".pdf" or ".png"
+extra_coeff_vals = False
+finite_diff_LHS = False # use finite difference for LHS computation instead of complex step?
 
 
 # instantiate Burgers Diffeq object
 diffeq = Burgers(None, q0_type, True, split_alpha)
 diffeq.q0_max_q = q0_amplitude
 
+sparse = False
 if op in ['csbp', 'hgtl', 'hgt', 'mattsson']:
     s = p + 1
     eps = 3.125/5**s
     useH = False
     bdy_fix = True
     dx = (xmax-xmin)/((nen-1)*nelem)
+    if nen >= 60: sparse = True
 elif op in ['lg', 'lgl']:
     s = p
     if p == 2: eps = 0.02
@@ -77,10 +81,14 @@ else:
 
 if include_upwind:
     n_runs = 6
+elif extra_coeff_vals:
+    n_runs = 8
 else:
     n_runs = 4
 results = []
 labels = []
+random_eigs = []
+random_eigs_pos = []
 assert cons_obj[-1] == 'time', 'time must be the last element of cons_obj'
 for i in range(n_runs):
     # set the different solver settings
@@ -126,7 +134,7 @@ for i in range(n_runs):
         diss = {'diss_type':'nd'}
         use_split_form = True
         labels.append(r'E.D. $\varepsilon=0$')
-    elif i == 4 or (i==2 and not include_upwind): # entropy-dissipative with comparable sigma
+    elif (i == 4 and not extra_coeff_vals) or (i==2 and not include_upwind): # entropy-dissipative with comparable sigma
         op_ = op
         p_op = p
         sat = {'diss_type':'es', 'jac_type':'sca', 'maxeig':maxeig}
@@ -142,6 +150,24 @@ for i in range(n_runs):
                 'bdy_fix':True, 'use_H':True, 'avg_half_nodes':True}
         use_split_form = True
         labels.append(f"E.D. $\\varepsilon={diss['coeff']:g}$")
+    elif (i == 6 and extra_coeff_vals): # entropy-dissipative with even smaller sigma
+        op_ = op
+        p_op = p
+        sat = {'diss_type':'es', 'jac_type':'sca', 'maxeig':maxeig}
+        diss = {'diss_type':'dcp', 'jac_type':'sca', 's':s, 'coeff':coeff_fix*0.04*eps, 
+                'bdy_fix':True, 'use_H':True, 'avg_half_nodes':True}
+        use_split_form = True
+        labels.append(f"E.D. $\\varepsilon={diss['coeff']:g}$")
+    elif (i == 7 and extra_coeff_vals): # entropy-dissipative with even smaller sigma
+        op_ = op
+        p_op = p
+        sat = {'diss_type':'es', 'jac_type':'sca', 'maxeig':maxeig}
+        diss = {'diss_type':'dcp', 'jac_type':'sca', 's':s, 'coeff':coeff_fix*0.008*eps, 
+                'bdy_fix':True, 'use_H':True, 'avg_half_nodes':True}
+        use_split_form = True
+        labels.append(f"E.D. $\\varepsilon={diss['coeff']:g}$")
+    else:
+        continue # skip this iteration if not one of the above
 
 
     # set solver
@@ -151,13 +177,26 @@ for i in range(n_runs):
                         p=p_op, surf_diss=sat, vol_diss=diss,
                         nelem=nelem, nen=nen, disc_nodes=op_,
                         bc='periodic', xmin=xmin, xmax=xmax,
-                        cons_obj_name=cons_obj)
+                        cons_obj_name=cons_obj, sparse=sparse)
     solver.skip_ts = skip_ts
     solver.tm_atol = 1e-13
     solver.tm_rtol = 3e-13
 
+    # test eigenvalues
+    if i == 0:
+        qrand_pos = np.random.rand(*solver.qshape) + 0.01
+        qrand = np.random.rand(*solver.qshape) - 0.5
+    #print('CHECKING EIGENVALUES WITH POSITIVE BASEFLOW, ',labels[i])
+    eigs = solver.check_eigs(qrand_pos, plot_eigs=False, returneigs=True, finite_diff=finite_diff_LHS)
+    random_eigs_pos.append(np.max(np.real(eigs)))
+    #print('CHECKING EIGENVALUES WITH ALTERNATING BASEFLOW, ',labels[i])
+    eigs = solver.check_eigs(qrand, plot_eigs=False, returneigs=True)
+    random_eigs.append(np.max(np.real(eigs)))
+    
+    
+
     # solve PDE
-    diffeq.calc_breaking_time()
+    #diffeq.calc_breaking_time()
     solver.solve()
 
     # save results
@@ -202,14 +241,14 @@ for i in range(n_runs):
 # plot results
 linewidth=2
 #colors = ['tab:red', 'tab:blue', 'tab:orange', 'tab:green', 'k', 'm', 'tab:brown']
-colors = ['tab:red', 'tab:orange', 'tab:blue', 'darkgoldenrod', 'k',  'm', 'tab:brown']
+colors = ['tab:red', 'tab:orange', 'tab:blue', 'darkgoldenrod', 'k',  'm', 'tab:brown', 'tab:green']
 if plot_markers:
-    linestyles = ['-','--','-',':','-',':']
-    markers = ['o', '^', 's', 'v', 'x', '+', '*']
-    marker_start = [0.01, 0.015, 0.0, 0.005, 0.01, 0.01] # where to start markers (in time units)
-    if op == 'csbp' and p==2 and nelem==1 and nen==40: marker_start = [0.01, 0.015, 0.0, 0.005, 0.01, 0.01] 
-    if op == 'csbp' and p==4 and nelem==1 and nen==40: marker_start = [0.0, 0.015, 0.0, 0.005, 0.01, 0.01] 
-    if op == 'lgl' and p==6 and nelem==5: marker_start = [0.01, 0.015, 0.0, 0.005, 0.01, 0.01] 
+    linestyles = ['-','--','-',':','-',':','--','--']
+    markers = ['o', '^', 's', 'v', 'x', '+', '*', '>']
+    marker_start = [0.01, 0.015, 0.0, 0.005, 0.01, 0.01, 0.01, 0.01] # where to start markers (in time units)
+    if op == 'csbp' and p==2 and nelem==1 and nen==40: marker_start = [0.01, 0.015, 0.0, 0.005, 0.01, 0.01, 0.01, 0.01] 
+    if op == 'csbp' and p==4 and nelem==1 and nen==40: marker_start = [0.0, 0.015, 0.0, 0.005, 0.01, 0.01, 0.01, 0.01] 
+    if op == 'lgl' and p==6 and nelem==5: marker_start = [0.01, 0.015, 0.0, 0.005, 0.01, 0.01, 0.01, 0.01] 
     n_markers = 8 # Number of markers per line
 else:
     #linestyles = [(-1, (3,1)),(0, (1,2,3,2,1,3)),'-',':',(0,(1,1,1,3)),(-1,(2,4))] # this works well when 4 dissipations overlap
@@ -281,9 +320,17 @@ for i in range(len(cons_obj)-1):
         #legend_loc = 'upper left'
         #legend_anchor = (0.0, 0.95)
         grid = False
-        print("!!! SANITY CHECK !!! Max eig...")
-        for j in range(n_runs):
+        print("!!! SANITY CHECK !!! ")
+        print("... Well-resolved baseflow (burgers equation solution) Max eig:")
+        for j in range(len(labels)):
             print('... for '+labels[j]+' = ',np.max(results[j][i]))
+        print("... Random Positive State Max eig:")
+        for j in range(len(labels)):
+            print('... for '+labels[j]+' = ',random_eigs_pos[j])
+        print("... Random Mixed-Sign State Max eig:")
+        for j in range(len(labels)):
+            print('... for '+labels[j]+' = ',random_eigs[j])
+        
 
     elif cons_obj[i].lower() == 'spec_rad':
         #plt.title(r'Spectral Radius of LHS',fontsize=18)
@@ -306,7 +353,7 @@ for i in range(len(cons_obj)-1):
         grid = True
 
     # plot!
-    for j in range(n_runs):
+    for j in range(len(labels)):
         if use_norm:
             norm = results[j][i][0]
         else:
@@ -353,3 +400,168 @@ for i in range(len(cons_obj)-1):
     plt.tight_layout()
     if savefile is not None:
         plt.savefig(savefile+'_'+cons_obj[i].lower()+file_format,dpi=600)
+
+
+
+
+
+
+
+
+# savefile = 'burgers_lglp6_5elem'
+# colors = ['tab:green', 'tab:orange', 'k', 'm', 'tab:red', 'tab:blue']
+# markers = ['s', 'v', 'x', '+', 'o', '^']
+# #results = [results[2],results[3],results[4],results[5],results[0],results[1]]
+# #labels = [labels[2], labels[3], labels[4], labels[5], labels[0], labels[1]]
+# marker_start = [0.0, 0.017, 0.014, 0.015, 0.0, 0.005] 
+# labels = [r'EC $\varepsilon=0$',
+#  r'ED $\varepsilon=0$',
+#  r'ED $\varepsilon=0.0008$',
+#  r'ED $\varepsilon=0.00016$',
+#  r'USE $\varepsilon=0.0008$',
+#  r'USE $\varepsilon=0.00016$']
+
+# for i in range(len(cons_obj)-1):
+    
+#     # general figure settings
+#     #plt.figure(figsize=(6,4))
+#     plt.figure(figsize=(5,4.5))
+#     if cons_obj[i].lower() == 'energy':
+#         #plt.title(r'Change in Energy',fontsize=18)
+#         use_norm = True
+#         if use_norm:
+#             plt.ylabel(r'Energy Change $\Vert \bm{u} \Vert_\mathsf{H}^2 - \Vert \bm{u}_0 \Vert_\mathsf{H}^2 $',fontsize=16)
+#             plt.yscale('symlog',linthresh=1e-14)
+#         else:
+#             plt.ylabel(r'Energy $\Vert \bm{u} \Vert_\mathsf{H}^2 $',fontsize=16)
+#             plt.yscale('log')
+#         legend_loc = 'best'
+#         legend_anchor = None
+#         #legend_loc = 'upper center'
+#         #legend_anchor = (0.55,0.895) #(0.525,0.925)
+#         #legend_anchor = (0.565,0.875) #(0.565,0.895)
+#         if op == 'csbp' and p==2 and nelem==1 and nen==40:
+#             legend_loc = 'upper right'
+#             legend_anchor = (1.0, 0.825) #(1.0, 0.87)
+#         if op == 'csbp' and p==4 and nelem==1 and nen==40:
+#             legend_loc = 'upper right'
+#             legend_anchor = (1.0, 0.87)
+#         elif op == 'lgl' and p==6 and nelem==5:
+#             legend_loc = 'center right'
+#             legend_anchor = (1.0, 0.5)
+#         #legend_anchor = (1.0, 0.825) #(1.0, 0.87)
+#         plt.ylim(-4e-2, 4e-2)
+#         #legend_loc = 'best'
+#         #legend_anchor = None
+#         grid = True
+
+#     elif cons_obj[i].lower() == 'conservation':
+#         #plt.title(r'Change in Conservation',fontsize=18)
+#         plt.ylabel(r'Conservation $\left( \bm{1}^\mathsf{T} \mathsf{H} \bm{u} - \bm{1}^\mathsf{T} \mathsf{H} \bm{u}_0 \right)$',fontsize=16)
+#         plt.ticklabel_format(axis='y',style='sci',scilimits=(0,1))
+#         use_norm = True
+#         legend_loc = 'lower left'
+#         legend_anchor = None
+#         grid = False
+
+#     elif cons_obj[i].lower() == 'max_eig':
+#         #plt.title(r'Maximum Real Eigenvalue of LHS',fontsize=18)
+#         plt.ylabel(r'$\max \ \Re(\lambda) $',fontsize=16)
+#         plt.yscale('symlog',linthresh=1e-6)
+#         use_norm = False
+#         legend_loc = 'best'
+#         legend_anchor = None
+#         #legend_loc = 'center'
+#         #legend_anchor = (0.5, 0.35)
+#         #legend_anchor = (0.5, 0.4)
+#         #legend_loc = 'best'
+#         #legend_anchor = None
+#         if (op == 'csbp' and p==2 and nelem==1 and nen==40) or \
+#             (op == 'csbp' and p==4 and nelem==1 and nen==40) or \
+#             (op == 'lgl' and p==6 and nelem==5):
+#             legend_loc = 'lower right'
+#             legend_anchor = (1.0, 0.06)
+#         plt.ylim(ymin=-2.5e-7, ymax=20)
+#         legend_loc = 'lower left'
+#         legend_anchor = (0.0, 0.06)
+#         grid = False
+#         print("!!! SANITY CHECK !!! ")
+#         print("... Well-resolved baseflow (burgers equation solution) Max eig:")
+#         for j in range(len(labels)):
+#             print('... for '+labels[j]+' = ',np.max(results[j][i]))
+#         print("... Random Positive State Max eig:")
+#         for j in range(len(labels)):
+#             print('... for '+labels[j]+' = ',random_eigs_pos[j])
+#         print("... Random Mixed-Sign State Max eig:")
+#         for j in range(len(labels)):
+#             print('... for '+labels[j]+' = ',random_eigs[j])
+        
+
+#     elif cons_obj[i].lower() == 'spec_rad':
+#         #plt.title(r'Spectral Radius of LHS',fontsize=18)
+#         plt.ylabel(r'Spectral Radius $\left( \max \ \vert \lambda \vert \right)$',fontsize=16)
+#         use_norm = False
+#         #legend_loc = 'upper right'
+#         legend_loc = 'best'
+#         legend_anchor = None
+#         grid = False
+
+#     if cons_obj[i].lower() == 'conservation_der':
+#         use_norm = False
+#         if use_norm:
+#             plt.ylabel(r'Conservation Derivative $\left( \bm{1}^\mathsf{T} \mathsf{H} \frac{\mathrm{d} \bm{u}}{\mathrm{d} t} - \frac{\mathsf{d} \bm{u}_0}{\mathsf{d} t} \right)$',fontsize=16)
+#         else:
+#             plt.ylabel(r'Conservation Derivative $\left( \bm{1}^\mathsf{T} \mathsf{H} \frac{\mathrm{d} \bm{u}}{\mathrm{d} t} \right)$',fontsize=16)
+#         plt.yscale('symlog',linthresh=1e-15)
+#         legend_loc = 'best'
+#         legend_anchor = None
+#         grid = True
+
+#     # plot!
+#     for j in range(len(labels)):
+#         if use_norm:
+#             norm = results[j][i][0]
+#         else:
+#             norm = 0
+#         data = results[j][i] - norm
+#         time = results[j][-1]
+        
+#         # Define the spacing interval
+#         marker_spacing = (time[-1] - time[0]) / (n_markers - 1)
+#         # Generate marker positions before shifting
+#         marker_positions = time[0] + np.arange(n_markers) * marker_spacing
+#         # Apply the offset
+#         marker_positions += marker_start[j]
+#         # Remove markers beyond the last time point
+#         marker_positions = marker_positions[marker_positions <= time[-1]]
+#         # Get corresponding indices
+#         marker_indices = np.searchsorted(time, marker_positions)
+
+                
+#         plt.plot(time, data, color=colors[j], linestyle=linestyles[j], 
+#              marker=markers[j], markevery=marker_indices, label=labels[j], linewidth=linewidth, 
+#              markersize=9, markerfacecolor='none', markeredgewidth=linewidth,zorder=2)
+        
+#         # again so that markers are ontop
+#         if plot_markers:
+#             plt.plot(time, data, color=colors[j], linestyle='', 
+#                 marker=markers[j], markevery=marker_indices, label=None, linewidth=None, 
+#                 markersize=10, markerfacecolor='none', markeredgewidth=linewidth,zorder=3)
+        
+#     plt.xlabel(r'Time $t$',fontsize=16)
+#     plt.legend(loc=legend_loc,fontsize=14, 
+#                     bbox_to_anchor=legend_anchor)
+#     ax = plt.gca()
+#     ax.tick_params(axis='both', which='both', labelsize=13) 
+#     if grid:
+#         plt.grid(which='major',axis='y',linestyle='--',color='gray',linewidth='1')
+#     if cons_obj[i].lower() == 'energy' and use_norm:
+#         ymin, ymax = ax.get_ylim()
+#         positive_ticks = [0] + [10**exp for exp in range(-12, int(np.log10(ymax)) + 1, 4)]
+#         negative_ticks = [-10**exp for exp in range(-12, int(np.log10(-ymin)) + 1, 4)]
+#         custom_ticks = negative_ticks[::-1] + positive_ticks
+#         ax.set_yticks(custom_ticks)
+
+#     plt.tight_layout()
+#     if savefile is not None:
+#         plt.savefig(savefile+'_'+cons_obj[i].lower()+file_format,dpi=600)

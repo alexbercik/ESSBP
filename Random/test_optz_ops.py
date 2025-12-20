@@ -56,7 +56,6 @@ solver = PdeSolverSbp
 diffeq = LinearConv(para, q0_type)
 solver1D = solver(diffeq, settings,                     # Diffeq
                   tm_method, dt, tf,                    # Time marching
-                  q0,                                   # Initial solution
                   p, disc_type,             # Discretization
                   surf_type, vol_diss, had_flux,
                   nelem, nen, disc_nodes,

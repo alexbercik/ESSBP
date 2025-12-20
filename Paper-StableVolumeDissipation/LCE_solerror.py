@@ -22,21 +22,22 @@ from Source.Methods.Analysis import run_convergence, plot_conv
 
 ''' Set parameters for simultation 
 '''
-savefile = None # use a string like 'sol.png' or 'sol.pdf' to save the plot, None for no save
+savefile = None #'csbp_gauss_solerr1.pdf' # use a string like 'sol.png' or 'sol.pdf' to save the plot, None for no save
 a = 1.0 # wave speed 
 cfl = 0.01
-tf = 1 # final time
+tf = 1.0 # final time
 nelem = 2 # number of elements
 nen = 0 # number of nodes per element, as a list
 op = 'lgl' # operator type
 p = 8 # polynomial degree
-linear_thresh = 1e-7 #1e-8 for gauss, 1e-7 for sin, 1e-5 for LGLp4, 1e-7 fpr LGLp8
-max_thresh = 1e-4 #9e-3 for csbp gauss, 9e-4 for csbp sin, 3e-2 for LGLp4, 1e-4 for LGLp8
-q0_type = 'sinwave_2pi' #'sinwave_4pi' #'GaussWave_sbpbook' 'sinwave_2pi' #'squarewave' # initial condition 
-settings = {} # additional settings for mesh type, etc. Not needed.
+linear_thresh = 1e-7 #1e-6 #1e-5 #1e-8 for gauss, 1e-7 for sin, 1e-5 for LGLp4, 1e-7 fpr LGLp8
+max_thresh = 1e-4 #2e-3 #9e-3 #9e-3 for csbp gauss, 9e-4 for csbp sin, 3e-2 for LGLp4, 1e-4 for LGLp8
+q0_type = 'sinwave_2pi' #'sinwave_4pi' #'GaussWave_sbpbook' 'sinwave_2pi' #'squarewave' 'morlet_wavelet' # initial condition 
+settings = {} #{'warp_factor':[0.05,1.0,40],'warp_type': 'corners_periodic','jac_method':'exact'} #{} # additional settings for mesh type, etc. Not needed.
 plot_abs_error = False
 zoom = 0 # how many nodes to zoom in on? Counts the left-most node to start in the frame
 interp_num = 200 # for LG/LGL, number of nodes to interpolate to per element 
+logscale = True
 
 if op  in ['csbp', 'hgtl', 'hgt', 'mattsson']:
     s = p + 1
@@ -53,6 +54,11 @@ elif op in ['lg', 'lgl']:
     elif p == 7: eps = 0.0004
     elif p == 8: eps = 0.0002
     else: raise Exception('No dissipation for this p')
+    useH = False
+    bdy_fix = False
+elif op in ['circulant']:
+    s = int(p/2) + 1
+    eps = 3.125/5**s
     useH = False
     bdy_fix = False
 else:
@@ -82,6 +88,21 @@ if op in ['lg', 'lgl']:
             'sat':{'diss_type':'lf'},
             'label':f'$p={p}$, $\\varepsilon = {0.2*eps:.3g}$',
             'p':p,'nelem':nelem,'nen':0}
+elif op == 'circulant':
+    nelem_pm1 = 0
+    run1 = {'diss':{'diss_type':'nd'},
+            'sat':{'diss_type':'nd'},
+            'label':r'$\varepsilon = 0$',
+            'p':p,'nelem':nelem,'nen':nen}
+    run2 = {'diss':{'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':eps},
+            'sat':{'diss_type':'nd'},
+            'label':f'$\\varepsilon = {eps:.3g}$',
+            'p':p,'nelem':nelem,'nen':nen}
+    run3 = {'diss':{'diss_type':'dcp', 'jac_type':'scalar', 's':s, 'bdy_fix':bdy_fix, 'use_H':useH, 'coeff':0.2*eps},
+            'sat':{'diss_type':'nd'},
+            'label':f'$\\varepsilon = {0.2*eps:.3g}$',
+            'p':p,'nelem':nelem,'nen':nen}
+    run4 = False
 else:
     nelem_pm1 = 0
     run1 = {'diss':{'diss_type':'nd'},
@@ -107,14 +128,19 @@ title = None
 xlabel = r'$x$'
 ylabel = r'Solution Error $\bm{u} - \bm{u}_{\mathrm{ex}}$'
 #colors = ['tab:blue', 'darkgoldenrod', 'k',  'm', 'tab:brown']
-colors = ['tab:green', 'tab:orange', 'k',  'm', 'tab:brown']
 if op in ['lg', 'lgl']: 
     linestyles = ['-','-','-','-']
     #linestyles = ['-','-','--',':']
     linewidths = [2.5,2.2,2.0,1.5]
+    colors = ['tab:green', 'tab:orange', 'k',  'm', 'tab:brown']
+elif op == 'circulant':
+    linestyles = ['-', '--', (0, (2, 3))]
+    linewidths = [2.8, 2.5, 2.5]
+    colors = ['k', 'tab:blue', 'tab:orange']
 else:
     linestyles = [(0, (1, 1.5)), (0, (2, 3)), '-',(0, (4, 3, 1, 3))]
     linewidths = [2.3,2,1.8,1.8]
+    colors = ['tab:green', 'tab:orange', 'k',  'm', 'tab:brown']
 
 # initialize the runs and solve
 if nen == 0: 
@@ -132,14 +158,15 @@ solver2 = PdeSolverSbp(diffeq2, settings, 'rk8', dt, tf, p=run2['p'], surf_diss=
 diffeq3 = LinearConv(a, q0_type)
 diffeq3.q0_max_q = 1.
 solver3 = PdeSolverSbp(diffeq3, settings, 'rk8', dt, tf, p=run3['p'], surf_diss=run3['sat'], vol_diss=run3['diss'], nelem=run3['nelem'], nen=run3['nen'], disc_nodes=op, bc='periodic')
-diffeq4 = LinearConv(a, q0_type)
-diffeq4.q0_max_q = 1.
-solver4 = PdeSolverSbp(diffeq4, settings, 'rk8', dt, tf, p=run4['p'], surf_diss=run4['sat'], vol_diss=run4['diss'], nelem=run4['nelem'], nen=run4['nen'], disc_nodes=op, bc='periodic')
+if run4 is not False:
+    diffeq4 = LinearConv(a, q0_type)
+    diffeq4.q0_max_q = 1.
+    solver4 = PdeSolverSbp(diffeq4, settings, 'rk8', dt, tf, p=run4['p'], surf_diss=run4['sat'], vol_diss=run4['diss'], nelem=run4['nelem'], nen=run4['nen'], disc_nodes=op, bc='periodic')
 solver1.keep_all_ts, solver2.keep_all_ts, solver3.keep_all_ts, solver4.keep_all_ts = False, False, False, False # don't save info on every iteration - unecessary
 solver1.solve()
 solver2.solve()
 solver3.solve()
-solver4.solve()
+if run4 is not False: solver4.solve()
 if op in ['lg', 'lgl']:
     if interp_num == 0: interp_num = 20
     tmp, x1 = solver1.interpolate(return_mesh=True,num_nodes=interp_num)
@@ -159,11 +186,11 @@ else:
     er1 = solver1.q_sol - solver1.diffeq.exact_sol(time=tf)
     er2 = solver2.q_sol - solver2.diffeq.exact_sol(time=tf)
     er3 = solver3.q_sol - solver3.diffeq.exact_sol(time=tf)
-    er4 = solver4.q_sol - solver4.diffeq.exact_sol(time=tf)
+    if run4 is not False: er4 = solver4.q_sol - solver4.diffeq.exact_sol(time=tf)
     x1 = solver1.diffeq.x_elem
     x2 = solver2.diffeq.x_elem
     x3 = solver3.diffeq.x_elem
-    x4 = solver4.diffeq.x_elem
+    if run4 is not False: x4 = solver4.diffeq.x_elem
     end = nen - zoom
 
 # plot results
@@ -171,31 +198,62 @@ plt.figure(figsize=(6,4.4))
 if title is not None: plt.title(title,fontsize=18)
 plt.ylabel(ylabel,fontsize=16)
 plt.xlabel(xlabel,fontsize=16)
-plt.yscale('symlog',linthresh=linear_thresh)
+ax = plt.gca()
+if linear_thresh is None:
+    linear_thresh = np.min(abs(er1))
+if logscale: 
+    plt.yscale('symlog',linthresh=linear_thresh)
+else:
+    plt.yscale('linear')
+    from matplotlib.ticker import FuncFormatter
+    def custom_sci_notation(x, pos):
+        if x == 0:
+            return "0"
+        exponent = int(np.floor(np.log10(abs(x))))
+        coeff = x / 10**exponent
+        if abs(coeff - 1) < 0.09 :
+            return f"$10^{{{exponent:+d}}}$"
+        elif abs(coeff + 1) < 0.09:
+            return f"$-10^{{{exponent:+d}}}$"
+        else:
+            return f"${coeff:.1f}\\times 10^{{{exponent:+d}}}$"
+    ax.yaxis.set_major_formatter(FuncFormatter(custom_sci_notation))
 plt.grid(which='major',axis='y',linestyle='--',color='gray',linewidth='1')
-plt.gca().tick_params(axis='both', labelsize=12) 
-plt.ylim(-max_thresh,max_thresh)
+ax.tick_params(axis='both', labelsize=12) 
+if max_thresh is not None:
+    plt.ylim(-max_thresh,max_thresh)
 
-plt.plot(x1[zoom:,0], er1[zoom:,0], color=colors[0], linestyle=linestyles[0], label=run1['label'], linewidth=linewidths[0]) 
-plt.plot(x2[zoom:,0], er2[zoom:,0], color=colors[1], linestyle=linestyles[1], label=run2['label'], linewidth=linewidths[1]) 
-plt.plot(x3[zoom:,0], er3[zoom:,0], color=colors[2], linestyle=linestyles[2], label=run3['label'], linewidth=linewidths[2]) 
-plt.plot(x4[zoom:,0], er4[zoom:,0], color=colors[3], linestyle=linestyles[3], label=run4['label'], linewidth=linewidths[3]) 
+plt.plot(x1[zoom:,0], er1[zoom:,0], color=colors[0], linestyle=linestyles[0], label=run1['label'], linewidth=linewidths[0], alpha=1) 
+plt.plot(x2[zoom:,0], er2[zoom:,0], color=colors[1], linestyle=linestyles[1], label=run2['label'], linewidth=linewidths[1], alpha=1) 
+plt.plot(x3[zoom:,0], er3[zoom:,0], color=colors[2], linestyle=linestyles[2], label=run3['label'], linewidth=linewidths[2], alpha=0.2) 
+if run4 is not False: plt.plot(x4[zoom:,0], er4[zoom:,0], color=colors[3], linestyle=linestyles[3], label=run4['label'], linewidth=linewidths[3], alpha=0.2) 
 for elem in range(1,nelem):
-    plt.plot(x1[:end,elem], er1[:end,elem], color=colors[0], linestyle=linestyles[0], linewidth=linewidths[0]) 
-    plt.plot(x2[:end,elem], er2[:end,elem], color=colors[1], linestyle=linestyles[1], linewidth=linewidths[1]) 
-    plt.plot(x3[:end,elem], er3[:end,elem], color=colors[2], linestyle=linestyles[2], linewidth=linewidths[2]) 
-    plt.plot(x4[:end,elem], er4[:end,elem], color=colors[3], linestyle=linestyles[3], linewidth=linewidths[3]) 
+    plt.plot(x1[:end,elem], er1[:end,elem], color=colors[0], linestyle=linestyles[0], linewidth=linewidths[0], alpha=1) 
+    plt.plot(x2[:end,elem], er2[:end,elem], color=colors[1], linestyle=linestyles[1], linewidth=linewidths[1], alpha=1) 
+    plt.plot(x3[:end,elem], er3[:end,elem], color=colors[2], linestyle=linestyles[2], linewidth=linewidths[2], alpha=0.2) 
+    if run4 is not False: plt.plot(x4[:end,elem], er4[:end,elem], color=colors[3], linestyle=linestyles[3], linewidth=linewidths[3], alpha=0.2) 
 for elem in range(nelem,nelem_pm1):
     plt.plot(x1[:end,elem], er1[:end,elem], color=colors[0], linestyle=linestyles[0], linewidth=linewidths[0]) 
 
-handles, labels = plt.gca().get_legend_handles_labels()
+handles, labels = ax.get_legend_handles_labels()
 if op in ['lg', 'lgl']: 
-    order = [0,1,2,3]
+    order = [0,3,1,2] #[0,1,2,3]
     anchor = (0.5, 1.248)
+elif op == 'circulant':
+    order = [0,2,1]
+    anchor = (0.5, 1.135)
 else:
     order = [0,3,1,2]
     anchor = (0.435, 1.248)
-plt.legend([handles[idx] for idx in order],[labels[idx] for idx in order],loc='upper center',fontsize=14,  
+if op == 'circulant':
+    custom_handles = [handles[idx] for idx in order]
+    custom_labels = [labels[idx] for idx in order]
+    plt.legend(custom_handles,custom_labels,loc='upper center',fontsize=14,  
+           bbox_to_anchor=anchor, fancybox=True, shadow=False, ncol=3, columnspacing=1.5)
+else:
+    custom_handles = [handles[idx] for idx in order]
+    custom_labels = [labels[idx] for idx in order]
+    plt.legend(custom_handles,custom_labels,loc='upper center',fontsize=14,  
            bbox_to_anchor=anchor, fancybox=True, shadow=False, ncol=2, columnspacing=1.5)
 # bbox_to_anchor=(0.435, 1.248), bbox_to_anchor=(0.445, 1.248)
 plt.tight_layout()
