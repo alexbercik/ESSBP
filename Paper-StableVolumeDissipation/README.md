@@ -4,10 +4,10 @@ This directory contains all the files necessary to reproduce the plots from the 
 
 ## Contents
 
-- Source code for generating the data and plots
+- Source code for generating the data and plots (plus a few other scripts)
 - Data files used in the paper for the 2D Euler Vortex Problem
 - Supplementary Material PDF
-- Contact Alex Bercik for data files for the 2D Euler Kelvin Helmholtz Instability
+- Contact Alex Bercik for .npz data files for the 2D Euler Kelvin Helmholtz Instability, i.e. 'KelvinHelmholtz_Results'
 
 ## Paper
 
