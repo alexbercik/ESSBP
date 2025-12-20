@@ -21,11 +21,8 @@ plt.rcParams['text.latex.preamble'] = r'\usepackage{amsmath}'
 ''' Set default parameters for simultation '''
 run_sims = False # actually run all the sims? Or just print the figures?
 check_eigs = False # check the eigenvalues of each discretization?
-run_sims = False # actually run all the sims? Or just print the figures?
-check_eigs = False # check the eigenvalues of each discretization?
 show_final_sol = False # show the plots for runs that finish?
 show_dissipation = False # show the dissipation plots?
-plot_aggregated = True # plot the aggregated results at the end?
 plot_aggregated = True # plot the aggregated results at the end?
 show_plots = False
 track_in_time = True # track the values in time, not just initial condition
@@ -33,7 +30,6 @@ check_for_fail = False # if True, check existing data files for failed simulatio
 savefile = None # use a string like 'CSBPp4' to save the plot, None for no save. Note: '.png' added automatically at end
 
 nelem = 1 # number of elements
-nen = [20,40,80,160,320] # number of nodes per element
 nen = [20,40,80,160,320] # number of nodes per element
 op = 'csbp'
 p = 4
@@ -61,7 +57,7 @@ nthreads = 1 # number of threads for batch runs
 
 def run_simulation(op, p, nen, nelem, disc_type, vdiss, sat, label, nruns, irun, cons_obj, datafile=None, do_append=False, ident=None):
 
-    if op in ['csbp', 'hgtl', 'hgt', 'mattsson', 'upwind']:
+    if op in ['csbp', 'hgtl', 'hgt', 'mattsson']:
         dx = (xmax-xmin)/((nen-1)*nelem)
     elif op in ['lgl', 'lg']:
         dx = (xmax-xmin)/(p*nelem)
@@ -72,7 +68,6 @@ def run_simulation(op, p, nen, nelem, disc_type, vdiss, sat, label, nruns, irun,
     else:
         sparse = False
     print("===============================================")
-    print(f'Running {irun+1} of {nruns}: ' + label + f', nelem={nelem}, nen={nen}', flush=True)
     print(f'Running {irun+1} of {nruns}: ' + label + f', nelem={nelem}, nen={nen}', flush=True)
     diffeq = Quasi1dEuler(para, 'density_wave', 'density_wave', 'constant', 'periodic', nondimensionalize)
     solver = PdeSolverSbp(diffeq, {}, tm_method, dt, tf, 
@@ -105,7 +100,6 @@ def run_simulation(op, p, nen, nelem, disc_type, vdiss, sat, label, nruns, irun,
     else:
         tfinal = 0.0
 
-    if run_sims and track_in_time:
     if run_sims and track_in_time:
         if show_plots: solver.plot_cons_obj()
         idx = [j for j in range(len(cons_obj)) if cons_obj[j].lower() == 'time'][0]
@@ -417,11 +411,6 @@ if __name__ == '__main__':
     else:
         final_sols = None
 
-    if run_sims:
-        final_sols = [[] for _ in range(len(run_var))]
-    else:
-        final_sols = None
-
     if run_sims or check_eigs:
         # Prepare per-run appendable data file only when tracking in time
         if track_in_time:
@@ -515,7 +504,6 @@ if __name__ == '__main__':
         print()
         print('---------------------------------------------------')
         print('COMPLETE: All simulations submitted')
-        print('---------------------------------------------------', flush=True)
         print('---------------------------------------------------', flush=True)
         print()
 
@@ -766,8 +754,6 @@ if __name__ == '__main__':
             max_eigs_scamat0008 = np.array([2.37,0.3739,0.04053,1.665,2.789])
             max_eigs_pu2p_sw = np.array([4.831,5.446,2.034,0.0691,0.0005763])
             max_eigs_pu2p1_sw = np.array([3.451,3.488,1.195,0.03207,0.0002351])
-            max_eigs_pu2p_sw = np.array([4.831,5.446,2.034,0.0691,0.0005763])
-            max_eigs_pu2p1_sw = np.array([3.451,3.488,1.195,0.03207,0.0002351])
             spec_rad_nodiss = np.array([516.2,968.2,2124,4311,9297])
             spec_rad_matmat1 = np.array([1801,1820,2013,4071,8976])
             spec_rad_matmat02 = np.array([511.6,966.3,2120,4301,9283])
@@ -779,8 +765,6 @@ if __name__ == '__main__':
             spec_rad_scamat0008 = np.array([516.2,968.1,2124,4311,9297])
             spec_rad_pu2p_sw = np.array([419.9,887.1,2119,5021,1.055e+04])
             spec_rad_pu2p1_sw = np.array([403,863.2,1938,4288,9472])
-            spec_rad_pu2p_sw = np.array([419.9,887.1,2119,5021,1.055e+04])
-            spec_rad_pu2p1_sw = np.array([403,863.2,1938,4288,9472])
             crash_time_nodiss = np.array([17.937061,33.792154,3.206111,2.497499,2.618005])
             crash_time_matmat1 = np.array([50,50,50,50,50])
             crash_time_matmat02 = np.array([50,50,50,50,50])
@@ -790,8 +774,6 @@ if __name__ == '__main__':
             crash_time_scamat02 = np.array([50,50,50,50,50])
             crash_time_scamat004 = np.array([1.5621998,50,50,50,50])
             crash_time_scamat0008 = np.array([50,4.0493814,2.352266,50,50])
-            crash_time_pu2p_sw = np.array([0.403328,0.271765,0.602812,12.967872,50])
-            crash_time_pu2p1_sw = np.array([0.308718,0.309748,0.90709,26.772701,50])
             crash_time_pu2p_sw = np.array([0.403328,0.271765,0.602812,12.967872,50])
             crash_time_pu2p1_sw = np.array([0.308718,0.309748,0.90709,26.772701,50])
         elif p == 3:
@@ -857,12 +839,12 @@ if __name__ == '__main__':
             markersizes = [12, 11, 11, 10, 10]
         xlabel = r'Degrees of Freedom'
         #savefile = None
-        #savefile = None
         linewidth = 3
         xticks = {20 : r'$20$',
                     40 : r'$40$',
                     80 : r'$80$',
                     200 : r'$200$'}
+
         for i in range(3):
             leg_order = 2
             leg_alpha = 0.85
@@ -893,14 +875,7 @@ if __name__ == '__main__':
                 else: savefile_ = None
                 legendloc = 'upper left'
                 legendanchor = None
-                legend=False
                 log = True
-                if include_upwind:
-                    legendsize = 10.5
-                    ylim = (300,1.3e4)
-                else:
-                    legendsize = 12.5
-                    ylim = (4e2,1.3e4)
                 if include_upwind:
                     legendsize = 10.5
                     ylim = (300,1.3e4)
@@ -939,11 +914,6 @@ if __name__ == '__main__':
                     legendloc = 'upper right'
             if extra_coeff_vals: legendsize = 10
             
-            if include_upwind:
-                fig = plt.figure(figsize=(6.2,4.5))
-                ax = fig.add_axes([0.2, 0.15, 0.55, 0.75]) 
-            else:
-                fig = plt.figure(figsize=(5.0,4.5))
             if include_upwind:
                 fig = plt.figure(figsize=(6.2,4.5))
                 ax = fig.add_axes([0.2, 0.15, 0.55, 0.75]) 
@@ -989,8 +959,6 @@ if __name__ == '__main__':
             legend.set_zorder(leg_order)
             legend.get_frame().set_alpha(leg_alpha)
             #plt.tight_layout()
-            if not include_upwind:
-                plt.subplots_adjust(bottom=0.15, left=0.2)
             if not include_upwind:
                 plt.subplots_adjust(bottom=0.15, left=0.2)
             if savefile is not None: 
