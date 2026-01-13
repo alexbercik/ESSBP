@@ -10,6 +10,7 @@ import numpy as np
 import time
 import matplotlib.pyplot as plt
 from matplotlib import rc
+from matplotlib.colors import LogNorm
 rc('text', usetex=True)
 from os import path
 from socket import gethostname
@@ -119,7 +120,10 @@ class PdeSolver:
 
         self.diffeq = diffeq
         
-        self.settings = settings
+        if settings is None:
+            self.settings = {}
+        else:
+            self.settings = settings
         
         ''' Set default settings if not given '''
         self.settings.setdefault('warp_factor',0.) 
@@ -814,13 +818,14 @@ class PdeSolver:
 
     
     def check_eigs(self, q=None, plot_eigs=True, returnA=False, returneigs=False, 
-                   returnvecs=False, plot_maxvec=False, 
+                   returnvecs=False, plot_maxvec=False, num_vecs=5,
                    exact_dfdq=False, finite_diff=False, step=5.0e-6, istep=1e-15, tol=1.0e-10, 
-                   savefile=None, print_nothing=False, colour_by_k=False, normalize=False,
+                   savefile=None, print_nothing=False, colour_by_k=False, colour_by_bdy=False, normalize=False,
                    ymin=None, ymax=None, xmin=None, xmax=None, print_error=False,
                    time=None, display_time=False, display_maxreal=False,
                    title=None, save_format='png', dpi=600, overwrite=False,
-                   sparse_solver=False, sparse_largestRe_only=True, figsize=(6,4), **kargs):
+                   sparse_solver=False, sparse_largestRe_only=True, figsize=(6,4), 
+                   log_colorbar=False, **kargs):
         '''
         Call on self.diffeq.dqdt to check the stability of the spatial operator
         at a particular state q using central finite differences (approximate!).
@@ -881,6 +886,7 @@ class PdeSolver:
         
         if sparse_solver:
             colour_by_k = False
+            colour_by_bdy = False
             plot_eigs = False
             import scipy.sparse as sp
             if not print_nothing: print('... converting to sparse matrix.')
@@ -908,7 +914,7 @@ class PdeSolver:
 
         else:
 
-            if ((colour_by_k) and self.dim==1 and self.neq_node==1 and plot_eigs) or plot_maxvec or returnvecs:
+            if ((colour_by_k or colour_by_bdy) and self.dim==1 and self.neq_node==1 and plot_eigs) or plot_maxvec or returnvecs:
                 eigs, eigvecs = np.linalg.eig(A)
             else:
                 eigs = np.linalg.eigvals(A)
@@ -990,6 +996,29 @@ class PdeSolver:
                             else:
                                 avg_k[i] = np.average(ks,weights=power_spec)
                                 # np.sum(power_spec*ks)/np.sum(power_spec) # equivalent to above
+            elif colour_by_bdy:
+                if self.disc_nodes == 'circulant':
+                    H_bdy = self.H_phys[[0,1,-1],:].flatten('F')
+                else:
+                    H_bdy = self.H_phys[[0,-1],:].flatten('F')
+                H_flat = self.H_phys.flatten('F')
+                R_idcs = []
+                idx = 0
+                for i in range(self.nelem):
+                    R_idcs.append(idx)
+                    if self.disc_nodes == 'circulant':
+                        R_idcs.append(idx+1)
+                    R_idcs.append(idx+self.nen-1)
+                    idx += self.nen
+                avg_k = np.zeros(self.nn)
+                for i in range(self.nn):
+                    w = eigvecs[:,i]
+                    w_bdy = w[R_idcs]
+                    num = np.sum(np.conjugate(w_bdy)*H_bdy*w_bdy)
+                    den = np.sum(np.conjugate(w)*H_flat*w)
+                    if abs(num.imag) > 1e-10 or abs(den.imag) > 1e-10:
+                        raise ValueError('Imaginary part of numerator or denominator is non-zero!')
+                    avg_k[i] = num.real/den.real
 
             else:
                 avg_k=None
@@ -1000,8 +1029,24 @@ class PdeSolver:
             if avg_k is None:
                 plt.scatter(X,Y, color='red')
             else:
-                plt.scatter(X,Y, c=avg_k, cmap='viridis', vmin=1, vmax=np.max(ks))
-                plt.colorbar(label='Average Wavenumber')
+                if colour_by_bdy:
+                    if log_colorbar:
+                        # For log scale, need to ensure positive values and handle zeros
+                        avg_k_log = np.maximum(avg_k, 1e-4)  # avoid log(0)
+                        norm = LogNorm(vmin=max(np.min(avg_k_log), 1e-10), vmax=1)
+                        plt.scatter(X,Y, c=avg_k_log, cmap='viridis', norm=norm)
+                    else:
+                        plt.scatter(X,Y, c=avg_k, cmap='viridis', vmin=0, vmax=1)
+                    plt.colorbar(label='Element-Boundary Content')
+                elif colour_by_k:
+                    if log_colorbar:
+                        # For log scale, ensure positive values
+                        avg_k_log = np.maximum(avg_k, 1e-4)
+                        norm = LogNorm(vmin=max(1, np.min(avg_k_log)), vmax=np.max(ks))
+                        plt.scatter(X,Y, c=avg_k_log, cmap='viridis', norm=norm)
+                    else:
+                        plt.scatter(X,Y, c=avg_k, cmap='viridis', vmin=1, vmax=np.max(ks))
+                    plt.colorbar(label='Average Wavenumber')
             plt.axvline(x=0, linewidth=1, linestyle='--', color='black')
             plt.xlabel(r'Real Component ($x<0$ for stability)',fontsize=14)
             plt.ylabel(r'Imaginary Component',fontsize=14)
@@ -1035,7 +1080,7 @@ class PdeSolver:
 
         if plot_maxvec:
             #TODO: assumes 1D, also not well suited to neq_node>1
-            num_vecs = min(5, len(eigs))
+            num_vecs = min(num_vecs, len(eigs))
             # Find the indices of the {num_vecs} largest eigenvalues
             largest_indices = np.argsort(eigs)[-num_vecs:][::-1]
             for i, idx in enumerate(largest_indices):
@@ -1049,7 +1094,7 @@ class PdeSolver:
                 amplitude = np.abs(eigenvector)
                 
                 # Create the plot
-                plt.figure()
+                plt.figure(figsize=figsize)
                 plt.plot(self.mesh.x, real_part, label='Real Component')
                 plt.plot(self.mesh.x, imaginary_part, label='Imaginary Component')
                 plt.plot(self.mesh.x, amplitude, label='Amplitude', linestyle='--')
