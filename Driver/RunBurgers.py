@@ -3,7 +3,7 @@
 """
 Created on Wed Jun 17 14:48:54 2020
 
-@author: andremarchildon
+@author: bercik
 """
 
 import os
@@ -28,7 +28,7 @@ from Source.Solvers.PdeSolverSbp import PdeSolverSbp
 tm_method = 'rk8' # explicit_euler, rk4
 dt = 0.0001
 # note: should set according to courant number C = a dt / dx
-tf = 2 # final time / breaking time
+tf = 1 # final time / breaking time
 
 # Domain
 xmin = 0.
@@ -44,9 +44,9 @@ nen = 200 # optional, number of nodes per element (set to zero for element-type)
 had_flux = 'ec' # 2-point numerical flux used in hadamard form (only 'ec' and 'central' set up)
 surf_diss = {'diss_type':'ent', 'jac_type':'scasca', 'maxeig':'rusanov', 'coeff':1.0}
 vol_diss = {'diss_type':'nd', 'use_H':False, 'jac_type':'scalar', 'fluxvec':'burgers',
-            'avg_half_nodes':True, 's':1, 'eps_type':4, 'coeff':1}#1.0}
+            'avg_half_nodes':True, 's':1, 'eps_type':4, 'coeff':3.125/5**(p+1)}#1.0}
 use_split_form = True
-split_alpha = 2./3. # splitting parameter, 2/3 to recover entropy-conservative had form
+split_alpha = 1. # splitting parameter, 2/3 to recover entropy-conservative had form
 
 # Initial solution
 q0_type = 'sinwave_shift' # 'GassnerSinWave', '..._cont', '..._coarse' 'GaussWave', 'SinWave'
@@ -56,7 +56,7 @@ bool_plot_sol = False
 print_sol_norm = False
 skip_ts = 0
 
-cons_obj_name = ('time', 'Energy', 'Conservation', 'Max_Eig')
+cons_obj_name = ('time', 'Error')
 settings = {'warp_factor':0.0,               # Warps / stretches mesh.
             'warp_type': 'none',             # Options: 'defualt', 'papers', 'quad'
             'use_optz_metrics':True,         # Uses optimized metrics for free stream preservation.
@@ -85,7 +85,7 @@ solver.print_progress = False
 #solver.check_eigs()
 solver.solve()
 solver.plot_sol()
-#solver.plot_cons_obj()
+solver.plot_cons_obj()
 import numpy as np
 #solver.check_eigs(q=np.random.rand(*solver.qshape))
 #solver.check_eigs(q=np.random.rand(*solver.qshape))

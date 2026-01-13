@@ -729,11 +729,19 @@ class Sat(SatDer1, SatDer2):
                 else:
                     if self.diss_type=='split':
                         self.alpha = solver.diffeq.split_alpha
+                        if self.print_progress: print('... Using a split form SAT that recovers the Central and EC SATs with alpha=1 and alpha=2/3.')
+                        if self.print_progress: print(f'... average={self.average}, maxeig={self.maxeig_type}, coeff={self.coeff}, alpha={self.alpha}')
+                        self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.div_1d_burgers_split(q, E, q_bdyL=q_bdyL, q_bdyR=q_bdyR) 
+                        self.diss = self.diss_cons_1d
+                        self.calc_absA_dq = self.calc_absA_dq_sca_1D
+
+                    elif self.diss_type=='varcoeff_split':
+                        self.alpha = solver.diffeq.split_alpha
                         if self.print_progress: print('... Using a split form SAT mimicking the variable coefficient advection formulation.')
                         if self.print_progress: print(f'... average={self.average}, maxeig=lf, coeff={self.coeff}, alpha={self.alpha}')
                         if self.print_progress: print('WARNING: The split form follows the Variable Coefficient formulation and is not entropy-stable.')
-                        self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.div_1d_burgers_split(q, E, q_bdyL=q_bdyL, q_bdyR=q_bdyR,
-                                                                 extrapolate_flux=True) # TODO: Add some solver setting for this
+                        self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.div_1d_burgers_split_old(q, E, q_bdyL=q_bdyL, q_bdyR=q_bdyR,
+                                                                 extrapolate_flux=True) # TODO: Add some solver setting for this                     
                     elif self.diss_type=='ec':
                         if self.print_progress: print('... Using an entropy-conservative SAT found in the SBP book.')
                         if self.print_progress: print("    (not the one recovered from the Hadamard form. For this use diss_type='ec_had').")
