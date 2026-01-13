@@ -627,46 +627,56 @@ class SatDer1:
         sat = sat - self.tR @ numflux[:,1:] + self.tL @ numflux[:,:-1]
         return sat
     
-    def div_1d_burgers_split(self, q, E, q_bdyL=None, q_bdyR=None, extrapolate_flux=True):
+    def div_1d_burgers_split(self, q, E=None, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None):
         '''
-        A general split form SAT for Burgers equation, treating it as a variable coefficient problem with a=u/2
-        Note: the entropy conservative SAT is NOT recovered with self.split_alpha=2/3
+        A general split form SAT for Burgers equation,
+        recovering the divergence/central form with self.split_alpha=1.
+        recovers the entropy-conservative SAT with self.split_alpha=2/3.
+        Note: I have not checked if this works for operators without boundary nodes.
         self.coeff=0 is conservative, self.coeff=1 is disspative
-        '''        
-        
-        sat = self.alpha * self.lm_gv(self.Esurf, E, self.neq_node) \
-            + (1 - self.alpha) * 0.5 * q * self.lm_gv(self.Esurf, q, self.neq_node)
+        ''' 
+
         q_a = self.lm_gv(self.tLT, q, self.neq_node)
         q_b = self.lm_gv(self.tRT, q, self.neq_node)
-        if q_bdyL is None:
-            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
-            qf_R = fn.pad_1dR(q_a, q_a[:,0])
-        else:
-            qf_L = fn.pad_1dL(q_b, q_bdyL)
-            qf_R = fn.pad_1dR(q_a, q_bdyR)
-            # make sure boundaries have upwind SATs
-            sigma = self.coeff * np.ones((1,self.nelem+1))
-            sigma[0] = 1
-            sigma[-1] = 1
-        qf_jump = qf_R - qf_L
-        qf_avg = self.calc_avgq(qf_L, qf_R)
 
-        if extrapolate_flux:
-            E_a = self.lm_gv(self.tLT, E, self.neq_node)
-            E_b = self.lm_gv(self.tRT, E, self.neq_node)
-            if q_bdyL is None:
-                Ef_L = fn.pad_1dL(E_b, E_b[:,-1])
-                Ef_R = fn.pad_1dR(E_a, E_a[:,0])
-            else:
-                Ef_L = fn.pad_1dL(E_b, 0.5 * q_bdyL**2)
-                Ef_R = fn.pad_1dR(E_a, 0.5 * q_bdyR**2)
-            f_avg = self.calc_avgq(Ef_L, Ef_R)
-        else:  
-            f_avg = (qf_avg)**2 / 2
-        numflux = f_avg - sigma * fn.cabs(qf_avg) * qf_jump / 2
+        EL = fn.shift_right(E)
+        intL = self.lm_gv(self.ta, EL, self.neq_node)
+        ER = fn.shift_left(E)
+        intR = self.lm_gv(self.tb, ER, self.neq_node)
         
-        sat = sat - self.lm_gv(self.tR, numflux[:,1:], self.neq_node) \
-                  + self.lm_gv(self.tL, numflux[:,:-1], self.neq_node)
+        if q_bdyL is None:
+            qf_L = fn.pad_1dL(q_b, q_b[:,-1]) # periodic
+        else:
+            # manually fix boundaries of EL to ensure proper boundary coupling
+            if E_bdyL is None: E_bdyL = self.calcEx(q_bdyL)
+            intL[:,0] = self.lm_lv(self.tL, E_bdyL, self.neq_node)
+            qf_L = fn.pad_1dL(q_b, q_bdyL)
+        
+        if q_bdyR is None:
+            qf_R = fn.pad_1dR(q_a, q_a[:,0]) # periodic
+        elif np.any(q_bdyR == 'None'):
+            # outflow boundary condition - do not apply a SAT here
+            qf_R = fn.pad_1dR(q_a, np.zeros(self.neq_node))
+            qf_L[:,-1] = 0.0
+            # but careful I am doing E * flux, must also subtract this from SAT
+            E_bdyR = E[-self.neq_node:,-1]
+            intR[:,-1] = self.lm_lv(self.tR, E_bdyR, self.neq_node)
+        else:
+            # manually fix boundaries of ER to ensure proper boundary coupling
+            if E_bdyR is None: E_bdyR = self.calcEx(q_bdyR)
+            intR[:,-1] = self.lm_lv(self.tR, E_bdyR, self.neq_node)
+            qf_R = fn.pad_1dR(q_a, q_bdyR)
+
+        diss = self.coeff*self.diss(qf_L,qf_R)
+        Esat = self.lm_gv(self.Esurf, E, self.neq_node)
+        sat = 0.5*( (2.-self.alpha)*Esat - intR + intL ) - diss
+
+        if self.alpha != 1:
+            q_R = qf_R[:,1:]
+            q_L = qf_L[:,:-1]
+            sat += 0.5*(1.-self.alpha) * ( self.lm_gv(self.tR, (0.5*q_R*q_R - q_b*q_R), self.neq_node)
+                                         - self.lm_gv(self.tL, (0.5*q_L*q_L - q_a*q_L), self.neq_node) )
+
         return sat
             
     def div_1d_burgers_es(self, q, E=None, q_bdyL=None, q_bdyR=None):
@@ -768,6 +778,48 @@ class SatDer1:
     ##########################################################################
     ''' OLD STUFF ''' 
     ##########################################################################
+
+    def div_1d_burgers_split_old(self, q, E, q_bdyL=None, q_bdyR=None, extrapolate_flux=True):
+        '''
+        A general split form SAT for Burgers equation, treating it as a variable coefficient problem with a=u/2
+        Note: the entropy conservative SAT is NOT recovered with self.split_alpha=2/3
+        self.coeff=0 is conservative, self.coeff=1 is disspative
+        '''        
+        
+        sat = self.alpha * self.lm_gv(self.Esurf, E, self.neq_node) \
+            + (1 - self.alpha) * 0.5 * q * self.lm_gv(self.Esurf, q, self.neq_node)
+        q_a = self.lm_gv(self.tLT, q, self.neq_node)
+        q_b = self.lm_gv(self.tRT, q, self.neq_node)
+        if q_bdyL is None:
+            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
+            qf_R = fn.pad_1dR(q_a, q_a[:,0])
+        else:
+            qf_L = fn.pad_1dL(q_b, q_bdyL)
+            qf_R = fn.pad_1dR(q_a, q_bdyR)
+            # make sure boundaries have upwind SATs
+            sigma = self.coeff * np.ones((1,self.nelem+1))
+            sigma[0] = 1
+            sigma[-1] = 1
+        qf_jump = qf_R - qf_L
+        qf_avg = self.calc_avgq(qf_L, qf_R)
+
+        if extrapolate_flux:
+            E_a = self.lm_gv(self.tLT, E, self.neq_node)
+            E_b = self.lm_gv(self.tRT, E, self.neq_node)
+            if q_bdyL is None:
+                Ef_L = fn.pad_1dL(E_b, E_b[:,-1])
+                Ef_R = fn.pad_1dR(E_a, E_a[:,0])
+            else:
+                Ef_L = fn.pad_1dL(E_b, 0.5 * q_bdyL**2)
+                Ef_R = fn.pad_1dR(E_a, 0.5 * q_bdyR**2)
+            f_avg = self.calc_avgq(Ef_L, Ef_R)
+        else:  
+            f_avg = (qf_avg)**2 / 2
+        numflux = f_avg - sigma * fn.cabs(qf_avg) * qf_jump / 2
+        
+        sat = sat - self.lm_gv(self.tR, numflux[:,1:], self.neq_node) \
+                  + self.lm_gv(self.tL, numflux[:,:-1], self.neq_node)
+        return sat
     
     def dfdq_der1_upwind_scalar(self, q_L, q_R, xy, sigma=1, avg='simple'):
         '''
