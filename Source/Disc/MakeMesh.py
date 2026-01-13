@@ -68,19 +68,19 @@ class MakeMesh:
         if self.dim == 1:
             self.dom_len = self.xmax - self.xmin
             self.build_mesh_1d()
-            if self.warp_factor!=0 and self.warp_type != 'none':
+            if self.warp_factor!=0 and self.warp_type != 'none' and self.warp_type != None:
                 self.stretch_mesh_1d()
              
         elif self.dim == 2:
             self.dom_len = (self.xmax[0] - self.xmin[0], self.xmax[1] - self.xmin[1])
             self.build_mesh_2d()
-            if self.warp_factor!=0 and self.warp_type != 'none':
+            if self.warp_factor!=0 and self.warp_type != 'none' and self.warp_type != None:
                 self.warp_mesh_2d()
                 
         elif self.dim == 3:
             self.dom_len = (self.xmax[0] - self.xmin[0], self.xmax[1] - self.xmin[1], self.xmax[2] - self.xmin[2])
             self.build_mesh_3d()
-            if self.warp_factor!=0 and self.warp_type != 'none':
+            if self.warp_factor!=0 and self.warp_type != 'none' and self.warp_type != None:
                 self.warp_mesh_3d()
         
         else:
