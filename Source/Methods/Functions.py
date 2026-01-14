@@ -650,17 +650,17 @@ def gdiag_gv(H,q,neq_node=None):
     '''
     NOTE: Faster to directly use H * q
     Takes a global array of shape (nen,nelem) that simulates a global diagonal
-    matrix of shape (nen,nen,nelem), and a global vector of shape (nen,nelem) 
-    and returns a global vector of shape (nen,nelem), i.e. H @ q
+    matrix of shape (nen,nen,nelem), and a global vector of shape (nen*neq_node,nelem) 
+    and returns a global vector of shape (nen*neq_node,nelem), i.e. H @ q
 
     Parameters
     ----------
     H : numpy array of shape (nen,nelem)
-    D : numpy array of shape (nen,nelem)
+    q : numpy array of shape (nen*neq_node,nelem)
 
     Returns
     -------
-    c : numpy array of shape (nen1,nen2,nelem)
+    c : numpy array of shape (nen*neq_node,nelem)
     ''' 
     nen,nelem = np.shape(H)
     nenb,nelemb = np.shape(q)
@@ -679,6 +679,40 @@ def gdiag_gv(H,q,neq_node=None):
                 for i in range(neq_node):
                     idx = row_offset + i
                     c[idx, e] = h_val * q[idx, e]
+        return c
+
+@njit
+def ldiag_lv(H,q,neq_node=None):
+    '''
+    NOTE: Faster to directly use H * q
+    Takes a global array of shape (nen,) that simulates a local diagonal
+    matrix of shape (nen,nen), and a local vector of shape (nen*neq_node,) 
+    and returns a global vector of shape (nen,nelem), i.e. H @ q
+
+    Parameters
+    ----------
+    H : numpy array of shape (nen,)
+    q : numpy array of shape (nen*neq_node,)
+
+    Returns
+    -------
+    c : numpy array of shape (nen1,nen2,nelem)
+    ''' 
+    nen, = np.shape(H)
+    nenb, = np.shape(q)
+    # Optimize: neq_node == 1 is equivalent to None (no kronning needed)
+    if neq_node is None or neq_node == 1:
+        assert nen==nenb, f'array shapes do not match, {nen} != {nenb}'
+        return H * q
+    else:
+        assert nenb == nen * neq_node, f'array shapes do not match, {nen * neq_node} != {nenb}'
+        c = np.zeros_like(q)
+        for row in range(nen):
+            h_val = H[row]
+            row_offset = row * neq_node
+            for i in range(neq_node):
+                idx = row_offset + i
+                c[idx] = h_val * q[idx]
         return c
 
 @njit

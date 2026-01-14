@@ -525,7 +525,7 @@ class PdeSolver:
         return np.sqrt(float(self.energy(q,nen)))
     
     def calc_error(self, q=None, tf=None, method=None, use_all_t=False,
-                   var2plot_name=None):
+                   var2plot_name=None, q_exa=None):
         '''
         Purpose
         ----------
@@ -571,7 +571,11 @@ class PdeSolver:
                 errors[i] = self.calc_error(self.q_sol[:,:,i],times[i],method=method)
             return errors
         
-        q_exa = self.diffeq.exact_sol(tf,guess=q)
+        if q_exa is None:
+            q_exa = self.diffeq.exact_sol(tf,guess=q)
+        else:
+            assert q_exa.shape == q.shape, f'ERROR: q_exa and q must have the same shape. {q_exa.shape}, {q.shape}'
+        
         if var2plot_name is None:
             var = q
             var_exa = q_exa
@@ -818,7 +822,7 @@ class PdeSolver:
 
     
     def check_eigs(self, q=None, plot_eigs=True, returnA=False, returneigs=False, 
-                   returnvecs=False, plot_maxvec=False, num_vecs=5,
+                   returnvecs=False, plot_maxvec=False, num_vecs=5, test_type='max abs',
                    exact_dfdq=False, finite_diff=False, step=5.0e-6, istep=1e-15, tol=1.0e-10, 
                    savefile=None, print_nothing=False, colour_by_k=False, colour_by_bdy=False, normalize=False,
                    ymin=None, ymax=None, xmin=None, xmax=None, print_error=False,
@@ -997,28 +1001,58 @@ class PdeSolver:
                                 avg_k[i] = np.average(ks,weights=power_spec)
                                 # np.sum(power_spec*ks)/np.sum(power_spec) # equivalent to above
             elif colour_by_bdy:
-                if self.disc_nodes == 'circulant':
-                    H_bdy = self.H_phys[[0,1,-1],:].flatten('F')
+                if self.dim >1 or self.neq_node>1: 
+                    if not print_nothing: print('WARNING: colour by boundary not set up for dim >1 or neq>0. Ignoring.')
+                    avg_k=None
+                # For C-SBP, use global H and map boundary nodes to global DOF indices
+                elif hasattr(self, 'H_glob') and hasattr(self, 'gid'):
+                    # C-SBP: eigenvectors are in global DOF format (N_global,)
+                    
+                    # Find boundary node indices in global space using gid
+                    # Boundary nodes: local indices [0, 1, -2, -1]
+                    boundary_local_nodes = [0, 1, self.nen - 2, self.nen - 1]
+                    
+                    # Get global node indices for boundary nodes
+                    boundary_node_gids_set = set()
+                    for e in range(self.nelem):
+                        for node_idx in boundary_local_nodes:
+                            boundary_node_gids_set.add(self.gid[node_idx, e])
+                    
+                    R_idcs = np.array(sorted(boundary_node_gids_set))
+                    H_bdy = self.H_glob[R_idcs]
+                    
+                    avg_k = np.zeros(self.nn)
+                    for i in range(self.nn):
+                        w = eigvecs[:,i]  # Global DOF vector (N_global,)
+                        w_bdy = w[R_idcs]
+                        num = np.sum(np.conjugate(w_bdy)*H_bdy*w_bdy)
+                        den = np.sum(np.conjugate(w)*self.H_glob*w)
+                        if abs(num.imag) > 1e-10 or abs(den.imag) > 1e-10:
+                            raise ValueError('Imaginary part of numerator or denominator is non-zero!')
+                        avg_k[i] = num.real/den.real
                 else:
-                    H_bdy = self.H_phys[[0,-1],:].flatten('F')
-                H_flat = self.H_phys.flatten('F')
-                R_idcs = []
-                idx = 0
-                for i in range(self.nelem):
-                    R_idcs.append(idx)
                     if self.disc_nodes == 'circulant':
-                        R_idcs.append(idx+1)
-                    R_idcs.append(idx+self.nen-1)
-                    idx += self.nen
-                avg_k = np.zeros(self.nn)
-                for i in range(self.nn):
-                    w = eigvecs[:,i]
-                    w_bdy = w[R_idcs]
-                    num = np.sum(np.conjugate(w_bdy)*H_bdy*w_bdy)
-                    den = np.sum(np.conjugate(w)*H_flat*w)
-                    if abs(num.imag) > 1e-10 or abs(den.imag) > 1e-10:
-                        raise ValueError('Imaginary part of numerator or denominator is non-zero!')
-                    avg_k[i] = num.real/den.real
+                        H_bdy = self.H_phys[[0,1,-1],:].flatten('F')
+                    else:
+                        H_bdy = self.H_phys[[0,-1],:].flatten('F')
+                    H_flat = self.H_phys.flatten('F')
+                    R_idcs = []
+                    idx = 0
+                    for i in range(self.nelem):
+                        R_idcs.append(idx)
+                        if self.disc_nodes == 'circulant':
+                            R_idcs.append(idx+1)
+                        R_idcs.append(idx+self.nen-1)
+                        idx += self.nen
+                    avg_k = np.zeros(self.nn)
+                    for i in range(self.nn):
+                        w = eigvecs[:,i]
+                        w_bdy = w[R_idcs]
+                        num = np.sum(np.conjugate(w_bdy)*H_bdy*w_bdy)
+                        den = np.sum(np.conjugate(w)*H_flat*w)
+                        if abs(num.imag) > 1e-10 or abs(den.imag) > 1e-10:
+                            raise ValueError('Imaginary part of numerator or denominator is non-zero!')
+                        avg_k[i] = num.real/den.real
 
             else:
                 avg_k=None
@@ -1080,10 +1114,24 @@ class PdeSolver:
 
         if plot_maxvec:
             #TODO: assumes 1D, also not well suited to neq_node>1
+            assert test_type in ['max real', 'max abs', 'min real'], 'ERROR: Choose one of test_type = "max real" or "max abs" or "min real"'
             num_vecs = min(num_vecs, len(eigs))
-            # Find the indices of the {num_vecs} largest eigenvalues
-            largest_indices = np.argsort(eigs)[-num_vecs:][::-1]
-            for i, idx in enumerate(largest_indices):
+            
+            # Sort eigenvalues and eigenvectors based on test_type
+            if test_type == 'max real':
+                # Sort by descending real part
+                sorted_indices = np.argsort(-np.real(eigs))
+            elif test_type == 'max abs':
+                # Sort by descending magnitude
+                sorted_indices = np.argsort(-np.abs(eigs))
+            elif test_type == 'min real':
+                # Sort by ascending real part
+                sorted_indices = np.argsort(np.real(eigs))
+            
+            # Select top num_vecs indices
+            selected_indices = sorted_indices[:num_vecs]
+            
+            for i, idx in enumerate(selected_indices):
                 # Extract the corresponding eigenvectors
                 eigenvalue = eigs[idx]
                 eigenvector = eigvecs[:, idx]
@@ -1158,6 +1206,8 @@ class PdeSolver:
         # Track paired eigenvalues
         processed_indices = set()
 
+        x = self.mesh.x
+
         # Iterate over eigenvalues and eigenvectors
         for idx, eigenvalue in enumerate(eigenvalues):
             if idx in processed_indices:
@@ -1195,7 +1245,6 @@ class PdeSolver:
                     else:
                         norm = np.linalg.norm(vars[:,vari])
                     vars[:,vari] = vars[:,vari] / norm
-                x = self.mesh.x
 
                 # Initialize figure
                 colors = ['#1f77b4', '#ff7f0e', '#2ca02c']
@@ -1380,7 +1429,7 @@ class PdeSolver:
         
         if self.disc_type == 'div' and self.dim==1:
             rhs = self.dqdt_1d_div(q0,0.) #TODO: Fix for had and 2D and 3D
-            self.dqdt = lambda q, t: self.dqdt_1d_div(q,t) - rhs           
+            self.dqdt = lambda q, t=0.0: self.dqdt_1d_div(q,t) - rhs           
         elif self.disc_type == 'dg':
             if self.weak_form:
                 rhs = self.dg_dqdt_weak(q0)
@@ -1638,12 +1687,18 @@ class PdeSolver:
             q = self.diffeq.set_q0() + 0.01*np.random.rand(*self.qshape)
         dqdt = self.dqdt(q,0.)
         result = self.energy_der(q,dqdt)
-        result2 = self.entropy_der(q,dqdt)
-        if print_result:
-            print('Derivative of energy stability is {0:.5g}'.format(result))
-            print('Derivative of entropy stability is {0:.5g}'.format(result2))
+        if hasattr(self.diffeq, 'entropy_var'):
+            result2 = self.entropy_der(q,dqdt)
+            if print_result:
+                print('Derivative of energy stability is {0:.5g}'.format(result))
+                print('Derivative of entropy stability is {0:.5g}'.format(result2))
+            else:
+                return result, result2
         else:
-            return result, result2
+            if print_result:
+                print('Derivative of energy stability is {0:.5g}'.format(result))
+            else:
+                return result
     
     def calc_cons_obj_rate(self, q=None, t=None, cons_obj_name=None, order=2):
         ''' calculate the rate of change (in time) of the conservation objectives '''

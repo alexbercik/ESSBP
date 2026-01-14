@@ -1,5 +1,5 @@
 # ESSBP
-Entropy-Stable Summation by Parts. See the driver files for examples on how to run.
+Entropy-Stable Summation by Parts. Can run SBP-SAT and Continuous SBP with different operator types in a tensor-product framework (or circulant Finite Difference). See the driver files for examples on how to run.
 
 ### Install Instructions
 

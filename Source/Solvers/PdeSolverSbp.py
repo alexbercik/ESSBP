@@ -7,7 +7,6 @@ Created on Thu Oct  1 11:28:38 2020
 """
 
 import numpy as np
-import gc
 
 from Source.Disc.MakeMesh import MakeMesh
 from Source.Disc.MakeSbpOp import MakeSbpOp
@@ -173,7 +172,7 @@ class PdeSolverSbp(PdeSolver):
         # but it is also useful for diffeq.calc_breaking_times
         self.diffeq.set_sbp_op_1d(self.Dx, self.gm_gv)
 
-    def dqdt_1d_div(self, q, t):
+    def dqdt_1d_div(self, q, t=0.0):
         ''' the main dqdt function for divergence form in 1D '''
         E = self.diffeq.calcEx(q)
         if self.use_diffeq_dExdx:
@@ -196,7 +195,7 @@ class PdeSolverSbp(PdeSolver):
         dqdt = - dExdx + self.diffeq.calcG(q,t) + sat_term + self.dissipation(q)
         return np.ascontiguousarray(dqdt)
         
-    def dqdt_2d_div(self, q, t):
+    def dqdt_2d_div(self, q, t=0.0):
         ''' the main dqdt function for divergence form in 2D '''
         Ex = self.diffeq.calcEx(q)
         #dExdx = self.gm_gv(self.Dx, Ex, self.neq_node)
@@ -226,7 +225,7 @@ class PdeSolverSbp(PdeSolver):
         dqdt = - dExdx - dEydy + sat_term + self.diffeq.calcG(q,t) + self.dissipation(q)
         return np.ascontiguousarray(dqdt)
 
-    def dqdt_3d_div(self, q, t):
+    def dqdt_3d_div(self, q, t=0.0):
         ''' the main dqdt function for divergence form in 3D '''
         Ex = self.diffeq.calcEx(q)
         dExdx = self.gm_gv(self.Dx, Ex, self.neq_node)
@@ -262,7 +261,7 @@ class PdeSolverSbp(PdeSolver):
         dqdt = - dExdx - dEydy - dEzdz + sat_term + self.diffeq.calcG(q,t) + self.dissipation(q)
         return np.ascontiguousarray(dqdt)
         
-    def dqdt_1d_had(self, q, t):
+    def dqdt_1d_had(self, q, t=0.0):
         ''' the main dqdt function for hadamard form in 1D '''
         #Fvol = self.build_F_vol(q)
         #dExdx = 2*self.gm_gm_had_diff(self.Dx, Fvol)
@@ -285,7 +284,7 @@ class PdeSolverSbp(PdeSolver):
         dqdt += sat_term + self.diffeq.calcG(q,t) + self.dissipation(q)
         return np.ascontiguousarray(dqdt)
         
-    def dqdt_2d_had(self, q, t):
+    def dqdt_2d_had(self, q, t=0.0):
         ''' the main dqdt function for hadamard form in 2D '''
         #Fxvol, Fyvol = self.build_F_vol(q)
         #dExdx = 2*self.gm_gm_had_diff(self.Dx, Fxvol)
@@ -319,7 +318,7 @@ class PdeSolverSbp(PdeSolver):
         dqdt += sat_term + self.diffeq.calcG(q,t) + self.dissipation(q)
         return np.ascontiguousarray(dqdt)
         
-    def dqdt_3d_had(self, q, t):
+    def dqdt_3d_had(self, q, t=0.0):
         ''' the main dqdt function for hadamard form in 3D '''
         Fxvol, Fyvol, Fzvol = self.build_F_vol(q)
         dExdx = 2*self.gm_gm_had_diff(self.Dx, Fxvol)
@@ -354,7 +353,7 @@ class PdeSolverSbp(PdeSolver):
         return np.ascontiguousarray(dqdt)
     
 
-    def dfdq_1d_div(self, q, t):
+    def dfdq_1d_div(self, q, t=0.0):
         ''' the main linearized RHS function for divergence form in 1D '''
         # TODO: this is not fully correct
         if not self.dissipation.type.lower() == 'nd':
@@ -380,23 +379,23 @@ class PdeSolverSbp(PdeSolver):
             + H_inv_kron.flatten('f')[:, np.newaxis] * sat
         return dfdq
     
-    def dfdq_2d_div(self, q, t):
+    def dfdq_2d_div(self, q, t=0.0):
         ''' the main linearized RHS function for divergence form in 2D '''
         raise Exception('Not done yet.')
     
-    def dfdq_3d_div(self, q, t):
+    def dfdq_3d_div(self, q, t=0.0):
         ''' the main linearized RHS function for divergence form in 3D '''
         raise Exception('Not done yet.') 
     
-    def dfdq_1d_had(self, q, t):
+    def dfdq_1d_had(self, q, t=0.0):
         ''' the main linearized RHS function for hadamard form in 1D '''
         raise Exception('Not done yet.')
     
-    def dfdq_2d_had(self, q, t):
+    def dfdq_2d_had(self, q, t=0.0):
         ''' the main linearized RHS function for hadamard form in 2D '''
         raise Exception('Not done yet.')
     
-    def dfdq_3d_had(self, q, t):
+    def dfdq_3d_had(self, q, t=0.0):
         ''' the main linearized RHS function for hadamard form in 3D '''
         raise Exception('Not done yet.')
         
