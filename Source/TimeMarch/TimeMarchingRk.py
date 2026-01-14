@@ -32,6 +32,11 @@ class TimeMarchingRk:
         q_sol = self.init_q_sol(q, n_ts)
         quit = False
 
+        # Initialize cons_obj at t=0 (similar to rk8)
+        if self.bool_calc_cons_obj:
+            dqdt_init = self.dqdt(q, t0)
+            self.cons_obj[:, 0] = self.fun_calc_cons_obj(q, t0, dqdt_init)
+
         # This method solves the 4th order explicit Runge-Kutta method.
         for i in range(0, n_ts):
 
@@ -94,6 +99,11 @@ class TimeMarchingRk:
 
         q_sol = self.init_q_sol(q, n_ts)
         quit = False
+
+        # Initialize cons_obj at t=0 (similar to rk8)
+        if self.bool_calc_cons_obj:
+            dqdt_init = self.dqdt(q, t0)
+            self.cons_obj[:, 0] = self.fun_calc_cons_obj(q, t0, dqdt_init)
 
         # This method solves the 1st order explicit Euler method.
         for i in range(0, n_ts):
@@ -285,6 +295,11 @@ class TimeMarchingRk:
 
         q_sol = self.init_q_sol(q, n_ts)
         quit = False
+
+        # Initialize cons_obj at t=0 (similar to rk8)
+        if self.bool_calc_cons_obj:
+            dqdt_init = self.dqdt(q, t0)
+            self.cons_obj[:, 0] = self.fun_calc_cons_obj(q, t0, dqdt_init)
 
         c = np.array([
             0.0,
