@@ -1526,7 +1526,7 @@ class ADiss():
     
     
     
-    def calc_LHS(self, q=None, step=1.0e-4):
+    def calc_RHS_jac(self, q=None, step=1.0e-4):
         ''' could form explicitly... but for simplicity just do finite difference. 
         Note: this does not include the coefficient '''
         if self.type == 'nd':

@@ -748,11 +748,11 @@ class PdeSolverCSbp(PdeSolverSbp):
         else:
             raise ValueError(f'ERROR: calc_error called with invalid q shape. Expected {self.qshape_global}, got {q.shape if q is not None else None}')
 
-    def calc_LHS(self, q=None, t=0., exact_dfdq=True, step=1.0e-4, istep=1.0e-15, 
+    def calc_RHS_jac(self, q=None, t=0., exact_dfdq=True, step=1.0e-4, istep=1.0e-15, 
                  finite_diff=False, print_nothing=False, print_error=False):
         """
-        Override calc_LHS() to ensure q is global.
-        We don't want to let the base class calc_LHS() set q to a local shape.
+        Override calc_RHS_jac() to ensure q is global.
+        We don't want to let the base class calc_RHS_jac() set q to a local shape.
         """
         if q is None:
             if hasattr(self, 'q_sol'):
@@ -766,7 +766,7 @@ class PdeSolverCSbp(PdeSolverSbp):
         else:
             assert q.shape == self.qshape_global, f'ERROR: q must be in global shape. Expected {self.qshape_global}, got {q.shape}'
 
-        return super().calc_LHS(q=q, t=t, exact_dfdq=exact_dfdq, step=step, istep=istep, 
+        return super().calc_RHS_jac(q=q, t=t, exact_dfdq=exact_dfdq, step=step, istep=istep, 
                    finite_diff=finite_diff, print_nothing=print_nothing, print_error=print_error)
 
     

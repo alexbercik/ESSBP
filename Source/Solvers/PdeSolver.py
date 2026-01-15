@@ -742,11 +742,11 @@ class PdeSolver:
 
         
         
-    def calc_LHS(self, q=None, t=0., exact_dfdq=True, step=1.0e-4, istep=1.0e-15, 
+    def calc_RHS_jac(self, q=None, t=0., exact_dfdq=True, func=None, step=1.0e-4, istep=1.0e-15, 
                  finite_diff=False, print_nothing=False, print_error=False):
         '''
-        Either get the exact LHS operator on q if the problem is linear, or the
-        linearization (LHS) of it at a particular state q. Either done exactly with
+        Either get the exact RHS operator on q if the problem is linear, or the
+        linearization of the RHS at a particular state q. Either done exactly with
         self.dfdq(q) or approximately with finite differences, calling self.diffeq.dqdt 
         A_ij \approx ( dqdt(q + e_j*tol) - dqdt(q - e_j*tol) ) / 2*tol
 
@@ -755,6 +755,8 @@ class PdeSolver:
         q : numpy array, optional
             Current state (must be compatible with self.diffeq.dqdt(q))
             Default is last solution.
+        func : function, optional
+            Function to use for the LHS. The default is self.dqdt.
         exact_dfdq : bool, optional
             Get the LHS analytically or approximately. The default is True.
         step : float, optional
@@ -774,6 +776,9 @@ class PdeSolver:
                     q = self.diffeq.set_q0()
             else:
                 q = self.diffeq.set_q0()
+
+        if func is None:
+            func = self.dqdt
         
         if exact_dfdq:
             try:  
@@ -799,7 +804,7 @@ class PdeSolver:
                         for j in range(nelem):
                             ei = np.zeros((nen,nelem),dtype=np.complex128)
                             ei[i,j] = istep*1j
-                            qi = self.dqdt(np.complex128(q)+ei, t).flatten('F')
+                            qi = func(np.complex128(q)+ei, t).flatten('F')
                             idx = np.where(np.imag(ei.flatten('F'))>istep/10)[0][0]
                             A[:,idx] = np.imag(qi)/istep
                 except Exception as e:  
@@ -814,8 +819,8 @@ class PdeSolver:
                     for j in range(nelem):
                         ei = np.zeros((nen,nelem))
                         ei[i,j] = 1.*step
-                        q_r = self.dqdt(q+ei, t).flatten('F')
-                        q_l = self.dqdt(q-ei, t).flatten('F')
+                        q_r = func(q+ei, t).flatten('F')
+                        q_l = func(q-ei, t).flatten('F')
                         idx = np.where(ei.flatten('F')>step/10)[0][0]
                         A[:,idx] = (q_r - q_l)/(2*step)
         return A
@@ -865,7 +870,7 @@ class PdeSolver:
 
         '''
         if not print_nothing: print('Checking Eigenvalues of System LHS Operator')
-        A = self.calc_LHS(q=q, exact_dfdq=exact_dfdq, step=step, istep=istep, 
+        A = self.calc_RHS_jac(q=q, exact_dfdq=exact_dfdq, step=step, istep=istep, 
                           finite_diff=finite_diff, print_nothing=print_nothing,
                           print_error=print_error)
         if normalize:
@@ -1183,7 +1188,7 @@ class PdeSolver:
         assert test_type in ['max real', 'max abs', 'min real'], 'ERROR: Choose one of test_type = "max real" or "max abs" or "min real"'     
         
         if matrix is None:
-            matrix = self.calc_LHS()
+            matrix = self.calc_RHS_jac()
 
         if return_eigs:
             eigvector_list = []
@@ -1470,7 +1475,7 @@ class PdeSolver:
             
             # This part adds a pertubation based on the largest real eigenmode
             if eigmode:
-                A = self.calc_LHS(q=q0)
+                A = self.calc_RHS_jac(q=q0)
                 eigvals, eigvecs = np.linalg.eig(A)
                 idx = np.argmax(eigvals.real)
                 eigmode = eigvecs[:,idx]

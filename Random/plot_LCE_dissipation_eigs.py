@@ -71,7 +71,7 @@ for run, label in zip(runs, labels):
                   p=run['p'],surf_diss=run['sat'], vol_diss=run['diss'],
                   nelem=nelem, nen=nen, disc_nodes=run['op'],
                   bc='periodic')
-    A = solver.calc_LHS()
+    A = solver.calc_RHS_jac()
     As.append(A)
 
 colors = ['tab:blue', 'tab:orange', 'tab:green', 'k', 'm', 'tab:red']

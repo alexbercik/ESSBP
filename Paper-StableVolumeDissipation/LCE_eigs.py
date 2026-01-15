@@ -89,7 +89,7 @@ for run, label in zip(runs, labels):
                   p=run['p'],surf_diss=run['sat'], vol_diss=run['diss'],
                   nelem=run['nelem'], nen=run['nen'], disc_nodes=run['op'],
                   bc='periodic', xmin=xmin, xmax=xmax)
-    A = solver.calc_LHS()
+    A = solver.calc_RHS_jac()
     if normalize:
         A /= solver.nelem*(solver.nen-1)/(xmax-xmin)
     As.append(A)
