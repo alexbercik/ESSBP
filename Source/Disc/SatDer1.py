@@ -639,6 +639,8 @@ class SatDer1:
         q_a = self.lm_gv(self.tLT, q, self.neq_node)
         q_b = self.lm_gv(self.tRT, q, self.neq_node)
 
+        if E is None: E = q**2 / 2.
+
         EL = fn.shift_right(E)
         intL = self.lm_gv(self.ta, EL, self.neq_node)
         ER = fn.shift_left(E)
