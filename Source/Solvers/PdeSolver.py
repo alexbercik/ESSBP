@@ -219,10 +219,8 @@ class PdeSolver:
         else: raise Exception('Discretization type not understood. Try div or had.')
         if surf_diss == None or surf_diss == 'ND' or surf_diss == 'nd' or surf_diss == 'central':
             self.surf_diss = {'diss_type':'nd'}
-        elif surf_diss == 'lf':
-            self.surf_diss = {'diss_type':'lf'}
-        elif surf_diss == 'upwind':
-            self.surf_diss = {'diss_type':'upwind'}
+        elif isinstance(surf_diss, str):
+            self.surf_diss = {'diss_type':surf_diss}
         else:
             self.surf_diss = surf_diss
             assert(isinstance(self.surf_diss, dict)),"surf_diss must be a dictionary"
@@ -398,7 +396,9 @@ class PdeSolver:
         #start_time = time.time()
         
         if q0 is None:
-            q0 = self.diffeq.set_q0()
+            q = self.diffeq.set_q0()
+        else:
+            q = np.copy(q0)
 
         if self.dt_to_be_set:
             raise Exception('Time step not set yet. Use set_timestep(dt) before running solve().')
@@ -418,7 +418,7 @@ class PdeSolver:
         
         tm_class.nframes = self.tm_nframes
         tm_class.print_progress = self.print_progress
-        self.q_sol =  tm_class.solve(q0, self.dt, self.n_ts, self.t_initial)
+        self.q_sol =  tm_class.solve(q, self.dt, self.n_ts, self.t_initial)
         self.cons_obj = tm_class.cons_obj
         self.t_final = tm_class.t_final
 
@@ -826,7 +826,7 @@ class PdeSolver:
         return A
 
     
-    def check_eigs(self, q=None, plot_eigs=True, returnA=False, returneigs=False, 
+    def check_eigs(self, q=None, A=None, plot_eigs=True, returnA=False, returneigs=False, 
                    returnvecs=False, plot_maxvec=False, num_vecs=5, test_type='max abs',
                    exact_dfdq=False, finite_diff=False, step=5.0e-6, istep=1e-15, tol=1.0e-10, 
                    savefile=None, print_nothing=False, colour_by_k=False, colour_by_bdy=False, normalize=False,
@@ -870,7 +870,8 @@ class PdeSolver:
 
         '''
         if not print_nothing: print('Checking Eigenvalues of System LHS Operator')
-        A = self.calc_RHS_jac(q=q, exact_dfdq=exact_dfdq, step=step, istep=istep, 
+        if A is None:
+            A = self.calc_RHS_jac(q=q, exact_dfdq=exact_dfdq, step=step, istep=istep, 
                           finite_diff=finite_diff, print_nothing=print_nothing,
                           print_error=print_error)
         if normalize:
@@ -1434,7 +1435,10 @@ class PdeSolver:
         
         if self.disc_type == 'div' and self.dim==1:
             rhs = self.dqdt_1d_div(q0,0.) #TODO: Fix for had and 2D and 3D
-            self.dqdt = lambda q, t=0.0: self.dqdt_1d_div(q,t) - rhs           
+            self.dqdt = lambda q, t=0.0: self.dqdt_1d_div(q,t) - rhs    
+        elif self.disc_type == 'had' and self.dim==1:
+            rhs = self.dqdt_1d_had(q0,0.) #TODO: Fix for had and 2D and 3D
+            self.dqdt = lambda q, t=0.0: self.dqdt_1d_had(q,t) - rhs    
         elif self.disc_type == 'dg':
             if self.weak_form:
                 rhs = self.dg_dqdt_weak(q0)

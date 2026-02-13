@@ -59,7 +59,7 @@ class PdeSolverSbp(PdeSolver):
         if self.sparse is None:
             self.sparse = False
             if self.dim == 1: 
-                if self.disc_nodes in ['csbp', 'upwind', 'hgtl', 'mattsson']:
+                if self.disc_nodes in ['csbp', 'upwind', 'hgtl', 'mattsson','circulant']:
                     self.sparse = True
                 if (self.disc_type == 'had') and (self.neq_node > 1):
                     self.sparse = True
@@ -126,7 +126,7 @@ class PdeSolverSbp(PdeSolver):
 
         ''' Modify solver approach '''
 
-        self.diffeq.set_mesh(self.mesh)
+        self.diffeq.set_mesh(self.mesh, self.H_phys)
         if self.settings['stop_after_mesh']:
             return
         if self.dim == 1:

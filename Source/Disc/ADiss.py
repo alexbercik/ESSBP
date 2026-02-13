@@ -364,7 +364,7 @@ class ADiss():
                     else:
                         print('WARNING: diffeq.maxeig_dqdw not found. Defaulting to spectral radius of dqdw, which is slower.')
                         if self.neq_node == 1:
-                            self.rho_dqdw = lambda q: self.dqdw(q)[:,0,0,:]
+                            self.rho_dqdw = lambda q: np.abs(self.dqdw(q)[:,0,0,:])
                         else:
                             self.rho_dqdw = lambda q: fn.spec_rad(self.dqdw(q),self.neq_node)
                 elif self.jac_type == 'scalarmatrix' or self.jac_type == 'scamat':

@@ -212,7 +212,7 @@ class TimeMarching(TimeMarchingRk):
                     self.cons_obj[:, self.frame_idx] = self.fun_calc_cons_obj(q,time,dqdt)
 
         if self.bool_plot_sol:
-            self.fun_plot_sol(q, time)
+            self.fun_plot_sol(q, time=time)
 
         if self.print_sol_norm:
             if (t_idx % self.idx_print == 0) or (t_idx == n_ts):
@@ -235,14 +235,14 @@ class TimeMarching(TimeMarchingRk):
                 printProgressBar(t_idx, n_ts, prefix = 'Progress:', suffix = suf)
                 
         elif t_idx == 0:
-            print('--- Beginning Simulation ---')
+            print('--- Beginning Simulation ---', flush=True)
         elif t_idx == 1:
             self.start_time = tm.time()
         elif t_idx == 10:
             sim_time = tm.time() - self.start_time
             rem_time = sim_time/9*(n_ts-9)
             print('... Estimating {0}:{1:02d}:{2:02d} to run.'.format(int(rem_time//3600),
-                                                                int((rem_time//60)%60),int(rem_time%60)))
+                                                                int((rem_time//60)%60),int(rem_time%60)), flush=True)
 
         if self.check_resid_conv:
             if (resid < 1E-10): 
@@ -268,7 +268,7 @@ class TimeMarching(TimeMarchingRk):
                     self.cons_obj[:, -1] = self.fun_calc_cons_obj(q,time,dqdt)
 
             if self.bool_plot_sol:
-                self.fun_plot_sol(q, time)
+                self.fun_plot_sol(q, time=time)
 
             if self.print_sol_norm:
                 if (t_idx % self.idx_print == 0) or (t_idx == n_ts):
@@ -417,7 +417,7 @@ def printProgressBar(iteration, total, prefix = '', suffix = '', decimals = 0, l
     percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
     filledLength = int(length * iteration // total)
     bar = fill * filledLength + '-' * (length - filledLength)
-    print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
+    print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd, flush=True)
     # Print New Line on Complete
     if iteration == total: 
         print()

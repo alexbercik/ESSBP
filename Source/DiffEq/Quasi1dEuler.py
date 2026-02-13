@@ -833,10 +833,10 @@ class Quasi1dEuler(PdeBase):
             return exa_sol, exa_sol_extra
         else: return exa_sol
 
-    def set_mesh(self, mesh):
+    def set_mesh(self, mesh, H):
         ''' Overwrite base function in DiffEqBase '''
 
-        PdeBase.set_mesh(self, mesh)
+        PdeBase.set_mesh(self, mesh, H)
 
         # Calculate the shape of the nozzle at the mesh and boundary nodes
         self.svec = self.fun_s(self.x)

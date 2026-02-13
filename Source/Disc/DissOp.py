@@ -11,11 +11,14 @@ def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
         B = np.ones(nen)
 
         if sbp_type.lower() == 'circulant':
+            # remember that p for circulat operators is the 2p interior of SBP
+            # so s here should actually be set not as p+1 but as s=(p/2)+1
             B = np.ones(nen)
             if s == 1:
                 from Source.Disc.CSbpOp import tridiag
                 Ds = tridiag(nen, -0.5, 0., 0.5, bc='periodic')
             elif s == 2:
+                # TODO: I think there is a bug here.
                 from Source.Disc.CSbpOp import tridiag
                 Ds = tridiag(nen, 1.0, 2.0, 1.0, bc='periodic')
             elif s == 3:

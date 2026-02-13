@@ -371,7 +371,7 @@ def lm_gv(A, b, neq_node=None):
     c : numpy array of shape (nrows, nelem) if neq_node is None,
                          or (nrows*neq_node, nelem) if neq_node is provided
     '''
-    if neq_node is None:
+    if neq_node is None or neq_node == 1:
         # Plain matrix-matrix multiply (NumPy can handle mixed dtypes here)
         return A @ b
     else:
@@ -992,8 +992,7 @@ def gdiag_to_gbdiag(q):
     c : numpy array of shape (nen,nen,nelem)
     '''
     nen,nelem = np.shape(q)
-    c = np.reshape(q,(nen,1,1,nelem),dtype=q.dtype)
-    return c
+    return np.reshape(q,(nen,1,1,nelem))
 
 def check_q_shape(q):
     '''
@@ -1717,7 +1716,7 @@ def log_mean(qL,qR):
     xi = qL/qR
     zeta = (1-xi)/(1+xi)
     zeta2 = zeta**2
-    if zeta2 < 0.01:
+    if np.real(zeta2) < 0.001:
         F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
     else:
         F = - np.log(xi)/zeta
@@ -1728,6 +1727,12 @@ def log_mean(qL,qR):
 def prod_mean(q1L,q2L,q1R,q2R):
     '''' product mean. Useful for split-form fluxes. '''
     q = (q1L*q2R+q2L*q1R)/2
+    return q
+
+@njit
+def geom_mean(qL,qR):
+    '''' geometric mean. Useful for split-form fluxes. '''
+    q = np.sqrt(qL*qR)
     return q
 
 def is_pos_def(A):

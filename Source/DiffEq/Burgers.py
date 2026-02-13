@@ -324,7 +324,7 @@ class Burgers(PdeBase):
         return q
     
     def dqdw(self,q):
-        return fn.gdiag_to_gm(np.ones(q.shape))
+        return fn.gdiag_to_gbdiag(np.ones_like(q))
     
     def maxeig_dqdw(self,q):
         return np.ones(q.shape)

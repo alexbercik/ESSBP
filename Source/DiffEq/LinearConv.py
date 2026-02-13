@@ -31,7 +31,7 @@ class LinearConv(PdeBase):
     a_fix = 1
     para_fix = [a_fix]
 
-    def __init__(self, para, q0_type='SinWave'):
+    def __init__(self, para, q0_type='SinWave', had_flux='central'):
 
         super().__init__(para, q0_type)
         self.a = self.para[0]
@@ -45,6 +45,26 @@ class LinearConv(PdeBase):
             self.dExdq_abs = dExdq_fix
             self.maxeig_dExdq = lambda q : np.ones(q.shape)
             self.central_flux = self.central_fix_flux
+            self.logarithmic_flux = self.logarithmic_fix_flux
+            self.geometric_flux = self.geometric_fix_flux
+        
+        if had_flux.lower() == 'central':
+            self.entropy = self.entropy_central
+            self.entropy_var = self.entropy_var_central
+            self.dqdw = self.dqdw_central
+            self.maxeig_dqdw = self.maxeig_dqdw_central
+        elif had_flux.lower() == 'logarithmic':
+            self.entropy = self.entropy_log
+            self.entropy_var = self.entropy_var_log
+            self.dqdw = self.dqdw_log
+            self.maxeig_dqdw = self.maxeig_dqdw_log
+        elif had_flux.lower() == 'geometric':
+            self.entropy = self.entropy_geom
+            self.entropy_var = self.entropy_var_geom
+            self.dqdw = self.dqdw_geom
+            self.maxeig_dqdw = self.maxeig_dqdw_geom
+        else:
+            raise ValueError(f'Invalid had_flux: {had_flux}. Must be "central", "logarithmic", or "geometric".')
 
     def exact_sol(self, time=0, x=None, guess=None):
 
@@ -113,3 +133,65 @@ class LinearConv(PdeBase):
         This allows us to jit the hadamard flux functions. '''
         f = fn.arith_mean(qL,qR)
         return f
+
+    @njit   
+    def logarithmic_fix_flux(qL,qR):
+        ''' a logarithmic 2-point flux for hadamard form but with a fixed at 1.
+        This allows us to jit the hadamard flux functions. '''
+        f = fn.log_mean(qL,qR)
+        return f
+
+    @njit   
+    def geometric_fix_flux(qL,qR):
+        ''' a geometric 2-point flux for hadamard form but with a fixed at 1.
+        This allows us to jit the hadamard flux functions. '''
+        f = fn.geom_mean(qL,qR)
+        return f
+
+    def entropy_central(self, q):
+        ''' nodal values of the entropy for the central flux '''
+        return q*q
+    
+    def entropy_var_central(self, q):
+        ''' nodal values of the entropy variables w(q) for the central flux '''
+        return q
+
+    def dqdw_central(self,q):
+        ''' hessian P of potential phi wrt entropy variables w '''
+        return fn.gdiag_to_gbdiag(np.ones_like(q))
+    
+    def maxeig_dqdw_central(self,q):
+        ''' maximum eigenvalues of hessian P, i.e. abs(dqdw) for scalar '''
+        return np.ones(q.shape)
+
+    def entropy_geom(self, q):
+        ''' nodal values of the entropy for the central flux '''
+        return -2*np.sqrt(q)
+    
+    def entropy_var_geom(self, q):
+        ''' nodal values of the entropy variables w(q) for the central flux '''
+        return -1/np.sqrt(q)
+
+    def dqdw_geom(self,q):
+        ''' hessian P of potential phi wrt entropy variables w '''
+        return fn.gdiag_to_gbdiag(2*q*np.sqrt(q))
+    
+    def maxeig_dqdw_geom(self,q):
+        ''' maximum eigenvalues of hessian P, i.e. abs(dqdw) for scalar '''
+        return 2*np.abs(q*np.sqrt(q))
+
+    def entropy_log(self, q):
+        ''' nodal values of the entropy for the central flux '''
+        return q*np.log(q) - q
+    
+    def entropy_var_log(self, q):
+        ''' nodal values of the entropy variables w(q) for the central flux '''
+        return np.log(q)
+
+    def dqdw_log(self,q):
+        ''' hessian P of potential phi wrt entropy variables w '''
+        return fn.gdiag_to_gbdiag(q)
+    
+    def maxeig_dqdw_log(self,q):
+        ''' maximum eigenvalues of hessian P, i.e. abs(dqdw) for scalar '''
+        return np.abs(q)

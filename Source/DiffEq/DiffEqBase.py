@@ -94,7 +94,7 @@ class PdeBase:
 
     # Parameters for the initial solution
     q0_max_q = 1.0                 # Max value in the vector q0
-    q0_gauss_wave_val_bc = 1e-10    # Value at the boundary for Gauss wave
+    q0_gauss_wave_val_bc = np.exp(-625/32) #1e-10    # Value at the boundary for Gauss wave (now matches sbp_book)
 
 
     def __init__(self, para, q0_type=None):
@@ -128,7 +128,7 @@ class PdeBase:
         ''' base method, only important for systems where this is redefined '''
         return q
 
-    def set_mesh(self, mesh):
+    def set_mesh(self, mesh, H):
         '''
         Purpose
         ----------
@@ -136,6 +136,7 @@ class PdeBase:
         '''
 
         self.mesh = mesh
+        self.H = H
 
         ''' Extract other parameters '''
         assert self.dim == self.mesh.dim,'Dimensions of DiffEq and Solver do not match.'
@@ -203,7 +204,7 @@ class PdeBase:
             #    raise Exception('This q0_type does not work with xy provided.')
             qshape = np.shape(xy)
 
-        if q0_type == 'gausswave' or q0_type == 'gausswave_0.25':
+        if q0_type == 'gausswave' or q0_type == 'gausswave_0.25' or q0_type == 'gausswave_shift':
             if self.dim == 1:
                 if q0_type == 'gausswave_0.25':
                     mid_point = 0.5*(self.xmax + self.xmin)
@@ -232,19 +233,27 @@ class PdeBase:
                 stdev2z = abs(self.dom_len[2]**2/k)
                 exp = -0.5*((xy[:,0,:]-mid_pointx)**2/stdev2x + (xy[:,1,:]-mid_pointy)**2/stdev2y + (xy[:,2,:]-mid_pointz)**2/stdev2z)
                 q0 = self.q0_max_q * np.exp(exp) 
-        elif q0_type == 'gausswave_sbpbook':
+            if 'shift' in q0_type: q0 = q0 + 0.5
+        elif q0_type == 'gausswave_shift':
             assert self.dim==1,'only for dim=1'
             assert (self.xmax==1 and self.xmin==0)
             stdev2 = 0.08**2
             exp = -0.5*(xy-0.5)**2/stdev2
-            q0 = np.exp(exp)
-        elif q0_type == 'gausswave_shifted':
+            q0 = np.exp(exp) + 0.5 #- 0.5
+        elif q0_type == 'gausswave_dispersed_shift':
             assert self.dim==1,'only for dim=1'
             assert (self.xmax==1 and self.xmin==0)
-            stdev2 = 0.08**2
-            exp = -0.5*(xy-0.5)**2/stdev2
-            q0 = np.exp(exp) - 0.5
-        elif q0_type == 'morlet_wavelet':
+            # fitted "numerical-solution-like" analytic guess (Gaussian + localized cosine ringing)
+            b     = 0.49601635
+            A     = 1.01882765
+            x0    = 0.50655031
+            sig   = 0.07309955
+            eps   = -0.09054338
+            sig2  = 0.21394410
+            k     = 26.68566281
+            phi   = -0.76228906
+            q0 = b + A*np.exp(-0.5*((xy-x0)/sig)**2) + eps*np.exp(-0.5*((xy-x0)/sig2)**2)*np.cos(k*(xy-x0) + phi)
+        elif q0_type == 'morlet_wavelet' or q0_type == 'morlet_wavelet_shift':
             assert self.dim==1,'only for dim=1'
             k = (8*np.log(self.q0_gauss_wave_val_bc/self.q0_max_q))
             mid_point = 0.5*(self.xmax + self.xmin) # mean
@@ -254,6 +263,7 @@ class PdeBase:
             k_pi = 10 # how many oscillations to include in the domain
             cos = np.cos(k_pi*2.*np.pi*(xy-mid_point)/self.dom_len)
             q0 = gauss * cos
+            if 'shift' in q0_type: q0 = q0 + 1.0
         elif q0_type == 'gausswave_1d' or 'gausswave_debug' in q0_type:
             if 'y' in q0_type: xyz = 1
             elif 'z' in q0_type: xyz = 2
@@ -277,13 +287,14 @@ class PdeBase:
             skew = 0.5 * (1 + erf(alpha * (xy - mu) / (sigma * np.sqrt(2))))
             q0 = gaussian * skew
             if 'shift' in q0_type: q0 = q0 - 0.5
-        elif q0_type == 'squarewave': 
+        elif q0_type == 'squarewave' or q0_type == 'squarewave_shift': 
             assert self.dim == 1,'square wave only works for dim = 1.' 
             dom_len = self.xmax - self.xmin
-            x_scaled = (xy + self.xmin) / dom_len
+            x_scaled = (xy - self.xmin) / dom_len
             q0 = np.ones_like(xy)
             q0[x_scaled <= 0.25] = 0.
             q0[x_scaled >= 0.75] = 0.
+            if 'shift' in q0_type: q0 = q0 + 0.5
         elif ('sinwave' in q0_type) and not ('gassner' in q0_type) \
             or ('coswave' in q0_type) and not ('gassner' in q0_type):
             if self.dim == 1:
@@ -293,13 +304,13 @@ class PdeBase:
                     w = 8*np.pi
                 else:
                     w = 2*np.pi
-                x_scaled = (xy + self.xmin) / self.dom_len
+                x_scaled = (xy - self.xmin) / self.dom_len
                 if 'sinwave' in q0_type:
                     q0 = np.sin(w * x_scaled) * self.q0_max_q
                 elif 'coswave' in q0_type:
                     q0 = np.cos(w * x_scaled) * self.q0_max_q
                 if 'shift' in q0_type:
-                    q0 = q0+2
+                    q0 = q0+1.5
                 if 'perturb' in q0_type:
                     assert (self.xmax==1 and self.xmin==0)
                     stdev2 = 0.08**2
@@ -321,16 +332,16 @@ class PdeBase:
                             qflat[(i*len(xflat))//ncoarse:((i+1)*len(xflat))//ncoarse] = xmod * (y1 - y0) + y0
                         q0 = qflat.reshape(qshape, order='F')
             elif self.dim == 2:
-                x_scaled = (xy[:,0,:] + self.xmin[0]) / self.dom_len[0]
-                y_scaled = (xy[:,1,:] + self.xmin[1]) / self.dom_len[1]
+                x_scaled = (xy[:,0,:] - self.xmin[0]) / self.dom_len[0]
+                y_scaled = (xy[:,1,:] - self.xmin[1]) / self.dom_len[1]
                 if q0_type == 'sinwave':
                     q0 = self.q0_max_q * np.sin(2*np.pi * x_scaled) * np.sin(2*np.pi * y_scaled)  
                 elif q0_type == 'sinwave2' or q0_type == 'sinwavesum' or q0_type == 'sinwave_sum':
                     q0 = self.q0_max_q * ( np.sin(2*np.pi * x_scaled) + np.sin(2*np.pi * y_scaled) )
             elif self.dim == 3:
-                x_scaled = (xy[:,0,:] + self.xmin[0]) / self.dom_len[0]
-                y_scaled = (xy[:,1,:] + self.xmin[1]) / self.dom_len[1]
-                z_scaled = (xy[:,2,:] + self.xmin[2]) / self.dom_len[2]
+                x_scaled = (xy[:,0,:] - self.xmin[0]) / self.dom_len[0]
+                y_scaled = (xy[:,1,:] - self.xmin[1]) / self.dom_len[1]
+                z_scaled = (xy[:,2,:] - self.xmin[2]) / self.dom_len[2]
                 if q0_type == 'sinwave':
                     q0 = self.q0_max_q * np.sin(2*np.pi * x_scaled) * np.sin(2*np.pi * y_scaled) * np.sin(2*np.pi * z_scaled) 
                 elif q0_type == 'sinwave2' or q0_type == 'sinwavesum' or q0_type == 'sinwave_sum':
@@ -666,6 +677,18 @@ class PdeBase:
         ''' a simple central 2-point flux, the default for the Hadamard form
         NOTE: Ideally this should NOT be used. Will be very slow. '''
         fx = fn.arith_mean(self.calcEx(qL),self.calcEx(qR))
+        return fx
+
+    def logarithmic_flux(self,qL,qR):
+        ''' a logarithmic 2-point flux, the default for the Hadamard form
+        NOTE: Ideally this should NOT be used. Will be very slow. '''
+        fx = fn.log_mean(self.calcEx(qL),self.calcEx(qR))
+        return fx
+
+    def geometric_flux(self,qL,qR):
+        ''' a geometric 2-point flux, the default for the Hadamard form
+        NOTE: Ideally this should NOT be used. Will be very slow. '''
+        fx = fn.geom_mean(self.calcEx(qL),self.calcEx(qR))
         return fx
 
     # Note: since this is class dependent, it will throw errors with numba    
