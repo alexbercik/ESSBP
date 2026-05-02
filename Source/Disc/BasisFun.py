@@ -134,7 +134,13 @@ class BasisFun:
 
         if self.nb == self.nn:
             # a = V^{-1} u
-            a =  Vinv @ u
+            # Handle broadcasting: Vinv is (N, N), u can be (N, k, m, ...)
+            # Use einsum to apply matrix multiplication along first dimension
+            if u.ndim == 1:
+                a = Vinv @ u
+            else:
+                # einsum: 'ij,j...->i...' applies Vinv[i,j] @ u[j,...] -> a[i,...]
+                a = np.einsum('ij,j...->i...', Vinv, u)
         else:
             # TODO: could probably do some projection, but who cares. This doesn't matter too much.
             a = np.linalg.lstsq(V, u, rcond=None)[0]
@@ -208,7 +214,12 @@ class BasisFun:
         elif dim == 3: V_eval = np.kron(V_eval,np.kron(V_eval,V_eval))
 
         # u = V a
-        u_eval =  V_eval @ a
+        # Handle broadcasting: V_eval is (N, N), a can be (N, k, m, ...)
+        # Use einsum to apply matrix multiplication along first dimension
+        if u.ndim == 1:
+            u_eval =  V_eval @ a
+        else:
+            u_eval = np.einsum('ij,j...->i...', V_eval, a)
         
         if neq_node > 1:
             u_eval = u_eval.reshape((len(x_eval_arr)**dim)*neq_node, *a.shape[2:])
