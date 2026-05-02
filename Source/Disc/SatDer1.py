@@ -622,7 +622,52 @@ class SatDer1:
         sat = sat - self.lm_gv(self.tR, numflux[:,1:]) + self.lm_gv(self.tL, numflux[:,:-1])
         return sat
 
-    def geom_div_1d_varcoeff(self, q, E, q_bdyL=None, q_bdyR=None):
+    def llf_div_1d_varcoeff_ext(self, q, E, q_bdyL=None, q_bdyR=None):
+        '''
+        A Local Lax-Fridriechs dissipative flux in 1D, specific for the variable
+        coefficient linear convection equation. self.coeff=0 turns off dissipation.
+        we modify the dissipation to include more than just the boudnary nodes.
+        # THIS ASSUMES THE OPERATORS INCLUDE BOUNDARY NODES!
+        '''
+        E_a = self.lm_gv(self.tLT, E)
+        E_b = self.lm_gv(self.tRT, E)
+        x_f = fn.pad_1dR(self.bdy_x[[0],:], self.bdy_x[[1],-1])
+        a_f = self.afun(x_f)
+        if q_bdyL is None:
+            Ef_L = fn.pad_1dL(E_b, E_b[:,-1])
+            Ef_R = fn.pad_1dR(E_a, E_a[:,0])
+        else:
+            Ef_L = fn.pad_1dL(E_b, a_f[:,0] * q_bdyL)
+            Ef_R = fn.pad_1dR(E_a, a_f[:,-1] * q_bdyR)
+        sat = 0.5*( self.lm_gv(self.tR, E_b - Ef_R[:,1:]) - self.lm_gv(self.tL, E_a - Ef_L[:,:-1]) )
+        
+        if self.coeff != 0:
+            q_a = (self.tL_ext @ q)[None, :]
+            q_b = (self.tR_ext @ q)[None, :]
+
+            if q_bdyL is None:
+                qf_L = fn.pad_1dL(q_b, q_b[:,-1])
+            else:
+                qf_L = fn.pad_1dL(q_b, q_bdyL)
+            
+            if q_bdyR is None:
+                qf_R = fn.pad_1dR(q_a, q_a[:,0])
+            elif np.any(q_bdyR == 'None'):
+                # outflow boundary condition - do not apply a SAT here
+                qf_R = fn.pad_1dR(q_a, np.zeros(self.neq_node))
+                qf_L[:,-1] = 0.0
+            else:
+                qf_R = fn.pad_1dR(q_a, q_bdyR)
+
+            absA_dq = np.abs(a_f) * (qf_R - qf_L)
+            dissL = self.tL_ext[:, None] * absA_dq[:,:-1]
+            dissR = self.tR_ext[:, None] * absA_dq[:,1:]
+
+            diss = (dissL - dissR)/2
+            sat -= self.coeff*diss
+        return sat
+
+    def geom_div_1d_varcoeff(self, q, E, q_bdyL=None, q_bdyR=None, use_ext=False):
         '''
         An entropy-stable SAT for the geometric-flux for the variable coefficient 
         linear convection equation.
@@ -653,8 +698,12 @@ class SatDer1:
         sat *= Esqrt
 
         if self.coeff != 0:
-            q_a = self.lm_gv(self.tLT, q)
-            q_b = self.lm_gv(self.tRT, q)
+            if use_ext:
+                q_a = (self.tL_ext @ q)[None, :]
+                q_b = (self.tR_ext @ q)[None, :]
+            else:
+                q_a = self.lm_gv(self.tLT, q)
+                q_b = self.lm_gv(self.tRT, q)
 
             if q_bdyL is None:
                 qf_L = fn.pad_1dL(q_b, q_b[:,-1])
@@ -673,8 +722,12 @@ class SatDer1:
             x_f = fn.pad_1dR(self.bdy_x[[0],:], self.bdy_x[[1],-1])
             a_f = self.afun(x_f)
             absA_dq = np.abs(a_f) * (qf_R - qf_L)
-            dissL = self.lm_gv(self.tL, absA_dq[:,:-1])
-            dissR = self.lm_gv(self.tR, absA_dq[:,1:])
+            if use_ext:
+                dissL = self.tL_ext[:, None] * absA_dq[:,:-1]
+                dissR = self.tR_ext[:, None] * absA_dq[:,1:]
+            else:
+                dissL = self.lm_gv(self.tL, absA_dq[:,:-1])
+                dissR = self.lm_gv(self.tR, absA_dq[:,1:])
 
             diss = (dissL - dissR)/2
             sat -= sigma*diss

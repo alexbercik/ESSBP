@@ -838,9 +838,25 @@ class Sat(SatDer1, SatDer2):
                 self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.llf_div_1d_varcoeff(q, E, q_bdyL=q_bdyL, q_bdyR=q_bdyR,
                                                                  extrapolate_flux=solver.diffeq.extrapolate_bdy_flux)
             elif self.diss_type == 'lf' or self.diss_type == 'llf' or self.diss_type == 'lax_friedrichs':
-                self.coeff = 1.
+                if self.coeff is None: self.coeff = 1.
                 self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.llf_div_1d_varcoeff(q, E, q_bdyL=q_bdyL, q_bdyR=q_bdyR,
                                                                  extrapolate_flux=solver.diffeq.extrapolate_bdy_flux)
+            elif self.diss_type == 'extended':
+                if self.coeff is None: self.coeff = 1.
+                from Source.Methods.Functions import endpoint_extrapolation_LR
+                if 'alpha' in solver.surf_diss.keys():
+                    alpha = solver.surf_diss['alpha']
+                else:
+                    alpha = 1.05
+                if 'p' in solver.surf_diss.keys():
+                    p = solver.surf_diss['p']
+                else:
+                    p = solver.sbp.p
+                self.tL_ext, self.tR_ext = endpoint_extrapolation_LR(solver.sbp.x, p, alpha=alpha)
+                if solver.diffeq.flux_type == 'product' or solver.diffeq.flux_type == 'central':
+                    self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.llf_div_1d_varcoeff_ext(q, E, q_bdyL=q_bdyL, q_bdyR=q_bdyR)
+                elif solver.diffeq.flux_type == 'geometric':
+                    self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.geom_div_1d_varcoeff(q, E, q_bdyL=q_bdyL, q_bdyR=q_bdyR, use_ext=True)
             elif self.diss_type == 'ec' or self.diss_type == 'ent' or self.diss_type == 'es':
                 if self.diss_type == 'ec': self.coeff = 0.
                 else: self.coeff = 1.
@@ -1164,3 +1180,4 @@ class Sat(SatDer1, SatDer2):
         
         diss = (dissL - dissR)/2
         return diss
+
