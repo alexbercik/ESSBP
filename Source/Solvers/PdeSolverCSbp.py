@@ -764,13 +764,14 @@ class PdeSolverCSbp(PdeSolverSbp):
             else:
                 q = self._ensure_global(self.diffeq.set_q0())
         else:
+            q = self._ensure_global(q)
             assert q.shape == self.qshape_global, f'ERROR: q must be in global shape. Expected {self.qshape_global}, got {q.shape}'
 
         return super().calc_RHS_jac(q=q, t=t, exact_dfdq=exact_dfdq, step=step, istep=istep, 
                    finite_diff=finite_diff, print_nothing=print_nothing, print_error=print_error)
 
     
-    def sbp_energy(self, q, nen=None):
+    def sbp_energy(self, q, neq=None):
         """
         Compute global SBP energy using H_glob and q.
         
@@ -778,7 +779,7 @@ class PdeSolverCSbp(PdeSolverSbp):
         ----------
         q : ndarray
             Either local shape (nen*neq_node, nelem) or global shape (N_global, 1) or (N_global,)
-        nen : int, optional
+        neq : int, optional
             Number of equations per node (for compatibility with base class)
         
         Returns
@@ -786,6 +787,7 @@ class PdeSolverCSbp(PdeSolverSbp):
         energy : float
             Global energy
         """
+        #TODO: add support for neq != self.neq_node
         # Ensure q is global (returns (N_global, 1))
         q_global = self._ensure_global(q)
         q_flat = q_global.flatten()

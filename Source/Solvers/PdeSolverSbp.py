@@ -401,16 +401,16 @@ class PdeSolverSbp(PdeSolver):
         
  
     
-    def sbp_energy(self,q,nen=None):
+    def sbp_energy(self,q,neq=None):
         ''' compute the global SBP energy of global solution vector q '''
-        if (nen == self.neq_node) or (nen is None):
+        if (neq == self.neq_node) or (neq is None):
             H_phys = self.H_phys
             local_neq = self.neq_node
-        elif nen == 1:
+        elif neq == 1:
             H_phys = self.H_phys
             local_neq = 1
         else:
-            raise Exception('Something went wrong, nen = ',nen)
+            raise Exception('Something went wrong, neq = ',neq)
         if q.ndim == 2:
             energy = fn.norm_gv_neq(H_phys, q, local_neq)
         elif q.ndim == 3:
@@ -419,13 +419,14 @@ class PdeSolverSbp(PdeSolver):
             raise Exception('Something went wrong, q.ndim = ',q.ndim)
         return energy
 
-    def sbp_conservation(self,q):
+    def sbp_conservation(self,q,neq=None):
         ''' compute the global SBP conservation of global solution vector q '''
         H_phys = self.H_phys
+        if neq is None: neq = self.neq_node
         if q.ndim == 2:
-            cons = fn.sum_gv_neq(H_phys, q, self.neq_node)
+            cons = fn.sum_gv_neq(H_phys, q, neq)
         elif q.ndim == 3:
-            cons = fn.sum_gv_neq_3d(H_phys, q, self.neq_node)
+            cons = fn.sum_gv_neq_3d(H_phys, q, neq)
         else:
             raise Exception('Something went wrong, q.ndim = ',q.ndim)
         return cons

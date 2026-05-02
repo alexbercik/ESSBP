@@ -35,8 +35,12 @@ class PdeSolver:
     tm_atol = None
     tm_rtol = None
     tm_nframes = None
+    tm_print_nothing = False
     t_initial = 0.0
     dt = None
+    clip_positivity = False
+    clip_positivity_floor = 1.0e-4
+    clip_positivity_cut = 1.0e-2
 
     def __init__(self, diffeq, settings,                            # Diffeq
                  tm_method, dt, t_final,                    # Time marching                                  # Initial solution
@@ -379,7 +383,7 @@ class PdeSolver:
         self.set_timestep(dt)
                 
         # Free Stream Preservation sanity check
-        if self.bc == 'periodic':
+        if self.bc == 'periodic' and self.diffeq.diffeq_name != 'VariableCoefficientLinearConvection':
             test = self.free_stream(print_result=False)
             if test>1e-12:
                 print('WARNING: Free Stream is not preserved. Check Metrics and/or SAT discretization.')
@@ -389,7 +393,7 @@ class PdeSolver:
         collect()
         if self.print_progress: print('---------- Solver succesfully initialized. ----------')
 
-    def solve(self, q0=None):
+    def solve(self, q0=None, t_final=None):
 
         ''' Solve to calculate the solution and the objective '''
 
@@ -418,7 +422,25 @@ class PdeSolver:
         
         tm_class.nframes = self.tm_nframes
         tm_class.print_progress = self.print_progress
-        self.q_sol =  tm_class.solve(q, self.dt, self.n_ts, self.t_initial)
+        if self.tm_print_nothing:
+            tm_class.print_nothing = True
+            tm_class.print_progress = False
+        if self.clip_positivity:
+            tm_class.clip_positivity = True
+            tm_class.pos_floor = self.clip_positivity_floor
+            tm_class.pos_cut = self.clip_positivity_cut
+        if t_final is not None:
+            assert isinstance(self.t_final, int) or isinstance(self.t_final, float)
+            if (t_final-self.t_initial) / self.dt < 1:
+                self.dt = (t_final-self.t_initial)/10
+            n_ts = int(np.round((t_final-self.t_initial) / self.dt))
+            if abs(n_ts - ((t_final-self.t_initial) / self.dt)) > 1e-12:
+                dt = (t_final-self.t_initial)/n_ts
+            else:
+                dt = self.dt
+            self.q_sol =  tm_class.solve(q, dt, n_ts, self.t_initial)
+        else: 
+            self.q_sol =  tm_class.solve(q, self.dt, self.n_ts, self.t_initial)
         self.cons_obj = tm_class.cons_obj
         self.t_final = tm_class.t_final
 
@@ -503,8 +525,14 @@ class PdeSolver:
                 cons_obj[i] = np.max(np.abs(eigs))
             elif cons_obj_name_i == 'sol_error' or cons_obj_name_i == 'error':
                 cons_obj[i] = self.calc_error(q,t)
+            elif cons_obj_name_i == 'var_error':
+                cons_obj[i] = self.calc_error(q,t,var2plot_name=self.diffeq.var2plot_name)
             elif cons_obj_name_i == 'max_error':
                 cons_obj[i] = self.calc_error(q,t,method='max_diff')
+            elif cons_obj_name_i == 'norm':
+                cons_obj[i] = self.norm(q)
+            elif cons_obj_name_i == 'max' or cons_obj_name_i == 'linf_norm':
+                cons_obj[i] = np.max(np.abs(q))
             elif cons_obj_name_i == 'time':
                 cons_obj[i] = t
             elif 'zelalem_coeff' in cons_obj_name_i:
@@ -514,15 +542,25 @@ class PdeSolver:
                     cons_obj[i] = np.min(zel_coeff)
                 elif 'mean' in cons_obj_name_i:
                     cons_obj[i] = np.mean(zel_coeff)
+            elif 'temp_' in cons_obj_name_i:
+                fn = getattr(self.diffeq, cons_obj_name_i, None)
+                if fn is None or not callable(fn):
+                    raise Exception(
+                        f"diffeq {type(self.diffeq).__name__} has no callable '{cons_obj_name_i}'"
+                    )
+                try:
+                    cons_obj[i] = fn(q)
+                except TypeError:
+                    cons_obj[i] = fn(q, t)
             else:
                 raise Exception('Unknown conservation objective function')
 
         return cons_obj
     
     
-    def norm(self, q, nen=None):
+    def norm(self, q, neq=None):
         ''' calculate the energy norm q.T @ H @ q given a global q'''
-        return np.sqrt(float(self.energy(q,nen)))
+        return np.sqrt(float(self.energy(q,neq)))
     
     def calc_error(self, q=None, tf=None, method=None, use_all_t=False,
                    var2plot_name=None, q_exa=None):
@@ -572,7 +610,7 @@ class PdeSolver:
             return errors
         
         if q_exa is None:
-            q_exa = self.diffeq.exact_sol(tf,guess=q)
+            q_exa = self.diffeq.exact_sol(tf,guess=q,print_warning=False)
         else:
             assert q_exa.shape == q.shape, f'ERROR: q_exa and q must have the same shape. {q_exa.shape}, {q.shape}'
         
@@ -711,7 +749,10 @@ class PdeSolver:
             self.check_resid_conv = False
 
         # time step stability sanity check
-        q = self.diffeq.set_q0()
+        if 'Euler' in self.diffeq.diffeq_name:
+            q = self.diffeq.set_q0()
+        else:
+            q = self.diffeq.set_q0(q0_type='GaussWave_shift', print_warning=False)
         cfl = 0.5
         if self.dim==1:
             LFconst = np.max(self.diffeq.maxeig_dExdq(q))
@@ -832,9 +873,10 @@ class PdeSolver:
                    savefile=None, print_nothing=False, colour_by_k=False, colour_by_bdy=False, normalize=False,
                    ymin=None, ymax=None, xmin=None, xmax=None, print_error=False,
                    time=None, display_time=False, display_maxreal=False,
-                   title=None, save_format='png', dpi=600, overwrite=False,
+                   title=r'Eigenvalues', save_format='png', dpi=600, overwrite=False,
                    sparse_solver=False, sparse_largestRe_only=True, figsize=(6,4), 
-                   log_colorbar=False, **kargs):
+                   log_colourbar=False, xlabel=None, ylabel=None, label_fontsize=14, 
+                   title_fontsize=16, legend_fontsize=12, **kargs):
         '''
         Call on self.diffeq.dqdt to check the stability of the spatial operator
         at a particular state q using central finite differences (approximate!).
@@ -1070,30 +1112,36 @@ class PdeSolver:
                 plt.scatter(X,Y, color='red')
             else:
                 if colour_by_bdy:
-                    if log_colorbar:
+                    if log_colourbar:
                         # For log scale, need to ensure positive values and handle zeros
                         avg_k_log = np.maximum(avg_k, 1e-4)  # avoid log(0)
                         norm = LogNorm(vmin=max(np.min(avg_k_log), 1e-10), vmax=1)
                         plt.scatter(X,Y, c=avg_k_log, cmap='viridis', norm=norm)
                     else:
                         plt.scatter(X,Y, c=avg_k, cmap='viridis', vmin=0, vmax=1)
-                    plt.colorbar(label='Element-Boundary Content')
+                    cbar = plt.colorbar(label=r'Block Boundary Content $\rho_{\text{bdy}}$')
+                    cbar.ax.yaxis.label.set_size(legend_fontsize)
                 elif colour_by_k:
-                    if log_colorbar:
+                    if log_colourbar:
                         # For log scale, ensure positive values
                         avg_k_log = np.maximum(avg_k, 1e-4)
                         norm = LogNorm(vmin=max(1, np.min(avg_k_log)), vmax=np.max(ks))
                         plt.scatter(X,Y, c=avg_k_log, cmap='viridis', norm=norm)
                     else:
                         plt.scatter(X,Y, c=avg_k, cmap='viridis', vmin=1, vmax=np.max(ks))
-                    plt.colorbar(label='Average Wavenumber')
+                    cbar = plt.colorbar(label='Average Wavenumber')
+                    cbar.ax.yaxis.label.set_size(legend_fontsize)
             plt.axvline(x=0, linewidth=1, linestyle='--', color='black')
-            plt.xlabel(r'Real Component ($x<0$ for stability)',fontsize=14)
-            plt.ylabel(r'Imaginary Component',fontsize=14)
-            if title is None:
-                plt.title(r'Eigenvalues',fontsize=16)
+            if xlabel is None:
+                plt.xlabel(r'Real Component ($x<0$ for stability)',fontsize=label_fontsize)
             else:
-                plt.title(title,fontsize=16)
+                plt.xlabel(xlabel,fontsize=label_fontsize)
+            if ylabel is None:
+                plt.ylabel(r'Imaginary Component',fontsize=label_fontsize)
+            else:
+                plt.ylabel(ylabel,fontsize=label_fontsize)
+            if title is not None:
+                plt.title(title,fontsize=title_fontsize)
             plt.ylim(ymin,ymax)
             plt.xlim(xmin,xmax)
             if display_time and (time is not None):
@@ -1143,9 +1191,9 @@ class PdeSolver:
                 eigenvector = eigvecs[:, idx]
                 
                 # Calculate real part, imaginary part, and power spectrum
-                real_part = np.real(eigenvector)
-                imaginary_part = np.imag(eigenvector)
-                amplitude = np.abs(eigenvector)
+                real_part = np.real(eigenvector)[::self.neq_node]
+                imaginary_part = np.imag(eigenvector)[::self.neq_node]
+                amplitude = np.abs(eigenvector)[::self.neq_node]
                 
                 # Create the plot
                 plt.figure(figsize=figsize)
@@ -1155,9 +1203,9 @@ class PdeSolver:
                 
                 # Add title, legend, and labels
                 plt.title(f'Eigenvalue: {eigenvalue.real:.2f} + {eigenvalue.imag:.2f}i')
-                plt.xlabel(r'$x$')
-                plt.ylabel('Value')
-                plt.legend()
+                plt.xlabel(r'$x$', fontsize=label_fontsize)
+                #plt.ylabel('Value')
+                plt.legend(fontsize=legend_fontsize)
                 
                 # Show the plot for each eigenvalue
                 plt.show()
@@ -1182,9 +1230,10 @@ class PdeSolver:
         
     # Define a function to compute eigenvalues and eigenvectors, and plot the results
     def plot_eigvecs(self, matrix=None, plot_type="real", 
-                     test_type='max real',
+                     test_type='max real', normalize=False,
                      threshold=1e-5, num_eigvecs = 5,
-                     include_pairs=True, return_eigs=False):
+                     include_pairs=True, return_eigs=False,
+                     plot_contribution=False, figsize=(6,4)):
         assert self.dim==1, 'ERROR: Only implemented for 1D problems'
         assert test_type in ['max real', 'max abs', 'min real'], 'ERROR: Choose one of test_type = "max real" or "max abs" or "min real"'     
         
@@ -1230,6 +1279,13 @@ class PdeSolver:
             
             if (passed_test):
                 eigenvector = eigenvectors[:, idx]
+                if normalize:
+                    eigenvector /= np.max(np.abs(eigenvector))
+
+                # Initialize figure
+                colors = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red']
+                fig = plt.figure(figsize=figsize)
+                ax1 = fig.add_subplot(111)   # main axis
 
                 # Separate components of the eigenvector based on plot type
                 vars = eigenvector.reshape((self.nelem*self.nen,self.neq_node), order='C')
@@ -1252,11 +1308,7 @@ class PdeSolver:
                         norm = np.linalg.norm(vars[:,vari])
                     vars[:,vari] = vars[:,vari] / norm
 
-                # Initialize figure
-                colors = ['#1f77b4', '#ff7f0e', '#2ca02c']
-                plt.figure()
-                for vari in range(self.neq_node):
-                    plt.plot(x, vars[:,vari], label=f'Variable {vari+1}', linestyle='solid', color=colors[vari])
+                for vari in range(self.neq_node): ax1.plot(x, vars[:,vari], label=f'Variable {vari+1}', linestyle='solid', color=colors[vari])
                 
                 if return_eigs:
                     eigvector_list.append(eigenvector)
@@ -1282,13 +1334,20 @@ class PdeSolver:
                                 else:
                                     norm = np.linalg.norm(vars2[:,vari])
                                 vars2[:,vari] = vars2[:,vari] / norm
-                                plt.plot(x, vars2[:,vari], label=f'Variable {vari+1} (Pair)', linestyle='dotted', color=colors[vari])
+                                ax1.plot(x, vars2[:,vari], label=f'Variable {vari+1} (Pair)', linestyle='dotted', color=colors[vari])
 
                             break
+                
+                if plot_contribution and test_type == 'max real':
+                    num = np.real( np.conjugate(eigenvector) * eigenvector * eigenvalue )
+                    norm = np.vdot(eigenvector, eigenvector)
+                    contribution = num / norm
+                    ax2 = ax1.twinx()
+                    ax2.plot(x, contribution, label='Contribution to Re(lam)', linestyle='dashed', color='black')
 
                 plt.title(f"Eigenvectors for Eigenvalue: {eigenvalue:g}")
-                plt.xlabel("x")
-                plt.ylabel(ylabel)
+                ax1.set_xlabel("x")
+                ax1.set_ylabel(ylabel)
                 plt.legend()
                 plt.grid()
                 plt.show()
@@ -1334,8 +1393,16 @@ class PdeSolver:
                         plt.yscale('symlog',linthresh=1e-14)
                         ax = plt.gca()
                         ymin, ymax = ax.get_ylim()
-                        positive_ticks = [0] + [10**exp for exp in range(-12, int(np.log10(ymax)) + 1, 4)]
-                        negative_ticks = [-10**exp for exp in range(-12, int(np.log10(-ymin)) + 1, 4)]
+                        # Handle cases where ymax might be 0, negative, or NaN
+                        if ymax > 0 and np.isfinite(ymax):
+                            positive_ticks = [0] + [10**exp for exp in range(-12, int(np.log10(ymax)) + 1, 4)]
+                        else:
+                            positive_ticks = [0]
+                        # Handle cases where ymin might be 0, positive, or NaN
+                        if ymin < 0 and np.isfinite(ymin):
+                            negative_ticks = [-10**exp for exp in range(-12, int(np.log10(-ymin)) + 1, 4)]
+                        else:
+                            negative_ticks = []
                         custom_ticks = negative_ticks[::-1] + positive_ticks
                         ax.set_yticks(custom_ticks)
                 else:
@@ -1353,8 +1420,16 @@ class PdeSolver:
                     plt.yscale('symlog',linthresh=1e-14)
                     ax = plt.gca()
                     ymin, ymax = ax.get_ylim()
-                    positive_ticks = [0] + [10**exp for exp in range(-12, int(np.log10(ymax)) + 1, 4)]
-                    negative_ticks = [-10**exp for exp in range(-12, int(np.log10(-ymin)) + 1, 4)]
+                    # Handle cases where ymax might be 0, negative, or NaN
+                    if ymax > 0 and np.isfinite(ymax):
+                        positive_ticks = [0] + [10**exp for exp in range(-12, int(np.log10(ymax)) + 1, 4)]
+                    else:
+                        positive_ticks = [0]
+                    # Handle cases where ymin might be 0, positive, or NaN
+                    if ymin < 0 and np.isfinite(ymin):
+                        negative_ticks = [-10**exp for exp in range(-12, int(np.log10(-ymin)) + 1, 4)]
+                    else:
+                        negative_ticks = []
                     custom_ticks = negative_ticks[::-1] + positive_ticks
                     ax.set_yticks(custom_ticks)
     
@@ -1407,8 +1482,12 @@ class PdeSolver:
                 
             else:
                 print('WARNING: No default plotting set up for '+cons_obj_name_i)
-                plt.title(cons_obj_name_i,fontsize=18)
-                plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx]) 
+                if plot_change:
+                    plt.title('Change in '+cons_obj_name_i,fontsize=18)
+                    plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx]-norm) 
+                else:
+                    plt.title(cons_obj_name_i,fontsize=18)
+                    plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx]) 
                 if logscale: plt.yscale('log') 
                 
             if savefile is not None:
@@ -1520,7 +1599,7 @@ class PdeSolver:
                 x = self.sbp.basis.eval_nodal_vec(self.mesh.x_elem, x50)
                 self.diffeq.plot_sol(q, x, **kwargs)
             elif self.dim==2:
-                xy = self.sbp.basis.eval_nodal_vec(self.mesh.xy_elem, x50)
+                xy = self.sbp.basis.eval_nodal_vec(self.mesh.xy_elem, x50, dim=2)
                 self.diffeq.plot_sol(q, xy, **kwargs)
         # if self.disc_nodes in ['lgl','lg','nc'] and interpolate:
         #     if self.dim==1:

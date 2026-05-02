@@ -18,6 +18,7 @@ class TimeMarching(TimeMarchingRk):
 
     idx_print = 100 # Calc norm after this number of iterations
     return_failed_itn = False # include the last iteration in the return if it failed?
+    clip_positivity = False
 
     def __init__(self, diffeq, tm_method,
                  keep_all_ts=True, skip_ts=0,
@@ -83,6 +84,7 @@ class TimeMarching(TimeMarchingRk):
         self.quitsim = False
         self.enforce_positivity = self.diffeq.enforce_positivity
         self.print_progress = True
+        self.print_nothing = False
 
         ''' Extract other required parameters '''
 
@@ -234,11 +236,11 @@ class TimeMarching(TimeMarchingRk):
                     suf += ' Resid = {0:.1E}'.format(resid)
                 printProgressBar(t_idx, n_ts, prefix = 'Progress:', suffix = suf)
                 
-        elif t_idx == 0:
+        elif t_idx == 0 and not self.print_nothing:
             print('--- Beginning Simulation ---', flush=True)
-        elif t_idx == 1:
+        elif t_idx == 1 and not self.print_nothing:
             self.start_time = tm.time()
-        elif t_idx == 10:
+        elif t_idx == 10 and not self.print_nothing:
             sim_time = tm.time() - self.start_time
             rem_time = sim_time/9*(n_ts-9)
             print('... Estimating {0}:{1:02d}:{2:02d} to run.'.format(int(rem_time//3600),
@@ -246,7 +248,8 @@ class TimeMarching(TimeMarchingRk):
 
         if self.check_resid_conv:
             if (resid < 1E-10): 
-                print('Reached a residual tolerance of 1E-10 (L2 square norm). Ending simulation.')
+                if not self.print_nothing:
+                    print('Reached a residual tolerance of 1E-10 (L2 square norm). Ending simulation.')
                 self.quitsim = True
                 self.failsim = False
 
@@ -279,19 +282,21 @@ class TimeMarching(TimeMarchingRk):
                 resid = np.linalg.norm(dqdt)
                 resid = resid*resid # I actually want the norm squared
 
-            sim_time = tm.time() - self.start_time
-            h,m,s = int(sim_time//3600),int((sim_time//60)%60),int(sim_time%60)
-            if self.print_progress:
-                suf = 'Complete.'
-                printProgressBar(t_idx, n_ts, prefix = 'Progress:', suffix = suf)
-            print('... Took {0}:{1:02d}:{2:02d} to run.'.format(h,m,s))
-        
-            if np.any(np.isnan(q)):
-                print('ERROR: there are undefined values for q at final t =',time,'t_idx =', t_idx)
+            if not self.print_nothing:
+                sim_time = tm.time() - self.start_time
+                h,m,s = int(sim_time//3600),int((sim_time//60)%60),int(sim_time%60)
+                if self.print_progress:
+                    suf = 'Complete.'
+                    printProgressBar(t_idx, n_ts, prefix = 'Progress:', suffix = suf)
+                
+                print('... Took {0}:{1:02d}:{2:02d} to run.'.format(h,m,s))
+            
+                if np.any(np.isnan(q)):
+                    print('ERROR: there are undefined values for q at final t =',time,'t_idx =', t_idx)
 
-            if self.check_resid_conv:
-                if (resid < 1E-10): 
-                    print('Reached a residual tolerance of 1E-10 (L2 square norm) on final iteration. Lucky you!')
+                if self.check_resid_conv:
+                    if (resid < 1E-10): 
+                            print('Reached a residual tolerance of 1E-10 (L2 square norm) on final iteration. Lucky you!')
 
 
     def init_q_sol(self, q0, n_ts):
