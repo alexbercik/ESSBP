@@ -80,7 +80,7 @@ class LinearConv(PdeBase):
         self.flux_type = flux_type.lower()
 
         # Lazy initialization for skewed_sin coefficients (computed on first call)
-        if self.a_type == 'skewed_sin':
+        if self.a_type == 'skewed_sin' or self.a_type == 'skewed_sin_bigshift':
             # number of Fourier modes in the truncated series
             self._skewed_sin_n_fourier = 5
             # Will be (n_fourier,) arrays computed lazily
@@ -152,7 +152,7 @@ class LinearConv(PdeBase):
             if 'shift' in self.a_type:
                 a = a + 1.5   
 
-        elif self.a_type == 'skewed_sin':
+        elif self.a_type == 'skewed_sin' or self.a_type == 'skewed_sin_bigshift':
             # Lazy computation of coefficients on first call
             if self._skewed_sin_coeff is None:
                 from scipy.special import comb
@@ -172,7 +172,10 @@ class LinearConv(PdeBase):
                 kx = ks * xmod  # shape: (n_fourier,)
                 sin_kx = np.sin(kx)  # shape: (n_fourier,)
                 fourier_sum = np.dot(self._skewed_sin_coeff, sin_kx)  # scalar result
-                a = float(fourier_sum + 1.5)
+                if 'bigshift' in self.a_type:
+                    a = fourier_sum + 10
+                else:
+                    a = float(fourier_sum + 1.5)
             else:
                 # Array case: preserve shape
                 xmod = 2.*np.pi*(x - self.xmin) / self.dom_len + 4.
@@ -183,7 +186,10 @@ class LinearConv(PdeBase):
                 # Multiply by coefficients and sum over k dimension (axis 0)
                 # Use einsum to sum over first dimension while preserving other dimensions
                 fourier_sum = np.einsum('i,i...->...', self._skewed_sin_coeff, sin_kx)
-                a = fourier_sum + 1.5
+                if 'bigshift' in self.a_type:
+                    a = fourier_sum + 10
+                else:
+                    a = fourier_sum + 1.5
 
 
         else:
@@ -216,9 +222,9 @@ class LinearConv(PdeBase):
             if 'sinwave' in self.a_type:
                 ader = w * np.cos(w * xmod) * self.q0_max_q / self.dom_len
             elif 'coswave' in self.a_type:
-                ader = w * np.cos(w * xmod) * self.q0_max_q / self.dom_len
+                ader = - w * np.sin(w * xmod) * self.q0_max_q / self.dom_len
 
-        elif self.a_type == 'skewed_sin':
+        elif self.a_type == 'skewed_sin' or self.a_type == 'skewed_sin_bigshift':
             # Lazy computation of coefficients on first call (if not already computed by afun)
             if self._skewed_sin_dcoeff is None:
                 from scipy.special import comb
@@ -237,7 +243,7 @@ class LinearConv(PdeBase):
                 ks = np.arange(1, self._skewed_sin_n_fourier + 1)
                 kx = ks * xmod  # shape: (n_fourier,)
                 cos_kx = np.cos(kx)  # shape: (n_fourier,)
-                dfourier_dx = np.dot(self._skewed_sin_dcoeff, cos_kx) / self.dom_len  # scalar result
+                dfourier_dx = 2.0*np.pi*np.dot(self._skewed_sin_dcoeff, cos_kx) / self.dom_len  # scalar result
                 ader = float(dfourier_dx)
             else:
                 # Array case: preserve shape
@@ -248,12 +254,75 @@ class LinearConv(PdeBase):
                 cos_kx = np.cos(kx)  # shape: (n_fourier, ...)
                 # Multiply by derivative coefficients and sum over k dimension, then divide by dom_len
                 # Use einsum to sum over first dimension while preserving other dimensions
-                dfourier_dx = np.einsum('i,i...->...', self._skewed_sin_dcoeff, cos_kx) / self.dom_len
+                dfourier_dx = 2.0*np.pi*np.einsum('i,i...->...', self._skewed_sin_dcoeff, cos_kx) / self.dom_len
                 ader = dfourier_dx
 
         else:
             raise Exception('Variable coefficient not understood.')
         return ader
+
+    def afunder2(self, x):
+        if self.a_type == 'gaussian' or self.a_type == 'gaussian_shift':
+            mid_point = 0.5 * (self.xmax + self.xmin)
+            q0_max_q = self.q0_max_q / 2
+            k = (8 * np.log(self.q0_gauss_wave_val_bc / q0_max_q))
+            stdev2 = abs(self.dom_len**2 / k)
+            exp = -0.5 * (x - mid_point)**2 / stdev2
+            a = q0_max_q * np.exp(exp)
+            ader2 = a * (((x - mid_point)**2) / (stdev2**2) - 1.0 / stdev2)
+
+        elif self.a_type == 'constant':
+            ader2 = np.zeros(np.shape(x))
+
+        elif 'linear' in self.a_type:
+            ader2 = np.zeros(np.shape(x))
+
+        elif 'sinwave' in self.a_type or 'coswave' in self.a_type:
+            if '4pi' in self.a_type:
+                w = 4 * np.pi
+            elif '8pi' in self.a_type:
+                w = 8 * np.pi
+            else:
+                w = 2 * np.pi
+            xmod = (x - self.xmin) / self.dom_len
+            if 'sinwave' in self.a_type:
+                ader2 = -(w**2) * np.sin(w * xmod) * self.q0_max_q / (self.dom_len**2)
+
+            elif 'coswave' in self.a_type:
+                ader2 = -(w**2) * np.cos(w * xmod) * self.q0_max_q / (self.dom_len**2)
+
+        elif self.a_type == 'skewed_sin' or self.a_type == 'skewed_sin_bigshift':
+            # Lazy computation of coefficients if needed
+            if self._skewed_sin_coeff is None or self._skewed_sin_dcoeff is None:
+                from scipy.special import comb
+                n_fourier = self._skewed_sin_n_fourier
+                binom_norm = comb(2 * n_fourier, n_fourier, exact=True)
+                ks = np.arange(1, n_fourier + 1)
+                comb_vals = comb(2 * n_fourier, n_fourier - ks, exact=False)
+                self._skewed_sin_coeff = comb_vals / (binom_norm * ks)
+                self._skewed_sin_dcoeff = comb_vals / binom_norm  # = k*c_k
+
+            if np.isscalar(x):
+                xmod = 2.0 * np.pi * (x - self.xmin) / self.dom_len + 4.0
+                ks = np.arange(1, self._skewed_sin_n_fourier + 1)
+                kx = ks * xmod
+                sin_kx = np.sin(kx)
+                k2c = ks * self._skewed_sin_dcoeff
+                sum_term = np.dot(k2c, sin_kx)
+                ader2 = - (2.0 * np.pi / self.dom_len)**2 * float(sum_term)
+            else:
+                xmod = 2.0 * np.pi * (x - self.xmin) / self.dom_len + 4.0
+                ks = np.arange(1, self._skewed_sin_n_fourier + 1)
+                ks_shape = (len(ks),) + (1,) * xmod.ndim
+                kx = ks.reshape(ks_shape) * xmod
+                sin_kx = np.sin(kx)
+                k2c = ks * self._skewed_sin_dcoeff  # shape (n_fourier,)
+                sum_term = np.einsum('i,i...->...', k2c, sin_kx)
+                ader2 = - (2.0 * np.pi / self.dom_len)**2 * sum_term
+
+        else:
+            raise Exception('Variable coefficient not understood.')
+        return ader2
 
     # ----------------------------
     # exact-solution admissibility
@@ -887,7 +956,7 @@ class LinearConv(PdeBase):
     # ----------------------------
     # exact solution
     # ----------------------------
-    def exact_sol(self, time=0, x=None, guess=None):
+    def exact_sol(self, time=0, x=None, **kwargs):
         """
         Exact solution via analytic characteristics. Works for:
           - periodic BCs (wrap in x and Phi-space)
@@ -1093,6 +1162,10 @@ class LinearConv(PdeBase):
         self.a = self.afun(self.x_elem)
         self.max_absa = np.max(np.abs(self.a))
         self.ader = self.afunder(self.x_elem)
+        try:
+            self.ader2 = self.afunder2(self.x_elem)
+        except:
+            pass
         if np.min(self.a) <= 0.: print('WARNING: Variable coefficient a(x) should be >=0')
 
         # Determine if a has strict sign (no crossing/touching 0)
