@@ -68,19 +68,19 @@ class MakeMesh:
         if self.dim == 1:
             self.dom_len = self.xmax - self.xmin
             self.build_mesh_1d()
-            if self.warp_factor!=0:
+            if self.warp_factor!=0 and self.warp_type != 'none' and self.warp_type != None:
                 self.stretch_mesh_1d()
              
         elif self.dim == 2:
             self.dom_len = (self.xmax[0] - self.xmin[0], self.xmax[1] - self.xmin[1])
             self.build_mesh_2d()
-            if self.warp_factor!=0:
+            if self.warp_factor!=0 and self.warp_type != 'none' and self.warp_type != None:
                 self.warp_mesh_2d()
                 
         elif self.dim == 3:
             self.dom_len = (self.xmax[0] - self.xmin[0], self.xmax[1] - self.xmin[1], self.xmax[2] - self.xmin[2])
             self.build_mesh_3d()
-            if self.warp_factor!=0:
+            if self.warp_factor!=0 and self.warp_type != 'none' and self.warp_type != None:
                 self.warp_mesh_3d()
         
         else:
@@ -466,29 +466,36 @@ class MakeMesh:
         
         def corners_periodic(x):
             ''' stretches the corners but keeps the ends and middle approximately linear'''
-            assert(self.xmin==0 and self.xmax==1),'Only set up for interval [0,1]'
-            x0 = self.warp_factor # how far in to have transition
+            # Normalize to [0,1] domain
+            arg = (x - self.xmin) / self.dom_len
+            x0 = self.warp_factor # transition location in normalized [0,1] domain (not physical units)
             a = self.warp_factor2 # strength of the transition
             N = max(3,int(self.warp_factor3)) # how many modes to use
 
-            f = np.copy(x)
+            f_normalized = np.copy(arg)
             for n in range(1,N+1):
                 c = 2*(1-x0)/(1-2*x0)*np.sin(2*np.pi*n*x0)/(np.pi*n)
-                f += a*c*np.sin(2*np.pi*n*x)/(2*np.pi*n)
-            return f
+                f_normalized += a*c*np.sin(2*np.pi*n*arg)/(2*np.pi*n)
+            # Scale back to actual domain
+            return f_normalized * self.dom_len + self.xmin
         
         def corners_periodic_der(x):
             ''' stretches the corners but keeps the ends and middle approximately linear'''
-            assert(self.xmin==0 and self.xmax==1),'Only set up for interval [0,1]'
-            x0 = self.warp_factor # how far in to have transition
+            # Normalize to [0,1] domain
+            arg = (x - self.xmin) / self.dom_len
+            x0 = self.warp_factor # transition location in normalized [0,1] domain (not physical units)
             a = self.warp_factor2 # strength of the transition
             N = max(3,int(self.warp_factor3)) # how many modes to use
 
-            df = np.ones_like(x)
+            df_normalized = np.ones_like(arg)
             for n in range(1,N+1):
                 c = 2*(1-x0)/(1-2*x0)*np.sin(2*np.pi*n*x0)/(np.pi*n)
-                df += a*c*np.cos(2*np.pi*n*x)
-            return df
+                df_normalized += a*c*np.cos(2*np.pi*n*arg)
+            # Note: Since f = f_normalized * dom_len + xmin and arg = (x-xmin)/dom_len,
+            # we have df/dx = dom_len * (df_normalized/darg) * (darg/dx) 
+            # = dom_len * df_normalized/darg * (1/dom_len) = df_normalized/darg
+            # So the scaling factors cancel and we can return the normalized derivative directly
+            return df_normalized
 
         
         # switch between different mappings here

@@ -11,13 +11,15 @@ def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
         B = np.ones(nen)
 
         if sbp_type.lower() == 'circulant':
+            # remember that p for circulat operators is the 2p interior of SBP
+            # so s here should actually be set not as p+1 but as s=(p/2)+1
             B = np.ones(nen)
             if s == 1:
                 from Source.Disc.CSbpOp import tridiag
                 Ds = tridiag(nen, -0.5, 0., 0.5, bc='periodic')
             elif s == 2:
                 from Source.Disc.CSbpOp import tridiag
-                Ds = tridiag(nen, 1.0, 2.0, 1.0, bc='periodic')
+                Ds = tridiag(nen, 1.0, -2.0, 1.0, bc='periodic')
             elif s == 3:
                 from Source.Disc.CSbpOp import pentadiag
                 Ds = pentadiag(nen, 0.0, -1.0, 3.0, -3.0, 1.0, bc='periodic')
@@ -27,6 +29,8 @@ def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
             elif s == 5:
                 from Source.Disc.CSbpOp import heptadiag
                 Ds = heptadiag(nen, 0.0, -1.0, 5.0, -10.0, 10.0, -5.0, 1.0, bc='periodic')
+            else:
+                raise ValueError(f"Invalid choice of s. Only coded up s=1,2,3,4,5.")
             return Ds, B
 
         if s==1:

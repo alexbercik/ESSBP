@@ -138,7 +138,7 @@ class Burgers(PdeBase):
             res = 0.5*(uL + uR)
             return [res]
 
-    def exact_sol(self, time=0, x=None, guess=None):
+    def exact_sol(self, time=0, x=None, guess=None, **kwargs):
         # NOTE: Assumes the PDE has periodic BCs
 
         if x is None:
@@ -324,7 +324,7 @@ class Burgers(PdeBase):
         return q
     
     def dqdw(self,q):
-        return fn.gdiag_to_gm(np.ones(q.shape))
+        return fn.gdiag_to_gbdiag(np.ones_like(q))
     
     def maxeig_dqdw(self,q):
         return np.ones(q.shape)

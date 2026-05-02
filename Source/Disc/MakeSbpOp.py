@@ -26,6 +26,7 @@ from scipy.linalg import null_space
 from Source.Disc.BasisFun import BasisFun
 from Source.Disc.SbpQuadRule import SbpQuadRule
 from Source.Disc.CSbpOp import CSbpOp, HGTLOp, HGTOp, MattOp, HGTLOp_DDRF, HGTLOp_DDRF2
+from Source.Disc.GlaubitzOp import GlaubitzOp
 import Source.Methods.Functions as fn
 import Source.Methods.Sparse as sp
 from Source.Disc.MakeMesh import MakeMesh
@@ -74,11 +75,12 @@ class MakeSbpOp:
         self.p = p
         self.nn = nn
         self.print_progress = print_progress
+        self.basis = None
        
         if sbp_type.lower()=='csbp' or sbp_type.lower()=='optz':
             ''' Build Classical SBP Operators '''
             
-            self.sbp_fam = 'csbp'
+            self.bdy_nodes = True
             self.quad = None # if CSBP, it is meaningless to talk about quadrature
             assert self.nn > 1 , "Please specify number of nodes nn > 1"
             if p==1 and nn<3:
@@ -175,25 +177,25 @@ class MakeSbpOp:
                 self.nn = 17
 
             if sbp_type.lower()=='hgtl':
-                self.sbp_fam = 'hgtl'
+                self.bdy_nodes = True
                 self.H, self.D, self.Q, self.E, self.S, self.dx, self.x = HGTLOp(self.p,self.nn)
                 self.tL, self.tR = np.zeros(self.nn), np.zeros(self.nn)
                 self.tL[0] , self.tR[-1] = 1 , 1
             elif sbp_type.lower()=='hgtl_ddrf':
-                self.sbp_fam = 'hgtl_ddrf'
+                self.bdy_nodes = True
                 self.H, self.D, self.Q, self.E, self.S, self.dx, self.x = HGTLOp_DDRF(self.p,self.nn)
                 self.tL, self.tR = np.zeros(self.nn), np.zeros(self.nn)
                 self.tL[0] , self.tR[-1] = 1 , 1
             elif sbp_type.lower()=='hgtl_ddrf2':
-                self.sbp_fam = 'hgtl_ddrf2'
+                self.bdy_nodes = True
                 self.H, self.D, self.Q, self.E, self.S, self.dx, self.x = HGTLOp_DDRF2(self.p,self.nn)
                 self.tL, self.tR = np.zeros(self.nn), np.zeros(self.nn)
                 self.tL[0] , self.tR[-1] = 1 , 1
             elif sbp_type.lower()=='hgt':
-                self.sbp_fam = 'hgt'
+                self.bdy_nodes = False
                 self.H, self.D, self.Q, self.E, self.S, self.dx, self.x, self.tL, self.tR = HGTOp(self.p,self.nn)
             else:
-                self.sbp_fam = 'mattsson'
+                self.bdy_nodes = True
                 self.H, self.D, self.Q, self.E, self.S, self.dx, self.x = MattOp(self.p,self.nn)
                 self.tL, self.tR = np.zeros(self.nn), np.zeros(self.nn)
                 self.tL[0] , self.tR[-1] = 1 , 1
@@ -241,28 +243,61 @@ class MakeSbpOp:
                 print('WARNING: nn set too small ({0}). Automatically increasing to minimum 9.'.format(nn))
                 self.nn = 9
 
+            self.bdy_nodes = False
             self.H, self.D, self.Q, self.S, self.dx = circulant(self.p,self.nn)
             self.x = np.linspace(0, 1, self.nn, endpoint=False)
             self.E = np.zeros((self.nn,self.nn))
             self.tL, self.tR = np.zeros(self.nn), np.zeros(self.nn)
             print_progress = False
+        
+        elif sbp_type.lower()=='glaubitz_exp':
+            self.bdy_nodes = True
+            if self.p is None or self.p < 1:
+                raise Exception('p must be set for glaubitz_exp. Set it according to equivalent polynomial basis.')
+            self.nb = self.p + 1 # assume equivalent polynomial basis first to set nb, then fix it
+            self.p = self.nb - 2 # nb-1 polynomial basis vectors, up to degree nb-2
+            self.dx = 1.
+            self.H, self.D, self.Q, self.E, self.S, self.x = GlaubitzOp(self.nb,'exp')
+            self.nn = len(self.x)
+            self.tL, self.tR = np.zeros(self.nn), np.zeros(self.nn)
+            self.tL[0] , self.tR[-1] = 1 , 1
+            #TODO: Should I add the basis?
+            
 
         else:
             ''' Build Element-type SBP Operators '''
+            if self.p is None:
+                self.p = self.nn - 1
+                if self.p > 0:
+                    print('WARNING: p is not set. Assuming p = nn - 1 = {0}'.format(self.p))
+                else:
+                    raise Exception('p is not set and nn is not set. Please set p or nn.')
             
             if self.sbp_type == 'lgl':
-                self.sbp_fam = 'R0'
-                self.quad = SbpQuadRule(p, sbp_fam='R0', nn=self.nn, quad_rule='lgl')
+                self.bdy_nodes = True
+                self.nb = self.p + 1
+                self.quad = SbpQuadRule(self.p, sbp_fam='R0', nn=self.nn, quad_rule='lgl')
             elif self.sbp_type == 'lg':
-                self.sbp_fam = 'Rd'
-                self.quad = SbpQuadRule(p, sbp_fam='Rd', nn=self.nn, quad_rule='lg')
+                self.bdy_nodes = False
+                self.nb = self.p + 1
+                self.quad = SbpQuadRule(self.p, sbp_fam='Rd', nn=self.nn, quad_rule='lg')
             elif self.sbp_type == 'nc':
-                self.sbp_fam = 'R0'
-                self.quad = SbpQuadRule(p, sbp_fam='R0', nn=self.nn, quad_rule='nc')
+                self.bdy_nodes = True
+                self.nb = self.p + 1
+                self.quad = SbpQuadRule(self.p, sbp_fam='R0', nn=self.nn, quad_rule='nc')
+            elif self.sbp_type == 'lg_exp':
+                self.bdy_nodes = False
+                if self.nn == 0: 
+                    print('WARNING: lg_exp - no nn set. Assuming nn = p + 1 = {0}'.format(p + 1))
+                    self.nn = self.p + 1
+                self.nb = self.nn
+                self.p = self.nb - 2 # nb-1 polynomial basis vectors, up to degree nb-2
+                self.quad = SbpQuadRule(p, sbp_fam='Rd', nn=self.nn, quad_rule='lg_exp')
+                self.basis_type = 'exponential'
             else:
                 raise Exception('Misunderstood SBP type.')
                 
-            self.x = self.quad.xq[:,0]
+            self.x = self.quad.xq
             self.H = np.diag(self.quad.wq)
                 
             if ((self.nn != len(self.x)) and (self.nn>0)):
@@ -271,13 +306,12 @@ class MakeSbpOp:
             self.dx = 1.
         
             # Get the Vandermonde matrix at the element nodes
-            elem_basis = BasisFun(self.quad.xq, self.p, self.basis_type)
-            self.van = elem_basis.van
-            self.van_der = elem_basis.van_der[0]
-            self.tL = self.construct_tL(self.nn,self.van,self.p)   # interpolation vector for left node
-            self.tR = np.flip(self.tL)                             # interpolation vector for right node
+            self.basis = BasisFun(self.x, self.nb, self.p, basis_type=self.basis_type)
+            self.van = self.basis._V
+            self.van_der = self.basis._Vx
+            self.tL, self.tR = self.construct_tL_tR()   # boundary interpolation vectors
             self.E = np.outer(self.tR, self.tR) - np.outer(self.tL, self.tL) # surface integral
-            self.D, self.Q, self.S = self.construct_op(self.p, self.nn, self.van, self.van_der, self.E, self.H)
+            self.D, self.Q, self.S = self.construct_op(self.nb, self.nn, self.van, self.van_der, self.E, self.H)
 
         ''' Test the operators '''
         if print_progress: 
@@ -290,32 +324,35 @@ class MakeSbpOp:
                 self.check_decomposition(self.E, self.S, self.Q, self.D, self.H)
 
 
-    def construct_tL(self,nn,van,p):
+    def construct_tL_tR(self, nn=None):
         '''
         Returns
         -------
-        tL : numpy array
-            This is the left int/ext operator tL.
+        tL, tR : numpy array
+            The left/right interpolation (or extrapolation) operators tL/tR.
         '''
+        if nn is None:
+            nn = self.nn
 
-        # Refer to Section 2.3 of André Marchildon's SBP thesis for more
-        # information on the construction of the operator rr that ensures
-        # symmetrical contributions across symmetry lines or planes. Also
-        # refer to Appendix C for the required equations.
-
-        if self.sbp_fam != 'Rd': 
-            tL = np.zeros(nn)
-            tL[0] = 1
+        if self.bdy_nodes: 
+            tL, tR = np.zeros(self.nn), np.zeros(self.nn)
+            tL[0] = 1.; tR[-1] = 1.
 
         else:
-            # This is simplified code from Andre assuming everything 1D, facet 0D
-            van_f = BasisFun.facet_vandermonde(np.array([[0.]]), p, False, self.basis_type)[1].flatten()
-            tL = np.linalg.lstsq(van.T, van_f.T, rcond=None)[0]
+            if self.nn == self.basis.nb:
+                #tL = BasisFun.vandermonde(0.) @ BasisFun._Vinv
+                #tR = BasisFun.vandermonde(1.) @ BasisFun._Vinv
+                tL = np.linalg.solve(self.van.T, self.basis.vandermonde(0))
+                tR = np.linalg.solve(self.van.T, self.basis.vandermonde(1))
+            else:
+                # Not actually used, but future-proof in case nn > cardinality
+                tL = np.linalg.lstsq(self.van.T,self.basis.vandermonde(0),rcond=None)[0]
+                tR = np.linalg.lstsq(self.van.T,self.basis.vandermonde(1),rcond=None)[0]
 
-        return tL
+        return tL, tR
 
     @staticmethod
-    def construct_op(p, nn, van, van_der, E, H):
+    def construct_op(nb, nn, van, van_der, E, H):
         '''
         Returns
         -------
@@ -333,11 +370,13 @@ class MakeSbpOp:
         # the original multidimensional SBP paper.
         use_optz_method = False
         # Slightly more accurate to set as False for 1D operators 
-        # (roundoff error, the actual operators are the same really)
-        
-        n_p = p + 1 # for 1D
+        # (roundoff error, the actual operators are the same)
 
         if use_optz_method:
+
+            n_p = nb # TODO not sure if this is correct, previously was below
+            #n_p = p + 1 # for 1D
+
             n_dof = int(np.round(nn*(nn-1)/2))
             n_ind_eq = int(np.round(n_p * (n_p-1)/2 + n_p*(nn-n_p)))
 
@@ -387,7 +426,7 @@ class MakeSbpOp:
             dd = np.linalg.solve(H, qq)
 
         else:
-            num_w_col = nn - n_p
+            num_w_col = nn - nb
 
             if num_w_col > 0:
                 # Create square invertible matrix by appending self.van with its nullspace
@@ -868,7 +907,7 @@ class MakeSbpOp:
         if returndegree:
             return int(p-1)
         else:
-            print('Test: Quadrature H is order {0}.'.format(p-1))
+            print('Test: Quadrature H is (polynomial) order {0}.'.format(p-1))
         
     @staticmethod
     def check_compatibility(x,H,E,tol=1e-10):
@@ -891,7 +930,7 @@ class MakeSbpOp:
                 elif j ==0: ans = i*((x**j)@H@(x**(i-1)))
                 else: ans = j*((x**i)@H@(x**(j-1))) + i*((x**j)@H@(x**(i-1)))
                 er += abs(x**i @ E @ x**j - ans)
-        print('Test: Compatibility equations hold to order {0}'.format(p-1))        
+        print('Test: Compatibility equations hold to (polynomial) order {0}'.format(p-1))        
 
     @staticmethod
     def check_interpolation(tL, tR, x, tol=1e-10):
@@ -904,7 +943,7 @@ class MakeSbpOp:
             while er<tol:
                 p+=1
                 er = abs(tL@x**p) + abs(tR@(2*x)**p - 2**p)
-            print('Test: The interpolation tL/tR is order {0}.'.format(p-1))
+            print('Test: The interpolation tL/tR is (polynomial) order {0}.'.format(p-1))
 
     @staticmethod
     def check_decomposition(E, S, Q, D, H, tol=1e-10):
@@ -918,15 +957,15 @@ class MakeSbpOp:
 
         # Test that the matrix Q decomposes into E and S
         test_Q = np.max(np.abs(Q - (S + 0.5*E)))
-        assert test_Q < tol, 'The matrix Q does not decompose properly into S and E'
+        assert test_Q < tol, 'The matrix Q does not decompose properly into S and E. Error: {0:.2e}'.format(test_Q)
 
         # Test that the matrix D decomposes into H and Q
         test_D = np.max(np.abs(H @ D - Q))
-        assert test_D < tol, 'The matrix D does not decompose properly into Q and H'
+        assert test_D < tol, 'The matrix D does not decompose properly into Q and H. Error: {0:.2e}'.format(test_D)
         
         # Test that the matrix E decomposes into Q and Q.T
         test_E = np.max(np.abs(E - Q - Q.T))
-        assert test_E < tol, 'The matrix E does not decompose properly into Q and Q.T'
+        assert test_E < tol, 'The matrix E does not decompose properly into Q and Q.T. Error: {0:.2e}'.format(test_E)
         
         print('Test: The operator succesfully passed all decomposition tests.')
 
@@ -939,7 +978,7 @@ class MakeSbpOp:
         while er<tol:
             p+=1
             er = np.sum(abs(D @ x**p - p*x**(p-1)))
-        print('Test: Derivative D is degree {0}.'.format(p-1))
+        print('Test: Derivative D is (polynomial) degree {0}.'.format(p-1))
 
     @staticmethod
     def check_accuracy(D, x):

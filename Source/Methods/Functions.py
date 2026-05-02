@@ -19,12 +19,9 @@ def cabs(x):
     return res
 
 @njit
-def _gm_gv_unkronned(A, b, neq_node):
+def _gm_gv_unkronned_real(A, b, neq_node):
     """
-    Un-kronned helper for gm_gv with a single block and rectangular A.
-
-    Interprets the operation as, per element e:
-        c_e = (A_e ⊗ I_{neq_node}) @ b_e
+    Fast path for real inputs: uses BLAS-backed matmul inside njit.
 
     Shapes:
         A: (nen1, nen2, nelem)
@@ -37,7 +34,6 @@ def _gm_gv_unkronned(A, b, neq_node):
     if nelem != nelem_b:
         raise ValueError("Shape mismatch: A.shape[2] != b.shape[1]")
 
-    # Input must be exactly nen2 * neq_node (one block, no repetition)
     block_size_in = nen2 * neq_node
     if n_in != block_size_in:
         raise ValueError(
@@ -49,17 +45,44 @@ def _gm_gv_unkronned(A, b, neq_node):
     c = np.zeros((block_size_out, nelem), dtype=b.dtype)
 
     for e in range(nelem):
-        # b_e: (nen2 * neq_node,) → (nen2, neq_node)
-        b_slice = np.ascontiguousarray(b[:, e])
-        b_block = b_slice.reshape(nen2, neq_node)
-
-        # A_e: (nen1, nen2)
+        b_block = np.ascontiguousarray(b[:, e]).reshape(nen2, neq_node)
         A_e = np.ascontiguousarray(A[:, :, e])
-
-        # (nen1, nen2) @ (nen2, neq_node) → (nen1, neq_node)
         c_block = A_e @ b_block
+        c[:, e] = c_block.reshape(block_size_out)
 
-        # flatten to (nen1 * neq_node,)
+    return c
+
+
+@njit
+def _gm_gv_unkronned_complex(A, b, neq_node):
+    """
+    Fast path for real inputs: uses BLAS-backed matmul inside njit.
+
+    Shapes:
+        A: (nen1, nen2, nelem)
+        b: (nen2 * neq_node, nelem)
+        c: (nen1 * neq_node, nelem)
+    """
+    nen1, nen2, nelem = A.shape
+    n_in, nelem_b = b.shape
+
+    if nelem != nelem_b:
+        raise ValueError("Shape mismatch: A.shape[2] != b.shape[1]")
+
+    block_size_in = nen2 * neq_node
+    if n_in != block_size_in:
+        raise ValueError(
+            f"b.shape[0]={n_in} must equal nen2*neq_node={block_size_in} "
+            "(single-block A ⊗ I_neq_node)"
+        )
+
+    block_size_out = nen1 * neq_node
+    c = np.zeros((block_size_out, nelem), dtype=b.dtype)
+
+    for e in range(nelem):
+        b_block = np.ascontiguousarray(b[:, e]).reshape(nen2, neq_node)
+        A_e = np.ascontiguousarray(A[:, :, e])
+        c_block = A_e @ b_block
         c[:, e] = c_block.reshape(block_size_out)
 
     return c
@@ -123,52 +146,10 @@ def gm_gv(A, b, neq_node=None):
         assert nen_neq == nen2 * neq_node, f'b shape {nen_neq} should be {nen2}*{neq_node}'
         
         # Use numba-compiled helper for performance
-        return _gm_gv_unkronned(A_cast, b_cast, neq_node)
-
-# TODO: This is the function to speed up (is approximately 40% of total code runtime)
-def gm_gv(A,b,neq_node=None):
-    '''
-    Equivalent to np.einsum('ijk,jk->ik',A,b) where A is a 3-tensor of shape
-    (nen1,nen2,nelem) and b is a 2-tensor of shape (nen2,nelem). This can be 
-    thought of as a global matrix @ global vector.
-    Faster than A[:,:,e]@b[:,e] because A[:,:,e] is not a contigous array
-    
-    If neq_node is provided, A is assumed to be unkronned (shape (nen,nen,nelem))
-    and b is kronned (shape (nen*neq_node,nelem)). The function handles the
-    neq_node dimension manually.
-
-    Parameters
-    ----------
-    A : numpy array of shape (nen1,nen2,nelem) or (nen,nen,nelem) if neq_node provided
-    b : numpy array of shape (nen2,nelem) or (nen*neq_node,nelem) if neq_node provided
-    neq_node : int, optional
-        Number of equations per node. If provided, A is unkronned and b is kronned.
-
-    Returns
-    -------
-    c : numpy array of shape (nen1,nelem) or (nen*neq_node,nelem) if neq_node provided
-    '''
-    # Optimize: neq_node == 1 is equivalent to None (no kronning needed)
-    if neq_node is None or neq_node == 1:
-        # Original behavior: both A and b are kronned (or neq_node == 1)
-        nen1,nen2,nelem = np.shape(A)
-        nen2b,nelemb = np.shape(b)
-        assert nen2==nen2b, f'array shapes do not match, {nen2} != {nen2b}' 
-        assert nelem==nelemb, f'element shapes do not match, {nelem} != {nelemb}'
-        
-        # Use numba-compiled helper for performance
-        return _gm_gv_kronned(A, b)
-    else:
-        # New behavior: A is unkronned, b is kronned (possibly repeated across spatial blocks)
-        nen, nen2, nelem = np.shape(A)
-        nen_neq, nelemb = np.shape(b)
-        assert nen == nen2, f'A must be square (unkronned), got shape {np.shape(A)}'
-        assert nelem == nelemb, f'element shapes do not match, {nelem} != {nelemb}'
-        block_size = nen * neq_node
-        assert nen_neq % block_size == 0, f'b shape {nen_neq} should be a multiple of {nen}*{neq_node}'
-        
-        # Use numba-compiled helper for performance
-        return _gm_gv_unkronned(A, b, neq_node)
+        if target_dtype == np.float64:
+            return _gm_gv_unkronned_real(A_cast, b_cast, neq_node)
+        else:
+            return _gm_gv_unkronned_complex(A_cast, b_cast, neq_node)
 
 @njit
 def gm_gm(A,B):
@@ -390,7 +371,7 @@ def lm_gv(A, b, neq_node=None):
     c : numpy array of shape (nrows, nelem) if neq_node is None,
                          or (nrows*neq_node, nelem) if neq_node is provided
     '''
-    if neq_node is None:
+    if neq_node is None or neq_node == 1:
         # Plain matrix-matrix multiply (NumPy can handle mixed dtypes here)
         return A @ b
     else:
@@ -669,17 +650,17 @@ def gdiag_gv(H,q,neq_node=None):
     '''
     NOTE: Faster to directly use H * q
     Takes a global array of shape (nen,nelem) that simulates a global diagonal
-    matrix of shape (nen,nen,nelem), and a global vector of shape (nen,nelem) 
-    and returns a global vector of shape (nen,nelem), i.e. H @ q
+    matrix of shape (nen,nen,nelem), and a global vector of shape (nen*neq_node,nelem) 
+    and returns a global vector of shape (nen*neq_node,nelem), i.e. H @ q
 
     Parameters
     ----------
     H : numpy array of shape (nen,nelem)
-    D : numpy array of shape (nen,nelem)
+    q : numpy array of shape (nen*neq_node,nelem)
 
     Returns
     -------
-    c : numpy array of shape (nen1,nen2,nelem)
+    c : numpy array of shape (nen*neq_node,nelem)
     ''' 
     nen,nelem = np.shape(H)
     nenb,nelemb = np.shape(q)
@@ -698,6 +679,40 @@ def gdiag_gv(H,q,neq_node=None):
                 for i in range(neq_node):
                     idx = row_offset + i
                     c[idx, e] = h_val * q[idx, e]
+        return c
+
+@njit
+def ldiag_lv(H,q,neq_node=None):
+    '''
+    NOTE: Faster to directly use H * q
+    Takes a global array of shape (nen,) that simulates a local diagonal
+    matrix of shape (nen,nen), and a local vector of shape (nen*neq_node,) 
+    and returns a global vector of shape (nen,nelem), i.e. H @ q
+
+    Parameters
+    ----------
+    H : numpy array of shape (nen,)
+    q : numpy array of shape (nen*neq_node,)
+
+    Returns
+    -------
+    c : numpy array of shape (nen1,nen2,nelem)
+    ''' 
+    nen, = np.shape(H)
+    nenb, = np.shape(q)
+    # Optimize: neq_node == 1 is equivalent to None (no kronning needed)
+    if neq_node is None or neq_node == 1:
+        assert nen==nenb, f'array shapes do not match, {nen} != {nenb}'
+        return H * q
+    else:
+        assert nenb == nen * neq_node, f'array shapes do not match, {nen * neq_node} != {nenb}'
+        c = np.zeros_like(q)
+        for row in range(nen):
+            h_val = H[row]
+            row_offset = row * neq_node
+            for i in range(neq_node):
+                idx = row_offset + i
+                c[idx] = h_val * q[idx]
         return c
 
 @njit
@@ -977,8 +992,7 @@ def gdiag_to_gbdiag(q):
     c : numpy array of shape (nen,nen,nelem)
     '''
     nen,nelem = np.shape(q)
-    c = np.reshape(q,(nen,1,1,nelem),dtype=q.dtype)
-    return c
+    return np.reshape(q,(nen,1,1,nelem))
 
 def check_q_shape(q):
     '''
@@ -1702,7 +1716,7 @@ def log_mean(qL,qR):
     xi = qL/qR
     zeta = (1-xi)/(1+xi)
     zeta2 = zeta**2
-    if zeta2 < 0.01:
+    if np.real(zeta2) < 0.001:
         F = 2*(1. + zeta2/3. + zeta2**2/5. + zeta2**3/7.)
     else:
         F = - np.log(xi)/zeta
@@ -1713,6 +1727,32 @@ def log_mean(qL,qR):
 def prod_mean(q1L,q2L,q1R,q2R):
     '''' product mean. Useful for split-form fluxes. '''
     q = (q1L*q2R+q2L*q1R)/2
+    return q
+
+@njit
+def geom_mean(qL,qR):
+    '''' geometric mean. Useful for split-form fluxes. '''
+    q = np.sqrt(qL*qR)
+    return q
+
+@njit
+def arcsinh_mean(qL, qR):
+    '''Smooth regularized version of the logarithmic mean.
+    For eps = 0 and q >> beta, it approaches the standard logarithmic mean.
+    For eps = 0 and beta = 2, the entropy variables approach that of the logarithmic mean.
+    '''
+    eps  = 0.0      # shift of the regularization center; start with 0
+    beta = 1.0 #0.001  # smoothing width
+    sL = np.sqrt((qL - eps)*(qL - eps) + beta*beta)
+    sR = np.sqrt((qR - eps)*(qR - eps) + beta*beta)
+    tau = (qR - qL) / (sL + sR)
+    tau2 = tau*tau
+    if np.real(tau2) < 0.001:
+        phi = 1.0 - tau2/3.0 - 4.0*tau2*tau2/45.0 - 44.0*tau2*tau2*tau2/945.0
+    else:
+        phi = tau / np.arctanh(tau)
+    qavg = 0.5*(qL + qR)
+    q = eps + (qavg - eps)*phi
     return q
 
 def is_pos_def(A):
@@ -2529,6 +2569,135 @@ def solve_lin_system(A, b, is_spd,
     except TypeError:  # older SciPy
         x, _, _, _ = lstsq(A_dense, b2)
     return x.ravel() if b.ndim == 1 else x
+
+
+# The following is used for extended endpoint dissipation 
+# when we have endpoints, but want to apply interface
+# dissipation at more than just the endpoints.
+
+def lagrange_weights(x_stencil, xi):
+    """
+    Lagrange extrapolation weights at xi for given stencil nodes.
+    """
+    xs = np.asarray(x_stencil, dtype=float)
+    m = xs.size
+    w = np.ones(m, dtype=float)
+
+    for j in range(m):
+        num = 1.0
+        den = 1.0
+        xj = xs[j]
+        for k in range(m):
+            if k == j:
+                continue
+            num *= (xi - xs[k])
+            den *= (xj - xs[k])
+        w[j] = num / den
+
+    return w
+
+def endpoint_extrapolation_LR(x, p, alpha=2/3):
+    """
+    Returns mixed endpoint extrapolation vectors (tL, tR).
+
+    alpha = weight on trivial pick-off
+    (1-alpha) = weight on degree-p stencil extrapolation
+
+    Uses p+1 nodes adjacent to each boundary, excluding the endpoints
+    for the nontrivial stencil.
+    """
+    x = np.asarray(x, dtype=float)
+    N = x.size
+    m = p + 1
+
+    if m + 1 > N:
+        raise ValueError(
+            f"Need at least p+2 nodes to exclude endpoints; got N={N}, p={p}."
+        )
+
+    # ---------- LEFT ----------
+    xiL = 0.0
+    idxL = np.arange(1, m + 1)   # exclude x[0]
+    wL = lagrange_weights(x[idxL], xiL)
+
+    tL_stencil = np.zeros(N)
+    tL_stencil[idxL] = wL
+
+    eL = np.zeros(N)
+    eL[0] = 1.0
+
+    tL = alpha * eL + (1.0 - alpha) * tL_stencil
+
+    # ---------- RIGHT ----------
+    xiR = 1.0
+    idxR = np.arange(N - m - 1, N - 1)  # exclude x[-1]
+    wR = lagrange_weights(x[idxR], xiR)
+
+    tR_stencil = np.zeros(N)
+    tR_stencil[idxR] = wR
+
+    eR = np.zeros(N)
+    eR[-1] = 1.0
+
+    tR = alpha * eR + (1.0 - alpha) * tR_stencil
+
+    return tL, tR
+
+@njit
+def clip_pos_smooth(q, q_floor=1.0e-14, q_cut=1.0e-12):
+    """
+    Smooth positivity clip
+
+    Real input:
+      returns a smooth approximation to max(x, q_floor)
+
+    Complex-step input q = x + i*h:
+      returns f(x) + i*h*f'(x)
+
+    Notes
+    -----
+    This is NOT exactly constant below q_floor and NOT exactly identity above q_cut.
+    That combination is incompatible with smoothness + f(x) >= x.
+    Here q_cut is used to choose the transition width so that for x >= q_cut,
+    the deviation from x is negligible.
+    """
+    x = np.real(q)
+
+    # Choose a transition width from q_floor and q_cut.
+    # Larger denom => tighter transition.
+    eps = (q_cut - q_floor) / 12.0
+    if eps <= 0.0:
+        eps = max(1.0e-16, 0.1 * q_floor)
+
+    z = (q_floor - x) / eps
+
+    # Stable evaluation of:
+    #   f  = x + eps * log(1 + exp(z))
+    #   df = 1 / (1 + exp(z))
+    if z > 40.0:
+        emz = np.exp(-z)
+        f = q_floor + eps * emz
+        df = emz
+    elif z < -40.0:
+        ez = np.exp(z)
+        f = x + eps * ez
+        df = 1.0 - ez
+    else:
+        ez = np.exp(z)
+        f = x + eps * np.log1p(ez)
+        df = 1.0 / (1.0 + ez)
+
+    return f + (q - x) * df
+
+@njit
+def clip_pos_smooth_vec(q, q_floor=1.0e-14, q_cut=1.0e-12):
+    '''
+    C^\infty positive floor with complex-step-compatible extension.
+    '''
+    qnew = np.empty_like(q)
+    for idx in np.ndindex(q.shape):
+        qnew[idx] = clip_pos_smooth(q[idx], q_floor, q_cut)
+    return qnew
 
 """ Old functions (no longer useful)
 

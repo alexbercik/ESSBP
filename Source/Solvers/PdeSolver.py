@@ -10,6 +10,7 @@ import numpy as np
 import time
 import matplotlib.pyplot as plt
 from matplotlib import rc
+from matplotlib.colors import LogNorm
 rc('text', usetex=True)
 from os import path
 from socket import gethostname
@@ -34,8 +35,12 @@ class PdeSolver:
     tm_atol = None
     tm_rtol = None
     tm_nframes = None
+    tm_print_nothing = False
     t_initial = 0.0
     dt = None
+    clip_positivity = False
+    clip_positivity_floor = 1.0e-4
+    clip_positivity_cut = 1.0e-2
 
     def __init__(self, diffeq, settings,                            # Diffeq
                  tm_method, dt, t_final,                    # Time marching                                  # Initial solution
@@ -119,7 +124,10 @@ class PdeSolver:
 
         self.diffeq = diffeq
         
-        self.settings = settings
+        if settings is None:
+            self.settings = {}
+        else:
+            self.settings = settings
         
         ''' Set default settings if not given '''
         self.settings.setdefault('warp_factor',0.) 
@@ -215,10 +223,8 @@ class PdeSolver:
         else: raise Exception('Discretization type not understood. Try div or had.')
         if surf_diss == None or surf_diss == 'ND' or surf_diss == 'nd' or surf_diss == 'central':
             self.surf_diss = {'diss_type':'nd'}
-        elif surf_diss == 'lf':
-            self.surf_diss = {'diss_type':'lf'}
-        elif surf_diss == 'upwind':
-            self.surf_diss = {'diss_type':'upwind'}
+        elif isinstance(surf_diss, str):
+            self.surf_diss = {'diss_type':surf_diss}
         else:
             self.surf_diss = surf_diss
             assert(isinstance(self.surf_diss, dict)),"surf_diss must be a dictionary"
@@ -377,7 +383,7 @@ class PdeSolver:
         self.set_timestep(dt)
                 
         # Free Stream Preservation sanity check
-        if self.bc == 'periodic':
+        if self.bc == 'periodic' and self.diffeq.diffeq_name != 'VariableCoefficientLinearConvection':
             test = self.free_stream(print_result=False)
             if test>1e-12:
                 print('WARNING: Free Stream is not preserved. Check Metrics and/or SAT discretization.')
@@ -387,14 +393,16 @@ class PdeSolver:
         collect()
         if self.print_progress: print('---------- Solver succesfully initialized. ----------')
 
-    def solve(self, q0=None):
+    def solve(self, q0=None, t_final=None):
 
         ''' Solve to calculate the solution and the objective '''
 
         #start_time = time.time()
         
         if q0 is None:
-            q0 = self.diffeq.set_q0()
+            q = self.diffeq.set_q0()
+        else:
+            q = np.copy(q0)
 
         if self.dt_to_be_set:
             raise Exception('Time step not set yet. Use set_timestep(dt) before running solve().')
@@ -414,7 +422,25 @@ class PdeSolver:
         
         tm_class.nframes = self.tm_nframes
         tm_class.print_progress = self.print_progress
-        self.q_sol =  tm_class.solve(q0, self.dt, self.n_ts, self.t_initial)
+        if self.tm_print_nothing:
+            tm_class.print_nothing = True
+            tm_class.print_progress = False
+        if self.clip_positivity:
+            tm_class.clip_positivity = True
+            tm_class.pos_floor = self.clip_positivity_floor
+            tm_class.pos_cut = self.clip_positivity_cut
+        if t_final is not None:
+            assert isinstance(self.t_final, int) or isinstance(self.t_final, float)
+            if (t_final-self.t_initial) / self.dt < 1:
+                self.dt = (t_final-self.t_initial)/10
+            n_ts = int(np.round((t_final-self.t_initial) / self.dt))
+            if abs(n_ts - ((t_final-self.t_initial) / self.dt)) > 1e-12:
+                dt = (t_final-self.t_initial)/n_ts
+            else:
+                dt = self.dt
+            self.q_sol =  tm_class.solve(q, dt, n_ts, self.t_initial)
+        else: 
+            self.q_sol =  tm_class.solve(q, self.dt, self.n_ts, self.t_initial)
         self.cons_obj = tm_class.cons_obj
         self.t_final = tm_class.t_final
 
@@ -499,8 +525,14 @@ class PdeSolver:
                 cons_obj[i] = np.max(np.abs(eigs))
             elif cons_obj_name_i == 'sol_error' or cons_obj_name_i == 'error':
                 cons_obj[i] = self.calc_error(q,t)
+            elif cons_obj_name_i == 'var_error':
+                cons_obj[i] = self.calc_error(q,t,var2plot_name=self.diffeq.var2plot_name)
             elif cons_obj_name_i == 'max_error':
                 cons_obj[i] = self.calc_error(q,t,method='max_diff')
+            elif cons_obj_name_i == 'norm':
+                cons_obj[i] = self.norm(q)
+            elif cons_obj_name_i == 'max' or cons_obj_name_i == 'linf_norm':
+                cons_obj[i] = np.max(np.abs(q))
             elif cons_obj_name_i == 'time':
                 cons_obj[i] = t
             elif 'zelalem_coeff' in cons_obj_name_i:
@@ -510,18 +542,28 @@ class PdeSolver:
                     cons_obj[i] = np.min(zel_coeff)
                 elif 'mean' in cons_obj_name_i:
                     cons_obj[i] = np.mean(zel_coeff)
+            elif 'temp_' in cons_obj_name_i:
+                fn = getattr(self.diffeq, cons_obj_name_i, None)
+                if fn is None or not callable(fn):
+                    raise Exception(
+                        f"diffeq {type(self.diffeq).__name__} has no callable '{cons_obj_name_i}'"
+                    )
+                try:
+                    cons_obj[i] = fn(q)
+                except TypeError:
+                    cons_obj[i] = fn(q, t)
             else:
                 raise Exception('Unknown conservation objective function')
 
         return cons_obj
     
     
-    def norm(self, q, nen=None):
+    def norm(self, q, neq=None):
         ''' calculate the energy norm q.T @ H @ q given a global q'''
-        return np.sqrt(float(self.energy(q,nen)))
+        return np.sqrt(float(self.energy(q,neq)))
     
     def calc_error(self, q=None, tf=None, method=None, use_all_t=False,
-                   var2plot_name=None):
+                   var2plot_name=None, q_exa=None):
         '''
         Purpose
         ----------
@@ -567,7 +609,11 @@ class PdeSolver:
                 errors[i] = self.calc_error(self.q_sol[:,:,i],times[i],method=method)
             return errors
         
-        q_exa = self.diffeq.exact_sol(tf,guess=q)
+        if q_exa is None:
+            q_exa = self.diffeq.exact_sol(tf,guess=q,print_warning=False)
+        else:
+            assert q_exa.shape == q.shape, f'ERROR: q_exa and q must have the same shape. {q_exa.shape}, {q.shape}'
+        
         if var2plot_name is None:
             var = q
             var_exa = q_exa
@@ -703,7 +749,10 @@ class PdeSolver:
             self.check_resid_conv = False
 
         # time step stability sanity check
-        q = self.diffeq.set_q0()
+        if 'Euler' in self.diffeq.diffeq_name:
+            q = self.diffeq.set_q0()
+        else:
+            q = self.diffeq.set_q0(q0_type='GaussWave_shift', print_warning=False)
         cfl = 0.5
         if self.dim==1:
             LFconst = np.max(self.diffeq.maxeig_dExdq(q))
@@ -734,11 +783,11 @@ class PdeSolver:
 
         
         
-    def calc_LHS(self, q=None, t=0., exact_dfdq=True, step=1.0e-4, istep=1.0e-15, 
+    def calc_RHS_jac(self, q=None, t=0., exact_dfdq=True, func=None, step=1.0e-4, istep=1.0e-15, 
                  finite_diff=False, print_nothing=False, print_error=False):
         '''
-        Either get the exact LHS operator on q if the problem is linear, or the
-        linearization (LHS) of it at a particular state q. Either done exactly with
+        Either get the exact RHS operator on q if the problem is linear, or the
+        linearization of the RHS at a particular state q. Either done exactly with
         self.dfdq(q) or approximately with finite differences, calling self.diffeq.dqdt 
         A_ij \approx ( dqdt(q + e_j*tol) - dqdt(q - e_j*tol) ) / 2*tol
 
@@ -747,6 +796,8 @@ class PdeSolver:
         q : numpy array, optional
             Current state (must be compatible with self.diffeq.dqdt(q))
             Default is last solution.
+        func : function, optional
+            Function to use for the LHS. The default is self.dqdt.
         exact_dfdq : bool, optional
             Get the LHS analytically or approximately. The default is True.
         step : float, optional
@@ -766,6 +817,9 @@ class PdeSolver:
                     q = self.diffeq.set_q0()
             else:
                 q = self.diffeq.set_q0()
+
+        if func is None:
+            func = self.dqdt
         
         if exact_dfdq:
             try:  
@@ -791,7 +845,7 @@ class PdeSolver:
                         for j in range(nelem):
                             ei = np.zeros((nen,nelem),dtype=np.complex128)
                             ei[i,j] = istep*1j
-                            qi = self.dqdt(np.complex128(q)+ei, t).flatten('F')
+                            qi = func(np.complex128(q)+ei, t).flatten('F')
                             idx = np.where(np.imag(ei.flatten('F'))>istep/10)[0][0]
                             A[:,idx] = np.imag(qi)/istep
                 except Exception as e:  
@@ -806,21 +860,23 @@ class PdeSolver:
                     for j in range(nelem):
                         ei = np.zeros((nen,nelem))
                         ei[i,j] = 1.*step
-                        q_r = self.dqdt(q+ei, t).flatten('F')
-                        q_l = self.dqdt(q-ei, t).flatten('F')
+                        q_r = func(q+ei, t).flatten('F')
+                        q_l = func(q-ei, t).flatten('F')
                         idx = np.where(ei.flatten('F')>step/10)[0][0]
                         A[:,idx] = (q_r - q_l)/(2*step)
         return A
 
     
-    def check_eigs(self, q=None, plot_eigs=True, returnA=False, returneigs=False, 
-                   returnvecs=False, plot_maxvec=False, 
+    def check_eigs(self, q=None, A=None, plot_eigs=True, returnA=False, returneigs=False, 
+                   returnvecs=False, plot_maxvec=False, num_vecs=5, test_type='max abs',
                    exact_dfdq=False, finite_diff=False, step=5.0e-6, istep=1e-15, tol=1.0e-10, 
-                   savefile=None, print_nothing=False, colour_by_k=False, normalize=False,
+                   savefile=None, print_nothing=False, colour_by_k=False, colour_by_bdy=False, normalize=False,
                    ymin=None, ymax=None, xmin=None, xmax=None, print_error=False,
                    time=None, display_time=False, display_maxreal=False,
-                   title=None, save_format='png', dpi=600, overwrite=False,
-                   sparse_solver=False, sparse_largestRe_only=True, **kargs):
+                   title=r'Eigenvalues', save_format='png', dpi=600, overwrite=False,
+                   sparse_solver=False, sparse_largestRe_only=True, figsize=(6,4), 
+                   log_colourbar=False, xlabel=None, ylabel=None, label_fontsize=14, 
+                   title_fontsize=16, legend_fontsize=12, **kargs):
         '''
         Call on self.diffeq.dqdt to check the stability of the spatial operator
         at a particular state q using central finite differences (approximate!).
@@ -856,7 +912,8 @@ class PdeSolver:
 
         '''
         if not print_nothing: print('Checking Eigenvalues of System LHS Operator')
-        A = self.calc_LHS(q=q, exact_dfdq=exact_dfdq, step=step, istep=istep, 
+        if A is None:
+            A = self.calc_RHS_jac(q=q, exact_dfdq=exact_dfdq, step=step, istep=istep, 
                           finite_diff=finite_diff, print_nothing=print_nothing,
                           print_error=print_error)
         if normalize:
@@ -881,6 +938,7 @@ class PdeSolver:
         
         if sparse_solver:
             colour_by_k = False
+            colour_by_bdy = False
             plot_eigs = False
             import scipy.sparse as sp
             if not print_nothing: print('... converting to sparse matrix.')
@@ -908,7 +966,7 @@ class PdeSolver:
 
         else:
 
-            if ((colour_by_k) and self.dim==1 and self.neq_node==1 and plot_eigs) or plot_maxvec or returnvecs:
+            if ((colour_by_k or colour_by_bdy) and self.dim==1 and self.neq_node==1 and plot_eigs) or plot_maxvec or returnvecs:
                 eigs, eigvecs = np.linalg.eig(A)
             else:
                 eigs = np.linalg.eigvals(A)
@@ -947,22 +1005,27 @@ class PdeSolver:
                         new_x = x[mask] # Apply mask to remove duplicates
                         new_y = y[mask]
                         return new_x, new_y
-                    if self.disc_nodes == 'lgl':
-                        # evaluate eigenvectors at equispaced nc nodes so fft works
+                    if self.sbp.basis is not None:
                         nc_nodes = np.linspace(0,1,self.nen,endpoint=True)
-                        elem_nodes = np.reshape(self.sbp.x,(self.nen,1))
-                        wBary = MakeDgOp.BaryWeights(elem_nodes)
-                        V_to_nc = MakeDgOp.VandermondeLagrange1D(nc_nodes,elem_nodes,wBary)
                         for elem in range(self.nelem):
-                            eigvecs[elem*self.nen:(elem+1)*self.nen] = V_to_nc @ eigvecs[elem*self.nen:(elem+1)*self.nen]
-                    elif self.disc_nodes == 'lg':
-                        # evaluate eigenvectors at equispaced nodes (not nc) so fft works
-                        nc_nodes = np.linspace(0,1,self.nen,endpoint=False)
-                        elem_nodes = np.reshape(self.sbp.x,(self.nen,1))
-                        wBary = MakeDgOp.BaryWeights(elem_nodes)
-                        V_to_nc = MakeDgOp.VandermondeLagrange1D(nc_nodes,elem_nodes,wBary)
-                        for elem in range(self.nelem):
-                            eigvecs[elem*self.nen:(elem+1)*self.nen] = V_to_nc @ eigvecs[elem*self.nen:(elem+1)*self.nen]
+                            eigvecs[elem*self.nen:(elem+1)*self.nen] = self.sbp.basis.eval_nodal_vec(eigvecs[elem*self.nen:(elem+1)*self.nen], nc_nodes)
+
+                    # if self.disc_nodes == 'lgl':
+                    #     # evaluate eigenvectors at equispaced nc nodes so fft works
+                    #     nc_nodes = np.linspace(0,1,self.nen,endpoint=True)
+                    #     elem_nodes = np.reshape(self.sbp.x,(self.nen,1))
+                    #     wBary = MakeDgOp.BaryWeights(elem_nodes)
+                    #     V_to_nc = MakeDgOp.VandermondeLagrange1D(nc_nodes,elem_nodes,wBary)
+                    #     for elem in range(self.nelem):
+                    #         eigvecs[elem*self.nen:(elem+1)*self.nen] = V_to_nc @ eigvecs[elem*self.nen:(elem+1)*self.nen]
+                    # elif self.disc_nodes == 'lg':
+                    #     # evaluate eigenvectors at equispaced nodes (not nc) so fft works
+                    #     nc_nodes = np.linspace(0,1,self.nen,endpoint=False)
+                    #     elem_nodes = np.reshape(self.sbp.x,(self.nen,1))
+                    #     wBary = MakeDgOp.BaryWeights(elem_nodes)
+                    #     V_to_nc = MakeDgOp.VandermondeLagrange1D(nc_nodes,elem_nodes,wBary)
+                    #     for elem in range(self.nelem):
+                    #         eigvecs[elem*self.nen:(elem+1)*self.nen] = V_to_nc @ eigvecs[elem*self.nen:(elem+1)*self.nen]
 
                     
                     new_x, new_eigvecs = remove_duplicates_and_average(self.mesh.x, eigvecs)
@@ -985,25 +1048,100 @@ class PdeSolver:
                             else:
                                 avg_k[i] = np.average(ks,weights=power_spec)
                                 # np.sum(power_spec*ks)/np.sum(power_spec) # equivalent to above
+            elif colour_by_bdy:
+                if self.dim >1 or self.neq_node>1: 
+                    if not print_nothing: print('WARNING: colour by boundary not set up for dim >1 or neq>0. Ignoring.')
+                    avg_k=None
+                # For C-SBP, use global H and map boundary nodes to global DOF indices
+                elif hasattr(self, 'H_glob') and hasattr(self, 'gid'):
+                    # C-SBP: eigenvectors are in global DOF format (N_global,)
+                    
+                    # Find boundary node indices in global space using gid
+                    # Boundary nodes: local indices [0, 1, -2, -1]
+                    boundary_local_nodes = [0, 1, self.nen - 2, self.nen - 1]
+                    
+                    # Get global node indices for boundary nodes
+                    boundary_node_gids_set = set()
+                    for e in range(self.nelem):
+                        for node_idx in boundary_local_nodes:
+                            boundary_node_gids_set.add(self.gid[node_idx, e])
+                    
+                    R_idcs = np.array(sorted(boundary_node_gids_set))
+                    H_bdy = self.H_glob[R_idcs]
+                    
+                    avg_k = np.zeros(self.nn)
+                    for i in range(self.nn):
+                        w = eigvecs[:,i]  # Global DOF vector (N_global,)
+                        w_bdy = w[R_idcs]
+                        num = np.sum(np.conjugate(w_bdy)*H_bdy*w_bdy)
+                        den = np.sum(np.conjugate(w)*self.H_glob*w)
+                        if abs(num.imag) > 1e-10 or abs(den.imag) > 1e-10:
+                            raise ValueError('Imaginary part of numerator or denominator is non-zero!')
+                        avg_k[i] = num.real/den.real
+                else:
+                    if self.disc_nodes == 'circulant':
+                        H_bdy = self.H_phys[[0,1,-1],:].flatten('F')
+                    else:
+                        H_bdy = self.H_phys[[0,-1],:].flatten('F')
+                    H_flat = self.H_phys.flatten('F')
+                    R_idcs = []
+                    idx = 0
+                    for i in range(self.nelem):
+                        R_idcs.append(idx)
+                        if self.disc_nodes == 'circulant':
+                            R_idcs.append(idx+1)
+                        R_idcs.append(idx+self.nen-1)
+                        idx += self.nen
+                    avg_k = np.zeros(self.nn)
+                    for i in range(self.nn):
+                        w = eigvecs[:,i]
+                        w_bdy = w[R_idcs]
+                        num = np.sum(np.conjugate(w_bdy)*H_bdy*w_bdy)
+                        den = np.sum(np.conjugate(w)*H_flat*w)
+                        if abs(num.imag) > 1e-10 or abs(den.imag) > 1e-10:
+                            raise ValueError('Imaginary part of numerator or denominator is non-zero!')
+                        avg_k[i] = num.real/den.real
 
             else:
                 avg_k=None
 
-            plt.figure()
+            plt.figure(figsize=figsize)
             X = [x.real for x in eigs]
             Y = [x.imag for x in eigs]
             if avg_k is None:
                 plt.scatter(X,Y, color='red')
             else:
-                plt.scatter(X,Y, c=avg_k, cmap='viridis', vmin=1, vmax=np.max(ks))
-                plt.colorbar(label='Average Wavenumber')
+                if colour_by_bdy:
+                    if log_colourbar:
+                        # For log scale, need to ensure positive values and handle zeros
+                        avg_k_log = np.maximum(avg_k, 1e-4)  # avoid log(0)
+                        norm = LogNorm(vmin=max(np.min(avg_k_log), 1e-10), vmax=1)
+                        plt.scatter(X,Y, c=avg_k_log, cmap='viridis', norm=norm)
+                    else:
+                        plt.scatter(X,Y, c=avg_k, cmap='viridis', vmin=0, vmax=1)
+                    cbar = plt.colorbar(label=r'Block Boundary Content $\rho_{\text{bdy}}$')
+                    cbar.ax.yaxis.label.set_size(legend_fontsize)
+                elif colour_by_k:
+                    if log_colourbar:
+                        # For log scale, ensure positive values
+                        avg_k_log = np.maximum(avg_k, 1e-4)
+                        norm = LogNorm(vmin=max(1, np.min(avg_k_log)), vmax=np.max(ks))
+                        plt.scatter(X,Y, c=avg_k_log, cmap='viridis', norm=norm)
+                    else:
+                        plt.scatter(X,Y, c=avg_k, cmap='viridis', vmin=1, vmax=np.max(ks))
+                    cbar = plt.colorbar(label='Average Wavenumber')
+                    cbar.ax.yaxis.label.set_size(legend_fontsize)
             plt.axvline(x=0, linewidth=1, linestyle='--', color='black')
-            plt.xlabel(r'Real Component ($x<0$ for stability)',fontsize=14)
-            plt.ylabel(r'Imaginary Component',fontsize=14)
-            if title is None:
-                plt.title(r'Eigenvalues',fontsize=16)
+            if xlabel is None:
+                plt.xlabel(r'Real Component ($x<0$ for stability)',fontsize=label_fontsize)
             else:
-                plt.title(title,fontsize=16)
+                plt.xlabel(xlabel,fontsize=label_fontsize)
+            if ylabel is None:
+                plt.ylabel(r'Imaginary Component',fontsize=label_fontsize)
+            else:
+                plt.ylabel(ylabel,fontsize=label_fontsize)
+            if title is not None:
+                plt.title(title,fontsize=title_fontsize)
             plt.ylim(ymin,ymax)
             plt.xlim(xmin,xmax)
             if display_time and (time is not None):
@@ -1030,30 +1168,44 @@ class PdeSolver:
 
         if plot_maxvec:
             #TODO: assumes 1D, also not well suited to neq_node>1
-            num_vecs = min(5, len(eigs))
-            # Find the indices of the {num_vecs} largest eigenvalues
-            largest_indices = np.argsort(eigs)[-num_vecs:][::-1]
-            for i, idx in enumerate(largest_indices):
+            assert test_type in ['max real', 'max abs', 'min real'], 'ERROR: Choose one of test_type = "max real" or "max abs" or "min real"'
+            num_vecs = min(num_vecs, len(eigs))
+            
+            # Sort eigenvalues and eigenvectors based on test_type
+            if test_type == 'max real':
+                # Sort by descending real part
+                sorted_indices = np.argsort(-np.real(eigs))
+            elif test_type == 'max abs':
+                # Sort by descending magnitude
+                sorted_indices = np.argsort(-np.abs(eigs))
+            elif test_type == 'min real':
+                # Sort by ascending real part
+                sorted_indices = np.argsort(np.real(eigs))
+            
+            # Select top num_vecs indices
+            selected_indices = sorted_indices[:num_vecs]
+            
+            for i, idx in enumerate(selected_indices):
                 # Extract the corresponding eigenvectors
                 eigenvalue = eigs[idx]
                 eigenvector = eigvecs[:, idx]
                 
                 # Calculate real part, imaginary part, and power spectrum
-                real_part = np.real(eigenvector)
-                imaginary_part = np.imag(eigenvector)
-                amplitude = np.abs(eigenvector)
+                real_part = np.real(eigenvector)[::self.neq_node]
+                imaginary_part = np.imag(eigenvector)[::self.neq_node]
+                amplitude = np.abs(eigenvector)[::self.neq_node]
                 
                 # Create the plot
-                plt.figure()
+                plt.figure(figsize=figsize)
                 plt.plot(self.mesh.x, real_part, label='Real Component')
                 plt.plot(self.mesh.x, imaginary_part, label='Imaginary Component')
                 plt.plot(self.mesh.x, amplitude, label='Amplitude', linestyle='--')
                 
                 # Add title, legend, and labels
                 plt.title(f'Eigenvalue: {eigenvalue.real:.2f} + {eigenvalue.imag:.2f}i')
-                plt.xlabel(r'$x$')
-                plt.ylabel('Value')
-                plt.legend()
+                plt.xlabel(r'$x$', fontsize=label_fontsize)
+                #plt.ylabel('Value')
+                plt.legend(fontsize=legend_fontsize)
                 
                 # Show the plot for each eigenvalue
                 plt.show()
@@ -1078,15 +1230,15 @@ class PdeSolver:
         
     # Define a function to compute eigenvalues and eigenvectors, and plot the results
     def plot_eigvecs(self, matrix=None, plot_type="real", 
-                     plot_positive_eigs=True, plot_maxabs_eigs=False,
+                     test_type='max real', normalize=False,
                      threshold=1e-5, num_eigvecs = 5,
-                     include_pairs=True, return_eigs=False):
+                     include_pairs=True, return_eigs=False,
+                     plot_contribution=False, figsize=(6,4)):
         assert self.dim==1, 'ERROR: Only implemented for 1D problems'
-        assert (plot_positive_eigs and not plot_maxabs_eigs) or  \
-                (not plot_positive_eigs and plot_maxabs_eigs), 'ERROR: Choose one of plot_positive_eigs or plot_maxabs_eigs'      
+        assert test_type in ['max real', 'max abs', 'min real'], 'ERROR: Choose one of test_type = "max real" or "max abs" or "min real"'     
         
         if matrix is None:
-            matrix = self.calc_LHS()
+            matrix = self.calc_RHS_jac()
 
         if return_eigs:
             eigvector_list = []
@@ -1094,28 +1246,46 @@ class PdeSolver:
         # Compute eigenvalues and eigenvectors
         eigenvalues, eigenvectors = np.linalg.eig(matrix)
 
-        if plot_positive_eigs:
+        if test_type == 'max real':
             # Organize eigenvalues and eigenvectors by descending real part of eigenvalues
             sorted_indices = np.argsort(-np.real(eigenvalues))
-        else:
+        elif test_type == 'max abs':
             # Organize eigenvalues and eigenvectors by descending magnitude of eigenvalues
             sorted_indices = np.argsort(-np.abs(eigenvalues))
+        elif test_type == 'min real':
+            # Organize eigenvalues and eigenvectors by ascending real part of eigenvalues
+            sorted_indices = np.argsort(np.real(eigenvalues))
         eigenvalues = eigenvalues[sorted_indices]
         eigenvectors = eigenvectors[:, sorted_indices]
 
         # Track paired eigenvalues
         processed_indices = set()
 
+        x = self.mesh.x
+
         # Iterate over eigenvalues and eigenvectors
         for idx, eigenvalue in enumerate(eigenvalues):
             if idx in processed_indices:
                 continue
-            
+
             # Check for positive real part above threshold OR
             # maximum 5 eigenvalues by magnitude
-            if (plot_positive_eigs and np.real(eigenvalue) > threshold) \
-                or (plot_maxabs_eigs and idx < num_eigvecs):
+            if test_type == 'max real':
+                passed_test = (np.real(eigenvalue) > threshold) and (idx < num_eigvecs)
+            elif test_type == 'max abs':
+                passed_test = idx < num_eigvecs
+            elif test_type == 'min real':
+                passed_test = idx < num_eigvecs
+            
+            if (passed_test):
                 eigenvector = eigenvectors[:, idx]
+                if normalize:
+                    eigenvector /= np.max(np.abs(eigenvector))
+
+                # Initialize figure
+                colors = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red']
+                fig = plt.figure(figsize=figsize)
+                ax1 = fig.add_subplot(111)   # main axis
 
                 # Separate components of the eigenvector based on plot type
                 vars = eigenvector.reshape((self.nelem*self.nen,self.neq_node), order='C')
@@ -1137,13 +1307,8 @@ class PdeSolver:
                     else:
                         norm = np.linalg.norm(vars[:,vari])
                     vars[:,vari] = vars[:,vari] / norm
-                x = self.mesh.x
 
-                # Initialize figure
-                colors = ['#1f77b4', '#ff7f0e', '#2ca02c']
-                plt.figure()
-                for vari in range(self.neq_node):
-                    plt.plot(x, vars[:,vari], label=f'Variable {vari+1}', linestyle='solid', color=colors[vari])
+                for vari in range(self.neq_node): ax1.plot(x, vars[:,vari], label=f'Variable {vari+1}', linestyle='solid', color=colors[vari])
                 
                 if return_eigs:
                     eigvector_list.append(eigenvector)
@@ -1151,7 +1316,7 @@ class PdeSolver:
                 # Check for and include the complex pair if applicable
                 if include_pairs and np.iscomplex(eigenvalue):
                     for jdx, other_eigenvalue in enumerate(eigenvalues):
-                        if jdx != idx and np.isclose(eigenvalue.conj(), other_eigenvalue):
+                        if jdx != idx and np.isclose(eigenvalue.conj(), other_eigenvalue, rtol=1e-3):
                             processed_indices.add(jdx)
                             paired_eigenvector = eigenvectors[:, jdx]
 
@@ -1169,13 +1334,20 @@ class PdeSolver:
                                 else:
                                     norm = np.linalg.norm(vars2[:,vari])
                                 vars2[:,vari] = vars2[:,vari] / norm
-                                plt.plot(x, vars2[:,vari], label=f'Variable {vari+1} (Pair)', linestyle='dotted', color=colors[vari])
+                                ax1.plot(x, vars2[:,vari], label=f'Variable {vari+1} (Pair)', linestyle='dotted', color=colors[vari])
 
                             break
+                
+                if plot_contribution and test_type == 'max real':
+                    num = np.real( np.conjugate(eigenvector) * eigenvector * eigenvalue )
+                    norm = np.vdot(eigenvector, eigenvector)
+                    contribution = num / norm
+                    ax2 = ax1.twinx()
+                    ax2.plot(x, contribution, label='Contribution to Re(lam)', linestyle='dashed', color='black')
 
                 plt.title(f"Eigenvectors for Eigenvalue: {eigenvalue:g}")
-                plt.xlabel("x")
-                plt.ylabel(ylabel)
+                ax1.set_xlabel("x")
+                ax1.set_ylabel(ylabel)
                 plt.legend()
                 plt.grid()
                 plt.show()
@@ -1221,8 +1393,16 @@ class PdeSolver:
                         plt.yscale('symlog',linthresh=1e-14)
                         ax = plt.gca()
                         ymin, ymax = ax.get_ylim()
-                        positive_ticks = [0] + [10**exp for exp in range(-12, int(np.log10(ymax)) + 1, 4)]
-                        negative_ticks = [-10**exp for exp in range(-12, int(np.log10(-ymin)) + 1, 4)]
+                        # Handle cases where ymax might be 0, negative, or NaN
+                        if ymax > 0 and np.isfinite(ymax):
+                            positive_ticks = [0] + [10**exp for exp in range(-12, int(np.log10(ymax)) + 1, 4)]
+                        else:
+                            positive_ticks = [0]
+                        # Handle cases where ymin might be 0, positive, or NaN
+                        if ymin < 0 and np.isfinite(ymin):
+                            negative_ticks = [-10**exp for exp in range(-12, int(np.log10(-ymin)) + 1, 4)]
+                        else:
+                            negative_ticks = []
                         custom_ticks = negative_ticks[::-1] + positive_ticks
                         ax.set_yticks(custom_ticks)
                 else:
@@ -1240,8 +1420,16 @@ class PdeSolver:
                     plt.yscale('symlog',linthresh=1e-14)
                     ax = plt.gca()
                     ymin, ymax = ax.get_ylim()
-                    positive_ticks = [0] + [10**exp for exp in range(-12, int(np.log10(ymax)) + 1, 4)]
-                    negative_ticks = [-10**exp for exp in range(-12, int(np.log10(-ymin)) + 1, 4)]
+                    # Handle cases where ymax might be 0, negative, or NaN
+                    if ymax > 0 and np.isfinite(ymax):
+                        positive_ticks = [0] + [10**exp for exp in range(-12, int(np.log10(ymax)) + 1, 4)]
+                    else:
+                        positive_ticks = [0]
+                    # Handle cases where ymin might be 0, positive, or NaN
+                    if ymin < 0 and np.isfinite(ymin):
+                        negative_ticks = [-10**exp for exp in range(-12, int(np.log10(-ymin)) + 1, 4)]
+                    else:
+                        negative_ticks = []
                     custom_ticks = negative_ticks[::-1] + positive_ticks
                     ax.set_yticks(custom_ticks)
     
@@ -1294,8 +1482,12 @@ class PdeSolver:
                 
             else:
                 print('WARNING: No default plotting set up for '+cons_obj_name_i)
-                plt.title(cons_obj_name_i,fontsize=18)
-                plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx]) 
+                if plot_change:
+                    plt.title('Change in '+cons_obj_name_i,fontsize=18)
+                    plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx]-norm) 
+                else:
+                    plt.title(cons_obj_name_i,fontsize=18)
+                    plt.plot(time[start_idx:final_idx],self.cons_obj[i,start_idx:final_idx]) 
                 if logscale: plt.yscale('log') 
                 
             if savefile is not None:
@@ -1322,7 +1514,10 @@ class PdeSolver:
         
         if self.disc_type == 'div' and self.dim==1:
             rhs = self.dqdt_1d_div(q0,0.) #TODO: Fix for had and 2D and 3D
-            self.dqdt = lambda q, t: self.dqdt_1d_div(q,t) - rhs           
+            self.dqdt = lambda q, t=0.0: self.dqdt_1d_div(q,t) - rhs    
+        elif self.disc_type == 'had' and self.dim==1:
+            rhs = self.dqdt_1d_had(q0,0.) #TODO: Fix for had and 2D and 3D
+            self.dqdt = lambda q, t=0.0: self.dqdt_1d_had(q,t) - rhs    
         elif self.disc_type == 'dg':
             if self.weak_form:
                 rhs = self.dg_dqdt_weak(q0)
@@ -1363,7 +1558,7 @@ class PdeSolver:
             
             # This part adds a pertubation based on the largest real eigenmode
             if eigmode:
-                A = self.calc_LHS(q=q0)
+                A = self.calc_RHS_jac(q=q0)
                 eigvals, eigvecs = np.linalg.eig(A)
                 idx = np.argmax(eigvals.real)
                 eigmode = eigvecs[:,idx]
@@ -1396,26 +1591,76 @@ class PdeSolver:
             print('WARNING: No time specified in plot_sol. Using t_final.')
             kwargs['time']=self.t_final
         if 'plot_exa' not in kwargs: kwargs['plot_exa']=True
-        if self.disc_nodes in ['lgl','lg','nc'] and interpolate:
+        if self.sbp.basis is not None and interpolate:
+            x50 = np.linspace(0,1,50)
+            q = self.sbp.basis.eval_nodal_vec(q, x50, neq_node=self.neq_node, dim=self.dim)
+            # the following is not strictly correct if nonpolynommial grid warping, but is good enough
             if self.dim==1:
-                x50 = np.linspace(0,1,50)
-                V = MakeDgOp.VandermondeLagrange1D(x50,self.sbp.x)
-                x = V @ self.mesh.x_elem # strictly not correct if nonpolynommial grid warping, but good enough
-                from Source.Methods.Functions import kron_neq_lm
-                q = kron_neq_lm(V,self.neq_node) @ q
+                x = self.sbp.basis.eval_nodal_vec(self.mesh.x_elem, x50)
                 self.diffeq.plot_sol(q, x, **kwargs)
             elif self.dim==2:
-                x50 = np.linspace(0,1,50)
-                V = MakeDgOp.VandermondeLagrange1D(x50,self.sbp.x)
-                V = np.kron(V,V)
-                xy = np.zeros((int(len(x50)**2),2,self.nelem[0]*self.nelem[1]))
-                xy[:,0,:] = V @ self.mesh.xy_elem[:,0,:]
-                xy[:,1,:] = V @ self.mesh.xy_elem[:,1,:]
-                from Source.Methods.Functions import kron_neq_lm
-                q = kron_neq_lm(V,self.neq_node) @ q
+                xy = self.sbp.basis.eval_nodal_vec(self.mesh.xy_elem, x50, dim=2)
                 self.diffeq.plot_sol(q, xy, **kwargs)
+        # if self.disc_nodes in ['lgl','lg','nc'] and interpolate:
+        #     if self.dim==1:
+        #         x50 = np.linspace(0,1,50)
+        #         V = MakeDgOp.VandermondeLagrange1D(x50,self.sbp.x)
+        #         x = V @ self.mesh.x_elem # strictly not correct if nonpolynommial grid warping, but good enough
+        #         from Source.Methods.Functions import kron_neq_lm
+        #         q = kron_neq_lm(V,self.neq_node) @ q
+        #         self.diffeq.plot_sol(q, x, **kwargs)
+        #     elif self.dim==2:
+        #         x50 = np.linspace(0,1,50)
+        #         V = MakeDgOp.VandermondeLagrange1D(x50,self.sbp.x)
+        #         V = np.kron(V,V)
+        #         xy = np.zeros((int(len(x50)**2),2,self.nelem[0]*self.nelem[1]))
+        #         xy[:,0,:] = V @ self.mesh.xy_elem[:,0,:]
+        #         xy[:,1,:] = V @ self.mesh.xy_elem[:,1,:]
+        #         from Source.Methods.Functions import kron_neq_lm
+        #         q = kron_neq_lm(V,self.neq_node) @ q
+        #         self.diffeq.plot_sol(q, xy, **kwargs)
         else:
             self.diffeq.plot_sol(q, **kwargs)
+
+    def plot_slice(self, q, xslice=None, yslice=None, interpolate=True, **kwargs):
+        ''' plot a slice of the solution either in x or in y direction '''
+        assert self.dim == 2, 'ERROR: Only implemented for 2D problems'
+        if xslice is None and yslice is None:
+            raise Exception('ERROR: Either xslice or yslice must be provided')
+        if xslice is not None and yslice is not None:
+            raise Exception('ERROR: Either xslice or yslice must be provided, not both')
+        if q is None:
+            if self.q_sol is None:
+                q = self.diffeq.set_q0()
+                if 'time' not in kwargs: kwargs['time']=0.0
+            else:
+                if self.q_sol.ndim == 2: q = self.q_sol
+                elif self.q_sol.ndim == 3: q = self.q_sol[:,:,-1]
+                if 'time' not in kwargs: kwargs['time']=self.t_final
+        if 'time' not in kwargs: 
+            print('WARNING: No time specified in plot_sol. Using t_final.')
+            kwargs['time']=self.t_final
+        if self.sbp.basis is not None and interpolate:
+            x50 = np.linspace(0,1,50)
+            q = self.sbp.basis.eval_nodal_vec(q, x50, neq_node=self.neq_node, dim=self.dim)
+            # the following is not strictly correct if nonpolynommial grid warping, but is good enough
+            xy = self.sbp.basis.eval_nodal_vec(self.mesh.xy_elem, x50)
+            res = self.diffeq.plot_slice(q, x=xy, xslice=xslice, yslice=yslice, **kwargs)
+        # if self.disc_nodes in ['lgl','lg','nc'] and interpolate:
+        #     x50 = np.linspace(0,1,50)
+        #     V = MakeDgOp.VandermondeLagrange1D(x50,self.sbp.x)
+        #     V = np.kron(V,V)
+        #     xy = np.zeros((int(len(x50)**2),2,self.nelem[0]*self.nelem[1]))
+        #     xy[:,0,:] = V @ self.mesh.xy_elem[:,0,:]
+        #     xy[:,1,:] = V @ self.mesh.xy_elem[:,1,:]
+        #     from Source.Methods.Functions import kron_neq_lm
+        #     q = kron_neq_lm(V,self.neq_node) @ q
+        #     res = self.diffeq.plot_slice(q, x=xy, xslice=xslice, yslice=yslice, **kwargs)
+        else:
+            res = self.diffeq.plot_slice(q, xslice=xslice, yslice=yslice, **kwargs)
+        if res is not None:
+            return res
+        
 
     def plot_sol_error(self, q=None, x=None, idx=-1, time=None, savefile=None, display_time=False,
                    title=None, logscale=True, linear_thresh=None, max_thresh=None, show_fig=True,
@@ -1530,12 +1775,18 @@ class PdeSolver:
             q = self.diffeq.set_q0() + 0.01*np.random.rand(*self.qshape)
         dqdt = self.dqdt(q,0.)
         result = self.energy_der(q,dqdt)
-        result2 = self.entropy_der(q,dqdt)
-        if print_result:
-            print('Derivative of energy stability is {0:.5g}'.format(result))
-            print('Derivative of entropy stability is {0:.5g}'.format(result2))
+        if hasattr(self.diffeq, 'entropy_var'):
+            result2 = self.entropy_der(q,dqdt)
+            if print_result:
+                print('Derivative of energy stability is {0:.5g}'.format(result))
+                print('Derivative of entropy stability is {0:.5g}'.format(result2))
+            else:
+                return result, result2
         else:
-            return result, result2
+            if print_result:
+                print('Derivative of energy stability is {0:.5g}'.format(result))
+            else:
+                return result
     
     def calc_cons_obj_rate(self, q=None, t=None, cons_obj_name=None, order=2):
         ''' calculate the rate of change (in time) of the conservation objectives '''

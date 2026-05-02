@@ -71,7 +71,7 @@ class LinearConv(PdeBase):
             self.maxeig_dEzdq = lambda q : np.ones(q.shape)
             #self.central_Ez = self.central_fix_Ez
 
-    def exact_sol(self, time=0, xyx=None, guess=None):
+    def exact_sol(self, time=0, xyz=None, **kwargs):
 
         if xyz is None:
             xyz = self.xyz_elem

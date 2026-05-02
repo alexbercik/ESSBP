@@ -9,6 +9,7 @@ Created on Fri Oct 23 17:28:45 2020
 import numpy as np
 from scipy.integrate import DOP853
 import traceback
+from Source.Methods import Functions as fn
 # import scipy.sparse as sp
 # from scipy.sparse.linalg import spsolve
 
@@ -31,6 +32,11 @@ class TimeMarchingRk:
 
         q_sol = self.init_q_sol(q, n_ts)
         quit = False
+
+        # Initialize cons_obj at t=0 (similar to rk8)
+        if self.bool_calc_cons_obj:
+            dqdt_init = self.dqdt(q, t0)
+            self.cons_obj[:, 0] = self.fun_calc_cons_obj(q, t0, dqdt_init)
 
         # This method solves the 4th order explicit Runge-Kutta method.
         for i in range(0, n_ts):
@@ -79,6 +85,8 @@ class TimeMarchingRk:
                 break
             
             q += dt*(k1 + 2*(k2+k3) + k4)/6 # final correction q_{n+1}
+            if self.clip_positivity:
+                q = self.diffeq.clip_positivity_fn(q, self.pos_floor, self.pos_cut)
         
         # Congrats you reached the end
         i += 1
@@ -94,6 +102,11 @@ class TimeMarchingRk:
 
         q_sol = self.init_q_sol(q, n_ts)
         quit = False
+
+        # Initialize cons_obj at t=0 (similar to rk8)
+        if self.bool_calc_cons_obj:
+            dqdt_init = self.dqdt(q, t0)
+            self.cons_obj[:, 0] = self.fun_calc_cons_obj(q, t0, dqdt_init)
 
         # This method solves the 1st order explicit Euler method.
         for i in range(0, n_ts):
@@ -258,11 +271,12 @@ class TimeMarchingRk:
             n_ts = i
         q = y_current.reshape(self.qshape,order='F')
         self.final_common(q, q_sol, i, n_ts, dt, dqdt, time=t_current)
-        if t_current < self.t_final:
-            print("RK8: WARNING: Did not reach final time. t = %f" % t_current)
-        else:
-            print("RK8: Reached final time. t = %f" % t_current)
-        print("RK8: used %d steps" % i)
+        if not self.print_nothing:
+            if t_current < self.t_final:
+                print("RK8: WARNING: Did not reach final time. t = %f" % t_current)
+            else:
+                print("RK8: Reached final time. t = %f" % t_current)
+            print("RK8: used %d steps" % i)
         if keep_all_ts_lcl:
             if self.use_time_frames:
                 q_sol = q_sol[:, :, :self.frame_idx+1]
@@ -285,6 +299,11 @@ class TimeMarchingRk:
 
         q_sol = self.init_q_sol(q, n_ts)
         quit = False
+
+        # Initialize cons_obj at t=0 (similar to rk8)
+        if self.bool_calc_cons_obj:
+            dqdt_init = self.dqdt(q, t0)
+            self.cons_obj[:, 0] = self.fun_calc_cons_obj(q, t0, dqdt_init)
 
         c = np.array([
             0.0,
@@ -348,6 +367,7 @@ class TimeMarchingRk:
                         q_s = q.copy()
                         for j, a_sj in a_stages.get(s, []):
                             q_s += dt * a_sj * k[j]
+                    #q_s = fn.clip_pos_smooth_vec(q_s, 5e-4, 5e-2)
                     k[s] = self.dqdt(q_s, t + c[s]*dt)
             except Exception as e:
                 print(f"ERROR rk8_verner: dqdt failed in stage {s+1}. Returning last q.")
@@ -361,6 +381,7 @@ class TimeMarchingRk:
 
             for s, bs in b_terms:
                 q += dt * bs * k[s]
+            #q = fn.clip_pos_smooth_vec(q,5e-4,5e-2)
 
         i += 1
         if quit:

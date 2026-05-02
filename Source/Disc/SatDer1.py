@@ -60,16 +60,11 @@ class SatDer1:
         '''
         A non-dissipative central flux in 1D
         '''
-        if q_bdyL is None: # periodic
-            EL = fn.shift_right(E)
-            ER = fn.shift_left(E)
-            intR = self.lm_gv(self.tb, ER, self.neq_node)
-            intL = self.lm_gv(self.ta, EL, self.neq_node)
-        else:
-            EL = fn.shift_right(E)
-            ER = fn.shift_left(E)
-            intR = self.lm_gv(self.tb, ER, self.neq_node)
-            intL = self.lm_gv(self.ta, EL, self.neq_node)
+        EL = fn.shift_right(E)
+        ER = fn.shift_left(E)
+        intR = self.lm_gv(self.tb, ER, self.neq_node)
+        intL = self.lm_gv(self.ta, EL, self.neq_node)
+        if q_bdyL is not None:
             # manually fix boundaries of EL, ER to ensure proper boundary coupling
             if E_bdyL is None:
                 E_bdyL = self.calcEx(q_bdyL)
@@ -587,19 +582,19 @@ class SatDer1:
     ''' SPECIAL FUNCTIONS ''' 
     ##########################################################################
     
-    def llf_div_1d_varcoeff(self, q, E, q_bdyL=None, q_bdyR=None):
+    def llf_div_1d_varcoeff(self, q, E, q_bdyL=None, q_bdyR=None, extrapolate_flux=True):
         '''
         A Local Lax-Fridriechs dissipative flux in 1D, specific for the variable
         coefficient linear convection equation. self.coeff=0 turns off dissipation.
         '''
-        extrapolate_flux = True
 
-        sat = self.alpha * self.Esurf @ E + (1 - self.alpha) * self.a * (self.Esurf @ q)
-        q_a = self.tLT @ q
-        q_b = self.tRT @ q
+        sat = self.alpha * self.lm_gv(self.Esurf, E) + (1 - self.alpha) * self.a * self.lm_gv(self.Esurf, q)
+        q_a = self.lm_gv(self.tLT,q)
+        q_b = self.lm_gv(self.tRT,q)
         if q_bdyL is None:
             qf_L = fn.pad_1dL(q_b, q_b[:,-1])
             qf_R = fn.pad_1dR(q_a, q_a[:,0])
+            sigma = self.coeff
         else:
             qf_L = fn.pad_1dL(q_b, q_bdyL)
             qf_R = fn.pad_1dR(q_a, q_bdyR)
@@ -611,8 +606,8 @@ class SatDer1:
         a_f = self.afun(x_f)
         qf_jump = qf_R - qf_L
         if extrapolate_flux:
-            E_a = self.tLT @ E
-            E_b = self.tRT @ E
+            E_a = self.lm_gv(self.tLT, E)
+            E_b = self.lm_gv(self.tRT, E)
             if q_bdyL is None:
                 Ef_L = fn.pad_1dL(E_b, E_b[:,-1])
                 Ef_R = fn.pad_1dR(E_a, E_a[:,0])
@@ -622,51 +617,176 @@ class SatDer1:
             f_avg = (Ef_L + Ef_R) / 2
         else:
             f_avg = a_f * (qf_L + qf_R) / 2
-        numflux = f_avg - sigma * fn.cabs(a_f) * qf_jump / 2
+        numflux = f_avg - sigma * np.abs(a_f) * qf_jump / 2
         
-        sat = sat - self.tR @ numflux[:,1:] + self.tL @ numflux[:,:-1]
+        sat = sat - self.lm_gv(self.tR, numflux[:,1:]) + self.lm_gv(self.tL, numflux[:,:-1])
         return sat
-    
-    def div_1d_burgers_split(self, q, E, q_bdyL=None, q_bdyR=None, extrapolate_flux=True):
+
+    def llf_div_1d_varcoeff_ext(self, q, E, q_bdyL=None, q_bdyR=None):
         '''
-        A general split form SAT for Burgers equation, treating it as a variable coefficient problem with a=u/2
-        Note: the entropy conservative SAT is NOT recovered with self.split_alpha=2/3
-        self.coeff=0 is conservative, self.coeff=1 is disspative
-        '''        
+        A Local Lax-Fridriechs dissipative flux in 1D, specific for the variable
+        coefficient linear convection equation. self.coeff=0 turns off dissipation.
+        we modify the dissipation to include more than just the boudnary nodes.
+        # THIS ASSUMES THE OPERATORS INCLUDE BOUNDARY NODES!
+        '''
+        E_a = self.lm_gv(self.tLT, E)
+        E_b = self.lm_gv(self.tRT, E)
+        x_f = fn.pad_1dR(self.bdy_x[[0],:], self.bdy_x[[1],-1])
+        a_f = self.afun(x_f)
+        if q_bdyL is None:
+            Ef_L = fn.pad_1dL(E_b, E_b[:,-1])
+            Ef_R = fn.pad_1dR(E_a, E_a[:,0])
+        else:
+            Ef_L = fn.pad_1dL(E_b, a_f[:,0] * q_bdyL)
+            Ef_R = fn.pad_1dR(E_a, a_f[:,-1] * q_bdyR)
+        sat = 0.5*( self.lm_gv(self.tR, E_b - Ef_R[:,1:]) - self.lm_gv(self.tL, E_a - Ef_L[:,:-1]) )
         
-        sat = self.alpha * self.lm_gv(self.Esurf, E, self.neq_node) \
-            + (1 - self.alpha) * 0.5 * q * self.lm_gv(self.Esurf, q, self.neq_node)
+        if self.coeff != 0:
+            q_a = (self.tL_ext @ q)[None, :]
+            q_b = (self.tR_ext @ q)[None, :]
+
+            if q_bdyL is None:
+                qf_L = fn.pad_1dL(q_b, q_b[:,-1])
+            else:
+                qf_L = fn.pad_1dL(q_b, q_bdyL)
+            
+            if q_bdyR is None:
+                qf_R = fn.pad_1dR(q_a, q_a[:,0])
+            elif np.any(q_bdyR == 'None'):
+                # outflow boundary condition - do not apply a SAT here
+                qf_R = fn.pad_1dR(q_a, np.zeros(self.neq_node))
+                qf_L[:,-1] = 0.0
+            else:
+                qf_R = fn.pad_1dR(q_a, q_bdyR)
+
+            absA_dq = np.abs(a_f) * (qf_R - qf_L)
+            dissL = self.tL_ext[:, None] * absA_dq[:,:-1]
+            dissR = self.tR_ext[:, None] * absA_dq[:,1:]
+
+            diss = (dissL - dissR)/2
+            sat -= self.coeff*diss
+        return sat
+
+    def geom_div_1d_varcoeff(self, q, E, q_bdyL=None, q_bdyR=None, use_ext=False):
+        '''
+        An entropy-stable SAT for the geometric-flux for the variable coefficient 
+        linear convection equation.
+        '''
+        Esqrt = np.sqrt(E)
+        sat = self.lm_gv(self.Esurf, Esqrt)
+        
+        EsqrtL = fn.shift_right(Esqrt)
+        EsqrtR = fn.shift_left(Esqrt)
+        intR = self.lm_gv(self.tb, EsqrtR)
+        intL = self.lm_gv(self.ta, EsqrtL)
+
+        if (q_bdyL is None) and (q_bdyR is None):
+            sigma = self.coeff
+        else:
+            # manually fix boundaries of EL, ER to ensure proper boundary coupling
+            sigma = self.coeff * np.ones((1,self.nelem+1))
+            if q_bdyL is not None:
+                EsqrtbdyL = np.sqrt(q_bdyL*self.afun(self.bdy_x[0,0]))
+                intL[:,0] = self.lm_lv(self.tL, EsqrtbdyL)
+                sigma[0] = 1
+            if q_bdyR is not None:
+                EsqrtbdyR = np.sqrt(q_bdyR*self.afun(self.bdy_x[1,-1]))
+                intR[:,-1] = self.lm_lv(self.tR, EsqrtbdyR)
+                sigma[-1] = 1
+
+        sat += - intR + intL
+        sat *= Esqrt
+
+        if self.coeff != 0:
+            if use_ext:
+                q_a = (self.tL_ext @ q)[None, :]
+                q_b = (self.tR_ext @ q)[None, :]
+            else:
+                q_a = self.lm_gv(self.tLT, q)
+                q_b = self.lm_gv(self.tRT, q)
+
+            if q_bdyL is None:
+                qf_L = fn.pad_1dL(q_b, q_b[:,-1])
+            else:
+                qf_L = fn.pad_1dL(q_b, q_bdyL)
+            
+            if q_bdyR is None:
+                qf_R = fn.pad_1dR(q_a, q_a[:,0])
+            elif np.any(q_bdyR == 'None'):
+                # outflow boundary condition - do not apply a SAT here
+                qf_R = fn.pad_1dR(q_a, np.zeros(self.neq_node))
+                qf_L[:,-1] = 0.0
+            else:
+                qf_R = fn.pad_1dR(q_a, q_bdyR)
+
+            x_f = fn.pad_1dR(self.bdy_x[[0],:], self.bdy_x[[1],-1])
+            a_f = self.afun(x_f)
+            absA_dq = np.abs(a_f) * (qf_R - qf_L)
+            if use_ext:
+                dissL = self.tL_ext[:, None] * absA_dq[:,:-1]
+                dissR = self.tR_ext[:, None] * absA_dq[:,1:]
+            else:
+                dissL = self.lm_gv(self.tL, absA_dq[:,:-1])
+                dissR = self.lm_gv(self.tR, absA_dq[:,1:])
+
+            diss = (dissL - dissR)/2
+            sat -= sigma*diss
+        
+        return sat
+
+    
+    def div_1d_burgers_split(self, q, E=None, q_bdyL=None, q_bdyR=None, E_bdyL=None, E_bdyR=None):
+        '''
+        A general split form SAT for Burgers equation,
+        recovering the divergence/central form with self.split_alpha=1.
+        recovers the entropy-conservative SAT with self.split_alpha=2/3.
+        Note: I have not checked if this works for operators without boundary nodes.
+        self.coeff=0 is conservative, self.coeff=1 is disspative
+        ''' 
+
         q_a = self.lm_gv(self.tLT, q, self.neq_node)
         q_b = self.lm_gv(self.tRT, q, self.neq_node)
-        if q_bdyL is None:
-            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
-            qf_R = fn.pad_1dR(q_a, q_a[:,0])
-        else:
-            qf_L = fn.pad_1dL(q_b, q_bdyL)
-            qf_R = fn.pad_1dR(q_a, q_bdyR)
-            # make sure boundaries have upwind SATs
-            sigma = self.coeff * np.ones((1,self.nelem+1))
-            sigma[0] = 1
-            sigma[-1] = 1
-        qf_jump = qf_R - qf_L
-        qf_avg = self.calc_avgq(qf_L, qf_R)
 
-        if extrapolate_flux:
-            E_a = self.lm_gv(self.tLT, E, self.neq_node)
-            E_b = self.lm_gv(self.tRT, E, self.neq_node)
-            if q_bdyL is None:
-                Ef_L = fn.pad_1dL(E_b, E_b[:,-1])
-                Ef_R = fn.pad_1dR(E_a, E_a[:,0])
-            else:
-                Ef_L = fn.pad_1dL(E_b, 0.5 * q_bdyL**2)
-                Ef_R = fn.pad_1dR(E_a, 0.5 * q_bdyR**2)
-            f_avg = self.calc_avgq(Ef_L, Ef_R)
-        else:  
-            f_avg = (qf_avg)**2 / 2
-        numflux = f_avg - sigma * fn.cabs(qf_avg) * qf_jump / 2
+        if E is None: E = q**2 / 2.
+
+        EL = fn.shift_right(E)
+        intL = self.lm_gv(self.ta, EL, self.neq_node)
+        ER = fn.shift_left(E)
+        intR = self.lm_gv(self.tb, ER, self.neq_node)
         
-        sat = sat - self.lm_gv(self.tR, numflux[:,1:], self.neq_node) \
-                  + self.lm_gv(self.tL, numflux[:,:-1], self.neq_node)
+        if q_bdyL is None:
+            qf_L = fn.pad_1dL(q_b, q_b[:,-1]) # periodic
+        else:
+            # manually fix boundaries of EL to ensure proper boundary coupling
+            if E_bdyL is None: E_bdyL = self.calcEx(q_bdyL)
+            intL[:,0] = self.lm_lv(self.tL, E_bdyL, self.neq_node)
+            qf_L = fn.pad_1dL(q_b, q_bdyL)
+        
+        if q_bdyR is None:
+            qf_R = fn.pad_1dR(q_a, q_a[:,0]) # periodic
+        elif np.any(q_bdyR == 'None'):
+            # outflow boundary condition - do not apply a SAT here
+            qf_R = fn.pad_1dR(q_a, np.zeros(self.neq_node))
+            qf_L[:,-1] = 0.0
+            # but careful I am doing E * flux, must also subtract this from SAT
+            E_bdyR = E[-self.neq_node:,-1]
+            intR[:,-1] = self.lm_lv(self.tR, E_bdyR, self.neq_node)
+        else:
+            # manually fix boundaries of ER to ensure proper boundary coupling
+            if E_bdyR is None: E_bdyR = self.calcEx(q_bdyR)
+            intR[:,-1] = self.lm_lv(self.tR, E_bdyR, self.neq_node)
+            qf_R = fn.pad_1dR(q_a, q_bdyR)
+
+        diss = self.coeff*self.diss(qf_L,qf_R)
+        Esat = self.lm_gv(self.Esurf, E, self.neq_node)
+        sat = 0.5*( (2.-self.alpha)*Esat - intR + intL ) - diss
+
+        if self.alpha != 1:
+            q_R = qf_R[:,1:]
+            q_L = qf_L[:,:-1]
+            sat += 0.5*(1.-self.alpha) * ( self.lm_gv(self.tR, (0.5*q_R*q_R - q_b*q_R), self.neq_node)
+                                         - self.lm_gv(self.tL, (0.5*q_L*q_L - q_a*q_L), self.neq_node) )
+
         return sat
             
     def div_1d_burgers_es(self, q, E=None, q_bdyL=None, q_bdyR=None):
@@ -768,6 +888,48 @@ class SatDer1:
     ##########################################################################
     ''' OLD STUFF ''' 
     ##########################################################################
+
+    def div_1d_burgers_split_old(self, q, E, q_bdyL=None, q_bdyR=None, extrapolate_flux=True):
+        '''
+        A general split form SAT for Burgers equation, treating it as a variable coefficient problem with a=u/2
+        Note: the entropy conservative SAT is NOT recovered with self.split_alpha=2/3
+        self.coeff=0 is conservative, self.coeff=1 is disspative
+        '''        
+        
+        sat = self.alpha * self.lm_gv(self.Esurf, E, self.neq_node) \
+            + (1 - self.alpha) * 0.5 * q * self.lm_gv(self.Esurf, q, self.neq_node)
+        q_a = self.lm_gv(self.tLT, q, self.neq_node)
+        q_b = self.lm_gv(self.tRT, q, self.neq_node)
+        if q_bdyL is None:
+            qf_L = fn.pad_1dL(q_b, q_b[:,-1])
+            qf_R = fn.pad_1dR(q_a, q_a[:,0])
+        else:
+            qf_L = fn.pad_1dL(q_b, q_bdyL)
+            qf_R = fn.pad_1dR(q_a, q_bdyR)
+            # make sure boundaries have upwind SATs
+            sigma = self.coeff * np.ones((1,self.nelem+1))
+            sigma[0] = 1
+            sigma[-1] = 1
+        qf_jump = qf_R - qf_L
+        qf_avg = self.calc_avgq(qf_L, qf_R)
+
+        if extrapolate_flux:
+            E_a = self.lm_gv(self.tLT, E, self.neq_node)
+            E_b = self.lm_gv(self.tRT, E, self.neq_node)
+            if q_bdyL is None:
+                Ef_L = fn.pad_1dL(E_b, E_b[:,-1])
+                Ef_R = fn.pad_1dR(E_a, E_a[:,0])
+            else:
+                Ef_L = fn.pad_1dL(E_b, 0.5 * q_bdyL**2)
+                Ef_R = fn.pad_1dR(E_a, 0.5 * q_bdyR**2)
+            f_avg = self.calc_avgq(Ef_L, Ef_R)
+        else:  
+            f_avg = (qf_avg)**2 / 2
+        numflux = f_avg - sigma * fn.cabs(qf_avg) * qf_jump / 2
+        
+        sat = sat - self.lm_gv(self.tR, numflux[:,1:], self.neq_node) \
+                  + self.lm_gv(self.tL, numflux[:,:-1], self.neq_node)
+        return sat
     
     def dfdq_der1_upwind_scalar(self, q_L, q_R, xy, sigma=1, avg='simple'):
         '''

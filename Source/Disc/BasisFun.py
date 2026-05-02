@@ -7,56 +7,226 @@ Created in Sep 2019
 """
 
 import numpy as np
-from Source.Disc.RefSimplexElem import RefSimplexElem
+from numpy.polynomial import legendre as Leg
+from numpy.polynomial import polynomial as Poly
 
 
 class BasisFun:
 
-    def __init__(self, xy, p, basis_type="monomial"):
+    def __init__(self, x, nb, p, basis_type="legendre"):
         '''
         Parameters
         ----------
-        xy : np array
-            Each row has the coord. for one node.
+        x : np array
+            A default set of nodes that will serve for nodal evaluations.
+        n : int
+            Number of basis functions in the basis.
         p : int
-            Degree of the basis function.
+            Polynomial degree of the basis.
         basis_type : str, optional
             Indicates the type of basis function used.
-            The default is "monomial".
+            The default is "legendre".
+        '''
+
+        self.x = x
+        self.p = p
+        assert len(x.shape) == 1, f"x must be a 1D array, but given {x.shape}"
+        self.nn = len(x) # number of nodes
+        self.nb = nb # number of basis functions (cardinality)
+        if self.nn != self.nb:
+            # I do not have full cardinality! 
+            print(f"WARNING: Number of nodes does not match number of basis functions, {self.nn} != {self.nb}")
+        self.basis_type = basis_type.lower()
+
+        ''' Initialize the specific basis class from which we inherit through __getattr__ '''
+        if self.basis_type == "monomial":
+            self._basis = MonomialBasis(x, self.p)
+        elif self.basis_type == 'legendre':
+            self._basis = LegendreBasis(x, self.p)
+        elif self.basis_type == "exponential":
+            self._basis = ExponentialBasis(x, self.nb)
+        else:
+            raise NotImplementedError(f"Unknown basis_type {basis_type!r}")
+
+        # Precompute Vandermonde at the default nodes and its inverse if full cardinality
+        self._basis._V = self._build_vandermonde(self.x)  # modal -> nodal
+        if self.nb == self.nn:
+            self._basis._Vinv = np.linalg.inv(self._V)    # nodal -> modal
+        #else:
+        #    # could probably use a projection instead. But this really doesn't matter much.
+        #    self._basis._Vinv = np.linalg.pinv(self._V)
+        self._basis._Vx = self._build_vandermonde_derivative(self.x) 
+
+    def __getattr__(self, name):
+        """
+        Delegate attribute/method lookup to the underlying _basis object
+        when not found on BasisFun itself. This allows us to directly access
+        the methods and attributes of the underlying _basis object.
+        """
+        return getattr(self._basis, name)
+
+    # ---------- Public Vandermonde interfaces ----------
+
+    def vandermonde(self, x):
+        r"""
+        Evaluate the orthonormal basis functions at x.
+        A wrapper for _build_vandermonde to handle both scalar and array inputs.
+        """
+        x_arr = np.asarray(x, dtype=float)
+        scalar_input = (x_arr.ndim == 0)
+
+        V = self._build_vandermonde(x_arr)
+
+        if scalar_input:
+            return V[0, :]   # shape (nb,)
+        return V             # shape (m, nb)
+
+    def vandermonde_derivative(self, x):
+        r"""
+        Evaluate the derivatives of theorthonormal basis functions at x.
+        A wrapper for _build_vandermonde_derivative to handle both scalar and array inputs.
+        """
+        x_arr = np.asarray(x, dtype=float)
+        scalar_input = (x_arr.ndim == 0)
+
+        Vx = self._build_vandermonde_derivative(x_arr)
+
+        if scalar_input:
+            return Vx[0, :]   # shape (nb,)
+        return Vx             # shape (m, nb)
+
+    # ---------- Nodal <-> Modal transforms ----------
+
+    def nodal_to_modal(self, u, neq_node=1, dim=1, reshape=True):
+        r"""
+        Transform from nodal (values at self.x) to modal (orthonormal Legendre) coefficients.
+
+        Parameters
+        ----------
+        u : array_like
+            Nodal values. First dimension must have length nn.
+            Examples:
+                shape (nn,)       -> single field
+                shape (nn, k)     -> k fields, each defined at the nn nodes
 
         Returns
         -------
-        None.
+        a : ndarray
+            Modal coefficients with same leading shape as `u`,
+            but first dimension still nb.
+        """
+        u = np.asarray(u, dtype=float)
+        if u.shape[0] != (self.nn**dim)*neq_node:
+            raise ValueError(f"nodal_to_modal: first axis must have length (nn**dim)*neq_node={(self.nn**dim)*neq_node}, got {u.shape[0]}.")
 
-        '''
+        # prepare the Vandermonde matrix
+        if self.nb == self.nn: # will use stored inverse
+            if dim == 1: Vinv = self._Vinv
+            elif dim == 2: Vinv = np.kron(self._Vinv,self._Vinv)
+            elif dim == 3: Vinv = np.kron(self._Vinv,np.kron(self._Vinv,self._Vinv))
+        else: # will solve the linear system with least squares
+            if dim == 1: V = self._V
+            elif dim == 2: V = np.kron(self._V,self._V)
+            elif dim == 3: V = np.kron(self._V,np.kron(self._V,self._V))
+        
+        if neq_node > 1:
+            u = u.reshape(self.nn**dim,neq_node,*u.shape[1:])
 
-
-        ''' Add inputs to the class '''
-
-        self.xy = xy
-        self.p = p
-        self.basis_type = basis_type.lower()
-
-        ''' Extract required data '''
-
-        self.nn, self.dim = np.shape(self.xy)
-        self.n_p = self.cardinality(self.dim, self.p)
-
-        ''' Build the Vandermonde matrix and its derivative '''
-
-        if self.basis_type == "monomial":
-            self.van, self.van_der, self.indices = self.basis_monomial(self.xy, self.p)
-        elif self.basis_type == 'legendre':
-            self.van, self.van_der, self.indices = self.basis_legendre(self.xy, self.p)
-        elif self.basis_type == "lagrange":
-            raise Exception("Error, not yet available")
-            # self.van, self.van_der, self.indices = self.basis_lagrange(self.xy, self.p)
+        if self.nb == self.nn:
+            # a = V^{-1} u
+            # Handle broadcasting: Vinv is (N, N), u can be (N, k, m, ...)
+            # Use einsum to apply matrix multiplication along first dimension
+            if u.ndim == 1:
+                a = Vinv @ u
+            else:
+                # einsum: 'ij,j...->i...' applies Vinv[i,j] @ u[j,...] -> a[i,...]
+                a = np.einsum('ij,j...->i...', Vinv, u)
         else:
-            raise Exception("Error, not yet available")
+            # TODO: could probably do some projection, but who cares. This doesn't matter too much.
+            a = np.linalg.lstsq(V, u, rcond=None)[0]
+        
+        if neq_node > 1 and reshape:
+            a = a.reshape((self.nb**dim)*neq_node, *u.shape[2:])
+        
+        return a
 
-        self.idx_basis_dn1 = self.basis_idx_dn1(self.dim, self.p)
+    def modal_to_nodal(self, a, neq_node=1, dim=1):
+        r"""
+        Transform from modal coefficients to nodal values at self.x.
 
+        Parameters
+        ----------
+        a : array_like
+            Modal coefficients. First dimension must have length nb.
 
+        Returns
+        -------
+        u : ndarray
+            Nodal values with same leading shape as `a`,
+            but first dimension still nn.
+        """
+        a = np.asarray(a, dtype=float)
+        if a.shape[0] != (self.nb**dim)*neq_node:
+            raise ValueError(f"modal_to_nodal: first axis must have length (nb**dim)*neq_node={(self.nb**dim)*neq_node}, got {a.shape[0]}.")
+
+        # prepare the Vandermonde matrix
+        if dim == 1: V = self._V
+        elif dim == 2: V = np.kron(self._V,self._V)
+        elif dim == 3: V = np.kron(self._V,np.kron(self._V,self._V))
+
+        if neq_node > 1:
+            a = a.reshape(self.nb**dim,neq_node,*a.shape[1:])
+
+        # u = V a
+        u =  V @ a
+        
+        if neq_node > 1:
+            u = u.reshape((self.nn**dim)*neq_node, *a.shape[2:])
+        
+        return u
+
+    def eval_nodal_vec(self, u, x_eval, neq_node=1, dim=1):
+        r"""
+        Evaluate a function given in nodal form (values at self.x) at new evaluation points.
+
+        Parameters
+        ----------
+        u : array_like
+            Nodal coefficients. Last dimension must match len(self.x).
+        x_eval : float or array_like
+            Points in [0,1] to evaluate the function at.
+
+        Returns
+        -------
+        out : ndarray
+            Values of the function at x_eval.
+        """
+        # Step 1: nodal -> modal
+        a = self.nodal_to_modal(u, neq_node=neq_node, dim=dim, reshape=False)
+
+        # Step 2: modal -> evaluate at x_eval
+        x_eval_arr = np.asarray(x_eval, float)
+
+        # prepare the Vandermonde matrix
+        V_eval = self._build_vandermonde(x_eval_arr)
+        if dim == 1: pass
+        elif dim == 2: V_eval = np.kron(V_eval,V_eval)
+        elif dim == 3: V_eval = np.kron(V_eval,np.kron(V_eval,V_eval))
+
+        # u = V a
+        # Handle broadcasting: V_eval is (N, N), a can be (N, k, m, ...)
+        # Use einsum to apply matrix multiplication along first dimension
+        if u.ndim == 1:
+            u_eval =  V_eval @ a
+        else:
+            u_eval = np.einsum('ij,j...->i...', V_eval, a)
+        
+        if neq_node > 1:
+            u_eval = u_eval.reshape((len(x_eval_arr)**dim)*neq_node, *a.shape[2:])
+            
+        return u_eval
+
+    
     @staticmethod
     def cardinality(dim, p):
         '''
@@ -65,12 +235,12 @@ class BasisFun:
         dim : int
             No. of dimensions.
         p : int or numpy array of int
-            Degree(s) of an operator
+            Polynomial degree(s) of an operator
 
         Returns
         -------
         n_p : int or numpy array of int
-            The cardinality of the set of basis functions of degree p.
+            The cardinality of the set of basis functions of polynomial degree p.
         '''
 
         if dim == 0:
@@ -91,447 +261,295 @@ class BasisFun:
 
         return n_p
 
-    @staticmethod
-    def inv_cardinality(dim, n_p):
-        '''
+
+
+
+
+
+class LegendreBasis:
+    r"""
+    Orthonormal polynomial basis on [0, 1] built from shifted Legendre polynomials.
+
+    Modal basis: phi_n(x) = sqrt(2n+1) * P_n(2x - 1),   n = 0,...,nb-1
+    where P_n is the standard Legendre polynomial on [-1, 1].
+
+    Nodal representation: values at the user-supplied nodes self.x in [0,1].
+    """
+
+    def __init__(self, x, p):
+        r"""
         Parameters
         ----------
-        dim : int
-            No. of dimensions.
-        n_p : int or numpy array of int
-            The cardinality of the set of basis functions of degree p.
+        x_nodes : array_like
+            An important set of nodes that will always serve as the default for
+            nodal evaluations in [0, 1]; defines nb (the number of basis functions).
+        nb : int
+            Total number of basis functions. Must satisfy nb >= 2.
+        """
+        self.x = np.asarray(x, dtype=float)
+        self.nb = int(p+1)
+        assert self.nb >= 2, "Legendre Basis requires nb >= 2."
 
-        Returns
-        -------
-        p : int
-            Degree of an operator.
-        '''
+        # Normalization factors for orthonormal basis on [0,1]
+        # phi_n(x) = sqrt(2n+1) * P_n(2x - 1)
+        self._norms = np.sqrt(2 * np.arange(self.nb) + 1.0)
 
-        if dim == 1:
-            p = n_p - 1
-        elif dim == 2:
-            p = int(np.round((-3 + np.sqrt(1 + 8*n_p))/2))
-        else:
-            raise Exception('Only available for 1 and 2D')
+    # ---------- Core internal builders ----------
 
-        return p
+    def _build_vandermonde(self, x):
+        r"""
+        Internal helper: evaluate the orthonormal basis at arbitrary x.
 
-    @staticmethod
-    def basis_function(xy, p, basis='monomial'):
-        '''
+        For x with shape (nn,), returns V with shape (nn, nb):
+            V[i, n] = phi_n(x[i]).
+        """
+        x = np.atleast_1d(x)
+        xi = 2.0 * x - 1.0                  # map [0,1] -> [-1,1]
+        # V_leg[i, n] = P_n(xi[i]) 
+        V_unscaled = Leg.legvander(xi, self.nb - 1)
+        # Scale columns to get orthonormal basis on [0,1]
+        V = V_unscaled * self._norms # broadcast over columns
+        return V
+
+    def _build_vandermonde_derivative(self, x):
+        r"""
+        Internal helper: evaluate the derivatives of the orthonormal basis at arbitrary x.
+
+        For x with shape (m,), returns Vx with shape (m, nb):
+            Vx[i, n] = d/dx phi_n(x[i]).
+        """
+        x = np.atleast_1d(x)
+        xi = 2.0 * x - 1.0
+        m = x.size
+        Vx = np.empty((m, self.nb), dtype=float)
+
+        # For each n, differentiate P_n(ξ), evaluate at ξ = 2x-1,
+        # then apply chain rule d/dx = 2 d/dξ and normalization.
+        for n in range(self.nb):
+            # coefficients for P_n(ξ): c = [0,...,0,1]
+            c = np.zeros(n + 1)
+            c[n] = 1.0
+            dc = Leg.legder(c)  # derivative w.r.t. ξ
+            # d/dx P_n(2x-1) = 2 * P_n'(2x-1)
+            Vx[:, n] = 2.0 * Leg.legval(xi, dc) * self._norms[n]
+
+        return Vx
+
+
+
+
+class MonomialBasis:
+    r"""
+    Polynomial (monomial) basis on [0, 1] in the power basis.
+
+    Modal basis: phi_n(x) = x^n,  n = 0,...,nb-1
+
+    Nodal representation: values at the user-supplied nodes self.x in [0,1].
+    """
+
+    def __init__(self, x, p):
+        r"""
         Parameters
         ----------
-        xy : numpy array
-            Cartesian coordinates for nodes with one row per node.
-        p : int
-            Max degree for the basis function.
-        basis : string, optional
-            Type of basis function to use. The default is 'monomial'.
+        x : array_like
+            An important set of nodes that will always serve as the default for
+            nodal evaluations in [0, 1]; defines nb (the number of basis functions).
+        nb : int
+            Total number of basis functions. Must satisfy nb >= 2.
+        """
+        self.x = np.asarray(x, dtype=float)
+        self.nb = int(p+1)
+        assert self.nb >= 2, "Monomial Basis requires nb >= 2."
 
-        Returns
-        -------
-        van : numpy array
-            Vandermonde matrix evaluated at xy and up to degree p.
-        van_der : numpy array
-            Equivalent to the Vandermonde matrix but it holds the derivatives
-            of the basis functions.
-        indices : numpy array of int
-            The 2D array is of size [dim x n_p]. Each col is for one basis
-            function and each row is for one dimension. For monomial and
-            Legendre basis functions each index indicates the number of the
-            basis function in a respective direction
-            e.g. for a 2D p=2 Vandermonde matrix the array would be
-                [[0,1,0,2,1,0], [0,0,1,0,1,2]] for the basis: 1,x,y,x**2,xy,y**2
-        '''
+    # ---------- Core internal builders ----------
 
-        # Convert basis to all lowercase
-        basis = basis.lower()
+    def _build_vandermonde(self, x):
+        r"""
+        Internal helper: evaluate the monomial basis at arbitrary x.
 
-        if basis == 'monomial':
-            van, van_der, indices = BasisFun.basis_monomial(xy, p)
-        elif basis == 'legendre':
-            van, van_der, indices = BasisFun.basis_legendre(xy, p)
-        elif basis == 'lagrange':
-            raise Exception('The requested basis type is not available')
-            # van, van_der, indices = BasisFun.basis_lagrange(xy, p)
-        else:
-            raise Exception('The requested basis type is not available')
+        For x with shape (nn,), returns V with shape (nn, nb):
+            V[i, n] = x[i]**n.
+        """
+        x = np.atleast_1d(x)
+        # Poly.polyvander(x, deg) returns columns [1, x, x^2, ..., x^deg]
+        V = Poly.polyvander(x, self.nb - 1)   # shape (nn, nb)
+        return V
 
-        return van, van_der, indices
+    def _build_vandermonde_derivative(self, x):
+        r"""
+        Internal helper: evaluate the derivatives of the monomial basis at arbitrary x.
 
-    @staticmethod
-    def basis_monomial(xy, p):
-        ''' See the function basis_function '''
+        For x with shape (m,), returns Vx with shape (m, nb):
+            Vx[i, n] = d/dx (x^n) evaluated at x[i] = n * x[i]^(n-1),
+            with the convention that the derivative of x^0 = 1 is 0.
+        """
+        x = np.atleast_1d(x)
+        m = x.size
+        Vx = np.empty((m, self.nb), dtype=float)
 
-        # Common data
-        [nn, dim] = np.shape(xy)
-        n_p = BasisFun.cardinality(dim, p)
+        # Column n=0 corresponds to derivative of x^0 = 1 => 0
+        Vx[:, 0] = 0.0
 
-        # Initiate matrices
-        van = np.zeros((nn, n_p))
-        van_der = np.zeros((dim, nn, n_p))
-        indices = np.zeros((dim, n_p), dtype=int)
+        if self.nb > 1:
+            # We need x^(n-1) for n=1,...,nb-1 => powers up to nb-2
+            Xpow = Poly.polyvander(x, self.nb - 2)     # shape (m, nb-1), columns x^0,...,x^(nb-2)
+            for n in range(1, self.nb):
+                # d/dx x^n = n * x^(n-1)
+                Vx[:, n] = n * Xpow[:, n - 1]
 
-        if dim == 1:
-            d = 0
-            van[:,0] = 1
-            van_der[d,:,0] = 0
-
-            for i in range(1, n_p):
-                van[:,i] = xy[:,0]**i
-                van_der[d,:,i] = i * xy[:,0]**(i - 1)
-                indices[0,i] = i
-
-        elif dim == 2:
-
-            van[:, 0] = 1
-
-            x = xy[:, 0]
-            y = xy[:, 1]
-
-            for i in range(0, p+1):
-                for j in range(0, i+1):
-                    idx = i * (i + 1) // 2 + j
-                    a = i - j
-                    b = j
-                    indices[:, idx] = np.array([a, b])
-                    van[:, idx] = x**a * y**b
-
-                    if a == 0:
-                        van_der[0,:,idx] = 0
-                    else:
-                        van_der[0,:,idx] = a * x**(a - 1) * y**b
-
-                    if b == 0:
-                        van_der[1,:,idx] = 0
-                    else:
-                        van_der[1,:,idx] = b * x**a * y**(b - 1)
-
-        elif dim == 3:
-
-            van[:, 0] = 1
-
-            x = xy[:, 0]
-            y = xy[:, 1]
-            z = xy[:, 2]
-
-            for i in range(0, p + 1):
-                for j in range(0, i + 1):
-                    for k in range(0, j + 1):
-
-                        idx = k + j * (j + 1) // 2 + i * (i + 1) * (i + 2) // 6
-                        a = i - j
-                        b = j - k
-                        c = k
-                        indices[:, idx] = np.array([a, b, c])
-
-                        van[:, idx] = x**a * y**b * z**c
-
-                        if a == 0:
-                            van_der[0,:,idx] = 0
-                        else:
-                            van_der[0,:,idx] = a * x**(a - 1) * y**b * z**c
-
-                        if b == 0:
-                            van_der[1,:,idx] = 0
-                        else:
-                            van_der[1,:,idx] = b * x**a * y**(b - 1) * z**c
-
-                        if c == 0:
-                            van_der[2,:,idx] = 0
-                        else:
-                            van_der[2,:,idx] = c * x**a * y**b * z**(c - 1)
-        else:
-            raise Exception('Only 1 to 3 dimensions accepted')
-
-        return van, van_der, indices
-
-    @staticmethod
-    def basis_legendre(xy, p):
-        ''' See the function basis_function '''
-
-        # Common data
-        dim = xy.shape[1]
-
-        if dim == 1:
-            van, van_der, indices = BasisFun.basis_legendre_1d(xy[:, 0], p)
-        elif dim == 2:
-            van, van_der, indices = BasisFun.basis_legendre_2d(xy, p)
-        elif dim == 3:
-            van, van_der, indices = BasisFun.basis_legendre_3d(xy, p)
-        else:
-            raise Exception('Only 1 to 3 dimensions accepted')
-
-        return van, van_der, indices
-
-    @staticmethod
-    def basis_legendre_1d(xy, p):
-        ''' See the function basis_function '''
-
-        dim = 1
-        nn = xy.shape[0]
-        n_p = BasisFun.cardinality(dim, p)
-
-        leg_1d = np.zeros((nn, n_p))
-        leg_1d_der = np.zeros((dim, nn, n_p))
-
-        indices = np.arange(0, n_p, dtype=int)
-        indices = indices[None, :]
-
-        leg_1d[:, 0] = 1
-        leg_1d_der[0,:,0] = 0
-
-        if p >= 1:
-            leg_1d[:, 1] = 2*xy - 1
-            leg_1d_der[0,:,1] = 2
-
-        for i in range(2, p + 1):
-            n = i - 1
-            c1 = (2 * n + 1) / (n + 1)
-            c2 = n / (n + 1)
-
-            leg_1d[:,n+1] = c1 * (2*xy-1) * leg_1d[:,n] - c2 * leg_1d[:,n-1]
-            leg_1d_der[0,:,n+1] = c1 * (2 * leg_1d[:,n] + (2*xy-1) * leg_1d_der[0,:,n]) - c2 * leg_1d_der[0,:,n-1]
-        return leg_1d, leg_1d_der, indices
+        return Vx
 
 
-    @staticmethod
-    def basis_legendre_2d(xy, p):
-        ''' See the function basis_function '''
 
-        dim = 2
-        nn = xy.shape[0]
-        n_p = BasisFun.cardinality(dim, p)
 
-        van = np.zeros((nn, n_p))
-        van_der = np.zeros((dim, nn, n_p))
-        indices = np.zeros((dim, n_p), dtype=int)
+class ExponentialBasis:
+    """
+    Mixed basis on [0, 1] consisting of:
+      - the first nb-1 orthonormal Legendre polynomials, and
+      - an exponential-type function as the last basis vector:
+          * either plain exp(x), or
+          * its orthogonal complement to the Legendre subspace.
 
-        # Calculate 1D Legendre shape functions
-        leg_1d_x, leg_der_1d_x, _ = BasisFun.basis_legendre_1d(xy[:,0], p)
-        leg_1d_y, leg_der_1d_y, _ = BasisFun.basis_legendre_1d(xy[:,1], p)
+    The Legendre part is the same orthonormal basis as in LegendreBasis:
+        phi_n(x) = sqrt(2n+1) * P_n(2x - 1),  n = 0,...,nb-2
+    """
 
-        # Build two dimensional basis
-        for i in range(0, p + 1):
-            for j in range(0, i + 1):
-                idx = i * (i + 1)// 2 + j
-                a = i - j   # x ^ a
-                b = j       # y ^ b
-                indices[:, idx] = np.array([a, b])
-
-                van[:, idx] = leg_1d_x[:,a] * leg_1d_y[:,b]
-                van_der[0,:,idx] = leg_der_1d_x[0,:,a] * leg_1d_y[:,b]
-                van_der[1,:,idx] = leg_1d_x[:,a] * leg_der_1d_y[0,:,b]
-
-        return van, van_der, indices
-
-    @staticmethod
-    def basis_legendre_3d(xy, p):
-        ''' See the function basis_function '''
-
-        dim = 3
-        nn = xy.shape[0]
-        n_p = BasisFun.cardinality(dim, p)
-
-        van = np.zeros((nn, n_p))
-        van_der = np.zeros((dim, nn, n_p))
-        indices = np.zeros((dim, n_p), dtype=int)
-
-        # Calculate 1D Legendre shape functions
-        leg_1d_x, leg_der_1d_x, _ = BasisFun.basis_legendre_1d(xy[:,0], p)
-        leg_1d_y, leg_der_1d_y, _ = BasisFun.basis_legendre_1d(xy[:,1], p)
-        leg_1d_z, leg_der_1d_z, _ = BasisFun.basis_legendre_1d(xy[:,2], p)
-
-        # Build two dimensional basis
-        for i in range(0, p + 1):
-            for j in range(0, i + 1):
-                for k in range(0, j+1):
-                    idx = k + j * (j + 1)// 2 + i * (i + 1) * (i + 2)// 6
-                    a = i - j
-                    b = j - k
-                    c = k
-                    indices[:, idx] = np.array([a, b, c])
-
-                    van[:, idx] = leg_1d_x[:, a] * leg_1d_y[:, b] * leg_1d_z[:, c]
-                    van_der[0,:,idx] = leg_der_1d_x[0,:,a] * leg_1d_y[:, b] * leg_1d_z[:, c]
-                    van_der[1,:,idx] = leg_1d_x[:, a] * leg_der_1d_y[0,:,b] * leg_1d_z[:, c]
-                    van_der[2,:,idx] = leg_1d_x[:, a] * leg_1d_y[:, b] * leg_der_1d_z[0,:,c]
-
-        return van, van_der, indices
-
-    @staticmethod
-    def basis_idx_dn1(dim, p):
-        '''
+    def __init__(self, x, nb, orthogonalize_exp=True, n_quad=None):
+        """
         Parameters
         ----------
-        dim : int
-            No. of dimensions.
-        p : int
-            Degree of the operator.
+        x : array_like
+            Default nodal locations in [0, 1]; length must be nb.
+        nb : int
+            Total number of basis functions. Must satisfy nb >= 2.
+        orthogonalize_exp : bool, optional
+            If False, the last basis function is plain exp(x).
+            If True, the last basis function is the orthogonal complement
+            of exp(x) with respect to the first nb-1 orthonormal Legendre
+            basis functions (in L2([0,1])).
+        n_quad : int or None, optional
+            Number of Gauss-Legendre quadrature points used to compute the
+            projection coefficients for exp(x) when orthogonalize_exp=True.
+            If None, we use an exact representation of exp(x) using a
+            Legendre-coefficient series (i.e. no quadrature).
+        """
+        self.x = np.asarray(x, dtype=float)
+        self.nb = int(nb)
+        assert self.nb >= 2, "ExponentialBasis requires nb >= 2."
 
-        Returns
-        -------
-        idx_vec : numpy array
-            Indicates the indices for the basis that need to be considered if
-            the nodes are on a d-1 hyperdimensional plane. This is helpful to
-            calculate the SBP operator rr for the Rdn1 family
-        '''
+        # Legendre part uses degrees 0,...,nb-2 -> nb_leg basis functions
+        self.nb_leg = self.nb - 1
+        self.orthogonalize_exp = bool(orthogonalize_exp)
 
-        # Get the indices for basis functions
-        xy = np.zeros((1, dim))
-        _, _, indices = BasisFun.basis_monomial(xy, p)
+        # Orthonormalization factors for the Legendre part
+        # phi_n(x) = sqrt(2n+1) * P_n(2x - 1),  n = 0,...,nb_leg-1
+        self._leg_norms = np.sqrt(2 * np.arange(self.nb_leg) + 1.0)
 
-        # Get the indices for basis function
-        idx_dim_d = indices[-1,:]
+        # Optional: coefficients of the projection of exp(x) onto the Legendre part
+        # a_n = <exp, phi_n>, n=0,...,nb_leg-1
+        if self.orthogonalize_exp:
+            if n_quad is None:
+                # Projection coefficients of e^x onto phi_n:
+                # from the Fourier–Legendre expansion of e^{itx}, one can derive:
+                # e^x = sum_n b_n phi_n(x) + higher modes,
+                # with  b_n = exp(1/2) * sqrt(2n+1) * i_n(1/2),
+                # where i_n is the modified spherical Bessel of the first kind.
+                from scipy.special import spherical_in
+                beta = 0.5
+                orders = np.arange(self.nb_leg)
+                # spherical_in(n, z) works with scalar z, vector n
+                i_vals = spherical_in(orders, beta)
+                self._exp_coeffs = np.exp(0.5) * self._leg_norms * i_vals
 
-        # Identify basis functions with no component on the d-th dimension
-        idx_vec = np.argwhere(idx_dim_d == 0)
-        idx_vec = idx_vec[:,0]
+            else:
+                # use a quadrature rule to compute the orthogonal coefficients
+                assert n_quad > 0, "n_quad must be positive when orthogonalize_exp=True"
 
-        return idx_vec
+                # Gauss-Legendre quadrature on [-1,1], then map to [0,1]
+                xi, wi = Leg.leggauss(n_quad)
+                xq = 0.5 * (xi + 1.0)
+                wq = 0.5 * wi
 
-    @staticmethod
-    def shp_fun(p, xquad, xint=np.empty([0]), basis='monomial'):
+                # Evaluate Legendre basis at quadrature points
+                V_leg_q = self._build_leg_vandermonde(xq)  # shape (n_quad, nb_leg)
+                f_q = np.exp(xq)
 
-        nn, dim = xquad.shape
-
-        if nn == 1 and dim == 1 and xquad[0, 0] == 0:
-            shp = np.array([[1]])
-            shpx = np.array([[0]])
-            return shp, shpx
-
-        n_p = BasisFun.cardinality(dim, p)
-
-        if xint.size == 0:
-            xint = RefSimplexElem.ref_vertices(dim)
-
-        inv_coeff, _, _ = BasisFun.basis_function(xint, p, basis)
-        psi, psix, _ = BasisFun.basis_function(xquad, p, basis)
-
-        assert inv_coeff.shape[0] == inv_coeff.shape[1], \
-            "The array inv_coeff is not square"
-
-        shp = np.linalg.solve(inv_coeff.T, psi.T).T
-        # shp = psi / inv_coeff
-
-        shpx = np.zeros((dim, nn, n_p))
-
-        for d in range(0, dim):
-            shpx[d,:,:] = np.linalg.solve(inv_coeff.T, psix[d,:,:].T).T
-            # shpx[d,:,:] = psix[d,:, :] / inv_coeff
-
-        return shp, shpx
-
-    @staticmethod
-    def facet_vandermonde(xqf, p, gen_all_facets=True, basis="monomial"):
-        '''
-        Parameters
-        ----------
-        xqf : numpy array
-            Cartesian coordinates for the facet quad rule
-        p : int
-            Max degree of the basis function for the Vandermonde matrix.
-        gen_all_facets : bool, optional
-            Indicates if the Vandermonde matrix should be constructed for the
-            facet quad rule on each facet. If set to False then only the quad
-            rule for the zero-th facet is evaluated.
-            The default is True.
-        basis : string, optional
-            Type of basis function to use. The default is "monomial".
-
-        Returns
-        -------
-        xfe : numpy array
-            Cartesian coord. of the facet quad rule on the 0-th facet.
-        van_f : numpy array
-            Vandermonde matrix evaluated at the facet quad rule on the 0-th
-            facet.
-        van_f_der : numpy array
-            Equivalent to the Vandermonde matrix but instead it is the
-            derivative of the basis functions.
-        '''
-
-        nfn, dim_f = np.shape(xqf)
-
-        if nfn == 1 and dim_f == 1 and xqf[0, 0] == 0:
-            dim_f = 0
-
-        dim = dim_f + 1
-        n_p = BasisFun.cardinality(dim, p)
-        f2v = RefSimplexElem.facet_2_vertices(dim)
-        vert = RefSimplexElem.ref_vertices(dim)
-
-        shpf_p1, _ = BasisFun.shp_fun(1, xqf, basis=basis)
-
-        if gen_all_facets:
-            nfacet = dim + 1
+                # Inner products <exp, phi_n> ≈ sum_i w_i f(x_i) phi_n(x_i)
+                self._exp_coeffs = V_leg_q.T @ (wq * f_q)   # shape (nb_leg,)
         else:
-            nfacet = 1
+            self._exp_coeffs = None
 
-        xfe = np.zeros((nfacet, nfn, dim))
-        van_f = np.zeros((nfacet, nfn, n_p))
-        van_f_der = np.zeros((nfacet, dim, nfn, n_p))
+    # ---------- Internal Legendre-only builders (same as LegendreBasis) ----------
 
-        for i in range(nfacet):
-            tril = f2v[:, i]
-            xl = vert[tril, :]
-            xfe[i,:,:] = shpf_p1 @ xl
-            van_f[i,:,:], van_f_der[i,:,:,:], _ = BasisFun.basis_function(xfe[i,:,:], p, basis)
+    def _build_leg_vandermonde(self, x):
+        """
+        Evaluate the orthonormal Legendre basis (nb_leg functions) at x.
 
-        # Eliminate the last dimension of the array, which is one
-        if ~gen_all_facets:
-            xfe = xfe[0,:,:]
-            van_f = van_f[0,:, :]
-            van_f_der = van_f_der[0,:,:,:]
+        Returns a matrix V_leg with shape (m, nb_leg), V_leg[i, n] = phi_n(x[i]).
+        """
+        x = np.atleast_1d(x)
+        xi = 2.0 * x - 1.0
+        V_unscaled = Leg.legvander(xi, self.nb_leg - 1)  # P_n(2x-1), n=0,...,nb_leg-1
+        return V_unscaled * self._leg_norms              # orthonormal basis
 
-        return xfe, van_f, van_f_der
+    def _build_leg_vandermonde_derivative(self, x):
+        """
+        Derivatives of the orthonormal Legendre basis (nb_leg functions) at x.
 
-    @staticmethod
-    def map2new_elem(xy_old, vert_old, vert_new, w_old=np.empty([0])):
-        '''
-        Parameters
-        ----------
-        xy_old : numpy array
-            Cartesian coordinates of the nodal locations in the current element.
-        vert_old : numpy array
-            Cartesian coordinates of the vertices of the current element.
-        vert_new : numpy array
-            Cartesian coordinates of the vertices for the new element
-        w_old : numpy array, optional
-            Weights for the quad rule for the current element. If the
-            parameter is not provided w_new is not calculated.
+        Returns Vx_leg with shape (m, nb_leg), Vx_leg[i, n] = d/dx phi_n(x[i]).
+        """
+        x = np.atleast_1d(x)
+        xi = 2.0 * x - 1.0
+        m = x.size
+        Vx = np.empty((m, self.nb_leg), dtype=float)
 
-        Returns
-        -------
-        xy_new : numpy array
-            Cartesian coordinates of the nodal locations for the new element.
-        w_new : numpy array
-            Weights of the quad rule for the new element.
-        '''
+        for n in range(self.nb_leg):
+            # P_n(ξ) has coefficients [0,...,0,1] in Legendre basis
+            c = np.zeros(n + 1)
+            c[n] = 1.0
+            dc = Leg.legder(c)  # derivative w.r.t. ξ
+            # d/dx P_n(2x-1) = 2 * P_n'(2x-1)
+            Vx[:, n] = 2.0 * Leg.legval(xi, dc) * self._leg_norms[n]
 
-        shp = BasisFun.shp_fun(1, xy_old, vert_old)[0]
+        return Vx
 
-        xy_new = shp @ vert_new
+    # ---------- Full mixed-basis builders (Legendre + exp / orthogonalized exp) ----------
 
-        if w_old.size == 0:
-            w_new = np.empty([0])
-        else:
-            elem_size = RefSimplexElem.ref_elem_size(vert_new)
-            w_new = w_old * (elem_size / np.sum(w_old))
+    def _build_vandermonde(self, x):
+        """
+        Internal helper: full Vandermonde of the mixed basis at arbitrary x.
 
-        return xy_new, w_new
+        For x with shape (m,), returns V with shape (m, nb):
+          - columns 0..nb-2: orthonormal Legendre basis
+          - column nb-1    : exp(x) or its orthogonal complement
+        """
+        x = np.atleast_1d(x)
+        V_leg = self._build_leg_vandermonde(x)  # (m, nb_leg)
 
-    @staticmethod
-    def map2new_elem_curved(xy_old, vert_old, vert_new, w_old=np.empty([0])):
+        # Exponential (or orthogonalized exponential) column
+        exp_col = np.exp(x)
+        if self.orthogonalize_exp and self._exp_coeffs is not None:
+            # psi(x) = exp(x) - sum_n a_n phi_n(x)
+            exp_col = exp_col - V_leg @ self._exp_coeffs
 
-        shp = BasisFun.shp_fun(1, xy_old, vert_old)[0]
+        V = np.column_stack([V_leg, exp_col])  # (m, nb_leg+1=nb)
+        return V
 
-        xy_new = shp @ vert_new
+    def _build_vandermonde_derivative(self, x):
+        """
+        Internal helper: derivatives of the mixed basis at arbitrary x.
 
-        if w_old.size == 0:
-            w_new = np.empty([0])
-        else:
-            elem_size = RefSimplexElem.ref_elem_size(vert_new)
-            w_new = w_old * (elem_size / np.sum(w_old))
+        For x with shape (m,), returns Vx with shape (m, nb).
+        """
+        x = np.atleast_1d(x)
+        Vx_leg = self._build_leg_vandermonde_derivative(x)  # (m, nb_leg)
 
-        return xy_new, w_new
+        # derivative of exp(x) or of the orthogonalized version
+        exp_col = np.exp(x)
+        if self.orthogonalize_exp and self._exp_coeffs is not None:
+            # d/dx psi(x) = exp(x) - sum_n a_n d/dx phi_n(x)
+            exp_col = exp_col - Vx_leg @ self._exp_coeffs
+
+        Vx = np.column_stack([Vx_leg, exp_col])
+        return Vx
+

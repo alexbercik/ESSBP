@@ -20,9 +20,9 @@ import matplotlib.pyplot as plt
 ''' Set parameters for simultation '''
 savefile = None # None for no save
 nen = 40 # number of nodes per element, as a list (multiple if traditional-refinement)
-ops = ['upwind','csbp','hgtl','hgt','mattsson']#,'lgl','lg']
+ops = ['lg'] #['upwind','csbp','hgtl','hgt','mattsson']#,'lgl','lg']
 p = 4 # polynomial degree
-include_nodiss = True # include runs without dissipation?
+include_nodiss = False # include runs without dissipation?
 bdy_fix = True # include B? 
 useH = False # include H? 
 num_k = 500 # number of k-values (x-axis) for dispersion analysis

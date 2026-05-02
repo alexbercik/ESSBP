@@ -87,6 +87,9 @@ class SbpQuadRule:
                 if self.quad_rule.lower() == 'lg':
                     self.xq, self.wq, self.pquad = self.quad_rule_1D(pquad_min, 'lg', self.nmin, self.nn)
                     self.xqf, self.wqf, self.pfquad = self.quad_rule_0D()
+                elif self.quad_rule.lower() == 'lg_exp':
+                    self.xq, self.wq, self.pquad = self.quad_rule_lg_exp(self.nn)
+                    self.xqf, self.wqf, self.pfquad = self.quad_rule_0D()
                 else: raise Exception('Invalid choice for quad_rule in Rd family')
             elif self.dim == 2:
                 self.xq, self.wq,self.pquad = self.quad_rule_2d_Rd(self.p)
@@ -236,10 +239,10 @@ class SbpQuadRule:
             print('WARNING: Using more nodes than required for degree order.')
 
         # Convert from domain [-1,1] to [0,1]
-        #xq = 0.5*(qp_class.points[:, None] + 1) # Convert from 1D to 2D array
+        #xq = 0.5*(qp_class.points + 1)
         #wq = 0.5 * qp_class.weights
         #pquad = qp_class.degree
-        xq = 0.5*(xq[:, None] + 1) # Convert from 1D to 2D array
+        xq = 0.5*(xq + 1) 
         wq = 0.5 * wq
 
         if np.any(wq<0):
@@ -722,3 +725,25 @@ class SbpQuadRule:
             raise Exception('The requested degree for the DD Rd quad is not available')
 
         return xq, wq, pquad, xqf, wqf, pquadf
+
+    @staticmethod
+    def quad_rule_lg_exp(n):
+        '''
+        Here n is the number of nodes. There are 2n basis functions,
+        we denote the "extra" basis functions (not required for SBP) by [.]
+        '''
+        if n == 3:
+            # basis functions are: 1, x, [x^2], e^x, x*e^x, e^2x
+            pquad = 2
+            wq = np.array([0.2985307764787258, 0.4438168260729103, 0.25765239744836466])
+            xq = np.array([0.12241831729870471, 0.5237495117347201, 0.8965781844636949])
+        elif n == 4:
+            # basis functions are: 1, x, x^2, x^3, e^x, x*e^x, x^2*e^x, e^2x
+            pquad = 3
+            wq = np.array([0.1844954540898896, 0.33358055379186397, 0.3182044221091473, 0.16371957000910017])
+            xq = np.array([0.07400719692383716, 0.34547123906122174, 0.6851979556839246, 0.9349554206253677])
+        else:
+            raise Exception(f'The requested n={n} for the lg exponential quadrature is not available')
+        
+        return xq, wq, pquad
+

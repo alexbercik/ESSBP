@@ -185,6 +185,7 @@ class Euler(PdeBase):
             self.ismail_roe_fluxes = efn.Ismail_Roe_fluxes_2D
             self.ranocha_fluxes = efn.Ranocha_fluxes_2D
             self.chandrashekar_fluxes = efn.Chandrashekar_fluxes_2D
+            self.shima_fluxes = efn.Shima_fluxes_2D
             self.maxeig_dExdq = efn.maxeig_dExdq_2D
             self.maxeig_dEydq = efn.maxeig_dEydq_2D
             self.maxeig_dEndq = efn.maxeig_dEndq_2D
@@ -334,7 +335,7 @@ class Euler(PdeBase):
         w = self.gm_gv(self.Dx,v) - self.gm_gv(self.Dy,u)
         return 0.5*rho*(w*w)
 
-    def exact_sol(self, time=0, xy=None, extra_vars=False, nondimensionalize=None, guess=None):
+    def exact_sol(self, time=0, xy=None, extra_vars=False, nondimensionalize=None, **kwargs):
         ''' Returns the exact solution at given time. Use default time=0 for
         steady solutions. if extra_vars=True, a dictionary with arrays for
         mach, T, p, rho, a, u, and e is also returned along with exa_sol.  '''
@@ -445,7 +446,7 @@ class Euler(PdeBase):
         else: return exa_sol
             
 
-    def set_q0(self, q0_type=None, xy=None):
+    def set_q0(self, q0_type=None, xy=None, print_warning=True):
         # overwrite base function from PdeBase
         
         if q0_type is None:
@@ -457,7 +458,8 @@ class Euler(PdeBase):
 
         if 'density_wave' in self.test_case:
             if q0_type != 'density_wave':
-                print("WARNING: Instead of using q0_type = '"+q0_type+", you should probably use q0_type = 'density_wave'.")
+                if print_warning:
+                    print("WARNING: Instead of using q0_type = '"+q0_type+", you should probably use q0_type = 'density_wave'.")
                 q0 = PdeBase.set_q0(self, q0_type=q0_type, xy=xy)
                 fn.repeat_neq_gv(q0,self.neq_node)
             else:
@@ -467,6 +469,8 @@ class Euler(PdeBase):
                     rho = 1 + 0.98*np.sin(2*np.pi*xy[:,0,:])
                 elif self.test_case == 'density_wave_1dy':
                     rho = 1 + 0.98*np.sin(2*np.pi*xy[:,1,:])
+                elif self.test_case == 'density_wave_shift':
+                    rho = 1 + 0.98*np.sin(2*np.pi*(xy[:,0,:]+xy[:,1,:])) + 0.5
                 else:
                     raise Exception('Invalid test case.')
                 u = self.u0 * np.ones(rho.shape)
@@ -521,7 +525,8 @@ class Euler(PdeBase):
             q0 = self.prim2cons(rho, u, v, e)
             
         else: 
-            print("WARNING: Instead of using q0_type = '"+q0_type+"', you should probably use q0_type = "+self.test_case+".")
+            if print_warning:
+                print("WARNING: Instead of using q0_type = '"+q0_type+"', you should probably use q0_type = "+self.test_case+".")
             q0 = PdeBase.set_q0(self, q0_type=q0_type, xy=xy)
             fn.repeat_neq_gv(q0,self.neq_node)
         

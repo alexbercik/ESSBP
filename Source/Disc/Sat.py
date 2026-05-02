@@ -57,20 +57,23 @@ class Sat(SatDer1, SatDer2):
         self.zsparsity, self.zsparsity_unkronned = None, None
 
         if solver.disc_nodes.lower() == 'circulant': 
-            print('... setting SATs to trivially return 0.')
+            if self.print_progress: print('... setting SATs to trivially return 0.')
             self.calc = lambda *x: np.zeros_like(x[0])
             return
 
         assert isinstance(self.diss_type,str), 'SAT: diss_type must be a str, {0}'.format(self.diss_type)
         self.diss_type = self.diss_type.lower()
 
-        if self.diss_type not in ['nd','symmetric','upwind','lf','llf','lax_friedrichs','ec']:
+        if len(solver.surf_diss.keys())>1 or self.diss_type not in ['nd','symmetric','upwind','lf','llf','lax_friedrichs','ec']:
 
             if 'jac_type' in solver.surf_diss.keys():
                 assert isinstance(solver.surf_diss['jac_type'], str), 'SAT: jac_type must be a str, {0}'.format(solver.surf_diss['jac_type'])
                 self.jac_type = solver.surf_diss['jac_type'].lower()
             else:
-                self.jac_type = 'sca'
+                if self.diss_type == 'ent':
+                    self.jac_type = 'scasca'
+                else:
+                    self.jac_type = 'sca'
             if self.jac_type == 'scalar': self.jac_type = 'sca'
             if self.jac_type == 'matrix': self.jac_type = 'mat'
             if self.jac_type == 'scalar_matrix' or self.jac_type == 'scalarmatrix': self.jac_type = 'scamat'
@@ -400,7 +403,7 @@ class Sat(SatDer1, SatDer2):
         if solver.pde_order1:
 
             if self.neq_node == 1:
-                self.calc_spec_rad = lambda gm: np.abs(fn.gm_to_gdiag(gm))
+                self.calc_spec_rad = lambda gbm: np.abs(gbm[:,0,0,:])
                 self.repeat_neq_gv = lambda q: q
             else:
                 self.calc_spec_rad = lambda gm: fn.spec_rad(gm, self.neq_node)
@@ -442,6 +445,12 @@ class Sat(SatDer1, SatDer2):
             else:
                 self.maxeig_type = 'none'
 
+            
+            if self.diffeq_name == 'VariableCoefficientLinearConvection': 
+                # temporarily set a different diss_type to skip the rest of the below
+                # so that we can override it all at the end with spetial functions
+                diss_type_tmp = self.diss_type
+                self.diss_type = 'ignore'
             
             # set base dissipation method
             if self.diss_type == 'nd' or self.diss_type == 'symmetric' or (self.diss_type == 'ec' and self.disc_type == 'had'):
@@ -729,11 +738,19 @@ class Sat(SatDer1, SatDer2):
                 else:
                     if self.diss_type=='split':
                         self.alpha = solver.diffeq.split_alpha
+                        if self.print_progress: print('... Using a split form SAT that recovers the Central and EC SATs with alpha=1 and alpha=2/3.')
+                        if self.print_progress: print(f'... average={self.average}, maxeig={self.maxeig_type}, coeff={self.coeff}, alpha={self.alpha}')
+                        self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.div_1d_burgers_split(q, E, q_bdyL=q_bdyL, q_bdyR=q_bdyR) 
+                        self.diss = self.diss_cons_1d
+                        self.calc_absA_dq = self.calc_absA_dq_sca_1D
+
+                    elif self.diss_type=='varcoeff_split':
+                        self.alpha = solver.diffeq.split_alpha
                         if self.print_progress: print('... Using a split form SAT mimicking the variable coefficient advection formulation.')
                         if self.print_progress: print(f'... average={self.average}, maxeig=lf, coeff={self.coeff}, alpha={self.alpha}')
                         if self.print_progress: print('WARNING: The split form follows the Variable Coefficient formulation and is not entropy-stable.')
-                        self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.div_1d_burgers_split(q, E, q_bdyL=q_bdyL, q_bdyR=q_bdyR,
-                                                                 extrapolate_flux=True) # TODO: Add some solver setting for this
+                        self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.div_1d_burgers_split_old(q, E, q_bdyL=q_bdyL, q_bdyR=q_bdyR,
+                                                                 extrapolate_flux=True) # TODO: Add some solver setting for this                     
                     elif self.diss_type=='ec':
                         if self.print_progress: print('... Using an entropy-conservative SAT found in the SBP book.')
                         if self.print_progress: print("    (not the one recovered from the Hadamard form. For this use diss_type='ec_had').")
@@ -757,7 +774,9 @@ class Sat(SatDer1, SatDer2):
                     else:
                         raise Exception("SAT type not understood. Try 'ec', 'es', 'ec_had', 'es_had', 'split', or 'split_diss'.")
 
-
+            elif self.diss_type == 'ignore':
+                # set back to the original diss_type
+                self.diss_type = diss_type_tmp
             else:
                 raise Exception(f'Choice of SAT not understood: {self.diss_type}')
 
@@ -807,18 +826,51 @@ class Sat(SatDer1, SatDer2):
         ''' special cases '''
         
         if self.diffeq_name == 'VariableCoefficientLinearConvection':
+            # Overide everything that came before
             self.alpha = solver.diffeq.alpha # splitting parameter
             self.a = solver.diffeq.a # variable coefficient
             self.afun = solver.diffeq.afun
             self.bdy_x = solver.mesh.bdy_x
             assert(self.dim == 1),'Only set up for 1D so far'
             assert(self.disc_type == 'div'),'Not set up for Hadamard form yet'
-            if self.diss_type == 'central' or self.diss_type == 'nondissipative' or self.diss_type == 'symmetric':
-                self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.llf_div_1d_varcoeff(q, E, sigma=0, q_bdyL=q_bdyL, q_bdyR=q_bdyR,
+            if self.diss_type == 'central' or self.diss_type == 'nondissipative' or self.diss_type == 'symmetric' or self.diss_type == 'nd':
+                self.coeff = 0.
+                self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.llf_div_1d_varcoeff(q, E, q_bdyL=q_bdyL, q_bdyR=q_bdyR,
                                                                  extrapolate_flux=solver.diffeq.extrapolate_bdy_flux)
             elif self.diss_type == 'lf' or self.diss_type == 'llf' or self.diss_type == 'lax_friedrichs':
-                self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.llf_div_1d_varcoeff(q, E, sigma=1, q_bdyL=q_bdyL, q_bdyR=q_bdyR,
+                if self.coeff is None: self.coeff = 1.
+                self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.llf_div_1d_varcoeff(q, E, q_bdyL=q_bdyL, q_bdyR=q_bdyR,
                                                                  extrapolate_flux=solver.diffeq.extrapolate_bdy_flux)
+            elif self.diss_type == 'extended':
+                if self.coeff is None: self.coeff = 1.
+                from Source.Methods.Functions import endpoint_extrapolation_LR
+                if 'alpha' in solver.surf_diss.keys():
+                    alpha = solver.surf_diss['alpha']
+                else:
+                    alpha = 1.05
+                if 'p' in solver.surf_diss.keys():
+                    p = solver.surf_diss['p']
+                else:
+                    p = solver.sbp.p
+                self.tL_ext, self.tR_ext = endpoint_extrapolation_LR(solver.sbp.x, p, alpha=alpha)
+                if solver.diffeq.flux_type == 'product' or solver.diffeq.flux_type == 'central':
+                    self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.llf_div_1d_varcoeff_ext(q, E, q_bdyL=q_bdyL, q_bdyR=q_bdyR)
+                elif solver.diffeq.flux_type == 'geometric':
+                    self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.geom_div_1d_varcoeff(q, E, q_bdyL=q_bdyL, q_bdyR=q_bdyR, use_ext=True)
+            elif self.diss_type == 'ec' or self.diss_type == 'ent' or self.diss_type == 'es':
+                if self.diss_type == 'ec': self.coeff = 0.
+                else: self.coeff = 1.
+                if solver.diffeq.flux_type == 'product' or solver.diffeq.flux_type == 'central':
+                    self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.llf_div_1d_varcoeff(q, E, q_bdyL=q_bdyL, q_bdyR=q_bdyR,
+                                                                 extrapolate_flux=solver.diffeq.extrapolate_bdy_flux)
+                elif solver.diffeq.flux_type == 'geometric':
+                    self.calc = lambda q,E,q_bdyL=None,q_bdyR=None: self.geom_div_1d_varcoeff(q, E, q_bdyL=q_bdyL, q_bdyR=q_bdyR)
+                    self.diss = self.diss_ent_1d
+                else:
+                    raise Exception(f'Variable coefficient linear convection flux_type type not understood: {solver.diffeq.flux_type}')
+            else:
+                # TODO: Add other SAT types
+                raise Exception(f'Variable coefficient linear convection SAT type not understood: {self.diss_type}')
         
     ''' functions to set metrics in 2D and 3D '''
 
@@ -1128,3 +1180,4 @@ class Sat(SatDer1, SatDer2):
         
         diss = (dissL - dissR)/2
         return diss
+

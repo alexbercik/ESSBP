@@ -132,10 +132,15 @@ class Quasi1dEuler(PdeBase):
                 self.a_inf = np.sqrt(self.g*p_inf/self.rho_inf)
                 self.t_scale = self.a_inf
             
-        elif self.test_case == 'density_wave':
+        elif self.test_case == 'density_wave' or self.test_case == 'density_wave_shift' \
+            or self.test_case == 'density_wave_shift_nov' or self.test_case == 'density_wave_skew' \
+            or self.test_case == 'density_wave_skew_shift':
             self.xmin_fix = -1.  # should be the same as self.x_min
             self.xmax_fix = 1. # should be the same as self.x_max
-            self.u0 = 0.1        # initial (ideally constant) velocity
+            if self.test_case == 'density_wave_shift':
+                self.u0 = 1.0        # initial (ideally constant) velocity
+            else:
+                self.u0 = 0.1        # initial (ideally constant) velocity
             self.p0 = 20          # initial (ideally constant) pressure
             if self.nozzle_shape != 'constant':
                 print("WARNING: Overwriting inputted nozzle_shape to 'constant'.")
@@ -210,7 +215,11 @@ class Quasi1dEuler(PdeBase):
             self.central_flux = efn.Central_flux_1D
             self.ismail_roe_flux = efn.Ismail_Roe_flux_1D
             self.ranocha_flux = efn.Ranocha_flux_1D
+            self.shima_flux = efn.Shima_flux_1D
+            self.kuya_flux = efn.Kuya_flux_1D
             self.chandrashekar_flux = efn.Chandrashekar_flux_1D
+            self.kennedy_gruber_flux = efn.KennedyGruber_flux_1D
+            self.singh_flux = efn.Singh_flux_1D
             self.maxeig_dExdq = efn.maxeig_dExdq_1D
             #self.maxeig_dEndq = efn.maxeig_dEndq_1D
             self.entropy = efn.entropy_1D
@@ -436,7 +445,7 @@ class Quasi1dEuler(PdeBase):
         w = self.assemble_vec(((self.g-s)/(self.g-1) - 0.5*q_0*u**2/p, q_0*u/p, -q_0/p))
         return w
 
-    def exact_sol(self, time=0, x=None, extra_vars=False, nondimensionalize=None, guess=None):
+    def exact_sol(self, time=0, x=None, extra_vars=False, nondimensionalize=None, print_warning=True, **kwargs):
         ''' Returns the exact solution at given time. Use default time=0 for
         steady solutions. if extra_vars=True, a dictionary with arrays for
         mach, T, p, rho, a, u, and e is also returned along with exa_sol. 
@@ -448,7 +457,8 @@ class Quasi1dEuler(PdeBase):
             nondimensionalize = self.nondimensionalize
 
         if self.nondimensionalize:
-            print(f'exact_sol: calculating at t={time/self.t_scale:.3g} instead of input t={time:.3g} due to nondimensionalization.')
+            if print_warning:
+                print(f'exact_sol: calculating at t={time/self.t_scale:.3g} instead of input t={time:.3g} due to nondimensionalization.')
             time /= self.t_scale
         
         if x is None:
@@ -804,7 +814,9 @@ class Quasi1dEuler(PdeBase):
                 x = x.flatten('F')
                 svec = svec.flatten('F')
             mach, T, p = shocktube(time)
-        elif self.test_case == 'density_wave':
+        elif self.test_case == 'density_wave' or self.test_case == 'density_wave_shift' \
+            or self.test_case == 'density_wave_shift_nov' or self.test_case == 'density_wave_skew' \
+            or self.test_case == 'density_wave_skew_shift':
             mach, T, p = density_wave(time)
         elif self.test_case == 'vortex':
             mach, T, p = density_wave(time)
@@ -833,10 +845,10 @@ class Quasi1dEuler(PdeBase):
             return exa_sol, exa_sol_extra
         else: return exa_sol
 
-    def set_mesh(self, mesh):
+    def set_mesh(self, mesh, H):
         ''' Overwrite base function in DiffEqBase '''
 
-        PdeBase.set_mesh(self, mesh)
+        PdeBase.set_mesh(self, mesh, H)
 
         # Calculate the shape of the nozzle at the mesh and boundary nodes
         self.svec = self.fun_s(self.x)
@@ -845,7 +857,7 @@ class Quasi1dEuler(PdeBase):
         self.svec_der_elem = np.reshape(self.svec_der,(self.nen,self.nelem),'F')
             
 
-    def set_q0(self, q0_type=None, xy=None, nondimensionalize=None):
+    def set_q0(self, q0_type=None, xy=None, nondimensionalize=None, print_warning=True):
         # overwrite base function from PdeBase
         
         if q0_type is None:
@@ -861,13 +873,23 @@ class Quasi1dEuler(PdeBase):
         if nondimensionalize is None:
             nondimensionalize = self.nondimensionalize
 
-        if self.test_case == 'density_wave':
+        if self.test_case == 'density_wave' or self.test_case == 'density_wave_shift' \
+            or self.test_case == 'density_wave_shift_nov' or self.test_case == 'density_wave_skew' \
+            or self.test_case == 'density_wave_skew_shift':
             if q0_type != 'density_wave':
-                print("WARNING: Instead of using q0_type = '"+q0_type+", you should probably use q0_type = 'density_wave'.")
+                if print_warning:
+                    print("WARNING: Instead of using q0_type = '"+q0_type+"', you should probably use q0_type = 'density_wave'.")
                 q0 = PdeBase.set_q0(self, q0_type=q0_type, xy=xy)
                 fn.repeat_neq_gv(q0,self.neq_node)
             else:
-                rho = 1 + 0.98*np.sin(2*np.pi*xy)
+                if self.test_case == 'density_wave':
+                    rho = 1 + 0.98*np.sin(2*np.pi*xy)
+                elif self.test_case == 'density_wave_shift' or self.test_case == 'density_wave_shift_nov': # shift
+                    rho = 1 + 0.98*np.sin(2*np.pi*xy) + 1.0
+                elif self.test_case == 'density_wave_skew':
+                    rho = PdeBase.set_q0(self, q0_type='skewed_sin', xy=xy) - 0.5
+                elif self.test_case == 'density_wave_skew_shift':
+                    rho = PdeBase.set_q0(self, q0_type='skewed_sin', xy=xy) + 0.5
                 u = self.u0 * np.ones(rho.shape)
                 p = self.p0 * np.ones(rho.shape)
                 e = p/(self.g-1) + rho * u**2 /2
@@ -917,7 +939,8 @@ class Quasi1dEuler(PdeBase):
                 q0 = self.prim2cons(rho, u, e, svec)
 
             else:
-                print("WARNING: Instead of using q0_type = '"+q0_type+"', you should probably use q0_type = 'linear' or 'exact'.")
+                if print_warning:
+                    print("WARNING: Instead of using q0_type = '"+q0_type+"', you should probably use q0_type = 'linear' or 'exact'.")
                 q0 = PdeBase.set_q0(self, q0_type=q0_type, xy=xy)
                 fn.repeat_neq_gv(q0,self.neq_node)
         
@@ -1157,3 +1180,12 @@ class Quasi1dEuler(PdeBase):
         
         rhou_avg = rho_avg*u_avg
         return np.array([rhou_avg, rhou_avg*u_avg + p_avg, rhou_avg*H_avg]) 
+
+    def clip_positivity_fn(self, q, pos_floor, pos_cut):
+        ''' crude density/pressure positivity enforcement function '''
+        rho, u, e, p, _ = self.cons2prim(q, self.svec_elem)
+        rho = fn.clip_pos_smooth_vec(rho, pos_floor, pos_cut)
+        p = fn.clip_pos_smooth_vec(p, pos_floor, pos_cut)
+        e = p/(self.g-1) + 0.5*rho*u*u
+        qnew = self.prim2cons(rho, u, e)
+        return qnew

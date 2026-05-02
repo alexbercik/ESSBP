@@ -7,7 +7,6 @@ Created on Thu Oct  1 11:28:38 2020
 """
 
 import numpy as np
-import gc
 
 from Source.Disc.MakeMesh import MakeMesh
 from Source.Disc.MakeSbpOp import MakeSbpOp
@@ -60,7 +59,7 @@ class PdeSolverSbp(PdeSolver):
         if self.sparse is None:
             self.sparse = False
             if self.dim == 1: 
-                if self.disc_nodes in ['csbp', 'upwind', 'hgtl', 'mattsson']:
+                if self.disc_nodes in ['csbp', 'upwind', 'hgtl', 'mattsson','circulant']:
                     self.sparse = True
                 if (self.disc_type == 'had') and (self.neq_node > 1):
                     self.sparse = True
@@ -127,7 +126,7 @@ class PdeSolverSbp(PdeSolver):
 
         ''' Modify solver approach '''
 
-        self.diffeq.set_mesh(self.mesh)
+        self.diffeq.set_mesh(self.mesh, self.H_phys)
         if self.settings['stop_after_mesh']:
             return
         if self.dim == 1:
@@ -173,7 +172,7 @@ class PdeSolverSbp(PdeSolver):
         # but it is also useful for diffeq.calc_breaking_times
         self.diffeq.set_sbp_op_1d(self.Dx, self.gm_gv)
 
-    def dqdt_1d_div(self, q, t):
+    def dqdt_1d_div(self, q, t=0.0):
         ''' the main dqdt function for divergence form in 1D '''
         E = self.diffeq.calcEx(q)
         if self.use_diffeq_dExdx:
@@ -196,7 +195,7 @@ class PdeSolverSbp(PdeSolver):
         dqdt = - dExdx + self.diffeq.calcG(q,t) + sat_term + self.dissipation(q)
         return np.ascontiguousarray(dqdt)
         
-    def dqdt_2d_div(self, q, t):
+    def dqdt_2d_div(self, q, t=0.0):
         ''' the main dqdt function for divergence form in 2D '''
         Ex = self.diffeq.calcEx(q)
         #dExdx = self.gm_gv(self.Dx, Ex, self.neq_node)
@@ -226,7 +225,7 @@ class PdeSolverSbp(PdeSolver):
         dqdt = - dExdx - dEydy + sat_term + self.diffeq.calcG(q,t) + self.dissipation(q)
         return np.ascontiguousarray(dqdt)
 
-    def dqdt_3d_div(self, q, t):
+    def dqdt_3d_div(self, q, t=0.0):
         ''' the main dqdt function for divergence form in 3D '''
         Ex = self.diffeq.calcEx(q)
         dExdx = self.gm_gv(self.Dx, Ex, self.neq_node)
@@ -262,7 +261,7 @@ class PdeSolverSbp(PdeSolver):
         dqdt = - dExdx - dEydy - dEzdz + sat_term + self.diffeq.calcG(q,t) + self.dissipation(q)
         return np.ascontiguousarray(dqdt)
         
-    def dqdt_1d_had(self, q, t):
+    def dqdt_1d_had(self, q, t=0.0):
         ''' the main dqdt function for hadamard form in 1D '''
         #Fvol = self.build_F_vol(q)
         #dExdx = 2*self.gm_gm_had_diff(self.Dx, Fvol)
@@ -285,7 +284,7 @@ class PdeSolverSbp(PdeSolver):
         dqdt += sat_term + self.diffeq.calcG(q,t) + self.dissipation(q)
         return np.ascontiguousarray(dqdt)
         
-    def dqdt_2d_had(self, q, t):
+    def dqdt_2d_had(self, q, t=0.0):
         ''' the main dqdt function for hadamard form in 2D '''
         #Fxvol, Fyvol = self.build_F_vol(q)
         #dExdx = 2*self.gm_gm_had_diff(self.Dx, Fxvol)
@@ -319,7 +318,7 @@ class PdeSolverSbp(PdeSolver):
         dqdt += sat_term + self.diffeq.calcG(q,t) + self.dissipation(q)
         return np.ascontiguousarray(dqdt)
         
-    def dqdt_3d_had(self, q, t):
+    def dqdt_3d_had(self, q, t=0.0):
         ''' the main dqdt function for hadamard form in 3D '''
         Fxvol, Fyvol, Fzvol = self.build_F_vol(q)
         dExdx = 2*self.gm_gm_had_diff(self.Dx, Fxvol)
@@ -354,7 +353,7 @@ class PdeSolverSbp(PdeSolver):
         return np.ascontiguousarray(dqdt)
     
 
-    def dfdq_1d_div(self, q, t):
+    def dfdq_1d_div(self, q, t=0.0):
         ''' the main linearized RHS function for divergence form in 1D '''
         # TODO: this is not fully correct
         if not self.dissipation.type.lower() == 'nd':
@@ -380,38 +379,38 @@ class PdeSolverSbp(PdeSolver):
             + H_inv_kron.flatten('f')[:, np.newaxis] * sat
         return dfdq
     
-    def dfdq_2d_div(self, q, t):
+    def dfdq_2d_div(self, q, t=0.0):
         ''' the main linearized RHS function for divergence form in 2D '''
         raise Exception('Not done yet.')
     
-    def dfdq_3d_div(self, q, t):
+    def dfdq_3d_div(self, q, t=0.0):
         ''' the main linearized RHS function for divergence form in 3D '''
         raise Exception('Not done yet.') 
     
-    def dfdq_1d_had(self, q, t):
+    def dfdq_1d_had(self, q, t=0.0):
         ''' the main linearized RHS function for hadamard form in 1D '''
         raise Exception('Not done yet.')
     
-    def dfdq_2d_had(self, q, t):
+    def dfdq_2d_had(self, q, t=0.0):
         ''' the main linearized RHS function for hadamard form in 2D '''
         raise Exception('Not done yet.')
     
-    def dfdq_3d_had(self, q, t):
+    def dfdq_3d_had(self, q, t=0.0):
         ''' the main linearized RHS function for hadamard form in 3D '''
         raise Exception('Not done yet.')
         
  
     
-    def sbp_energy(self,q,nen=None):
+    def sbp_energy(self,q,neq=None):
         ''' compute the global SBP energy of global solution vector q '''
-        if (nen == self.neq_node) or (nen is None):
+        if (neq == self.neq_node) or (neq is None):
             H_phys = self.H_phys
             local_neq = self.neq_node
-        elif nen == 1:
+        elif neq == 1:
             H_phys = self.H_phys
             local_neq = 1
         else:
-            raise Exception('Something went wrong, nen = ',nen)
+            raise Exception('Something went wrong, neq = ',neq)
         if q.ndim == 2:
             energy = fn.norm_gv_neq(H_phys, q, local_neq)
         elif q.ndim == 3:
@@ -420,13 +419,14 @@ class PdeSolverSbp(PdeSolver):
             raise Exception('Something went wrong, q.ndim = ',q.ndim)
         return energy
 
-    def sbp_conservation(self,q):
+    def sbp_conservation(self,q,neq=None):
         ''' compute the global SBP conservation of global solution vector q '''
         H_phys = self.H_phys
+        if neq is None: neq = self.neq_node
         if q.ndim == 2:
-            cons = fn.sum_gv_neq(H_phys, q, self.neq_node)
+            cons = fn.sum_gv_neq(H_phys, q, neq)
         elif q.ndim == 3:
-            cons = fn.sum_gv_neq_3d(H_phys, q, self.neq_node)
+            cons = fn.sum_gv_neq_3d(H_phys, q, neq)
         else:
             raise Exception('Something went wrong, q.ndim = ',q.ndim)
         return cons

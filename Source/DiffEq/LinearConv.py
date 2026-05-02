@@ -31,7 +31,7 @@ class LinearConv(PdeBase):
     a_fix = 1
     para_fix = [a_fix]
 
-    def __init__(self, para, q0_type='SinWave'):
+    def __init__(self, para, q0_type='SinWave', had_flux='central'):
 
         super().__init__(para, q0_type)
         self.a = self.para[0]
@@ -45,8 +45,36 @@ class LinearConv(PdeBase):
             self.dExdq_abs = dExdq_fix
             self.maxeig_dExdq = lambda q : np.ones(q.shape)
             self.central_flux = self.central_fix_flux
+            self.logarithmic_flux = self.logarithmic_fix_flux
+            self.geometric_flux = self.geometric_fix_flux
+            self.arcsinh_flux = self.arcsinh_fix_flux
+        
+        if had_flux.lower() == 'central':
+            self.entropy = self.entropy_central
+            self.entropy_var = self.entropy_var_central
+            self.dqdw = self.dqdw_central
+            self.maxeig_dqdw = self.maxeig_dqdw_central
+        elif had_flux.lower() == 'logarithmic':
+            self.entropy = self.entropy_log
+            self.entropy_var = self.entropy_var_log
+            self.dqdw = self.dqdw_log
+            self.maxeig_dqdw = self.maxeig_dqdw_log
+        elif had_flux.lower() == 'geometric':
+            self.entropy = self.entropy_geom
+            self.entropy_var = self.entropy_var_geom
+            self.dqdw = self.dqdw_geom
+            self.maxeig_dqdw = self.maxeig_dqdw_geom
+        elif had_flux.lower() == 'arcsinh':
+            self.beta = 1.0 #0.001
+            self.eps = 0.0
+            self.entropy = self.entropy_arcsinh
+            self.entropy_var = self.entropy_var_arcsinh
+            self.dqdw = self.dqdw_arcsinh
+            self.maxeig_dqdw = self.maxeig_dqdw_arcsinh
+        else:
+            raise ValueError(f'Invalid had_flux: {had_flux}. Must be "central", "logarithmic", or "geometric".')
 
-    def exact_sol(self, time=0, x=None, guess=None):
+    def exact_sol(self, time=0, x=None, **kwargs):
 
         if x is None:
             x = self.x_elem
@@ -113,3 +141,90 @@ class LinearConv(PdeBase):
         This allows us to jit the hadamard flux functions. '''
         f = fn.arith_mean(qL,qR)
         return f
+
+    @njit   
+    def logarithmic_fix_flux(qL,qR):
+        ''' a logarithmic 2-point flux for hadamard form but with a fixed at 1.
+        This allows us to jit the hadamard flux functions. '''
+        f = fn.log_mean(qL,qR)
+        return f
+
+    @njit   
+    def geometric_fix_flux(qL,qR):
+        ''' a geometric 2-point flux for hadamard form but with a fixed at 1.
+        This allows us to jit the hadamard flux functions. '''
+        f = fn.geom_mean(qL,qR)
+        return f
+
+    @njit   
+    def arcsinh_fix_flux(qL,qR):
+        ''' a regularized version of the logarithmic 2-point flux for hadamard form but with a fixed at 1.
+        This allows us to jit the hadamard flux functions. '''
+        f = fn.arcsinh_mean(qL,qR)
+        return f
+
+    def entropy_central(self, q):
+        ''' nodal values of the entropy for the central flux '''
+        return q*q
+    
+    def entropy_var_central(self, q):
+        ''' nodal values of the entropy variables w(q) for the central flux '''
+        return q
+
+    def dqdw_central(self,q):
+        ''' hessian P of potential phi wrt entropy variables w '''
+        return fn.gdiag_to_gbdiag(np.ones_like(q))
+    
+    def maxeig_dqdw_central(self,q):
+        ''' maximum eigenvalues of hessian P, i.e. abs(dqdw) for scalar '''
+        return np.ones(q.shape)
+
+    def entropy_geom(self, q):
+        ''' nodal values of the entropy for the central flux '''
+        return -2*np.sqrt(q)
+    
+    def entropy_var_geom(self, q):
+        ''' nodal values of the entropy variables w(q) for the central flux '''
+        return -1/np.sqrt(q)
+
+    def dqdw_geom(self,q):
+        ''' hessian P of potential phi wrt entropy variables w '''
+        return fn.gdiag_to_gbdiag(2*q*np.sqrt(q))
+    
+    def maxeig_dqdw_geom(self,q):
+        ''' maximum eigenvalues of hessian P, i.e. abs(dqdw) for scalar '''
+        return 2*np.abs(q*np.sqrt(q))
+
+    def entropy_log(self, q):
+        ''' nodal values of the entropy for the logarithmic flux '''
+        return q*np.log(q) - q
+    
+    def entropy_var_log(self, q):
+        ''' nodal values of the entropy variables w(q) for the logarithmic flux '''
+        return np.log(q)
+
+    def dqdw_log(self,q):
+        ''' hessian P of potential phi wrt entropy variables w '''
+        return fn.gdiag_to_gbdiag(q)
+    
+    def maxeig_dqdw_log(self,q):
+        ''' maximum eigenvalues of hessian P, i.e. abs(dqdw) for scalar '''
+        return np.abs(q)
+
+    def entropy_arcsinh(self, q):
+        ''' nodal values of the entropy for the arcsinh flux '''
+        qe = q - self.eps
+        return qe*np.arcsinh(qe/self.beta) - np.sqrt(qe*qe + self.beta*self.beta) + self.beta
+
+    def entropy_var_arcsinh(self, q):
+        ''' nodal values of the entropy variables w(q) for the arcsinh flux '''
+        return np.arcsinh((q - self.eps)/self.beta)
+
+    def dqdw_arcsinh(self, q):
+        ''' hessian P = dq/dw for the arcsinh flux '''
+        p = np.sqrt((q - self.eps)*(q - self.eps) + self.beta*self.beta)
+        return fn.gdiag_to_gbdiag(p)
+
+    def maxeig_dqdw_arcsinh(self, q):
+        ''' maximum eigenvalues of hessian P, i.e. abs(dq/dw) for scalar '''
+        return np.sqrt((q - self.eps)*(q - self.eps) + self.beta*self.beta)
