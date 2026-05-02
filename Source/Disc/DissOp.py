@@ -18,9 +18,8 @@ def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
                 from Source.Disc.CSbpOp import tridiag
                 Ds = tridiag(nen, -0.5, 0., 0.5, bc='periodic')
             elif s == 2:
-                # TODO: I think there is a bug here.
                 from Source.Disc.CSbpOp import tridiag
-                Ds = tridiag(nen, 1.0, 2.0, 1.0, bc='periodic')
+                Ds = tridiag(nen, 1.0, -2.0, 1.0, bc='periodic')
             elif s == 3:
                 from Source.Disc.CSbpOp import pentadiag
                 Ds = pentadiag(nen, 0.0, -1.0, 3.0, -3.0, 1.0, bc='periodic')
@@ -30,6 +29,8 @@ def make_dcp_diss_op(sbp_type, s, nen, boundary_fix=True):
             elif s == 5:
                 from Source.Disc.CSbpOp import heptadiag
                 Ds = heptadiag(nen, 0.0, -1.0, 5.0, -10.0, 10.0, -5.0, 1.0, bc='periodic')
+            else:
+                raise ValueError(f"Invalid choice of s. Only coded up s=1,2,3,4,5.")
             return Ds, B
 
         if s==1:
