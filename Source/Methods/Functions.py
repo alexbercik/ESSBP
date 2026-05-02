@@ -1735,6 +1735,26 @@ def geom_mean(qL,qR):
     q = np.sqrt(qL*qR)
     return q
 
+@njit
+def arcsinh_mean(qL, qR):
+    '''Smooth regularized version of the logarithmic mean.
+    For eps = 0 and q >> beta, it approaches the standard logarithmic mean.
+    For eps = 0 and beta = 2, the entropy variables approach that of the logarithmic mean.
+    '''
+    eps  = 0.0      # shift of the regularization center; start with 0
+    beta = 1.0 #0.001  # smoothing width
+    sL = np.sqrt((qL - eps)*(qL - eps) + beta*beta)
+    sR = np.sqrt((qR - eps)*(qR - eps) + beta*beta)
+    tau = (qR - qL) / (sL + sR)
+    tau2 = tau*tau
+    if np.real(tau2) < 0.001:
+        phi = 1.0 - tau2/3.0 - 4.0*tau2*tau2/45.0 - 44.0*tau2*tau2*tau2/945.0
+    else:
+        phi = tau / np.arctanh(tau)
+    qavg = 0.5*(qL + qR)
+    q = eps + (qavg - eps)*phi
+    return q
+
 def is_pos_def(A):
     ''' check if a matrix A is symmetric positive definite '''
     if np.array_equal(A, A.T):
@@ -2549,6 +2569,135 @@ def solve_lin_system(A, b, is_spd,
     except TypeError:  # older SciPy
         x, _, _, _ = lstsq(A_dense, b2)
     return x.ravel() if b.ndim == 1 else x
+
+
+# The following is used for extended endpoint dissipation 
+# when we have endpoints, but want to apply interface
+# dissipation at more than just the endpoints.
+
+def lagrange_weights(x_stencil, xi):
+    """
+    Lagrange extrapolation weights at xi for given stencil nodes.
+    """
+    xs = np.asarray(x_stencil, dtype=float)
+    m = xs.size
+    w = np.ones(m, dtype=float)
+
+    for j in range(m):
+        num = 1.0
+        den = 1.0
+        xj = xs[j]
+        for k in range(m):
+            if k == j:
+                continue
+            num *= (xi - xs[k])
+            den *= (xj - xs[k])
+        w[j] = num / den
+
+    return w
+
+def endpoint_extrapolation_LR(x, p, alpha=2/3):
+    """
+    Returns mixed endpoint extrapolation vectors (tL, tR).
+
+    alpha = weight on trivial pick-off
+    (1-alpha) = weight on degree-p stencil extrapolation
+
+    Uses p+1 nodes adjacent to each boundary, excluding the endpoints
+    for the nontrivial stencil.
+    """
+    x = np.asarray(x, dtype=float)
+    N = x.size
+    m = p + 1
+
+    if m + 1 > N:
+        raise ValueError(
+            f"Need at least p+2 nodes to exclude endpoints; got N={N}, p={p}."
+        )
+
+    # ---------- LEFT ----------
+    xiL = 0.0
+    idxL = np.arange(1, m + 1)   # exclude x[0]
+    wL = lagrange_weights(x[idxL], xiL)
+
+    tL_stencil = np.zeros(N)
+    tL_stencil[idxL] = wL
+
+    eL = np.zeros(N)
+    eL[0] = 1.0
+
+    tL = alpha * eL + (1.0 - alpha) * tL_stencil
+
+    # ---------- RIGHT ----------
+    xiR = 1.0
+    idxR = np.arange(N - m - 1, N - 1)  # exclude x[-1]
+    wR = lagrange_weights(x[idxR], xiR)
+
+    tR_stencil = np.zeros(N)
+    tR_stencil[idxR] = wR
+
+    eR = np.zeros(N)
+    eR[-1] = 1.0
+
+    tR = alpha * eR + (1.0 - alpha) * tR_stencil
+
+    return tL, tR
+
+@njit
+def clip_pos_smooth(q, q_floor=1.0e-14, q_cut=1.0e-12):
+    """
+    Smooth positivity clip
+
+    Real input:
+      returns a smooth approximation to max(x, q_floor)
+
+    Complex-step input q = x + i*h:
+      returns f(x) + i*h*f'(x)
+
+    Notes
+    -----
+    This is NOT exactly constant below q_floor and NOT exactly identity above q_cut.
+    That combination is incompatible with smoothness + f(x) >= x.
+    Here q_cut is used to choose the transition width so that for x >= q_cut,
+    the deviation from x is negligible.
+    """
+    x = np.real(q)
+
+    # Choose a transition width from q_floor and q_cut.
+    # Larger denom => tighter transition.
+    eps = (q_cut - q_floor) / 12.0
+    if eps <= 0.0:
+        eps = max(1.0e-16, 0.1 * q_floor)
+
+    z = (q_floor - x) / eps
+
+    # Stable evaluation of:
+    #   f  = x + eps * log(1 + exp(z))
+    #   df = 1 / (1 + exp(z))
+    if z > 40.0:
+        emz = np.exp(-z)
+        f = q_floor + eps * emz
+        df = emz
+    elif z < -40.0:
+        ez = np.exp(z)
+        f = x + eps * ez
+        df = 1.0 - ez
+    else:
+        ez = np.exp(z)
+        f = x + eps * np.log1p(ez)
+        df = 1.0 / (1.0 + ez)
+
+    return f + (q - x) * df
+
+@njit
+def clip_pos_smooth_vec(q, q_floor=1.0e-14, q_cut=1.0e-12):
+    '''
+    C^\infty positive floor with complex-step-compatible extension.
+    '''
+    qnew = np.empty_like(q)
+    for idx in np.ndindex(q.shape):
+        qnew[idx] = clip_pos_smooth(q[idx], q_floor, q_cut)
+    return qnew
 
 """ Old functions (no longer useful)
 
