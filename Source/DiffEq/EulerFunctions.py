@@ -1980,7 +1980,7 @@ def Central_fluxes_2D(qL,qR):
 def Ranocha_flux_1D(qL,qR):
     '''
     Return the Ranocha flux given two states qL and qR where each is
-    of shape (1,), and returns a numerical flux of shape (4,)
+    of shape (1,), and returns a numerical flux of shape (3,)
     '''
     #g = 1.4 # hard coded!
     
@@ -2077,7 +2077,7 @@ def Ranocha_fluxes_2D(qL,qR):
 def Chandrashekar_flux_1D(qL,qR):
     '''
     Return the Chandrashekar KEP + EC flux given two states qL and qR where each is
-    of shape (1,), and returns a numerical flux of shape (4,)
+    of shape (1,), and returns a numerical flux of shape (3,)
     '''
     # decompose q
     rhoL = qL[0]
@@ -2153,6 +2153,235 @@ def Chandrashekar_fluxes_2D(qL,qR):
     Ey[3] = pln*vavg/g1 + pavg*vavg + 0.5*rholn*vavg*u2bar
     return Ex, Ey
 
+@njit 
+def Shima_flux_1D(qL,qR):
+    '''
+    Return the Shima et al flux given two states qL and qR where each is
+    of shape (1,), and returns a numerical flux of shape (3,)
+    '''
+    rhoL = qL[0]
+    momL = qL[1]
+    EL   = qL[2]
+
+    rhoR = qR[0]
+    momR = qR[1]
+    ER   = qR[2]
+
+    invrhoL = 1.0 / rhoL
+    invrhoR = 1.0 / rhoR
+
+    uL = momL * invrhoL
+    uR = momR * invrhoR
+
+    gm1 = g - 1.0
+    inv_gm1 = 1.0 / gm1
+
+    pL = gm1 * (EL - 0.5 * momL * momL * invrhoL)
+    pR = gm1 * (ER - 0.5 * momR * momR * invrhoR)
+
+    sr = rhoL + rhoR
+    su = uL + uR
+    sp = pL + pR
+    uLuR = uL * uR
+
+    out = np.empty(3, dtype=qL.dtype)
+    out[0] = 0.25 * sr * su
+    out[1] = 0.125 * sr * su * su + 0.5 * sp
+    out[2] = (
+        0.125 * sr * su * uLuR
+        + 0.25 * sp * su * inv_gm1
+        + 0.5 * (pL * uR + pR * uL)
+    )
+    return out
+
+@njit
+def Shima_fluxes_2D(qL, qR):
+    '''
+    Return the 2D Shima et al flux given two states qL and qR where each is
+    of shape (4,), and returns numerical fluxes Fx and Fy, each of shape (4,).
+
+    q = [rho, rho*u, rho*v, E]
+    '''
+    rhoL = qL[0]
+    rhouL = qL[1]
+    rhovL = qL[2]
+    EL    = qL[3]
+
+    rhoR = qR[0]
+    rhouR = qR[1]
+    rhovR = qR[2]
+    ER    = qR[3]
+
+    invrhoL = 1.0 / rhoL
+    invrhoR = 1.0 / rhoR
+
+    uL = rhouL * invrhoL
+    vL = rhovL * invrhoL
+    uR = rhouR * invrhoR
+    vR = rhovR * invrhoR
+
+    gm1 = g - 1.0
+    inv_gm1 = 1.0 / gm1
+
+    pL = gm1 * (EL - 0.5 * (rhouL * uL + rhovL * vL))
+    pR = gm1 * (ER - 0.5 * (rhouR * uR + rhovR * vR))
+
+    # sums / averages written in reduced form
+    sr  = rhoL + rhoR
+    su  = uL + uR
+    sv  = vL + vR
+    sp  = pL + pR
+
+    # Shima kinetic cross-average:
+    # kin_avg = 0.5*(uL*uR + vL*vR)
+    kin_cross = uL * uR + vL * vR
+
+    Fx = np.empty(4, dtype=qL.dtype)
+    Fy = np.empty(4, dtype=qL.dtype)
+
+    # x-flux
+    Fx[0] = 0.25 * sr * su
+    Fx[1] = 0.125 * sr * su * su + 0.5 * sp
+    Fx[2] = 0.125 * sr * su * sv
+    Fx[3] = (
+        0.125 * sr * su * kin_cross
+        + 0.25 * sp * su * inv_gm1
+        + 0.5 * (pL * uR + pR * uL)
+    )
+
+    # y-flux
+    Fy[0] = 0.25 * sr * sv
+    Fy[1] = 0.125 * sr * sv * su
+    Fy[2] = 0.125 * sr * sv * sv + 0.5 * sp
+    Fy[3] = (
+        0.125 * sr * sv * kin_cross
+        + 0.25 * sp * sv * inv_gm1
+        + 0.5 * (pL * vR + pR * vL)
+    )
+
+    return Fx, Fy
+
+@njit 
+def Kuya_flux_1D(qL,qR):
+    '''
+    Return the Kuya et al flux given two states qL and qR where each is
+    of shape (1,), and returns a numerical flux of shape (3,)
+    '''
+    rhoL = qL[0]
+    momL = qL[1]
+    EL   = qL[2]
+
+    rhoR = qR[0]
+    momR = qR[1]
+    ER   = qR[2]
+
+    invrhoL = 1.0 / rhoL
+    invrhoR = 1.0 / rhoR
+
+    uL = momL * invrhoL
+    uR = momR * invrhoR
+
+    gm1 = g - 1.0
+    inv_gm1 = 1.0 / gm1
+
+    pL = gm1 * (EL - 0.5 * momL * momL * invrhoL)
+    pR = gm1 * (ER - 0.5 * momR * momR * invrhoR)
+
+    sr = rhoL + rhoR
+    su = uL + uR
+    sp = pL + pR
+    se = pL/rhoL + pR/rhoR
+    uLuR = uL * uR
+
+    out = np.empty(3, dtype=qL.dtype)
+    out[0] = 0.25 * sr * su
+    out[1] = 0.125 * sr * su * su + 0.5 * sp
+    out[2] = (
+        0.125 * sr * su * uLuR
+        + 0.125 * sr * se * su * inv_gm1
+        + 0.5 * (pL * uR + pR * uL)
+    )
+    return out
+
+@njit 
+def KennedyGruber_flux_1D(qL,qR):
+    '''
+    Return the Kennedy-Gruber flux given two states qL and qR where each is
+    of shape (1,), and returns a numerical flux of shape (3,)
+    '''
+    rhoL = qL[0]
+    momL = qL[1]
+    EL   = qL[2]
+
+    rhoR = qR[0]
+    momR = qR[1]
+    ER   = qR[2]
+
+    invrhoL = 1.0 / rhoL
+    invrhoR = 1.0 / rhoR
+
+    uL = momL * invrhoL
+    uR = momR * invrhoR
+
+    gm1 = g - 1.0
+
+    pL = gm1 * (EL - 0.5 * momL * momL * invrhoL)
+    pR = gm1 * (ER - 0.5 * momR * momR * invrhoR)
+
+    sr = rhoL + rhoR
+    su = uL + uR
+    sp = pL + pR
+    sE = EL/rhoL + ER/rhoR
+
+    out = np.empty(3, dtype=qL.dtype)
+    out[0] = 0.25 * sr * su
+    out[1] = 0.125 * sr * su * su + 0.5 * sp
+    out[2] = (
+        0.125 * sr * sE * su
+        + 0.25 * sp * su
+    )
+    return out
+
+@njit 
+def Singh_flux_1D(qL,qR):
+    '''
+    Return the Singh-Chandrashekar flux given two states qL and qR where each is
+    of shape (1,), and returns a numerical flux of shape (3,)
+    '''
+    rhoL = qL[0]
+    momL = qL[1]
+    EL   = qL[2]
+
+    rhoR = qR[0]
+    momR = qR[1]
+    ER   = qR[2]
+
+    invrhoL = 1.0 / rhoL
+    invrhoR = 1.0 / rhoR
+
+    uL = momL * invrhoL
+    uR = momR * invrhoR
+
+    gm1 = g - 1.0
+    inv_gm1 = 1.0 / gm1
+
+    pL = gm1 * (EL - 0.5 * momL * momL * invrhoL)
+    pR = gm1 * (ER - 0.5 * momR * momR * invrhoR)
+
+    sr = rhoL + rhoR
+    su = uL + uR
+    sp = pL + pR
+    sk = uL*uL + uR*uR
+
+    out = np.empty(3, dtype=qL.dtype)
+    out[0] = 0.25 * sr * su
+    out[1] = 0.125 * sr * su * su + 0.5 * sp
+    out[2] = (
+        0.25 * sp * su * inv_gm1
+        + 0.0625 * sr * sk * su
+        + 0.25 * sp * su
+    )
+    return out
 
 @njit
 def StegerWarming_diss_1D(q):
@@ -3145,6 +3374,10 @@ if __name__ == "__main__":
     F_Central = Central_flux_1D(q,q)
     F_Ranocha = Ranocha_flux_1D(q,q)
     F_Chandrashekar = Chandrashekar_flux_1D(q,q)
+    F_Shima = Shima_flux_1D(q,q)
+    F_Kuya = Kuya_flux_1D(q,q)
+    F_KennedyGruber = KennedyGruber_flux_1D(q,q)
+    F_Singh = Singh_flux_1D(q,q)
     
     print('---- Testing 1D functions (all should be zero) ----')
     print('An = nx*Ax: ', np.max(cabs(An1D[0,:,:,0]-Ax1D[0,:,:,0]*n1D[0,0])))
@@ -3171,6 +3404,10 @@ if __name__ == "__main__":
     print('Consistency of Central flux: ', np.max(cabs(F-F_Central)))
     print('Consistency of Ranocha flux: ', np.max(cabs(F-F_Ranocha)))
     print('Consistency of Chandashekar flux: ', np.max(cabs(F-F_Chandrashekar)))
+    print('Consistency of Shima flux: ', np.max(cabs(F-F_Shima)))
+    print('Consistency of Kuya flux: ', np.max(cabs(F-F_Kuya)))
+    print('Consistency of Kennedy-Gruber flux: ', np.max(cabs(F-F_KennedyGruber)))
+    print('Consistency of Singh-Chandrashekar flux: ', np.max(cabs(F-F_Singh)))
     print('Consistency of Roe avg: ', np.max(cabs(q1D-Roe_avg_1D(q1D,q1D))))
     print('Consistency of Ismail-Roe avg: ', np.max(cabs(q1D-Ismail_Roe_avg_1D(q1D,q1D))))
     print('Consistency of Derigs avg: ', np.max(cabs(q1D-Derigs_avg_1D(q1D,q1D))))
