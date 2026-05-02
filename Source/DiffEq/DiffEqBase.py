@@ -96,6 +96,8 @@ class PdeBase:
     q0_max_q = 1.0                 # Max value in the vector q0
     q0_gauss_wave_val_bc = np.exp(-625/32) #1e-10    # Value at the boundary for Gauss wave (now matches sbp_book)
 
+    # Discrete initial condition storage (for interpolation-based set_q0)
+    _q0_interpolator = None        # Interpolation function (UnivariateSpline)
 
     def __init__(self, para, q0_type=None):
         '''
@@ -220,6 +222,7 @@ class PdeBase:
             elif self.dim == 2:
                 mid_pointx = 0.5*(self.xmax[0] + self.xmin[0]) # mean
                 mid_pointy = 0.5*(self.xmax[1] + self.xmin[1])
+                k = 8*np.log(self.q0_gauss_wave_val_bc/self.q0_max_q)
                 stdev2x = abs(self.dom_len[0]**2/k) # standard deviation squared
                 stdev2y = abs(self.dom_len[1]**2/k)
                 exp = -0.5*((xy[:,0,:]-mid_pointx)**2/stdev2x + (xy[:,1,:]-mid_pointy)**2/stdev2y)
@@ -228,6 +231,7 @@ class PdeBase:
                 mid_pointx = 0.5*(self.xmax[0] + self.xmin[0]) # mean
                 mid_pointy = 0.5*(self.xmax[1] + self.xmin[1])
                 mid_pointz = 0.5*(self.xmax[2] + self.xmin[2])
+                k = 8*np.log(self.q0_gauss_wave_val_bc/self.q0_max_q)
                 stdev2x = abs(self.dom_len[0]**2/k) # standard deviation squared
                 stdev2y = abs(self.dom_len[1]**2/k)
                 stdev2z = abs(self.dom_len[2]**2/k)
@@ -346,9 +350,13 @@ class PdeBase:
                     q0 = self.q0_max_q * np.sin(2*np.pi * x_scaled) * np.sin(2*np.pi * y_scaled) * np.sin(2*np.pi * z_scaled) 
                 elif q0_type == 'sinwave2' or q0_type == 'sinwavesum' or q0_type == 'sinwave_sum':
                     q0 = self.q0_max_q * ( np.sin(2*np.pi * x_scaled) + np.sin(2*np.pi * y_scaled) + np.sin(2*np.pi * z_scaled) )
-        elif q0_type == 'random':
-            # Random numbers between -0.5 and 0.5
-            q0 = np.random.rand(*qshape) -0.5
+        elif q0_type == 'random' or q0_type == 'random_shift':
+            if 'shift' in q0_type:
+                # Random numbers between 1.0 and 2.0
+                q0 = np.random.rand(*qshape) + 1
+            else:
+                # Random numbers between -1.0 and 1.0
+                q0 = 2*np.random.rand(*qshape) - 1
         elif q0_type == 'constant':
             q0 = np.ones(qshape)
         elif q0_type == 'gassnersinwave_cont': # continuous
@@ -357,10 +365,14 @@ class PdeBase:
         elif q0_type == 'gassnersinwave_cont_4pi': # continuous
             assert self.dim == 1,'Chosen q0 shape only works for dim = 1.'
             q0 = np.sin(4 * np.pi * xy - 0.7) + 2 # note in the paper it is incorrectly written (np.pi * (xy - 0.7))
-        elif q0_type in ('gassnersinwave','gassnersinwave_coarse'): # discontinuous  
+        elif q0_type in ('gassnersinwave','gassnersinwave_coarse','gassnersinwave_4pi','gassnersinwave_coarse_4pi'): # discontinuous  
             assert self.dim == 1,'Chosen q0 shape only works for dim = 1.'
+            if '4pi' in q0_type:
+                w = 4*np.pi
+            else:
+                w = np.pi
             from Source.Disc.Quadratures.LG import LG_set # use this instead of quadpy
-            if q0_type == 'gassnersinwave_coarse':
+            if 'coarse' in q0_type:
                 #xy_LG = qp.c1.gauss_legendre(2).points # coarse LG nodes
                 LGp = 1
                 xy_LG = LG_set(LGp+1)[0]
@@ -374,14 +386,232 @@ class PdeBase:
             # now map the LG nodes to the entire domain
             mesh = MakeMesh(self.dim, self.xmin, self.xmax, self.nelem, xy_LG[:,0])
             # Now set the initial condition on the coarse nodes and map to solution nodes
-            q0_coarse = np.sin(np.pi * mesh.x_elem - 0.7) + 2
+            q0_coarse = np.sin(w * mesh.x_elem - 0.7) + 2
             q0 = van @ q0_coarse
+        elif q0_type == 'density_wave' or q0_type == 'density_wave_shift':
+            x_scaled = (xy - self.xmin) / self.dom_len
+            q0 = 1. + 0.98*np.sin(4*np.pi*x_scaled)
+            if 'shift' in q0_type:
+                q0 = q0 + 0.5
+        elif q0_type == 'skewed_sin':
+            # Lazy computation of coefficients on first call
+            if not hasattr(self, '_skewed_sin_coeff_q0'):
+                from scipy.special import comb
+                self._skewed_sin_n_fourier_q0 = 5
+                n_fourier = self._skewed_sin_n_fourier_q0
+                binom_norm = comb(2 * n_fourier, n_fourier, exact=True)
+                ks = np.arange(1, n_fourier + 1)
+                # Use exact=False for array inputs (exact=True only works with scalars)
+                comb_vals = comb(2 * n_fourier, n_fourier - ks, exact=False)
+                self._skewed_sin_coeff_q0 = comb_vals / (binom_norm * ks)
+            
+            # Check if x is a scalar (Python float/int or numpy scalar)
+            if np.isscalar(xy):
+                # Scalar case: return scalar
+                xmod = 2.*np.pi*(xy - self.xmin) / self.dom_len + 4.
+                ks = np.arange(1, self._skewed_sin_n_fourier_q0 + 1)
+                kx = ks * xmod  # shape: (n_fourier,)
+                sin_kx = np.sin(kx)  # shape: (n_fourier,)
+                fourier_sum = np.dot(self._skewed_sin_coeff_q0, sin_kx)  # scalar result
+                q0 = float(fourier_sum + 1.5)
+            else:
+                # Array case: preserve shape
+                xmod = 2.*np.pi*(xy - self.xmin) / self.dom_len + 4.
+                ks = np.arange(1, self._skewed_sin_n_fourier_q0 + 1)
+                ks_shape = (len(ks),) + (1,) * xmod.ndim
+                kx = ks.reshape(ks_shape) * xmod  # shape: (n_fourier, ...)
+                sin_kx = np.sin(kx)  # shape: (n_fourier, ...)
+                # Multiply by coefficients and sum over k dimension (axis 0)
+                # Use einsum to sum over first dimension while preserving other dimensions
+                fourier_sum = np.einsum('i,i...->...', self._skewed_sin_coeff_q0, sin_kx)
+                q0 = fourier_sum + 1.5
         else:
             print(f'q0_type = {q0_type}')
             raise Exception('Unknown q0_type for initial solution')
         
         return q0
     
+    def set_q0_discrete(self, q0, xy=None, k=3, s=0, periodic=None):
+        '''
+        Set discrete initial condition using spline interpolation.
+        Currently only supports 1D problems.
+        
+        Parameters
+        ----------
+        q0 : np array
+            Discrete initial condition values. Shape should match either:
+            - The shape of xy if xy is provided
+            - The shape of self.qshape if xy is None (e.g., (nen*neq_node, nelem) for 1D)
+        xy : np array, optional
+            Coordinates corresponding to q0. Defaults to self.x_elem if not provided.
+        k : int, optional
+            Degree of the spline. Default is 3 (cubic).
+        s : float, optional
+            Smoothing factor. Default is 0 (exact interpolation at all points).
+            If s > 0, the spline will smooth the data instead of interpolating exactly.
+        periodic : bool, optional
+            Whether to use periodic boundary conditions. Defaults to checking
+            hasattr(self, 'periodic') and self.periodic, or False if not available.
+            For periodic cases, the spline will wrap coordinates using modx.
+        
+        Returns
+        -------
+        None
+            Overwrites self.set_q0 with the interpolator function.
+        '''
+        # Dimension check: only 1D supported
+        assert self.dim == 1, "set_q0_discrete currently only supports 1D problems"
+        
+        # Determine if periodic
+        if periodic is None:
+            periodic = (hasattr(self, 'periodic') and self.periodic)
+        else:
+            periodic = bool(periodic)
+        
+        # Get coordinates
+        if xy is None:
+            xy = self.x_elem
+        
+        # Flatten q0 and xy using Fortran-style
+        q0_flat = np.array(q0).flatten('F')
+        xy_flat = np.array(xy).flatten('F')
+        
+        # Remove duplicate points (e.g., at element interfaces where nodes are shared)
+        # Keep unique x-coordinates and corresponding q0 values
+        # If duplicates exist, verify they have matching q0 values, then use the first occurrence
+        tol = 1e-12
+        unique_mask = np.ones(len(xy_flat), dtype=bool)
+        for i in range(1, len(xy_flat)):
+            if np.abs(xy_flat[i] - xy_flat[i-1]) < tol:
+                # Check that q0 values also match for duplicate x-coordinates
+                if np.abs(q0_flat[i] - q0_flat[i-1]) > tol:
+                    raise ValueError(
+                        f"Duplicate x-coordinate at {xy_flat[i]:.6e} has inconsistent q0 values: "
+                        f"{q0_flat[i-1]:.6e} and {q0_flat[i]:.6e}. "
+                        f"Cannot create valid interpolator for discontinuous data."
+                    )
+                unique_mask[i] = False
+        
+        xy_unique = xy_flat[unique_mask]
+        q0_unique = q0_flat[unique_mask]
+        
+        if periodic:
+            print(f"Using periodic spline interpolation (k={k}) to set initial condition.")
+            from scipy.interpolate import make_interp_spline, UnivariateSpline
+            
+            # Check which endpoints are included
+            left_endpoint_included = np.abs(xy_unique[0] - self.xmin) < tol
+            right_endpoint_included = np.abs(xy_unique[-1] - self.xmax) < tol
+            
+            # Prepare data for spline construction
+            if left_endpoint_included and right_endpoint_included:
+                # Both endpoints included (SBP case)
+                # For periodic splines, the endpoint values must match
+                if np.abs(q0_unique[-1] - q0_unique[0]) > tol:
+                    print(f"WARNING: Right endpoint value ({q0_unique[-1]:.6e}) does not match left endpoint ({q0_unique[0]:.6e}).")
+                    print("  For periodic data, these should be equal. Forcing right endpoint to match left endpoint.")
+                    qbdy_avg = 0.5*(q0_unique[-1] + q0_unique[0])
+                    q0_unique[-1] = qbdy_avg
+                    q0_unique[0] = qbdy_avg
+                xy_spline = xy_unique
+                q0_spline = q0_unique
+                use_periodic_spline = True
+                
+            elif left_endpoint_included or right_endpoint_included:
+                # One endpoint included - add the missing one
+                if left_endpoint_included:
+                    # Right endpoint missing - add it with value matching left endpoint
+                    xy_spline = np.concatenate([xy_unique, [self.xmax]])
+                    q0_spline = np.concatenate([q0_unique, [q0_unique[0]]])
+                else:
+                    # Left endpoint missing - add it with value matching right endpoint
+                    xy_spline = np.concatenate([[self.xmin], xy_unique])
+                    q0_spline = np.concatenate([[q0_unique[-1]], q0_unique])
+                use_periodic_spline = True
+                
+            else:
+                # Neither endpoint included - fallback to non-periodic spline with manual periodicity
+                print("  Neither endpoint included. Using non-periodic spline with manual periodic wrapping.")
+                endpoint_value = q0_unique[0]  # Use leftmost value for both endpoints
+                xy_spline = np.concatenate([[self.xmin], xy_unique, [self.xmax]])
+                q0_spline = np.concatenate([[endpoint_value], q0_unique, [endpoint_value]])
+                use_periodic_spline = False
+            
+            # Create spline (periodic or non-periodic)
+            if use_periodic_spline:
+                spline = make_interp_spline(xy_spline, q0_spline, k=k, bc_type='periodic')
+            else:
+                spline = UnivariateSpline(xy_spline, q0_spline, k=k, s=0)
+            
+            # Create periodic interpolator function that wraps coordinates
+            # This wrapper is the same regardless of spline type
+            def _q0_interpolator_func(x):
+                x = np.array(x, copy=False)
+                # Wrap coordinates to [xmin, xmin+L) domain (periodic)
+                if hasattr(self, 'modx'):
+                    x_wrapped = self.modx(x)
+                else:
+                    x_wrapped = self.xmin + np.mod(x - self.xmin, self.dom_len)
+                # Evaluate spline
+                return spline(x_wrapped)
+            
+            self._q0_interpolator_func = _q0_interpolator_func
+        else:
+            print(f"Using spline interpolation (k={k}, s={s}) to set initial condition.")
+            from scipy.interpolate import UnivariateSpline
+
+            # Create spline with s=0 (exact interpolation) and specified degree k
+            self._q0_interpolator_func = UnivariateSpline(xy_unique, q0_unique, k=k, s=s)
+        
+        # Store unique arrays for sanity check
+        xy_check = xy_unique
+        q0_check = q0_unique
+        
+        # Sanity check: verify interpolation is exact at original grid points
+        q0_interp_at_grid = self._q0_interpolator_func(xy_check)
+        max_error = np.max(np.abs(q0_interp_at_grid - q0_check))
+        tol = 1e-12
+        
+        if max_error > tol:
+            print(f"WARNING: Interpolation error at grid points: max error = {max_error:.2e} > tol = {tol:.2e}")
+            if s > 0:
+                print(f"  This is expected when s={s} > 0 (smoothing mode). For exact interpolation, use s=0.")
+            else:
+                print("  This should not happen for UnivariateSpline with s=0. Check implementation.")
+        else:
+            print(f"Interpolation sanity check passed: max error at grid points = {max_error:.2e}")
+        
+        # Create the interpolator function that matches set_q0 signature
+        # This makes sure that self._q0_interpolator_func is called with a flat array
+        def _q0_interpolator(self, q0_type=None, xy=None, **kwargs):
+            """
+            Interpolated version of set_q0 for discrete initial conditions.
+            Only works for 1D (enforced in set_q0_discrete).
+            """
+            if xy is None:
+                # Use default mesh coordinates (same as original set_q0)
+                xy = self.x_elem
+            
+            # Store original shape for reshaping
+            orig_shape = np.shape(xy)
+            
+            # Flatten xy for interpolation using Fortran-style
+            xy_flat = np.array(xy).flatten('F')
+            
+            # Evaluate interpolator at flattened coordinates
+            q0_flat = self._q0_interpolator_func(xy_flat)
+            
+            # Reshape to match input shape using Fortran-style
+            if len(orig_shape) > 1:
+                q0 = np.reshape(q0_flat, orig_shape, 'F')
+            else:
+                q0 = q0_flat
+            
+            return q0
+        
+        # Bind the method to the instance and overwrite set_q0
+        import types
+        self.set_q0 = types.MethodType(_q0_interpolator, self)
 
     # TODO: Make a separate function for interactive plots? is this even possible using free packages?
     def plot_sol(self, q, x=None, time=0., plot_exa=None, savefile=None,
@@ -423,7 +653,7 @@ class PdeBase:
             if plot_exa and self.has_exa_sol:
                 exa_sol = self.var2plot(self.exact_sol(time,x=x,guess=q),var2plot_name)
                 if np.shape(x[:, 0]) != np.shape(exa_sol[:, 0]):
-                    print('WARNING: Shapes of x and exa_sol do not match. Plotting only numerical solution.')
+                    print(f'WARNING: Shapes of x and exa_sol do not match ({x.shape} vs {exa_sol.shape}). Plotting only numerical solution.')
                     plot_exa = False
                 if plot_exa:
                     ax.plot(x[:, 0], exa_sol[:, 0], **self.plt_style_exa_sol,label='Exact')
@@ -752,6 +982,12 @@ class PdeBase:
 
     def dGdq(self, q):
         return 0
+
+    def clip_positivity_fn(self, q, pos_floor, pos_cut):
+        ''' default clip positivity function, can be overwritten by the user 
+            this implementation assumes a clipping everywhere, i.e. only
+            suitable for scalar euqations or systems where all variables are positive '''
+        return fn.clip_pos_smooth_vec(q, pos_floor, pos_cut)
 
     
     ''' functions setting up operators '''
