@@ -143,8 +143,11 @@ class PdeSolverCSbp(PdeSolverSbp):
             # Round coordinates to avoid floating point issues
             coords_rounded = np.round(coords / tol) * tol
             
-            # Flatten and find unique coordinates
-            coords_flat = coords_rounded.reshape(-1, 2)
+            # Keep each node's x and y coordinates together while moving the
+            # coordinate axis behind the element axis.  A direct reshape mixes
+            # coordinates from different elements because xy_elem is stored as
+            # (local node, coordinate, element).
+            coords_flat = coords_rounded.transpose(0, 2, 1).reshape(-1, 2)
             unique_coords, inverse = np.unique(coords_flat, axis=0, return_inverse=True)
             self.Nn_global = len(unique_coords)
             self.N_global = self.Nn_global * self.neq_node
@@ -154,14 +157,13 @@ class PdeSolverCSbp(PdeSolverSbp):
             
             # Manually stitch periodic boundaries using structured mesh
             # Nodes within each element are arranged as a 2D grid (nen x nen)
-            # After meshgrid and reshape: nodes are ordered as rows (y varies first, then x)
-            # So node index = i_y * nen + i_x, where i_y and i_x are local indices
+            # MakeMesh orders tensor-product nodes with y varying fastest, so
+            # node index = i_x * nen + i_y.
             
             if self.periodic[0]:
-                # Left face: nodes with i_x = 0 (indices 0, nen, 2*nen, ..., (nen-1)*nen)
-                # Right face: nodes with i_x = nen-1 (indices nen-1, 2*nen-1, ..., nen**2-1)
-                left_face_indices = np.arange(0, self.nen**2, self.nen)  # [0, nen, 2*nen, ...]
-                right_face_indices = np.arange(self.nen-1, self.nen**2, self.nen)  # [nen-1, 2*nen-1, ...]
+                # Left/right faces have fixed i_x and contain every i_y.
+                left_face_indices = np.arange(self.nen)
+                right_face_indices = np.arange((self.nen-1)*self.nen, self.nen**2)
                 
                 # For each y-position (j), stitch left face of i=0 to right face of i=nelem[0]-1
                 for j in range(self.nelem[1]):
@@ -178,10 +180,9 @@ class PdeSolverCSbp(PdeSolverSbp):
                         self.gid[right_face_indices[node_idx], e_right] = ref_gid
             
             if self.periodic[1]:
-                # Bottom face: nodes with i_y = 0 (indices 0 to nen-1)
-                # Top face: nodes with i_y = nen-1 (indices (nen-1)*nen to nen**2-1)
-                bottom_face_indices = np.arange(self.nen)  # [0, 1, ..., nen-1]
-                top_face_indices = np.arange((self.nen-1)*self.nen, self.nen**2)  # [(nen-1)*nen, ..., nen**2-1]
+                # Bottom/top faces have fixed i_y and contain every i_x.
+                bottom_face_indices = np.arange(0, self.nen**2, self.nen)
+                top_face_indices = np.arange(self.nen-1, self.nen**2, self.nen)
                 
                 # For each x-position (i), stitch bottom face of j=0 to top face of j=nelem[1]-1
                 for i in range(self.nelem[0]):
