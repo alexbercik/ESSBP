@@ -393,6 +393,8 @@ class PdeBase:
                     q0 = self.q0_max_q * np.sin(2*np.pi * x_scaled) * np.sin(2*np.pi * y_scaled)  
                 elif q0_type == 'sinwave2' or q0_type == 'sinwavesum' or q0_type == 'sinwave_sum':
                     q0 = self.q0_max_q * ( np.sin(2*np.pi * x_scaled) + np.sin(2*np.pi * y_scaled) )
+                elif q0_type == 'sinwave_8pi':
+                    q0 = self.q0_max_q * np.sin(8*np.pi * x_scaled) * np.sin(8*np.pi * y_scaled)  
             elif self.dim == 3:
                 x_scaled = (xy[:,0,:] - self.xmin[0]) / self.dom_len[0]
                 y_scaled = (xy[:,1,:] - self.xmin[1]) / self.dom_len[1]

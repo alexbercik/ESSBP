@@ -314,7 +314,11 @@ class Burgers(PdeBase):
             or ('coswave' in q0_type) and not ('gassner' in q0_type or 'coarse' in q0_type):
 
             w = 2*np.pi
-            if 'smallshift' in q0_type:
+            # This named case is used by the General Dissipation Burgers
+            # experiment and gives exactly u(x,0) = 2 + sin(2*pi*x).
+            if 'shift2' in q0_type:
+                b = 2.0
+            elif 'smallshift' in q0_type:
                 b = 1.1 * self.q0_max_q
             elif 'shift' in q0_type:
                 b = 1.5 * self.q0_max_q
@@ -691,4 +695,3 @@ class Burgers(PdeBase):
             u = np.reshape(u,orig_shape,'F')
 
         return u
-

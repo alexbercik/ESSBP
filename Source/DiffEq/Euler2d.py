@@ -106,6 +106,33 @@ class Euler(PdeBase):
                 self.rhou_inf = self.rho_inf * self.a_inf
                 self.t_scale = self.a_inf
 
+        elif self.test_case == 'vortex_zelalem':
+            # Moving isentropic vortex on [0, 20] x [-5, 5]. This differs
+            # from the original vortex above in its strength, radius,
+            # background velocity, pressure scaling, and center.
+            self.xmin_fix = (0., -5.)
+            self.xmax_fix = (20., 5.)
+            self.vortex_alpha = 3.
+            self.vortex_xc = 5.
+            self.vortex_yc = 0.
+            self.u0 = 1.
+            self.v0 = 0.
+            if self.q0_type != 'vortex_zelalem':
+                print("WARNING: Overwriting inputted q0_type to 'vortex_zelalem'.")
+                self.q0_type = 'vortex_zelalem'
+            assert bc == 'periodic', \
+                "vortex_zelalem must use bc='periodic'."
+            self.steady = False
+
+            # Keep these scales equal to one so the prescribed formula is
+            # unchanged even when nondimensionalization is requested.
+            if self.nondimensionalize:
+                self.rho_inf = 1.
+                self.a_inf = 1.
+                self.e_inf = 1.
+                self.rhou_inf = 1.
+                self.t_scale = 1.
+
         elif self.test_case == 'kelvin-helmholtz' or self.test_case == 'kelvin-helmholtz_asym' or self.test_case == 'kelvin-helmholtz_noperturb':
             if self.test_case == 'kelvin-helmholtz_noperturb':
                 self.has_exa_sol = True
@@ -170,7 +197,7 @@ class Euler(PdeBase):
                 self.a_inf = np.sqrt(self.g*p_inf/self.rho_inf)
                 self.t_scale = self.a_inf
             
-        else: raise Exception("Test case not understood. Try 'vortex', 'manufactured_soln', 'density_wave', or 'density_wave_1d.")
+        else: raise Exception("Test case not understood. Try 'vortex', 'vortex_zelalem', 'manufactured_soln', 'density_wave', or 'density_wave_1d.")
         
         if self.g == self.g_fix:
             print('Using the fixed g={0} diffeq functions since params match.'.format(self.g_fix))
@@ -376,6 +403,27 @@ class Euler(PdeBase):
             q = self.set_q0(xy=xy_mod)
 
             return q
+
+        def vortex_zelalem(tf):
+            '''Return the periodic, translating vortex_zelalem solution.'''
+
+            if self.q0_type != 'vortex_zelalem':
+                print("ERROR: for exact_sol, initial condition must be vortex_zelalem, not '"+self.q0_type+"'")
+                return np.zeros_like(xy)
+
+            # Shift the evaluation coordinates with the background flow. The
+            # spatial wrapping is completed in set_q0 using periodic distance
+            # from the initial vortex center.
+            xy_mod = np.empty(xy.shape)
+            xy_mod[:,0,:] = np.mod(
+                (xy[:,0,:] - self.xmin[0]) - self.u0*tf,
+                self.dom_len[0],
+            ) + self.xmin[0]
+            xy_mod[:,1,:] = np.mod(
+                (xy[:,1,:] - self.xmin[1]) - self.v0*tf,
+                self.dom_len[1],
+            ) + self.xmin[1]
+            return self.set_q0(q0_type='vortex_zelalem', xy=xy_mod)
         
         def kelvin_helmholtz(tf):
             ''' initial condition for kelvin-helmholtz problem '''
@@ -419,6 +467,8 @@ class Euler(PdeBase):
             exa_sol = density_wave(time)
         elif self.test_case == 'vortex' or self.test_case == 'vortex_lowma':    
             exa_sol = vortex(time)
+        elif self.test_case == 'vortex_zelalem':
+            exa_sol = vortex_zelalem(time)
         elif self.test_case == 'manufactured_soln':
             exa_sol = manufactured_soln(time)
         elif self.test_case == self.test_case == 'kelvin-helmholtz_noperturb':
@@ -495,6 +545,42 @@ class Euler(PdeBase):
             rho = (1. - 0.5*(self.mach0*self.beta)**2*(self.g-1)*np.exp(r2))**(1./(self.g-1))
             p = (rho**self.g)/self.g
             e = p/(self.g-1) + 0.5 * rho * (u*u + v*v)
+            q0 = self.prim2cons(rho, u, v, e)
+
+        elif self.test_case == 'vortex_zelalem':
+            assert q0_type == 'vortex_zelalem', \
+                "Must use q0_type == 'vortex_zelalem'."
+
+            # Use the shortest periodic displacement from the moving-vortex
+            # center. On the initial domain this is the supplied analytical
+            # formula, with only exponentially small tails affected by the
+            # periodic wrapping.
+            x_length = self.xmax_fix[0] - self.xmin_fix[0]
+            y_length = self.xmax_fix[1] - self.xmin_fix[1]
+            x_rel = np.mod(
+                xy[:,0,:] - self.vortex_xc + 0.5*x_length,
+                x_length,
+            ) - 0.5*x_length
+            y_rel = np.mod(
+                xy[:,1,:] - self.vortex_yc + 0.5*y_length,
+                y_length,
+            ) - 0.5*y_length
+            r2 = x_rel*x_rel + y_rel*y_rel
+            vortex_exp = np.exp(1. - r2)
+
+            rho_base = 1. - (
+                self.vortex_alpha**2 * (self.g-1.)
+                / (16.*self.g*np.pi**2)
+            ) * vortex_exp**2
+            rho = rho_base**(1./(self.g-1.))
+            p = rho**self.g
+            u = self.u0 - (
+                self.vortex_alpha/(2.*np.pi)
+            ) * y_rel*vortex_exp
+            v = self.v0 + (
+                self.vortex_alpha/(2.*np.pi)
+            ) * x_rel*vortex_exp
+            e = p/(self.g-1.) + 0.5*rho*(u*u + v*v)
             q0 = self.prim2cons(rho, u, v, e)
 
         elif self.test_case == 'kelvin-helmholtz' or self.test_case == 'kelvin-helmholtz_asym' or self.test_case == 'kelvin-helmholtz_noperturb':
