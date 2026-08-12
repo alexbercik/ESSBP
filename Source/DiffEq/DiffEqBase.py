@@ -169,6 +169,56 @@ class PdeBase:
         elif self.dim == 3:
             self.qshape = ((self.nen**3)*self.neq_node,self.nelem[0]*self.nelem[1]*self.nelem[2])
 
+    def _eval_gassnersinwave_projected_at_x(self, q_mesh, xy_query):
+        '''
+        For ``*_coarse*`` Gassner IC only: evaluate q_mesh (LG→solution projection) at arbitrary x.
+        '''
+        assert self.dim == 1
+        if not hasattr(self, 'mesh') or self.mesh is None:
+            raise RuntimeError('set_mesh must be called before evaluating the projected Gassner IC at arbitrary x.')
+        if q_mesh.shape != self.qshape:
+            raise ValueError(f'q_mesh shape {q_mesh.shape} does not match qshape {self.qshape}.')
+
+        from scipy.interpolate import BarycentricInterpolator
+        from scipy.optimize import brentq
+
+        def lag1d(nodes, values, xi_):
+            return float(BarycentricInterpolator(nodes, values)(xi_))
+
+        xy_query = np.asarray(xy_query, dtype=float)
+        orig_shape = xy_query.shape
+        xflat = xy_query.ravel()
+        out = np.empty_like(xflat, dtype=float)
+
+        verts = np.asarray(self.mesh.vertices, dtype=float)
+        ne = int(self.nelem)
+        elen = float(verts[1] - verts[0])
+        xr = np.asarray(self.x_ref, dtype=float).ravel()
+        dom = float(self.dom_len)
+        x_template = verts[:ne] + elen * xr[:, np.newaxis]
+        affine_ok = np.allclose(self.x_elem, x_template, rtol=0.0, atol=1e-10 * max(1.0, abs(self.xmax - self.xmin)))
+        xi_lo, xi_hi = float(xr.min()), float(xr.max())
+
+        for ii, xraw in enumerate(xflat):
+            xq = np.mod(xraw - self.xmin, dom) + self.xmin
+            e = int(np.searchsorted(verts, xq, side='right') - 1)
+            e = max(0, min(ne - 1, e))
+            qe = q_mesh[:, e]
+            xe = self.x_elem[:, e]
+            if affine_ok:
+                xi = (xq - verts[e]) / elen
+            else:
+                try:
+                    xi = brentq(lambda z: lag1d(xr, xe, z) - xq, xi_lo, xi_hi, xtol=1e-14, rtol=1e-14)
+                except ValueError:
+                    raise ValueError(
+                        f'Could not invert reference coordinate for x={xq} in element {e}. '
+                        'Try a non-warped mesh or check coordinates.'
+                    ) from None
+            out[ii] = lag1d(xr, qe, xi)
+
+        return out.reshape(orig_shape)
+
     def set_q0(self, q0_type=None, xy=None, **kwargs):
         '''
         Parameters
@@ -206,7 +256,7 @@ class PdeBase:
             #    raise Exception('This q0_type does not work with xy provided.')
             qshape = np.shape(xy)
 
-        if q0_type == 'gausswave' or q0_type == 'gausswave_0.25' or q0_type == 'gausswave_shift':
+        if q0_type == 'gausswave' or q0_type == 'gausswave_0.25' or q0_type == 'gausswave_shift' or q0_type == 'gausswave_smallshift':
             if self.dim == 1:
                 if q0_type == 'gausswave_0.25':
                     mid_point = 0.5*(self.xmax + self.xmin)
@@ -237,7 +287,8 @@ class PdeBase:
                 stdev2z = abs(self.dom_len[2]**2/k)
                 exp = -0.5*((xy[:,0,:]-mid_pointx)**2/stdev2x + (xy[:,1,:]-mid_pointy)**2/stdev2y + (xy[:,2,:]-mid_pointz)**2/stdev2z)
                 q0 = self.q0_max_q * np.exp(exp) 
-            if 'shift' in q0_type: q0 = q0 + 0.5
+            if 'smallshift' in q0_type: q0 = q0 + 0.1
+            elif 'shift' in q0_type: q0 = q0 + 0.5
         elif q0_type == 'gausswave_shift':
             assert self.dim==1,'only for dim=1'
             assert (self.xmax==1 and self.xmin==0)
@@ -365,29 +416,38 @@ class PdeBase:
         elif q0_type == 'gassnersinwave_cont_4pi': # continuous
             assert self.dim == 1,'Chosen q0 shape only works for dim = 1.'
             q0 = np.sin(4 * np.pi * xy - 0.7) + 2 # note in the paper it is incorrectly written (np.pi * (xy - 0.7))
-        elif q0_type in ('gassnersinwave','gassnersinwave_coarse','gassnersinwave_4pi','gassnersinwave_coarse_4pi'): # discontinuous  
-            assert self.dim == 1,'Chosen q0 shape only works for dim = 1.'
+        elif q0_type in ('gassnersinwave', 'gassnersinwave_4pi'):
+            # Same smooth IC as *_cont* on the solution nodes (no LG sub-cell projection).
+            assert self.dim == 1, 'Chosen q0 shape only works for dim = 1.'
             if '4pi' in q0_type:
-                w = 4*np.pi
+                w = 4 * np.pi
             else:
                 w = np.pi
-            from Source.Disc.Quadratures.LG import LG_set # use this instead of quadpy
-            if 'coarse' in q0_type:
-                #xy_LG = qp.c1.gauss_legendre(2).points # coarse LG nodes
-                LGp = 1
-                xy_LG = LG_set(LGp+1)[0]
+            xy_arr = np.asarray(xy, dtype=float)
+            q0 = np.sin(w * xy_arr - 0.7) + 2
+        elif q0_type in ('gassnersinwave_coarse', 'gassnersinwave_coarse_4pi'):
+            assert self.dim == 1, 'Chosen q0 shape only works for dim = 1.'
+            if '4pi' in q0_type:
+                w = 4 * np.pi
             else:
-                #xy_LG = qp.c1.gauss_legendre(self.nen).points # full degree LG nodes
-                xy_LG = LG_set(self.nen)[0]
-            xy_LG = 0.5*(xy_LG[:, None] + 1) # Convert from 1D to 2D array
-            wBary_LG = MakeDgOp.BaryWeights(xy_LG) # Barycentric weights for LG nodes
-            van = MakeDgOp.VandermondeLagrange1D(self.x_ref,xy_LG,wBary_LG)
-            # The vandermonde maps from xy_LG coarse nodes to self.xy_elem solution nodes
-            # now map the LG nodes to the entire domain
-            mesh = MakeMesh(self.dim, self.xmin, self.xmax, self.nelem, xy_LG[:,0])
-            # Now set the initial condition on the coarse nodes and map to solution nodes
-            q0_coarse = np.sin(w * mesh.x_elem - 0.7) + 2
-            q0 = van @ q0_coarse
+                w = np.pi
+            xy_arr = np.asarray(xy, dtype=float)
+            from Source.Disc.Quadratures.LG import LG_set
+            LGp = 1
+            xy_LG = LG_set(LGp + 1)[0]
+            xy_LG = 0.5 * (xy_LG[:, None] + 1)
+            wBary_LG = MakeDgOp.BaryWeights(xy_LG)
+            van = MakeDgOp.VandermondeLagrange1D(self.x_ref, xy_LG, wBary_LG)
+            verts = np.linspace(self.xmin, self.xmax, int(self.nelem) + 1)
+            elen = float(verts[1] - verts[0])
+            x_op_1d = np.asarray(xy_LG[:, 0], dtype=float).ravel()
+            x_elem_coarse = verts[:-1] + elen * x_op_1d[:, np.newaxis]
+            q0_coarse = np.sin(w * x_elem_coarse - 0.7) + 2
+            q_mesh = van @ q0_coarse
+            if xy_arr.shape == self.qshape:
+                q0 = q_mesh
+            else:
+                q0 = self._eval_gassnersinwave_projected_at_x(q_mesh, xy_arr)
         elif q0_type == 'density_wave' or q0_type == 'density_wave_shift':
             x_scaled = (xy - self.xmin) / self.dom_len
             q0 = 1. + 0.98*np.sin(4*np.pi*x_scaled)
@@ -425,6 +485,12 @@ class PdeBase:
                 # Use einsum to sum over first dimension while preserving other dimensions
                 fourier_sum = np.einsum('i,i...->...', self._skewed_sin_coeff_q0, sin_kx)
                 q0 = fourier_sum + 1.5
+        elif q0_type == 'rarefaction':
+            uL = 0.1
+            uR = 1.0
+            xmid = 0.5 * (self.xmin + self.xmax)
+            xmod = np.mod((xy - xmid), self.dom_len) / self.dom_len 
+            q0 = uR - (uR - uL) * xmod
         else:
             print(f'q0_type = {q0_type}')
             raise Exception('Unknown q0_type for initial solution')
@@ -808,7 +874,7 @@ class PdeBase:
             self.plot_sol(exa_sol, time=time, plot_exa=True, savefile=savefile,
                  show_fig=show_fig, ymin=ymin, ymax=ymax, display_time=display_time, 
                  title=title, plot_mesh=plot_mesh, save_format=save_format, dpi=dpi,
-                 plot_only_exa=True)
+                 plot_only_exa=True, var2plot_name=var2plot_name)
 
     def plot_slice(self, q, x=None, xslice=None, yslice=None, 
                  time=None,savefile=None, show_fig=True, ymin=None, ymax=None, display_time=False, 

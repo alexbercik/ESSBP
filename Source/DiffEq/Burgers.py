@@ -15,6 +15,7 @@ from scipy.optimize import root_scalar, newton, minimize_scalar
 from scipy.integrate import solve_ivp
 import matplotlib.pyplot as plt
 
+
 class Burgers(PdeBase):
     '''
     Purpose
@@ -55,17 +56,57 @@ class Burgers(PdeBase):
     def eq_tb(self, xb0, tb):
         " implicit equation relating xb0 and tb based on the characteristics"
         " where xb0 is the initial x0 of a characteristic, and tb is the breaking time of that charaacteristic"
+        if getattr(self, '_exact_sol_preshock_only', False):
+            raise NotImplementedError(
+                'Burgers post-shock characteristic construction needs analytic du0/dx; '
+                'this initial condition only supports exact_sol for t <= tb (see PdeBase IC path).'
+            )
         return tb + 1/self.du0dx(xb0)
     
     def modx(self, x):
         " useful for periodic boundary condition, loops x around the domain"
         return np.mod(x-self.xmin,self.dom_len) + self.xmin
+
+    def _breaking_slip(self, t, *, tb_for_slip=None):
+        '''Float tolerance band near breaking time (matches former slip_* formulas).'''
+        t = abs(float(np.asarray(t, dtype=float).reshape(-1)[0]))
+        if tb_for_slip is None:
+            if self.tb is not None and np.isfinite(float(self.tb)):
+                tb_abs = abs(float(self.tb))
+            else:
+                tb_abs = 0.0
+        else:
+            tb_abs = abs(float(tb_for_slip))
+        return max(
+            1e-9,
+            np.finfo(float).eps * (t + tb_abs + 1.0) * 64.0,
+            1e-9 * float(self.dom_len),
+        )
+
+    @staticmethod
+    def _char_tb_is_zero(tb):
+        return tb is not None and np.isfinite(float(tb)) and abs(float(tb)) < 1e-14
+
+    def _assert_char_exact_for_tb_zero(self, t, *, context):
+        t0 = abs(float(np.asarray(t, dtype=float).reshape(-1)[0]))
+        slip = self._breaking_slip(t0, tb_for_slip=0.0)
+        assert t0 <= slip, (
+            f'Burgers {context}: the classical characteristic exact solution is not valid for this '
+            'problem because tb == 0 (e.g. piecewise-constant coarse Gassner-type initial data). '
+            'Use |t| within O(slip) of 0 (same tolerance as t <= tb near breaking), or do not use '
+            'exact_sol / find_x0 / find_envelope for larger t.'
+        )
     
     def find_x0(self,x,t,N=None,print_warnings=True,limit_sols=True):
         " given a point (x,t) in characterstic space, find the x0 that feed into it"
         dom = (x - self.u0max*t - 0.01, x - self.u0min*t + 0.01)
-        if N is None: N = max(30,int(t/self.tb*30))
-        elif N > 1e7: raise Exception(f'N is too large. N={N}, t={t}, x={x}')
+        if N is None:
+            if getattr(self, '_exact_sol_preshock_only', False) and self._char_tb_is_zero(self.tb):
+                self._assert_char_exact_for_tb_zero(t, context='find_x0')
+                N = 30
+            else:
+                N = max(30,int(t/self.tb*30))
+        elif N > 1e6: raise Exception(f'N is too large. N={N}, t={t}, x={x}')
         x0s = self.find_all_roots(self.eq_x0, (x,t), domain=dom, N=N)
         if limit_sols:
             # keep only the x0 points that lead to x being in the domain at time t
@@ -84,23 +125,48 @@ class Burgers(PdeBase):
             return [x0s[2], x0s[4]]
         elif len(x0s) == 1:
             return x0s
-        elif len(x0s) > 0:
+        elif len(x0s) in (2, 4, 6):
+            # Even count: recurse with larger N forever if the search keeps the same multiplicity.
+            slip = self._breaking_slip(t)
+            preshock_only = getattr(self, '_exact_sol_preshock_only', False)
+            tb_ok = self.tb is not None and np.isfinite(float(self.tb))
+            in_preshock_window = (not tb_ok) or (t <= float(self.tb) + slip)
+            if preshock_only and in_preshock_window:
+                xa = np.asarray(x0s, dtype=float)
+                xs = np.asarray(self.eq_x(xa, t), dtype=float)
+                xq = float(np.asarray(x).reshape(-1)[0])
+                d = np.abs(self.modx(xs) - self.modx(xq))
+                d = np.minimum(d, float(self.dom_len) - d)
+                return np.array([xa[int(np.argmin(d))]])
+            if len(x0s) == 2:
+                return [float(x0s[0]), float(x0s[1])]
             if print_warnings:
                 print(f'{len(x0s)} roots found for (x,t)={(x,t)}. Increasing N to {11*N}')
-                # Note: if the characteristics cross again after enough time, there will be 5 roots
-                # and will need to generalize this
-            res = self.find_x0(x,t,N=11*N,print_warnings=print_warnings,limit_sols=limit_sols)
-            return res
+            return self.find_x0(x, t, N=11 * N, print_warnings=print_warnings, limit_sols=limit_sols)
         else:
             if print_warnings:
-                print(f'No root found for (x,t)={(x,t)}. Increasing N to {11*N}')
-            res = self.find_x0(x,t,N=11*N,print_warnings=print_warnings,limit_sols=limit_sols)
-            return res
+                if len(x0s) > 0:
+                    print(f'{len(x0s)} roots found for (x,t)={(x,t)}. Increasing N to {11*N}')
+                else:
+                    print(f'No root found for (x,t)={(x,t)}. Increasing N to {11*N}')
+            return self.find_x0(x, t, N=11 * N, print_warnings=print_warnings, limit_sols=limit_sols)
         
     def find_envelope(self,t,N=None,print_warnings=True):
         " given a time t, find the two x0 that define the `shocked envelope' "
+        if getattr(self, '_exact_sol_preshock_only', False) and np.isfinite(self.tb):
+            slip = self._breaking_slip(t)
+            if t > self.tb + slip:
+                raise NotImplementedError(
+                    'Burgers find_envelope for t > tb requires analytic du0/dx; '
+                    'this initial condition only supports exact_sol for t <= tb.'
+                )
         if t <= self.tb: return None, None
-        if N is None: N = max(30,int(t/self.tb*30))
+        if N is None:
+            if getattr(self, '_exact_sol_preshock_only', False) and self._char_tb_is_zero(self.tb):
+                self._assert_char_exact_for_tb_zero(t, context='find_envelope')
+                N = 30
+            else:
+                N = max(30,int(t/self.tb*30))
         elif N > 1e6: raise Exception('N is too large.', N)
         dom = (self.xmin - self.u0max*t - 0.01, self.xmax - self.u0min*t + 0.01)
         x0s = self.find_all_roots(self.eq_tb, t, domain=dom, N=N)
@@ -131,7 +197,7 @@ class Burgers(PdeBase):
             while len(x0) < 2:
                 N *= 11
                 x0 = self.find_x0(sx[0],t,N=N,limit_sols=False)
-                if N > 1e8:
+                if N > 1e6:
                     lims = np.sort(self.eq_x(self.find_envelope(t),t))
                     raise Exception(f'N={N} is too large. t={t}, sx={sx[0]}, envelope={lims}')
             uL, uR = self.u0(x0[0]), self.u0(x0[1])
@@ -145,7 +211,19 @@ class Burgers(PdeBase):
             x = self.x_elem
 
         if self.tb is None:
-            self.tb = self.calc_breaking_time(print_res=False)
+            # calc_breaking_time returns discrete Tb but must not overwrite coarse IC self.tb == 0.
+            self.calc_breaking_time(print_res=False)
+
+        slip_exact = self._breaking_slip(time)
+
+        if getattr(self, '_exact_sol_preshock_only', False) and np.isfinite(self.tb):
+            if time > float(self.tb) + slip_exact:
+                raise NotImplementedError(
+                    'Burgers.exact_sol for this initial condition is only implemented for t <= tb '
+                    '(PdeBase IC path without analytic du0/dx).'
+                )
+            if self._char_tb_is_zero(self.tb):
+                self._assert_char_exact_for_tb_zero(time, context='exact_sol')
         
         if guess is not None:
             assert(guess.shape == x.shape),'guess must be the same shape as x'
@@ -158,7 +236,7 @@ class Burgers(PdeBase):
 
         u = np.empty_like(x) # initiate u
 
-        if time > self.tb:
+        if time > float(self.tb) + slip_exact:
             # now solve the ODE for the shock location xs
             tm = solve_ivp(self.dsxdt, (self.tb, time), [self.xb], method='RK45', rtol=3e-13, atol=3e-13, max_step=1e-1)
             sx = self.modx(tm.y[0,-1])
@@ -194,6 +272,34 @@ class Burgers(PdeBase):
             u = np.reshape(u,orig_shape,'F')
 
         return u
+
+    def _configure_characteristic_ic_from_pdebase(self):
+        '''
+        For ICs from PdeBase.set_q0: u0(x)=set_q0(xy=x) (periodic via modx), u0min/max from samples.
+        ``*_coarse*``: set ``self.tb = 0`` (see calc_breaking_time / exact_sol).
+        '''
+        assert self.dim == 1
+        qt = self.q0_type.lower()
+
+        def u0_eval(x0):
+            x = self.modx(np.asarray(x0, dtype=float))
+            return np.asarray(PdeBase.set_q0(self, q0_type=qt, xy=x), dtype=float)
+
+        self.u0 = u0_eval
+        self.du0dx = None
+        self.x0b = None
+        self.xb = None
+        self.tb = None
+        self._exact_sol_preshock_only = True
+
+        nn = int(getattr(self, 'nn', 0) or 0)
+        xs = np.linspace(self.xmin, self.xmax, max(2049, 32 * max(nn, 1)), dtype=float)
+        uf = u0_eval(xs)
+        self.u0min = float(np.min(uf))
+        self.u0max = float(np.max(uf))
+
+        if 'coarse' in qt:
+            self.tb = 0.0
     
     def set_q0(self, q0_type=None, xy=None, **kwargs):
         # overwrite base function from PdeBase
@@ -208,7 +314,9 @@ class Burgers(PdeBase):
             or ('coswave' in q0_type) and not ('gassner' in q0_type or 'coarse' in q0_type):
 
             w = 2*np.pi
-            if 'shift' in q0_type:
+            if 'smallshift' in q0_type:
+                b = 1.1 * self.q0_max_q
+            elif 'shift' in q0_type:
                 b = 1.5 * self.q0_max_q
             else:
                 b = 0.0
@@ -228,6 +336,8 @@ class Burgers(PdeBase):
                 self.tb = self.dom_len/w
                 self.x0b = 0.25 * self.dom_len + self.xmin
                 self.xb = self.eq_x(self.x0b, self.tb)
+
+            self._exact_sol_preshock_only = False
 
             if 't05' in q0_type:
                 if self.tfix_initial_time is None:
@@ -253,11 +363,18 @@ class Burgers(PdeBase):
                 q0 = self.u0(xy)
         
         else:
-            print("WARNING: Defaulting to standard ICs. Will not be able to use exact_sol()" \
-            "               If you need this, either input the shock information for the" \
-            "               desired IC in Burgers.py, or use exact_sol_old() instead.")
             q0 = PdeBase.set_q0(self, q0_type=q0_type, xy=xy)
-            fn.repeat_neq_gv(q0,self.neq_node)
+            if getattr(q0, 'ndim', 0) == 2 and q0.shape == (self.nen, self.nelem):
+                q0 = fn.repeat_neq_gv(q0, self.neq_node)
+            if q0_type == self.q0_type.lower():
+                self._configure_characteristic_ic_from_pdebase()
+            elif self.u0min is None:
+                if kwargs.get('print_warning', True):
+                    print("WARNING: Auxiliary q0_type for this set_q0 call; exact_sol is not "
+                          "defined until set_q0 runs with the diffeq primary q0_type.")
+                self.u0min = float(np.min(q0))
+                self.u0max = float(np.max(q0))
+                self.u0 = lambda x0, _qt=q0_type: PdeBase.set_q0(self, q0_type=_qt, xy=x0)
         
         return q0
 
@@ -354,18 +471,29 @@ class Burgers(PdeBase):
         ''' estimate the time at which the solution breaks '''
         q0 = self.set_q0()
         dqdx = self.gm_gv(self.Dx, q0)
-        Tb = -1/np.min(dqdx)
-        if self.tb is not None:
+        mn = float(np.min(dqdx))
+        assert mn < 0.0, (
+            'Burgers calc_breaking_time: the discrete breaking time Tb = -1/min(dqdx) is not defined '
+            '(min(dqdx) >= 0). The characteristic / exact-solution framework is not valid for this '
+            'discrete initial state in the form expected here.'
+        )
+        Tb = -1.0 / mn
+        qt = self.q0_type.lower()
+        coarse_tb0 = 'coarse' in qt and self.tb is not None and np.isfinite(float(self.tb)) and float(self.tb) == 0.0
+        if self.tb is not None and np.isfinite(float(self.tb)) and not coarse_tb0:
             assert np.abs(Tb - self.tb) < 1e-2, f'Breaking time {Tb} does not match {self.tb}'
+        if self.tb is None and getattr(self, '_exact_sol_preshock_only', False):
+            self.tb = Tb
         if print_res:
             print(f'The breaking time is approximately T = {Tb:.{sig_fig}g}')
             if self.tb is not None:
                 print(f'The exact breaking time is T = {self.tb:.{sig_fig}g}')
         else:
-            if self.tb is not None:
-                return self.tb
-            else:
+            # For coarse Gassner IC, self.tb stays 0 for exact_sol / characteristics, but callers
+            # (e.g. t_final = calc_breaking_time() * tf) need the discrete gradient scale Tb > 0.
+            if coarse_tb0 and getattr(self, '_exact_sol_preshock_only', False):
                 return Tb
+            return self.tb if self.tb is not None else Tb
         
     def u0(self, x0): raise NotImplementedError('Initial condition not set')
     def du0dx(self, x0): raise NotImplementedError('Initial condition not set')
@@ -404,6 +532,7 @@ class Burgers(PdeBase):
     def find_all_roots(eq, args, domain=(0,1), N=30, tol=1e-13):
         """ Find all x0 in range [domain[0],domain[1]] such that eq(x0,t,x)==0."""
         if not isinstance(args, tuple): args = (args,)
+        eq_res_accept = 1e-10
         x = np.linspace(domain[0], domain[1], N+1)
         dx = x[1] - x[0]
         f = eq(x, *args)
@@ -418,7 +547,7 @@ class Burgers(PdeBase):
             elif f[i]*f[i+1] < 0.0: # there is a root between these points
                 sol = root_scalar(eq, args=args, bracket=(x[i], x[i+1]), method='brentq', xtol=tol)
                 x0 = sol.root
-            elif df[i]*df[i-1] < 0.0: # sign change in derivative, so at local max or min. Check if the max/min is a root!
+            elif i > 0 and df[i]*df[i-1] < 0.0: # sign change in derivative (skip i==0: df[-1] is meaningless)
                 try:
                     # first loosely solve for the minimum, then finely solve if it looks like a root
                     sol = minimize_scalar(abs_eq, args=args, bracket=(x[i]-dx, x[i+1]), method='golden', tol=1e-6)
@@ -430,7 +559,7 @@ class Burgers(PdeBase):
                 except:
                     pass
             if x0 is not None:
-                if abs_eq(x0,*args) < 1e-10 and not any(abs(x0 - r) < tol*10 for r in roots): 
+                if abs_eq(x0,*args) < eq_res_accept and not any(abs(x0 - r) < tol*10 for r in roots): 
                     roots.append(x0)
 
         return np.sort(roots)
