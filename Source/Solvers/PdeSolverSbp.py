@@ -12,6 +12,7 @@ from Source.Disc.MakeMesh import MakeMesh
 from Source.Disc.MakeSbpOp import MakeSbpOp
 from Source.Disc.Sat import Sat
 from Source.Disc.ADiss import ADiss
+from Source.Disc.ADissNew import ADissNew
 from Source.Solvers.PdeSolver import PdeSolver
 import Source.Methods.Functions as fn
 import Source.Methods.Sparse as sp
@@ -121,7 +122,12 @@ class PdeSolverSbp(PdeSolver):
         # no need to save tL, tR, Dx_unkronned, etc.
         # but if there is, we can access them from self.sat
 
-        self.adiss = ADiss(self)
+        # Keep the entropy-budgeted formulation separate from the legacy
+        # artificial-dissipation implementations in ADiss.
+        if self.vol_diss['diss_type'].lower() == 'new':
+            self.adiss = ADissNew(self)
+        else:
+            self.adiss = ADiss(self)
         self.dissipation = self.adiss.dissipation
 
         ''' Modify solver approach '''
@@ -356,7 +362,7 @@ class PdeSolverSbp(PdeSolver):
     def dfdq_1d_div(self, q, t=0.0):
         ''' the main linearized RHS function for divergence form in 1D '''
         # TODO: this is not fully correct
-        if not self.dissipation.type.lower() == 'nd':
+        if self.adiss.type.lower() != 'nd':
             raise Exception('Not coded up')
         
         if self.use_diffeq_dExdx:
@@ -986,4 +992,3 @@ class PdeSolverSbp(PdeSolver):
             return coeffxi, coeffeta
         elif self.dim == 3:
             raise Exception('Not implemented yet')
-        
