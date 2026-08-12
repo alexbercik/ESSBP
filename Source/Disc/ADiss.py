@@ -1528,24 +1528,24 @@ class ADiss():
     
     def calc_RHS_jac(self, q=None, step=1.0e-4):
         ''' could form explicitly... but for simplicity just do finite difference. 
-        Note: this does not include the coefficient '''
+        Note: this does not include the coefficient, and is only the first element '''
         if self.type == 'nd':
             return 0.0
         if q is None:
             q = self.solver.diffeq.set_q0()
-        nen = self.nen*self.neq_node  
-        nelem = self.nelem
-        assert((nen,nelem)==q.shape),"ERROR: sizes don't match"     
-        nelem = 1 # only make it for the first element
-        A = np.zeros((nen*nelem,nen*nelem))              
-        for i in range(nen):
-            for j in range(nelem):
-                ei = np.zeros((nen,nelem))
-                ei[i,j] = 1.*step
-                q_r = self.dissipation(q+ei)[:,0] #.flatten('F')
-                q_l = self.dissipation(q-ei)[:,0] #.flatten('F')
-                idx = np.where(ei.flatten('F')>step/10)[0][0]
-                A[:,idx] = (q_r - q_l)/(2*step)
+        assert q.ndim == 2, "ERROR: q must have shape (element DOFs, elements)"
+
+        # Volume dissipation is element local, so its first diagonal block is
+        # sufficient. Infer its size from q so this diagnostic also works for
+        # tensor-product elements, where self.nen is only the 1D node count.
+        ndof = q.shape[0]
+        A = np.zeros((ndof, ndof))
+        for i in range(ndof):
+            ei = np.zeros_like(q, dtype=float)
+            ei[i, 0] = step
+            q_r = self.dissipation(q + ei)[:, 0]
+            q_l = self.dissipation(q - ei)[:, 0]
+            A[:, i] = (q_r - q_l) / (2 * step)
         return A
     
     def dispersion_analysis(self):

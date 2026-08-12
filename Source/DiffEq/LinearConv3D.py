@@ -158,6 +158,14 @@ class LinearConv(PdeBase):
         nen,nelem = np.shape(q)
         dEzdq = np.zeros((nen,1,1,nelem),dtype=q.dtype)
         return dEzdq
+
+    def entropy_var(self, q):
+        '''Return entropy variables for the standard quadratic entropy.'''
+        return q
+
+    def dqdw(self, q):
+        '''Return the scalar identity dU/dW with block-diagonal shape.'''
+        return fn.gdiag_to_gbdiag(np.ones_like(q))
     
     @njit   
     def central_fix_fluxes(qL,qR):

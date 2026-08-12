@@ -137,6 +137,14 @@ class LinearConv(PdeBase):
         dEydq = np.zeros((nen,1,1,nelem),dtype=q.dtype)
         return dEydq
 
+    def entropy_var(self, q):
+        '''Return entropy variables for the standard quadratic entropy.'''
+        return q
+
+    def dqdw(self, q):
+        '''Return the scalar identity dU/dW with block-diagonal shape.'''
+        return fn.gdiag_to_gbdiag(np.ones_like(q))
+
     @njit
     def central_fix_fluxes(qL,qR):
         ''' a central 2-point flux for hadamard form but with ax fixed at (1,1).

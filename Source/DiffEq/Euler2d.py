@@ -301,21 +301,19 @@ class Euler(PdeBase):
     
     def entropy(self, q):
         ''' return the nodal values of the entropy s(q). '''
-        # Note: this is not quite the "normal" entropy for quasi1D euler when \neq 1, but is a correct entropy
         rho, q_1, q_2, e = self.decompose_q(q)
         u = q_1 / rho
         v = q_2 / rho
-        p = (self.g-1)*(q_2 - rho*0.5*(u*u+v*v))
+        p = (self.g-1)*(e - rho*0.5*(u*u+v*v))
         s = np.log(p/(rho**self.g))
         return (-rho*s/(self.g-1))
     
     def entropy_var(self, q):
         ''' return the nodal values of the entropy variables w(q). '''
-        # Note: the same entropy variables for quasi1D euler (no svec dependence)
         rho, q_1, q_2, e = self.decompose_q(q)
         u = q_1 / rho
         v = q_2 / rho
-        p = (self.g-1)*(q_2 - rho*0.5*(u*u+v*v))
+        p = (self.g-1)*(e - rho*0.5*(u*u+v*v))
         s = np.log(p/(rho**self.g))
         w = self.assemble_vec(((self.g-s)/(self.g-1) - 0.5*rho*(u*u+v*v)/p, rho*u/p, rho*v/p, -rho/p))
         return w
@@ -602,7 +600,26 @@ class Euler(PdeBase):
         return np.zeros((self.nn, 4, 4, self.nelem))
         
     def dqdw(self,q):
-        return np.zeros((self.nn, 4, 4, self.nelem))
+        '''Return the conservative-to-entropy change-of-variables matrix.'''
+        rho, rhou, rhov, energy = self.decompose_q(q)
+        rhou2 = rhou*rhou/rho
+        rhov2 = rhov*rhov/rho
+        pressure = (self.g-1)*(energy - 0.5*(rhou2 + rhov2))
+
+        r22 = rhou2 + pressure
+        r23 = rhou*rhov/rho
+        r24 = rhou*(pressure + energy)/rho
+        r33 = rhov2 + pressure
+        r34 = rhov*(pressure + energy)/rho
+        r44 = self.g*energy*energy/rho \
+            - 0.25*(self.g-1)*(rhou2 + rhov2)**2/rho
+
+        return fn.build_gbdiag(
+            rho, rhou, rhov, energy,
+            rhou, r22, r23, r24,
+            rhov, r23, r33, r34,
+            energy, r24, r34, r44,
+        )
     
     def calcG(self, q, t):
         return np.zeros_like(q)
