@@ -1755,6 +1755,11 @@ def arcsinh_mean(qL, qR):
     q = eps + (qavg - eps)*phi
     return q
 
+@njit
+def harm_mean(qL, qR):
+    """Harmonic mean of qL and qR."""
+    return 2.0 * qL * qR / (qL + qR)
+
 def is_pos_def(A):
     ''' check if a matrix A is symmetric positive definite '''
     if np.array_equal(A, A.T):
@@ -2691,9 +2696,9 @@ def clip_pos_smooth(q, q_floor=1.0e-14, q_cut=1.0e-12):
 
 @njit
 def clip_pos_smooth_vec(q, q_floor=1.0e-14, q_cut=1.0e-12):
-    '''
+    """
     C^\infty positive floor with complex-step-compatible extension.
-    '''
+    """
     qnew = np.empty_like(q)
     for idx in np.ndindex(q.shape):
         qnew[idx] = clip_pos_smooth(q[idx], q_floor, q_cut)

@@ -215,11 +215,15 @@ class Quasi1dEuler(PdeBase):
             self.central_flux = efn.Central_flux_1D
             self.ismail_roe_flux = efn.Ismail_Roe_flux_1D
             self.ranocha_flux = efn.Ranocha_flux_1D
+            self.ranocha_corrected_flux = efn.Ranocha_flux_1D_corrected
             self.shima_flux = efn.Shima_flux_1D
             self.kuya_flux = efn.Kuya_flux_1D
             self.chandrashekar_flux = efn.Chandrashekar_flux_1D
+            self.chandrashekar_corrected_flux = efn.Chandrashekar_REC_flux_1D
             self.kennedy_gruber_flux = efn.KennedyGruber_flux_1D
             self.singh_flux = efn.Singh_flux_1D
+            self.mkeplog_flux = efn.mKEPlog_flux_1D
+            self.arith_harm_flux = efn.arith_harm_flux_1D
             self.maxeig_dExdq = efn.maxeig_dExdq_1D
             #self.maxeig_dEndq = efn.maxeig_dEndq_1D
             self.entropy = efn.entropy_1D
