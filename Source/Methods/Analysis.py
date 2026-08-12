@@ -154,7 +154,8 @@ def animate(solver, q_sol=None, file_name='animation', make_video=True, make_gif
             printProgressBar(i+1, nframes, prefix = 'Progress:', suffix = suf)
 
             # call plotting function from solver module
-            plot(q_sol[:,:,idx], **plotargs, time=timei, idx=idx,
+            #print('DEBUG: timei = ', timei, ', time[idx] = ', time[idx], ', idx = ', idx)
+            plot(q_sol[:,:,idx], **plotargs, time=time[idx], idx=idx,
                 savefile=file_name+'/'+'frame'+str(i).zfill(numfill))
 
     if (make_video or make_gif):

@@ -2017,6 +2017,83 @@ def Ranocha_flux_1D(qL,qR):
     E[2] = fac*u_avg + 0.5*(pL*uR + pR*uL)
     return E
 
+@njit
+def Ranocha_flux_1D_corrected(qL, qR):
+    """
+    Corrected entropy-conservative Ranocha flux.
+
+    The correction additionally preserves the reduced energy after
+    linearization while retaining KEP and PEP.
+
+    qL and qR have shape (3,); the returned flux has shape (3,).
+    Positive density and pressure are required.
+    """
+    # Decompose the conservative states.
+    rhoL = qL[0]
+    momL = qL[1]
+    rhoEL = qL[2]
+    uL = momL / rhoL
+    pL = (g - 1.0) * (rhoEL - 0.5 * uL * momL)
+
+    rhoR = qR[0]
+    momR = qR[1]
+    rhoER = qR[2]
+    uR = momR / rhoR
+    pR = (g - 1.0) * (rhoER - 0.5 * uR * momR)
+
+    rho_over_p_L = rhoL / pL
+    rho_over_p_R = rhoR / pR
+
+    # Logarithmic means used by the original Ranocha flux.
+    rho_ln = logmean_sca(rhoL, rhoR)
+    rhop_ln = logmean_sca(rho_over_p_L, rho_over_p_R)
+
+    u_avg = 0.5 * (uL + uR)
+
+    # Assemble the original Ranocha flux.
+    fac = rho_ln * (
+        1.0 / ((g - 1.0) * rhop_ln)
+        + 0.5 * uL * uR
+    )
+
+    E = np.zeros(3, dtype=qL.dtype)
+    E[0] = rho_ln * u_avg
+    E[1] = E[0] * u_avg + 0.5 * (pL + pR)
+    E[2] = fac * u_avg + 0.5 * (pL * uR + pR * uL)
+
+    # Reduced-energy-preserving entropy-neutral correction.
+    y = np.log(rhoR / rhoL)
+    y2 = y * y
+
+    # The direct formula suffers from cancellation when rhoL ≈ rhoR.
+    if np.abs(y) < 1.0e-2:
+        beta = (
+            -1.0 / 12.0
+            + y2 / 720.0
+            - y2 * y2 / 30240.0
+        )
+    else:
+        beta = (
+            1.0 / y2
+            - (rhoL + rhoR)
+            / (2.0 * (rhoR - rhoL) * y)
+        )
+
+    delta_p = pR - pL
+    delta_a = rho_over_p_R - rho_over_p_L
+    delta_s = np.log(pR / pL) - g * y
+
+    alpha = (u_avg / g) * beta * delta_p
+
+    E[0] += alpha * delta_a
+    E[1] += alpha * u_avg * delta_a
+    E[2] += alpha * (
+        0.5 * uL * uR * delta_a
+        - delta_s / (g - 1.0)
+    )
+
+    return E
+
 @njit 
 def Ranocha_fluxes_2D(qL,qR):
     '''
@@ -2105,6 +2182,94 @@ def Chandrashekar_flux_1D(qL,qR):
     E[0] = rholn*uavg
     E[1] = E[0]*uavg + pavg
     E[2] = pln*uavg/g1 + pavg*uavg + 0.5*rholn*uavg*u2bar
+    return E
+
+@njit
+def Chandrashekar_REC_flux_1D(qL, qR):
+    '''
+    Return the corrected Chandrashekar EC + PEP + REC flux.
+
+    Chandrashekar's original convective KEP pressure flux is retained,
+    although the flux does not satisfy the stricter arithmetic-pressure
+    KEP condition.
+
+    qL and qR are conservative states of shape (3,), and the returned
+    numerical flux has shape (3,).
+    '''
+    gamma = g1 + 1.0
+
+    # Decompose the left state.
+    rhoL = qL[0]
+    uL = qL[1] / rhoL
+    pL = g1*(qL[2] - 0.5*qL[1]*uL)
+    betaL = 0.5*rhoL/pL
+
+    # Decompose the right state.
+    rhoR = qR[0]
+    uR = qR[1] / rhoR
+    pR = g1*(qR[2] - 0.5*qR[1]*uR)
+    betaR = 0.5*rhoR/pR
+
+    # Compute the quantities used by the baseline Chandrashekar flux.
+    betaavg = 0.5*(betaL + betaR)
+    betaln = logmean_sca(betaL, betaR)
+    rhoavg = 0.5*(rhoL + rhoR)
+    rholn = logmean_sca(rhoL, rhoR)
+    pavg = 0.5*rhoavg/betaavg
+    pln = 0.5*rholn/betaln
+    uavg = 0.5*(uL + uR)
+    u2avg = 0.5*(uL*uL + uR*uR)
+    u2bar = 2.0*uavg*uavg - u2avg  # Exactly uL*uR.
+
+    # Assemble the baseline Chandrashekar flux.
+    E = np.zeros(3, dtype=qL.dtype)
+    E[0] = rholn*uavg
+    E[1] = E[0]*uavg + pavg
+    E[2] = (
+        pln*uavg/g1
+        + pavg*uavg
+        + 0.5*rholn*uavg*u2bar
+    )
+
+    # Compute logarithmic jumps accurately when the states are close.
+    drho = rhoR - rhoL
+    dp = pR - pL
+    du = uR - uL
+    logrho_jump = np.log1p(drho/rhoL)
+    logp_jump = np.log1p(dp/pL)
+
+    # This is beta_ij from equation (60), not the thermodynamic beta.
+    # The direct expression suffers catastrophic cancellation near y = 0.
+    if np.abs(logrho_jump) < 1.0e-2:
+        y2 = logrho_jump*logrho_jump
+        correction_beta = (
+            -1.0/12.0
+            + y2/720.0
+            - y2*y2/30240.0
+        )
+    else:
+        correction_beta = (
+            1.0/(logrho_jump*logrho_jump)
+            - (rhoL + rhoR)/(2.0*drho*logrho_jump)
+        )
+
+    # Chandrashekar's coupled pressure mean is pavg.
+    alpha = (
+        uavg*correction_beta*dp/gamma
+        - rholn*pavg*du/(2.0*(rhoL + rhoR))
+    )
+
+    # Add the entropy-neutral REC correction.
+    a_jump = rhoR/pR - rhoL/pL
+    entropy_jump = logp_jump - gamma*logrho_jump
+
+    E[0] += alpha*a_jump
+    E[1] += alpha*uavg*a_jump
+    E[2] += alpha*(
+        0.5*u2bar*a_jump
+        - entropy_jump/g1
+    )
+
     return E
 
 @njit 
@@ -2381,6 +2546,102 @@ def Singh_flux_1D(qL,qR):
         + 0.0625 * sr * sk * su
         + 0.25 * sp * su
     )
+    return out
+
+@njit 
+def mKEPlog_flux_1D(qL,qR):
+    '''
+    Return the mKEP with log density mean flux given two states qL and qR where each is
+    of shape (1,), and returns a numerical flux of shape (3,)
+    '''
+    rhoL = qL[0]
+    momL = qL[1]
+    EL   = qL[2]
+
+    rhoR = qR[0]
+    momR = qR[1]
+    ER   = qR[2]
+
+    invrhoL = 1.0 / rhoL
+    invrhoR = 1.0 / rhoR
+
+    uL = momL * invrhoL
+    uR = momR * invrhoR
+
+    gm1 = g - 1.0
+    inv_gm1 = 1.0 / gm1
+
+    pL = gm1 * (EL - 0.5 * momL * momL * invrhoL)
+    pR = gm1 * (ER - 0.5 * momR * momR * invrhoR)
+
+    sr = fn.log_mean(rhoL, rhoR) # 0.5 * (rhoL + rhoR)
+    su = uL + uR
+    sp = pL + pR
+    sk = uL*uL + uR*uR
+
+    out = np.empty(3, dtype=qL.dtype)
+    out[0] = 0.5 * sr * su
+    out[1] = 0.25 * sr * su * su + 0.5 * sp
+    out[2] = (
+        0.25 * sp * su * inv_gm1
+        + 0.125 * sr * sk * su
+        + 0.25 * sp * su
+    )
+    return out
+
+@njit
+def arith_harm_flux_1D(qL, qR):
+    """
+    Arithmetic-density / harmonic-internal-energy two-point flux.
+    qL and qR contain the conservative variables
+        [rho, rho*u, E]
+    and the returned flux has shape (3,).
+    """
+    rhoL = qL[0]
+    momL = qL[1]
+    EL   = qL[2]
+
+    rhoR = qR[0]
+    momR = qR[1]
+    ER   = qR[2]
+
+    invrhoL = 1.0 / rhoL
+    invrhoR = 1.0 / rhoR
+
+    uL = momL * invrhoL
+    uR = momR * invrhoR
+
+    gm1 = g - 1.0
+    inv_gm1 = 1.0 / gm1
+
+    pL = gm1 * (EL - 0.5 * momL * momL * invrhoL)
+    pR = gm1 * (ER - 0.5 * momR * momR * invrhoR)
+
+    # Specific internal energy: epsilon = p / ((gamma - 1) rho)
+    epsL = pL * inv_gm1 * invrhoL
+    epsR = pR * inv_gm1 * invrhoR
+
+    # Arithmetic density mean and harmonic internal-energy mean
+    sr   = 0.5 * (rhoL + rhoR)
+    seps = fn.harm_mean(epsL, epsR)
+
+    su = uL + uR
+
+    out = np.empty(3, dtype=qL.dtype)
+
+    # {rho}_A {u}
+    out[0] = 0.5 * sr * su
+
+    # {rho}_A {u}^2 + {p}
+    out[1] = 0.25 * sr * su * su + 0.5 * (pL + pR)
+
+    # {rho}_A {u} {epsilon}_H + 1/2 {rho}_A {u^2}_p {u} + {p . u}_p
+    out[2] = (
+        0.5 * sr * seps * su
+        + 0.25 * sr * uL * uR * su
+        + 0.5 * (pL * uR + pR * uL)
+    )
+
     return out
 
 @njit

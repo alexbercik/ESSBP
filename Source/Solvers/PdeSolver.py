@@ -876,7 +876,7 @@ class PdeSolver:
                    title=r'Eigenvalues', save_format='png', dpi=600, overwrite=False,
                    sparse_solver=False, sparse_largestRe_only=True, figsize=(6,4), 
                    log_colourbar=False, xlabel=None, ylabel=None, label_fontsize=14, 
-                   title_fontsize=16, legend_fontsize=12, **kargs):
+                   title_fontsize=16, legend_fontsize=12, show_fig=True, colour='tab:blue', **kargs):
         '''
         Call on self.diffeq.dqdt to check the stability of the spatial operator
         at a particular state q using central finite differences (approximate!).
@@ -1109,7 +1109,7 @@ class PdeSolver:
             X = [x.real for x in eigs]
             Y = [x.imag for x in eigs]
             if avg_k is None:
-                plt.scatter(X,Y, color='red')
+                plt.scatter(X,Y, color=colour)
             else:
                 if colour_by_bdy:
                     if log_colourbar:
@@ -1164,7 +1164,9 @@ class PdeSolver:
                     plt.savefig(filename+'_RENAMEME', format=save_format, dpi=dpi)
                 else: 
                     plt.savefig(filename, format=save_format, dpi=dpi)
-            plt.show()
+            if show_fig:
+                plt.show()
+            plt.close()
 
         if plot_maxvec:
             #TODO: assumes 1D, also not well suited to neq_node>1
@@ -1208,7 +1210,9 @@ class PdeSolver:
                 plt.legend(fontsize=legend_fontsize)
                 
                 # Show the plot for each eigenvalue
-                plt.show()
+                if show_fig:
+                    plt.show()
+                plt.close()
 
         
         if returnA and returneigs and returnvecs:
