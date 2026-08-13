@@ -69,13 +69,13 @@ class ADissNew:
                     'a positive integer.'
                 )
 
-        self.sensor_type = config.get('sensor_type', 'scaled_conservative')
-        self.distribution_type = config.get('distribution_type', 'conservative')
-        self.budget_type = config.get('budget_type', 'cheap_entropy_viscosity')
+        self.sensor_type = config.get('sensor_type', 'cons')
+        self.distribution_type = config.get('distribution_type', 'cons_sca')
+        self.budget_type = config.get('budget_type', 'cheap')
         supported_selectors = {
-            'sensor_type': {'scaled_conservative', 'none'},
-            'distribution_type': {'conservative', 'entdcp'},
-            'budget_type': {'cheap_entropy_viscosity', 'entdcp'},
+            'sensor_type': {'cons', 'none'},
+            'distribution_type': {'cons_mat', 'cons_sca', 'entdcp'},
+            'budget_type': {'cheap', 'entdcp'},
         }
         selectors = (
             ('sensor_type', self.sensor_type),
@@ -289,6 +289,56 @@ class ADissNew:
         self.qshape = (self.np * self.neq_node, self.n_elem)
         self.A0_shape = (1, self.neq_node, self.neq_node, self.n_elem)
 
+        if self.distribution_type == 'cons_mat':
+            jacobian_name = (
+                'dExdq_abs' if self.dim == 1 else 'dEndq_abs'
+            )
+            if not hasattr(self.solver.diffeq, jacobian_name):
+                raise ValueError(
+                    "distribution_type='cons_mat' requires the differential "
+                    f'equation to define {jacobian_name}.'
+                )
+
+            # The 1D cofactor metric J d(xi)/dx is identically one, so only
+            # multidimensional distributions need frozen metric directions.
+            if self.dim > 1:
+                if not hasattr(self.solver, 'mesh') or not hasattr(
+                    self.solver.mesh, 'metrics'
+                ):
+                    raise ValueError(
+                        "distribution_type='cons_mat' requires mesh metric terms."
+                    )
+
+                nodal_metrics = np.asarray(self.solver.mesh.metrics)
+                expected_metric_shape = (
+                    self.np,
+                    self.dim * self.dim,
+                    self.n_elem,
+                )
+                if nodal_metrics.shape != expected_metric_shape:
+                    raise ValueError(
+                        f'Mesh metrics must have shape {expected_metric_shape}; '
+                        f'got {nodal_metrics.shape}.'
+                    )
+
+                # Mesh metrics are stored row-major as
+                # J d(xi_alpha)/d(x_j). Freeze each reference direction at its
+                # reference-H-weighted element average.
+                nodal_metrics = nodal_metrics.reshape(
+                    self.np, self.dim, self.dim, self.n_elem
+                )
+                self.element_metrics = np.einsum(
+                    'i,iaje->aje', self.H_ref, nodal_metrics
+                ) * self.ref_measure_inv
+                if not np.all(np.isfinite(self.element_metrics)):
+                    raise FloatingPointError(
+                        'Element-average contravariant metric terms are nonfinite.'
+                    )
+                if np.any(np.all(self.element_metrics == 0.0, axis=1)):
+                    raise ValueError(
+                        'Each element-average contravariant direction must be nonzero.'
+                    )
+
         # Linear-convection speeds are constant and need not be reconstructed
         # during every residual evaluation.
         if self.diffeq_name == 'LinearConvection':
@@ -483,6 +533,50 @@ class ADissNew:
             w_nodes.shape
         )
 
+    def _matrix_conservative_distribution(self, q_nodes, q_bar):
+        """Apply frozen contravariant absolute Jacobians at the cell average."""
+        if self.dim == 1:
+            # J d(xi)/dx = 1 in 1D, so the physical x Jacobian is already the
+            # contravariant Jacobian required by the reference derivative.
+            absolute_jacobians = np.asarray(
+                self.solver.diffeq.dExdq_abs(q_bar)
+            )
+        else:
+            # Stack the element-average state once per reference direction so
+            # dEndq_abs forms every directional matrix in one vectorized call.
+            directional_q_bar = np.tile(q_bar, (self.dim, 1))
+            absolute_jacobians = np.asarray(
+                self.solver.diffeq.dEndq_abs(
+                    directional_q_bar, self.element_metrics
+                )
+            )
+        expected_shape = (
+            self.dim,
+            self.neq_node,
+            self.neq_node,
+            self.n_elem,
+        )
+        if absolute_jacobians.shape != expected_shape:
+            raise ValueError(
+                'The absolute flux Jacobian must return shape '
+                f'{expected_shape}; got {absolute_jacobians.shape}.'
+            )
+
+        distribution = np.zeros_like(q_nodes)
+        for direction, Ds in enumerate(self.distribution_Ds_ref):
+            derivative = (Ds @ q_nodes.reshape(self.np, -1)).reshape(
+                q_nodes.shape
+            )
+            scaled_derivative = np.einsum(
+                'abe,ibe->iae', absolute_jacobians[direction], derivative
+            )
+            scaled_derivative *= self.H_ref[:, None, None]
+            distribution += (
+                Ds.T @ scaled_derivative.reshape(self.np, -1)
+            ).reshape(q_nodes.shape)
+
+        return distribution
+
     def dissipation(self, q):
         """Return the strong-form element-local artificial dissipation."""
         q = np.asarray(q)
@@ -507,7 +601,14 @@ class ADissNew:
 
         if self.distribution_type == 'entdcp':
             distribution = self._entdcp_distribution(q, q_nodes, w_nodes)
+        elif self.distribution_type == 'cons_mat':
+            if q_bar is None:
+                q_bar = np.einsum('ie,ice->ce', self.H_phys, q_nodes)
+                q_bar *= self.volume_inv[None, :]
+            distribution = self._matrix_conservative_distribution(q_nodes, q_bar)
         else:
+            # cons_sca applies the same reference operator independently to
+            # every conservative component.
             distribution = (
                 self.distribution_M @ q_nodes.reshape(self.np, -1)
             ).reshape(q_nodes.shape)

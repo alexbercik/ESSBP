@@ -114,6 +114,15 @@ class LinearConv(PdeBase):
         dEzdq = self.az*np.ones((nen,1,1,nelem),dtype=q.dtype)
         return dEzdq
 
+    def dEndq_abs(self, q, metrics):
+        """Return the absolute flux Jacobian in an unnormalized direction."""
+        speed = (
+            metrics[:,0,:]*self.ax
+            + metrics[:,1,:]*self.ay
+            + metrics[:,2,:]*self.az
+        )
+        return fn.gdiag_to_gbdiag(np.abs(speed))
+
     def dExdq_abs(self, q, entropy_fix=False):
         nen,nelem = np.shape(q)
         dExdq = abs(self.ax)*np.ones((nen,1,1,nelem),dtype=q.dtype)

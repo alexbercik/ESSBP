@@ -680,10 +680,88 @@ class Euler(PdeBase):
         return np.zeros_like(q)
     
     def dExdq(self, q):
-        return np.zeros((self.nn, 4, 4, self.nelem))
+        rho, rhou, rhov, energy = self.decompose_q(q)
+        u = rhou / rho
+        v = rhov / rho
+        kinetic_energy = 0.5 * (u*u + v*v)
+        gamma_energy = self.g * energy / rho
+        zero = np.zeros_like(rho)
+        one = np.ones_like(rho)
+
+        return fn.build_gbdiag(
+            zero, one, zero, zero,
+            (self.g-1)*kinetic_energy-u*u, (3-self.g)*u,
+            -(self.g-1)*v, (self.g-1)*one,
+            -u*v, v, u, zero,
+            (2*(self.g-1)*kinetic_energy-gamma_energy)*u,
+            gamma_energy-(self.g-1)*(kinetic_energy+u*u),
+            -(self.g-1)*u*v, self.g*u,
+        )
     
     def dEydq(self, q):
-        return np.zeros((self.nn, 4, 4, self.nelem))
+        rho, rhou, rhov, energy = self.decompose_q(q)
+        u = rhou / rho
+        v = rhov / rho
+        kinetic_energy = 0.5 * (u*u + v*v)
+        gamma_energy = self.g * energy / rho
+        zero = np.zeros_like(rho)
+        one = np.ones_like(rho)
+
+        return fn.build_gbdiag(
+            zero, zero, one, zero,
+            -u*v, v, u, zero,
+            (self.g-1)*kinetic_energy-v*v, -(self.g-1)*u,
+            (3-self.g)*v, (self.g-1)*one,
+            (2*(self.g-1)*kinetic_energy-gamma_energy)*v,
+            -(self.g-1)*u*v,
+            gamma_energy-(self.g-1)*(kinetic_energy+v*v), self.g*v,
+        )
+
+    def dEndq(self, q, metrics):
+        """Return the flux Jacobian in an unnormalized physical direction."""
+        return (
+            metrics[:, 0, None, None, :] * self.dExdq(q)
+            + metrics[:, 1, None, None, :] * self.dEydq(q)
+        )
+
+    def dEndq_abs(self, q, metrics, entropy_fix=False):
+        """Return the absolute flux Jacobian in an unnormalized direction."""
+        rho, rhou, rhov, energy = self.decompose_q(q)
+        velocity_x = rhou/rho
+        velocity_y = rhov/rho
+        pressure = (self.g-1) * (
+            energy - 0.5 * (rhou*rhou + rhov*rhov) / rho
+        )
+        sound_speed = np.sqrt(self.g * pressure / rho)
+
+        normal_velocity = (
+            metrics[:, 0, :]*velocity_x + metrics[:, 1, :]*velocity_y
+        )
+        metric_norm = np.sqrt(
+            metrics[:, 0, :]*metrics[:, 0, :]
+            + metrics[:, 1, :]*metrics[:, 1, :]
+        )
+        acoustic_speed = metric_norm*sound_speed
+        speed_abs = fn.cabs(normal_velocity)
+        minus_abs = fn.cabs(normal_velocity-acoustic_speed)
+        plus_abs = fn.cabs(normal_velocity+acoustic_speed)
+        linear_coefficient = (plus_abs-minus_abs) / (2*acoustic_speed)
+        quadratic_coefficient = (
+            plus_abs+minus_abs-2*speed_abs
+        ) / (2*acoustic_speed*acoustic_speed)
+
+        shifted_jacobian = self.dEndq(q, metrics)
+        diagonal = np.arange(self.neq_node)
+        shifted_jacobian[:, diagonal, diagonal, :] -= normal_velocity[:, None, :]
+        shifted_squared = np.einsum(
+            'nabe,nbce->nace', shifted_jacobian, shifted_jacobian
+        )
+        absolute_jacobian = (
+            linear_coefficient[:, None, None, :] * shifted_jacobian
+            + quadratic_coefficient[:, None, None, :] * shifted_squared
+        )
+        absolute_jacobian[:, diagonal, diagonal, :] += speed_abs[:, None, :]
+        return absolute_jacobian
         
     def dqdw(self,q):
         '''Return the conservative-to-entropy change-of-variables matrix.'''

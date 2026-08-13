@@ -240,25 +240,14 @@ def dEndw_abs_3D(q,dxidx,entropy_fix=False):
 
 
 @njit   
-def dEndq_abs_1D(q,dxidx,entropy_fix=False):
-    # NOTE: dxidx = 1 in 1D
-    ''' uses the Barth scaling to compute X @ cabs(Lam) @ Xinv, where X
-     are the eigenvectors of dExdq that symmetrixe P=dqdw, and Lam
-     are the eigenvalues of dExdq '''
-    
-    Lam, X, Xinv, _ = dEndq_eigs_1D(q,dxidx,val=True,vec=True,inv=True,trans=False,entropy_fix=entropy_fix)
-    dEndq_abs = fn.gbdiag_gbdiag(X, fn.gdiag_gbdiag(cabs(Lam), Xinv))
-    return dEndq_abs
-
-@njit   
 def dExdq_abs_1D(q,entropy_fix=False):
     ''' uses the Barth scaling to compute X @ cabs(Lam) @ Xinv, where X
      are the eigenvectors of dExdq that symmetrixe P=dqdw, and Lam
      are the eigenvalues of dExdq '''
     
     Lam, X, Xinv, _ = dExdq_eigs_1D(q,val=True,vec=True,inv=True,trans=False,entropy_fix=entropy_fix)
-    dEndq_abs = fn.gbdiag_gbdiag(X, fn.gdiag_gbdiag(cabs(Lam), Xinv))
-    return dEndq_abs
+    dExdq_abs = fn.gbdiag_gbdiag(X, fn.gdiag_gbdiag(cabs(Lam), Xinv))
+    return dExdq_abs
 
 @njit
 def dEndq_abs_2D(q,dxidx,entropy_fix=False):

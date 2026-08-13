@@ -432,7 +432,7 @@ class Burgers(PdeBase):
 
         dExdq_abs = fn.gdiag_to_gbdiag(fn.cabs(q))
         return dExdq_abs
-    
+
     def maxeig_dExdq(self, q):
         ''' return the absolute maximum eigenvalue - used for LF fluxes '''
         return fn.cabs(q)

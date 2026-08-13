@@ -1047,6 +1047,34 @@ class Quasi1dEuler(PdeBase):
         dEdq = fn.build_gbdiag(r0,r1,r0,r21,r22,r23,r31,r32,r33)
 
         return dEdq
+
+    def dExdq_abs(self, q, entropy_fix=False):
+        """Return the absolute physical flux Jacobian."""
+        rho, momentum, energy = self.decompose_q(q)
+        velocity = momentum / rho
+        pressure = (self.g-1) * (energy - 0.5*momentum*momentum/rho)
+        sound_speed = np.sqrt(self.g * pressure / rho)
+
+        speed_abs = fn.cabs(velocity)
+        minus_abs = fn.cabs(velocity-sound_speed)
+        plus_abs = fn.cabs(velocity+sound_speed)
+        linear_coefficient = (plus_abs-minus_abs) / (2*sound_speed)
+        quadratic_coefficient = (
+            plus_abs+minus_abs-2*speed_abs
+        ) / (2*sound_speed*sound_speed)
+
+        shifted_jacobian = self.dExdq(q)
+        diagonal = np.arange(self.neq_node)
+        shifted_jacobian[:, diagonal, diagonal, :] -= velocity[:, None, :]
+        shifted_squared = np.einsum(
+            'nabe,nbce->nace', shifted_jacobian, shifted_jacobian
+        )
+        absolute_jacobian = (
+            linear_coefficient[:, None, None, :] * shifted_jacobian
+            + quadratic_coefficient[:, None, None, :] * shifted_squared
+        )
+        absolute_jacobian[:, diagonal, diagonal, :] += speed_abs[:, None, :]
+        return absolute_jacobian
         
     def dqdw(self,q):
         ''' return hessian P of potential phi wrt entropy variables w, or dqdw '''
