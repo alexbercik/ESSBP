@@ -44,26 +44,193 @@ class NullSAT:
         return np.zeros((self.shape[0] * self.shape[1], self.shape[0] * self.shape[1]))
 
 
+class PhysicalBoundarySAT:
+    """Evaluate a configured 1D SAT only at the two physical boundaries."""
+
+    def __init__(self, base_sat, disc_type):
+        self.base_sat = base_sat
+        self.disc_type = disc_type
+        self.neq_node = base_sat.neq_node
+
+    def _calc_one_element(self, q, E, q_bdyL, q_bdyR, element,
+                          E_bdyL=None, E_bdyR=None):
+        """Call the D-SBP SAT on one boundary element and no interfaces."""
+        original_nelem = self.base_sat.nelem
+        element = element % original_nelem
+        element_data = {}
+
+        # A few specialized 1D SATs cache coefficient or boundary-coordinate
+        # arrays for every element.  Give them the matching one-element view
+        # while the delegated calculation runs, then restore their state.
+        for name in ('a', 'bdy_x'):
+            if hasattr(self.base_sat, name):
+                value = getattr(self.base_sat, name)
+                if (isinstance(value, np.ndarray) and value.ndim > 1
+                        and value.shape[-1] == original_nelem):
+                    element_data[name] = value
+                    setattr(self.base_sat, name, value[..., element:element + 1])
+        self.base_sat.nelem = 1
+
+        try:
+            if self.disc_type == 'had':
+                result = self.base_sat.calc(
+                    q,
+                    q_bdyL=q_bdyL,
+                    q_bdyR=q_bdyR,
+                )
+            # Only Dirichlet D-SBP calls provide boundary fluxes.  Omitting
+            # these keywords for homogeneous cases also supports specialized
+            # SAT call signatures that contain only q_bdyL and q_bdyR.
+            elif E_bdyL is None and E_bdyR is None:
+                result = self.base_sat.calc(
+                    q,
+                    E,
+                    q_bdyL=q_bdyL,
+                    q_bdyR=q_bdyR,
+                )
+            else:
+                result = self.base_sat.calc(
+                    q,
+                    E,
+                    q_bdyL=q_bdyL,
+                    q_bdyR=q_bdyR,
+                    E_bdyL=E_bdyL,
+                    E_bdyR=E_bdyR,
+                )
+        finally:
+            self.base_sat.nelem = original_nelem
+            for name, value in element_data.items():
+                setattr(self.base_sat, name, value)
+
+        return result
+
+    def calc(self, q, E=None, q_bdyL=None, q_bdyR=None,
+             E_bdyL=None, E_bdyR=None):
+        """Return local SAT data supported only on physical endpoint rows."""
+        assert q.ndim == 2 and q.shape[1] > 0, \
+            "PhysicalBoundarySAT expects a nonempty local element array"
+        if self.disc_type == 'div':
+            assert E is not None, "Divergence-form boundary SAT requires a flux array"
+
+        sat = np.zeros_like(q)
+        use_boundary_flux = E_bdyL is not None or E_bdyR is not None
+
+        if q.shape[1] == 1:
+            # Both physical boundaries belong to the same element.  Boundary
+            # nodes make the left and right endpoint row blocks disjoint.
+            one_element_sat = self._calc_one_element(
+                q,
+                E,
+                q_bdyL,
+                q_bdyR,
+                0,
+                E_bdyL,
+                E_bdyR,
+            )
+            sat[:self.neq_node, 0] = one_element_sat[:self.neq_node, 0]
+            sat[-self.neq_node:, 0] = one_element_sat[-self.neq_node:, 0]
+            return sat
+
+        # Present the first element as a one-element problem.  Its own right
+        # trace is a transparent state; only the physical left rows are kept.
+        q_first = q[:, :1]
+        q_right = self.base_sat.lm_gv(
+            self.base_sat.tRT,
+            q_first,
+            self.neq_node,
+        )[:, 0]
+        if use_boundary_flux:
+            E_first = E[:, :1]
+            E_right = self.base_sat.lm_gv(
+                self.base_sat.tRT,
+                E_first,
+                self.neq_node,
+            )[:, 0]
+        else:
+            E_first = None if E is None else E[:, :1]
+            E_right = None
+        left_sat = self._calc_one_element(
+            q_first,
+            E_first,
+            q_bdyL,
+            q_right,
+            0,
+            E_bdyL,
+            E_right,
+        )
+        sat[:self.neq_node, 0] = left_sat[:self.neq_node, 0]
+
+        # Repeat at the right boundary with a transparent left state.  No call
+        # ever receives more than one element, so no internal SAT is evaluated.
+        q_last = q[:, -1:]
+        q_left = self.base_sat.lm_gv(
+            self.base_sat.tLT,
+            q_last,
+            self.neq_node,
+        )[:, 0]
+        if use_boundary_flux:
+            E_last = E[:, -1:]
+            E_left = self.base_sat.lm_gv(
+                self.base_sat.tLT,
+                E_last,
+                self.neq_node,
+            )[:, 0]
+        else:
+            E_last = None if E is None else E[:, -1:]
+            E_left = None
+        right_sat = self._calc_one_element(
+            q_last,
+            E_last,
+            q_left,
+            q_bdyR,
+            -1,
+            E_left,
+            E_bdyR,
+        )
+        sat[-self.neq_node:, -1] = right_sat[-self.neq_node:, 0]
+        return sat
+
+    def calc_dfdq(self, *args, **kwargs):
+        """Use the existing numerical C-SBP Jacobian path for boundary SATs."""
+        raise NotImplementedError(
+            "Analytical physical-boundary SAT Jacobians are not implemented for C-SBP"
+        )
+
+
 class PdeSolverCSbp(PdeSolverSbp):
     """
     Continuous SBP (C-SBP) solver with global DOF storage and matrix-free gather/scatter.
     
     This class stores the solution in a global conforming DOF vector and uses gather/scatter
     operations to interface with element-local kernels from the base PdeSolverSbp class.
+    Periodic runs need no SATs. Non-periodic 1D runs evaluate SATs only at the
+    two physical boundaries; multidimensional physical boundaries are not yet supported.
     """
     
     def init_disc_specific(self):
         """Initialize C-SBP specific discretization"""
+        # Multidimensional D-SBP physical-boundary SATs are not implemented,
+        # so reject these cases before constructing their discretizations.
+        if self.dim > 1 and not all(self.periodic):
+            raise NotImplementedError(
+                "C-SBP non-periodic boundary conditions are currently supported only in 1D"
+            )
+
+        if self.dim == 1 and not self.periodic:
+            supported_bcs = {
+                'div': ('homogeneous', 'homogeneous-outflow', 'dirichlet'),
+                'had': ('dirichlet',),
+            }
+            if self.bc not in supported_bcs[self.disc_type]:
+                raise NotImplementedError(
+                    f"C-SBP does not support bc='{self.bc}' with "
+                    f"disc_type='{self.disc_type}'"
+                )
+
         # First call base class initialization
         if self.print_progress:
-            print('C-SBP initializing: First calling base SBP class, will overwrite with null SATs later.')
+            print('C-SBP initializing: First calling base SBP class.')
         super().init_disc_specific()
-        
-        # Assert periodic boundary conditions only (for now)
-        if self.dim == 1:
-            assert self.periodic, "C-SBP currently only supports periodic boundary conditions"
-        else:
-            assert all(self.periodic), "C-SBP currently only supports periodic boundary conditions"
 
         # Assert that we use operators with boundary nodes
         assert self.sbp.bdy_nodes, "C-SBP only supports operators with boundary nodes"
@@ -74,8 +241,12 @@ class PdeSolverCSbp(PdeSolverSbp):
         # Precompute local and global H weights
         self._build_H_weights()
         
-        # Replace SAT objects with NullSAT to disable internal coupling
-        self._replace_sats_with_null()
+        # Periodic C-SBP has no physical SATs.  For non-periodic 1D problems,
+        # retain the configured D-SBP SAT behind a boundary-only adapter.
+        if self.dim == 1 and not self.periodic:
+            self.sat = PhysicalBoundarySAT(self.sat, self.disc_type)
+        else:
+            self._replace_sats_with_null()
         
         # Override shape metadata for global DOFs
         self._update_shape_metadata()
@@ -84,7 +255,11 @@ class PdeSolverCSbp(PdeSolverSbp):
         self._rebind_function_handles()
         
         if self.print_progress:
-            print(f'C-SBP initialized: {self.N_global} global DOFs (from {self.qshape[0]*self.qshape[1]} local DOFs)')
+            local_dofs = int(np.prod(self.qshape_local))
+            print(
+                f'C-SBP initialized: {self.N_global} global DOFs '
+                f'(from {local_dofs} local DOFs)'
+            )
     
     
     def _build_global_id_mapping(self):
@@ -685,6 +860,9 @@ class PdeSolverCSbp(PdeSolverSbp):
         
         tm_class.nframes = self.tm_nframes
         tm_class.print_progress = self.print_progress
+        if self.tm_print_nothing:
+            tm_class.print_nothing = True
+            tm_class.print_progress = False
         
         # Pass global q0 to time marching
         # q_sol will be returned in global shape (N_global, 1) or (N_global, n_ts)

@@ -65,12 +65,16 @@ class SatDer1:
         intR = self.lm_gv(self.tb, ER, self.neq_node)
         intL = self.lm_gv(self.ta, EL, self.neq_node)
         if q_bdyL is not None:
-            # manually fix boundaries of EL, ER to ensure proper boundary coupling
+            # Manually fix the exterior fluxes.  The outflow sentinel means
+            # that the physical flux is taken directly from the interior.
             if E_bdyL is None:
                 E_bdyL = self.calcEx(q_bdyL)
+            if np.any(q_bdyR == 'None'):
+                E_bdyR = E[-self.neq_node:, -1]
+            elif E_bdyR is None:
                 E_bdyR = self.calcEx(q_bdyR)
-            intR[:,-1] = self.lm_lv(self.tR, E_bdyR, self.neq_node)
-            intL[:,0] = self.lm_lv(self.tL, E_bdyL, self.neq_node)
+            intR[:, -1] = self.lm_lv(self.tR, E_bdyR, self.neq_node)
+            intL[:, 0] = self.lm_lv(self.tL, E_bdyL, self.neq_node)
         
 # =============================================================================
 #         # This is equivalent to below, but tested to be slightly slower
@@ -1038,4 +1042,3 @@ class SatDer1:
         dSatRdqR = fn.gs_lm((q_fL - 4*q_fR)/6, self.tL @ self.tLT)
 
         return dSatLdqL, dSatLdqR, dSatRdqL, dSatRdqR
-
