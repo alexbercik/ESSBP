@@ -96,12 +96,12 @@ class LinearConv(PdeBase):
         dEydq = metrics[:,0,:]*self.ax + metrics[:,1,:]*self.ay
         return dEydq
 
-    def dExdq_abs(self, q, entropy_fix):
+    def dExdq_abs(self, q, entropy_fix=False):
         nen,nelem = np.shape(q)
         dExdq = abs(self.ax)*np.ones((nen,1,1,nelem),dtype=q.dtype)
         return dExdq
     
-    def dEydq_abs(self, q, entropy_fix):
+    def dEydq_abs(self, q, entropy_fix=False):
         nen,nelem = np.shape(q)
         dEydq = abs(self.ay)*np.ones((nen,1,1,nelem),dtype=q.dtype)
         return dEydq

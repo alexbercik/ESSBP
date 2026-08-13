@@ -114,17 +114,17 @@ class LinearConv(PdeBase):
         dEzdq = self.az*np.ones((nen,1,1,nelem),dtype=q.dtype)
         return dEzdq
 
-    def dExdq_abs(self, q, entropy_fix):
+    def dExdq_abs(self, q, entropy_fix=False):
         nen,nelem = np.shape(q)
         dExdq = abs(self.ax)*np.ones((nen,1,1,nelem),dtype=q.dtype)
         return dExdq
     
-    def dEydq_abs(self, q, entropy_fix):
+    def dEydq_abs(self, q, entropy_fix=False):
         nen,nelem = np.shape(q)
         dEydq = abs(self.ay)*np.ones((nen,1,1,nelem),dtype=q.dtype)
         return dEydq
     
-    def dEzdq_abs(self, q, entropy_fix):
+    def dEzdq_abs(self, q, entropy_fix=False):
         nen,nelem = np.shape(q)
         dEzdq = abs(self.az)*np.ones((nen,1,1,nelem),dtype=q.dtype)
         return dEzdq

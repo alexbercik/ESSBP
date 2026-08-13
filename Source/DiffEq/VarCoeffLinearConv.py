@@ -1079,7 +1079,7 @@ class LinearConv(PdeBase):
         d2Exdq2 = np.zeros(q.shape)
         return d2Exdq2
     
-    def dExdq_abs(self, q, entropy_fix):
+    def dExdq_abs(self, q, entropy_fix=False):
         if q.shape == self.qshape:
             dExdq = np.reshape(np.abs(self.a), (self.nen,1,1,self.nelem))
         else:
@@ -1180,7 +1180,6 @@ class LinearConv(PdeBase):
             self._inflow_side = None
             self._xin = None
         
-
 
 
 

@@ -428,7 +428,7 @@ class Burgers(PdeBase):
         q = fn.check_q_shape(self.set_q0())
         return np.max(fn.cabs(q))
 
-    def dExdq_abs(self, q, entropy_fix):
+    def dExdq_abs(self, q, entropy_fix=False):
 
         dExdq_abs = fn.gdiag_to_gbdiag(fn.cabs(q))
         return dExdq_abs

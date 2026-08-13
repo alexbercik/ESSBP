@@ -114,7 +114,7 @@ class LinearConv(PdeBase):
         dExdq = self.a*np.zeros((nen,1,1,nelem),dtype=q.dtype)
         return dExdq
 
-    def dExdq_abs(self, q, entropy_fix):
+    def dExdq_abs(self, q, entropy_fix=False):
         nen,nelem = np.shape(q)
         dExdq = abs(self.a)*np.ones((nen,1,1,nelem),dtype=q.dtype)
         return dExdq
