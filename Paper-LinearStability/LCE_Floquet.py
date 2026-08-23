@@ -1,7 +1,7 @@
 """
 Linear Convection Equation (LCE): 
 Plots Floquet growth rates and instantaneous eigenvalue spectra, 
-reproducing figures from section 3.2 of the paper.
+reproducing figure 9 from section 3.2 of the paper.
 """
 
 import numpy as np
@@ -19,8 +19,8 @@ T = 1.0
 q0_type = 'GaussWave_shift'  # 'GaussWave_shift', 'SinWave_shift'
 
 # Spatial discretization
-disc_nodes = 'circulant'  # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd', 'upwind'
-p = 4
+disc_nodes = 'csbp'  # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd', 'upwind'
+p = 1
 nen = 40
 nelem = 1
 had_flux = 'geometric'  # 'central', 'geometric', 'logarithmic'
@@ -82,9 +82,9 @@ solver3.keep_all_ts = False
 if not use_exact_sol:
     solver3.tm_print_nothing = True
 
-results = run_floquet(T, solver, K=1000, use_H=True, use_exact_sol=use_exact_sol)
-results2 = run_floquet(T, solver2, K=1000, use_H=True, use_exact_sol=use_exact_sol)
-results3 = run_floquet(T, solver3, K=1000, use_H=True, use_exact_sol=use_exact_sol)
+results = run_floquet(T, solver, K=8000, use_H=True, use_exact_sol=use_exact_sol)
+results2 = run_floquet(T, solver2, K=8000, use_H=True, use_exact_sol=use_exact_sol)
+results3 = run_floquet(T, solver3, K=10000, use_H=True, use_exact_sol=use_exact_sol)
 L = operator_L_from_u(baseflow_u(0.0, solver), solver)
 L2 = operator_L_from_u(baseflow_u(0.0, solver2), solver2)
 L3 = operator_L_from_u(baseflow_u(0.0, solver3), solver3)
@@ -143,9 +143,9 @@ plt.tight_layout()
 
 plt.figure(figsize=(4.5, 4))
 ax = plt.gca()
-plt.ylabel(r'$\Im{(\lambda)}$', fontsize=14)
+plt.ylabel(r'$\Im{(\mu)}$', fontsize=14)
 if normalize_eigs:
-    plt.xlabel(r'$\Re{(\lambda \Delta x)}$', fontsize=14)
+    plt.xlabel(r'$\Re{(\mu \Delta x)}$', fontsize=14)
     plt.scatter(results3['exponents'].real * dx3, results3['exponents'].imag,
                     color='tab:blue', label=r'$N=100$', marker='o', s=20)
     plt.scatter(results2['exponents'].real * dx2, results2['exponents'].imag,
@@ -153,7 +153,7 @@ if normalize_eigs:
     plt.scatter(results['exponents'].real * dx, results['exponents'].imag,
                     color='tab:red', label=r'$N=40$', marker='+', s=20)
 else:
-    plt.xlabel(r'$\Re{(\lambda)}$', fontsize=14)
+    plt.xlabel(r'$\Re{(\mu)}$', fontsize=14)
     plt.scatter(results3['exponents'].real, results3['exponents'].imag,
                     color='tab:blue', label=r'$N=100$', marker='o', s=20)
     plt.scatter(results2['exponents'].real, results2['exponents'].imag,
@@ -165,6 +165,8 @@ plt.legend([handles[i] for i in order], [labels[i] for i in order],
             fontsize=14, loc='lower left')
 plt.tick_params(axis='both', labelsize=14)
 plt.ylim(-3.3, 3.3)
+#plt.xlim(-1.1,1.1)
+#plt.xlim(-1.1e-12,1.1e-12)
 plt.ticklabel_format(axis='x', style='sci', scilimits=(-4, 4))
 ax.xaxis.get_offset_text().set_fontsize(14)
 ax.set_yticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi])
@@ -172,4 +174,5 @@ ax.set_yticklabels(
     [r'$-\pi$', r'$\displaystyle -\frac{\pi}{2}$', r'$0$',
         r'$\displaystyle \frac{\pi}{2}$', r'$\pi$'])
 plt.tight_layout()
+#plt.savefig("floquet_multipliers_CSBPp1.pdf")
 plt.show()

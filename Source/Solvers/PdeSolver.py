@@ -1119,7 +1119,7 @@ class PdeSolver:
                         plt.scatter(X,Y, c=avg_k_log, cmap='viridis', norm=norm)
                     else:
                         plt.scatter(X,Y, c=avg_k, cmap='viridis', vmin=0, vmax=1)
-                    cbar = plt.colorbar(label=r'Block Boundary Content $\rho_{\text{bdy}}$')
+                    cbar = plt.colorbar(label=r'Block Boundary Content $\ell_{\text{bdy}}$')
                     cbar.ax.yaxis.label.set_size(legend_fontsize)
                 elif colour_by_k:
                     if log_colourbar:

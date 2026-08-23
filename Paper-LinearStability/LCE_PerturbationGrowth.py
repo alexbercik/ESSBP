@@ -28,17 +28,16 @@ from Source.Solvers.PdeSolverCSbp import PdeSolverCSbp
 q0_type = 'GaussWave_shift' #'GaussWave_shift' # 'GaussWave_shift', 'SinWave_shift'
 
 # Time marching
-tm_method = 'rk4' # rk4, rk8 , use rk4 or rk8_verner to ensure that times line up
-dt = 0.0001 # for convergence studies, try to choose at least C=0.02
-# note: should set according to courant number C = a dt / dx
-tf = 100.0
+tm_method = 'rk4' # use rk4 or rk8_verner to ensure that times line up
+dt = 0.0001
+tf = 10.0
 
 # Spatial discretization
-disc_nodes = 'circulant' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd', 'upwind'
-p = 2
+disc_nodes = 'csbp' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd', 'upwind'
+p = 1
 nelem = 1 # optional, number of elements
-nen = 99 # optional, number of nodes per element
-savefile = None #'lce_lgl_p4_20e_nd'
+nen = 100 # optional, number of nodes per element
+savefile = None #'lce_csbp_p1_100n_nd'
 
 had_flux1 = 'central' # 2-point numerical flux used in hadamard form.
 had_flux2 = 'logarithmic' # 2-point numerical flux used in hadamard form.
@@ -188,7 +187,7 @@ if tm_method == 'rk4' or tm_method == 'rk8_verner':
     plt.figure(figsize=(5,4))
     ax = plt.gca()
     #plt.ylabel('Error (without perturbation)', fontsize=16)
-    plt.ylabel(r'$\| \boldsymbol{e} \|_\mathsf{H}$', rotation=0, fontsize=16, labelpad=22)
+    plt.ylabel(r'$\| \boldsymbol{\mathcal{E}} \|_\mathsf{H}$', rotation=0, fontsize=16, labelpad=22)
     plt.xlabel(r'$t$', fontsize=16, labelpad=-5)
     plt.plot(solver1.cons_obj[-1, :], solver1.cons_obj[1, :], label='Central', color='tab:blue')
     plt.plot(solver2.cons_obj[-1, :], solver2.cons_obj[1, :], label='Logarithmic', color='tab:orange')

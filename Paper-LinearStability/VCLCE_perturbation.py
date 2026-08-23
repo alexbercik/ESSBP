@@ -34,8 +34,8 @@ from Source.Solvers.PdeSolverCSbp import PdeSolverCSbp
 run_sim = True
 plot_eigs = True
 plot_resolved = True
-include_2nd_mode = True
-savefile = None #'vce_mattsson_lf_p2_400n_alpha00'
+include_2nd_mode = False
+savefile = None #'vce_csbp_nd_p1_40n_alpha00'
 
 # Eq parameters
 alpha = 0. # Variable coefficient splitting parameter (0 to 1)
@@ -45,7 +45,7 @@ extrapolate_bdy_flux = True
 # Time marching
 tm_method = 'rk8' # explicit_euler, rk4
 dt = 0.001
-tf = 30.0
+tf = 4.0
 
 # Domain
 xmin = 0.
@@ -54,11 +54,11 @@ bc = 'periodic' # 'periodic' or 'homogeneous'
 
 # Spatial discretization
 flux_type = 'product' # 'product' or 'geometric'
-disc_nodes = 'circulant' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
-p = 2
+disc_nodes = 'csbp' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd'
+p = 1
 nelem = 1 # optional, number of elements
-nen = 39 # optional, number of nodes per element
-surf_type = {'diss_type':'lf', 'coeff':1.0, 'alpha':1.0, 'p':p}
+nen = 40 # optional, number of nodes per element
+surf_type = {'diss_type':'nd', 'coeff':1.0, 'alpha':1.0, 'p':p}
 vol_diss = {'diss_type':'nd', 'use_H':False, 'bdy_fix':False, 
             #'jac_type':'scalar', 's':int(p/2)+1, 'coeff':0.625/5**(int(p/2)+1)}
             'jac_type':'scalar', 's':p+1, 'coeff':0.625/5**(p+1)}
@@ -181,7 +181,8 @@ if plot_eigs:
     solver.check_eigs(A=J, plot_maxvec=False, test_type='max real', num_vecs=3, 
                         colour_by_bdy=True, log_colourbar=True, figsize=(5,4),
                         #ymax=140, ymin=-140, xmin=-0.08, xmax=0.2,
-                        #ymax=140, ymin=-140, xmin=-1.2, xmax=3.4,
+                        ymax=140, ymin=-140, xmin=-1.2, xmax=3.4,
+                        #ymax=140, ymin=-140, xmin=-21, xmax=1.5,
                         xlabel=r'$\Re{(\lambda)}$', ylabel=r'$\Im{(\lambda)}$',
                         label_fontsize=14, title=None, legend_fontsize=14,
                         savefile=savefile1, save_format='pdf', overwrite=True)
@@ -446,13 +447,13 @@ if run_sim:
         mask_norm2 = theory_line_norm_exact2 >= theory_line_norm_exact
         mask_linf2 = theory_line_linf_exact2 >= theory_line_linf_exact
     
-    plt.semilogy(time_extended, theory_line_norm_exact, label=r'$\| \boldsymbol{u} \|_\mathsf{H}$ Prediction', linestyle=':', color='tab:blue', linewidth=3)
-    plt.semilogy(time_extended, theory_line_linf_exact, label=r'$\| \boldsymbol{u} \|_\infty$ Prediction', linestyle=':', color='tab:red', linewidth=3)
+    plt.semilogy(time_extended, theory_line_norm_exact, label=r'$\| \boldsymbol{u}_\mathrm{pred} \|_\mathsf{H}$', linestyle=':', color='tab:blue', linewidth=3)
+    plt.semilogy(time_extended, theory_line_linf_exact, label=r'$\| \boldsymbol{u}_\mathrm{pred} \|_\infty$', linestyle=':', color='tab:red', linewidth=3)
     if include_2nd_mode:
         plt.semilogy(time_extended[mask_norm2], theory_line_norm_exact2[mask_norm2], linestyle=':', color='tab:blue', linewidth=3)
         plt.semilogy(time_extended[mask_linf2], theory_line_linf_exact2[mask_linf2], linestyle=':', color='tab:red', linewidth=3)
-    plt.semilogy(time, error, linestyle='-.', color='tab:green', label=r'$\| \boldsymbol{e} \|_\mathsf{H}$', linewidth=2)
-    plt.semilogy(time, max_error, linestyle='-.',color='tab:orange', label=r'$\| \boldsymbol{e} \|_\infty$', linewidth=2)
+    plt.semilogy(time, error, linestyle='-.', color='tab:green', label=r'$\| \boldsymbol{\mathcal{E}} \|_\mathsf{H}$', linewidth=2)
+    plt.semilogy(time, max_error, linestyle='-.',color='tab:orange', label=r'$\| \boldsymbol{\mathcal{E}} \|_\infty$', linewidth=2)
 
     plt.xlabel(r'$t$', fontsize=14)
     #plt.ylabel('Norm (log scale)', fontsize=12)
@@ -486,7 +487,7 @@ if run_sim:
 # idx1 = np.argmin(np.abs(time_10-time1))
 # plt.semilogy(time_10[idx0:idx1+1],error_10[idx0:idx1+1],label=r'$\alpha=1$', linewidth=2, linestyle='-',color='tab:blue')
 # plt.xlabel(r'$t$', fontsize=14)
-# plt.ylabel(r'$\| \boldsymbol{e} \|_\mathsf{H}$', rotation=0, fontsize=14)
+# plt.ylabel(r'$\| \boldsymbol{\mathcal{E}} \|_\mathsf{H}$', rotation=0, fontsize=14)
 # plt.legend(loc='center left', fontsize=13)
 # plt.tight_layout()
 # plt.savefig('vce_mattsson_lf_p4_100n_error.pdf')

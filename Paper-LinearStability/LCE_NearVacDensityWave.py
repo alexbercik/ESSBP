@@ -56,7 +56,7 @@ had_flux = "logarithmic"
 surf_type = {"diss_type": "nd", "fluxvec": "lf", "coeff": 1.0}
 q0_type = "density_wave"
 cons_obj_name = ("error", "time")
-plot_bound = True
+plot_bound = False
 
 # Volume dissipation choices
 s = int(p / 2) + 1
@@ -178,6 +178,8 @@ for case_label, vol_diss in cases.items():
     base_qsol = np.copy(solver.q_sol)
     base_time = np.copy(solver.cons_obj[time_idx, :])
     base_error = np.copy(solver.cons_obj[error_idx, :])
+
+    #solver.plot_sol(q=solver.q_sol[:, :, idx_T1], time=base_time[idx_T1])
 
     # Floquet modal growth rate at later anchor time (for prediction)
     max_growth_rate1 = np.nan
@@ -328,7 +330,7 @@ for case_label, data in results.items():
         linewidth=1.8,
     )
 plt.xlabel(r"$t$", fontsize=16, labelpad=-5)
-plt.ylabel(r"$\| \boldsymbol{e} \|_{\mathsf{H}}$", fontsize=16, labelpad=22, rotation=0)
+plt.ylabel(r"$\| \boldsymbol{\mathcal{E}} \|_{\mathsf{H}}$", fontsize=16, labelpad=22, rotation=0)
 plt.tick_params(axis="both", labelsize=13)
 plt.ylim(ymin=data["e_H"][3])
 plt.legend(fontsize=12, loc="best")
@@ -373,7 +375,7 @@ for case_label, data in results.items():
             linewidth=1.8,
         )
 plt.xlabel(r"$t$", fontsize=16, labelpad=-5)
-plt.ylabel(r"$\lambda_{\max}\left(\tfrac{1}{2}(\mathsf{J}+\mathsf{J}^\mathsf{T})\right)$", fontsize=16)
+plt.ylabel(r"$\max \lambda \left(\tfrac{1}{2}(\mathsf{J}+\mathsf{J}^\mathsf{T})\right)$", fontsize=16)
 plt.tick_params(axis="both", labelsize=13)
 plt.legend(fontsize=12, loc="best")
 plt.grid(True, alpha=0.3)
