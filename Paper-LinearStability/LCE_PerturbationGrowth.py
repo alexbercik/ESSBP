@@ -25,7 +25,7 @@ from Source.Solvers.PdeSolverCSbp import PdeSolverCSbp
 ''' Set parameters for simultation '''
 
 # Initial solution
-q0_type = 'GaussWave_shift' #'GaussWave_shift' # 'GaussWave_shift', 'SinWave_shift'
+q0_type = 'GaussWave_shift' #'GaussWave_shift' # 'GaussWave_shift', 'SquareWave_shift'
 
 # Time marching
 tm_method = 'rk4' # use rk4 or rk8_verner to ensure that times line up
@@ -35,8 +35,13 @@ tf = 10.0
 # Spatial discretization
 disc_nodes = 'csbp' # 'lg', 'lgl', 'nc', 'csbp', 'dg', 'fd', 'upwind'
 p = 1
-nelem = 1 # optional, number of elements
-nen = 100 # optional, number of nodes per element
+nelem = 1 # number of elements
+nen1 = 100 # nodes per element for solver 1
+nen2 = 100 # nodes per element for solver 2
+nen3 = 100 # nodes per element for solver 3
+label1 = 'Central'
+label2 = 'Logarithmic'
+label3 = 'Geometric'
 savefile = None #'lce_csbp_p1_100n_nd'
 
 had_flux1 = 'central' # 2-point numerical flux used in hadamard form.
@@ -60,7 +65,7 @@ solver1 = PdeSolverSbp(diffeq1, None,                     # Diffeq
                   tm_method, dt, tf,                    # Time marching
                   p, 'had',             # Discretization
                   surf_type, vol_diss, had_flux1,
-                  nelem, nen, disc_nodes,
+                  nelem, nen1, disc_nodes,
                   'periodic', 0., 1.,         # Domain
                   cons_obj_name,              # Other
                   print_progress=True)
@@ -73,7 +78,7 @@ solver2 = PdeSolverSbp(diffeq2, None,                     # Diffeq
                   tm_method, dt, tf,                    # Time marching
                   p, 'had',             # Discretization
                   surf_type, vol_diss, had_flux2,
-                  nelem, nen, disc_nodes,
+                  nelem, nen2, disc_nodes,
                   'periodic', 0., 1.,         # Domain
                   cons_obj_name,              # Other
                   print_progress=True)
@@ -86,7 +91,7 @@ solver3 = PdeSolverSbp(diffeq3, None,                     # Diffeq
                   tm_method, dt, tf,                    # Time marching
                   p, 'had',             # Discretization
                   surf_type, vol_diss, had_flux3,
-                  nelem, nen, disc_nodes,
+                  nelem, nen3, disc_nodes,
                   'periodic', 0., 1.,         # Domain
                   cons_obj_name,              # Other
                   print_progress=True)
@@ -99,57 +104,98 @@ solver1.check_eigs(plot_maxvec=True, test_type='max real', num_vecs=1)
 eigvals2, eigvecs2 = solver2.check_eigs(plot_maxvec=True, test_type='max real', num_vecs=1, returnvecs=True, returneigs=True)
 eigvals3, eigvecs3 = solver3.check_eigs(plot_maxvec=True, test_type='max real', num_vecs=1, returnvecs=True, returneigs=True)
 
-q0 = diffeq1.set_q0()
+q0_1 = diffeq1.set_q0()
+q0_2 = diffeq2.set_q0()
+q0_3 = diffeq3.set_q0()
 ampli = 1e-3
 pred = None
+pert_seed = 0
+
+def random_noise(qshape, seed=pert_seed):
+    """Uniform noise in [-1, 1]. Same seed + same shape => identical array."""
+    rng = np.random.default_rng(seed=seed)
+    return 2 * rng.random(qshape) - 1.
+
+def resample_to_solver(q_src, solver_src, solver_dst):
+    """Copy if the grids match; otherwise interpolate periodically onto solver_dst."""
+    x_src = solver_src.diffeq.x_elem
+    x_dst = solver_dst.diffeq.x_elem
+    if solver_src.qshape == solver_dst.qshape and np.allclose(x_src, x_dst):
+        return np.copy(q_src)
+    xmin, xmax = solver_dst.xmin, solver_dst.xmax
+    L = xmax - xmin
+    x_s = np.asarray(x_src).reshape(-1, order='F')
+    v_s = np.asarray(q_src).reshape(-1, order='F')
+    x_d = np.asarray(x_dst).reshape(-1, order='F')
+    order = np.argsort(x_s)
+    x_sorted, v_sorted = x_s[order], v_s[order]
+    x_ext = np.concatenate(([x_sorted[-1] - L], x_sorted, [x_sorted[0] + L]))
+    v_ext = np.concatenate(([v_sorted[-1]], v_sorted, [v_sorted[0]]))
+    x_d_mod = np.mod(x_d - xmin, L) + xmin
+    v_d = np.interp(x_d_mod, x_ext, v_ext)
+    return v_d.reshape(solver_dst.qshape, order='F')
+
+def apply_perturbation(q0, eigvec):
+    scale = np.max(np.abs(eigvec))
+    if scale == 0:
+        return q0
+    return q0 + ampli * eigvec / scale
+
 if perturbation == 1:
-    rng = np.random.default_rng(seed=0)
-    eigvec = 2*rng.random(solver2.qshape)-1. # random noise in [-1,1]
+    eigvec1 = random_noise(solver1.qshape)
+    eigvec2 = random_noise(solver2.qshape)
+    eigvec3 = random_noise(solver3.qshape)
 elif perturbation == 0:
-    eigvec = 0.
+    eigvec1 = eigvec2 = eigvec3 = 0.
 elif perturbation == 2:
     eig_idx = np.argmax(eigvals2.real)
-    eigvec = eigvecs2[:, eig_idx].real.reshape(solver2.qshape)
+    eigvec2 = eigvecs2[:, eig_idx].real.reshape(solver2.qshape)
+    eigvec1 = resample_to_solver(eigvec2, solver2, solver1)
+    eigvec3 = resample_to_solver(eigvec2, solver2, solver3)
 elif perturbation == 3:
     eig_idx = np.argmax(eigvals3.real)
-    eigvec = eigvecs3[:, eig_idx].real.reshape(solver3.qshape)
+    eigvec3 = eigvecs3[:, eig_idx].real.reshape(solver3.qshape)
+    eigvec1 = resample_to_solver(eigvec3, solver3, solver1)
+    eigvec2 = resample_to_solver(eigvec3, solver3, solver2)
 else:
     raise ValueError(f"Invalid perturbation: {perturbation}")
 
-q0 += ampli*eigvec/np.max(np.abs(eigvec))
+q0_1 = apply_perturbation(q0_1, eigvec1)
+q0_2 = apply_perturbation(q0_2, eigvec2)
+q0_3 = apply_perturbation(q0_3, eigvec3)
 
-solver1.solve(q0=q0)
+solver1.solve(q0=q0_1)
 #solver1.plot_cons_obj()
-solver2.solve(q0=q0)
+solver2.solve(q0=q0_2)
 #solver2.plot_cons_obj()
-solver3.solve(q0=q0)
+solver3.solve(q0=q0_3)
 #solver3.plot_cons_obj()
 
 
 plt.figure(figsize=(5,4))
 plt.ylabel('Energy (with perturbation)', fontsize=16)
 plt.xlabel('Time', fontsize=16)
-plt.plot(solver1.cons_obj[-1, :], solver1.cons_obj[0, :], label='Central', color='tab:blue')
-plt.plot(solver2.cons_obj[-1, :], solver2.cons_obj[0, :], label='Logarithmic', color='tab:orange')
-plt.plot(solver3.cons_obj[-1, :], solver3.cons_obj[0, :], label='Geometric', color='tab:green')
+plt.plot(solver1.cons_obj[-1, :], solver1.cons_obj[0, :], label=label1, color='tab:blue')
+plt.plot(solver2.cons_obj[-1, :], solver2.cons_obj[0, :], label=label2, color='tab:orange')
+plt.plot(solver3.cons_obj[-1, :], solver3.cons_obj[0, :], label=label3, color='tab:green')
 plt.legend(fontsize=14)
 plt.show()
 
 plt.figure(figsize=(5,4))
 plt.ylabel('Error (with perturbation)', fontsize=16)
 plt.xlabel('Time', fontsize=16)
-plt.plot(solver1.cons_obj[-1, :], solver1.cons_obj[1, :], label='Central', color='tab:blue')
-plt.plot(solver2.cons_obj[-1, :], solver2.cons_obj[1, :], label='Logarithmic', color='tab:orange')
-plt.plot(solver3.cons_obj[-1, :], solver3.cons_obj[1, :], label='Geometric', color='tab:green')
+plt.plot(solver1.cons_obj[-1, :], solver1.cons_obj[1, :], label=label1, color='tab:blue')
+plt.plot(solver2.cons_obj[-1, :], solver2.cons_obj[1, :], label=label2, color='tab:orange')
+plt.plot(solver3.cons_obj[-1, :], solver3.cons_obj[1, :], label=label3, color='tab:green')
 plt.legend(fontsize=14)
 plt.show()
 
 plt.figure(figsize=(5,4))
 plt.ylabel('Max Error (with perturbation)', fontsize=16)
 plt.xlabel('Time', fontsize=16)
-plt.plot(solver1.cons_obj[-1, :], solver1.cons_obj[2, :], label='Central', color='tab:blue')
-plt.plot(solver2.cons_obj[-1, :], solver2.cons_obj[2, :], label='Logarithmic', color='tab:orange')
-plt.plot(solver3.cons_obj[-1, :], solver3.cons_obj[2, :], label='Geometric', color='tab:green')
+plt.plot(solver1.cons_obj[-1, :], solver1.cons_obj[2, :], label=label1, color='tab:blue')
+plt.plot(solver2.cons_obj[-1, :], solver2.cons_obj[2, :], label=label2, color='tab:orange')
+plt.plot(solver3.cons_obj[-1, :], solver3.cons_obj[2, :], label=label3, color='tab:green')
 plt.legend(fontsize=14)
 plt.show()
 
@@ -173,9 +219,9 @@ if tm_method == 'rk4' or tm_method == 'rk8_verner':
     #plt.ylabel('Energy (without perturbation)', fontsize=16)
     plt.ylabel(r'$\| \boldsymbol{u} \|_\mathsf{H}^2$ - $\| \boldsymbol{u}_0 \|_\mathsf{H}^2$', fontsize=16, labelpad=5)
     plt.xlabel(r'$t$', fontsize=16, labelpad=-5)
-    plt.plot(solver1.cons_obj[-1, :], solver1.cons_obj[0, :] - solver1.cons_obj[0, 0], label='Central', color='tab:blue')
-    plt.plot(solver2.cons_obj[-1, :], solver2.cons_obj[0, :] - solver2.cons_obj[0, 0], label='Logarithmic', color='tab:orange')
-    plt.plot(solver3.cons_obj[-1, :], solver3.cons_obj[0, :] - solver3.cons_obj[0, 0], label='Geometric', color='tab:green')
+    plt.plot(solver1.cons_obj[-1, :], solver1.cons_obj[0, :] - solver1.cons_obj[0, 0], label=label1, color='tab:blue')
+    plt.plot(solver2.cons_obj[-1, :], solver2.cons_obj[0, :] - solver2.cons_obj[0, 0], label=label2, color='tab:orange')
+    plt.plot(solver3.cons_obj[-1, :], solver3.cons_obj[0, :] - solver3.cons_obj[0, 0], label=label3, color='tab:green')
     plt.yscale('symlog',linthresh=1e-11)
     #plt.ylim(-3e-10,3e-10)
     #plt.legend(fontsize=14)
@@ -189,9 +235,9 @@ if tm_method == 'rk4' or tm_method == 'rk8_verner':
     #plt.ylabel('Error (without perturbation)', fontsize=16)
     plt.ylabel(r'$\| \boldsymbol{\mathcal{E}} \|_\mathsf{H}$', rotation=0, fontsize=16, labelpad=22)
     plt.xlabel(r'$t$', fontsize=16, labelpad=-5)
-    plt.plot(solver1.cons_obj[-1, :], solver1.cons_obj[1, :], label='Central', color='tab:blue')
-    plt.plot(solver2.cons_obj[-1, :], solver2.cons_obj[1, :], label='Logarithmic', color='tab:orange')
-    plt.plot(solver3.cons_obj[-1, :], solver3.cons_obj[1, :], label='Geometric', color='tab:green')
+    plt.plot(solver1.cons_obj[-1, :], solver1.cons_obj[1, :], label=label1, color='tab:blue')
+    plt.plot(solver2.cons_obj[-1, :], solver2.cons_obj[1, :], label=label2, color='tab:orange')
+    plt.plot(solver3.cons_obj[-1, :], solver3.cons_obj[1, :], label=label3, color='tab:green')
     #plt.legend(fontsize=14)
     plt.ticklabel_format(axis='y', style='sci', scilimits=(-2, 2))
     ax.yaxis.get_offset_text().set_fontsize(14)
@@ -203,9 +249,9 @@ if tm_method == 'rk4' or tm_method == 'rk8_verner':
     plt.figure(figsize=(5,4))
     plt.ylabel('Max Error (without perturbation)', fontsize=16)
     plt.xlabel('Time', fontsize=16)
-    plt.plot(solver1.cons_obj[-1, :], solver1.cons_obj[2, :], label='Central', color='tab:blue')
-    plt.plot(solver2.cons_obj[-1, :], solver2.cons_obj[2, :], label='Logarithmic', color='tab:orange')
-    plt.plot(solver3.cons_obj[-1, :], solver3.cons_obj[2, :], label='Geometric', color='tab:green')
+    plt.plot(solver1.cons_obj[-1, :], solver1.cons_obj[2, :], label=label1, color='tab:blue')
+    plt.plot(solver2.cons_obj[-1, :], solver2.cons_obj[2, :], label=label2, color='tab:orange')
+    plt.plot(solver3.cons_obj[-1, :], solver3.cons_obj[2, :], label=label3, color='tab:green')
     #plt.legend(fontsize=14)
     plt.show()
 
@@ -224,9 +270,9 @@ if tm_method == 'rk4' or tm_method == 'rk8_verner':
     #plt.ylabel('Perturbation H-Norm (perturbation)', fontsize=16)
     plt.ylabel(r'$\| \boldsymbol{v} \|_\mathsf{H}$', rotation=0, fontsize=16, labelpad=22)
     plt.xlabel(r'$t$', fontsize=16, labelpad=-5)
-    plt.plot(solver1.cons_obj[-1, :k1_min], np.sqrt(solver1.energy(solver1_pert)), label='Central', color='tab:blue')
-    plt.plot(solver2.cons_obj[-1, :k2_min], np.sqrt(solver2.energy(solver2_pert)), label='Logarithmic', color='tab:orange')
-    plt.plot(solver3.cons_obj[-1, :k3_min], np.sqrt(solver3.energy(solver3_pert)), label='Geometric', color='tab:green')
+    plt.plot(solver1.cons_obj[-1, :k1_min], np.sqrt(solver1.energy(solver1_pert)), label=label1, color='tab:blue')
+    plt.plot(solver2.cons_obj[-1, :k2_min], np.sqrt(solver2.energy(solver2_pert)), label=label2, color='tab:orange')
+    plt.plot(solver3.cons_obj[-1, :k3_min], np.sqrt(solver3.energy(solver3_pert)), label=label3, color='tab:green')
     if pred is not None and plot_prediction:
         plt.plot(solver1.cons_obj[-1, :], np.sqrt(solver2.energy(solver2_pert[:,:,0]))*np.exp(pred*solver1.cons_obj[-1, :]), linestyle=':', label='Prediction', color='tab:red')
     #plt.legend(fontsize=14, loc='upper left')
@@ -241,9 +287,9 @@ if tm_method == 'rk4' or tm_method == 'rk8_verner':
     #plt.ylabel('Perturbation L_infty norm', fontsize=16)
     plt.ylabel(r'$\| \boldsymbol{v} \|_{\infty}$', rotation=0, fontsize=16, labelpad=22)
     plt.xlabel(r'$t$', fontsize=16, labelpad=-5)
-    plt.plot(solver1.cons_obj[-1, :k1_min], np.max(abs(solver1_pert), axis=0)[0], label='Central', color='tab:blue')
-    plt.plot(solver2.cons_obj[-1, :k2_min], np.max(abs(solver2_pert), axis=0)[0], label='Logarithmic', color='tab:orange')
-    plt.plot(solver3.cons_obj[-1, :k3_min], np.max(abs(solver3_pert), axis=0)[0], label='Geometric', color='tab:green')
+    plt.plot(solver1.cons_obj[-1, :k1_min], np.max(abs(solver1_pert), axis=0)[0], label=label1, color='tab:blue')
+    plt.plot(solver2.cons_obj[-1, :k2_min], np.max(abs(solver2_pert), axis=0)[0], label=label2, color='tab:orange')
+    plt.plot(solver3.cons_obj[-1, :k3_min], np.max(abs(solver3_pert), axis=0)[0], label=label3, color='tab:green')
     #plt.legend(fontsize=14, loc='upper right')
     plt.ylim(ymin=0.001)#,ymax=0.0027)
     plt.ticklabel_format(axis='y', style='sci', scilimits=(-2, 2))
@@ -260,9 +306,9 @@ if tm_method == 'rk4' or tm_method == 'rk8_verner':
     # Create dummy lines for the legend
     from matplotlib.lines import Line2D
     legend_elements = [
-        Line2D([0], [0], color='tab:blue', label='Central'),
-        Line2D([0], [0], color='tab:orange', label='Logarithmic'),
-        Line2D([0], [0], color='tab:green', label='Geometric')
+        Line2D([0], [0], color='tab:blue', label=label1),
+        Line2D([0], [0], color='tab:orange', label=label2),
+        Line2D([0], [0], color='tab:green', label=label3)
     ]
     # Create legend with 3 columns (horizontal layout)
     legend = ax_legend.legend(handles=legend_elements, loc='center', ncol=3, fontsize=16, frameon=True)
