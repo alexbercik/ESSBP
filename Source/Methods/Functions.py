@@ -1736,15 +1736,13 @@ def geom_mean(qL,qR):
     return q
 
 @njit
-def arcsinh_mean(qL, qR):
+def arcsinh_mean(qL, qR, ureg, eps=0.0):
     '''Smooth regularized version of the logarithmic mean.
-    For eps = 0 and q >> beta, it approaches the standard logarithmic mean.
-    For eps = 0 and beta = 2, the entropy variables approach that of the logarithmic mean.
+    For eps = 0 and q >> ureg, it approaches the standard logarithmic mean.
+    For eps = 0 and ureg = 2, the entropy variables approach that of the logarithmic mean.
     '''
-    eps  = 0.0      # shift of the regularization center; start with 0
-    beta = 1.0 #0.001  # smoothing width
-    sL = np.sqrt((qL - eps)*(qL - eps) + beta*beta)
-    sR = np.sqrt((qR - eps)*(qR - eps) + beta*beta)
+    sL = np.sqrt((qL - eps)*(qL - eps) + ureg*ureg)
+    sR = np.sqrt((qR - eps)*(qR - eps) + ureg*ureg)
     tau = (qR - qL) / (sL + sR)
     tau2 = tau*tau
     if np.real(tau2) < 0.001:
@@ -1759,6 +1757,84 @@ def arcsinh_mean(qL, qR):
 def harm_mean(qL, qR):
     """Harmonic mean of qL and qR."""
     return 2.0 * qL * qR / (qL + qR)
+
+@njit
+def _logreg_power_sum(rL, rR, n):
+    """
+    Stable evaluation of
+
+        (rL**n - rR**n) / (rL - rR)
+        = sum_{k=0}^{n-1} rL**(n-1-k) rR**k.
+
+    This remains well defined when rL = rR.
+    """
+    s = 0.0 * (rL + rR)
+    for k in range(n):
+        s += rL**(n - 1 - k) * rR**k
+    return s
+
+
+@njit
+def logreg_mean(qL, qR, ureg, m):
+    """
+    Smooth regularized version of the logarithmic mean.
+    The regularization is defined through
+        dw/dq = (1/q) * (1 - (ureg/(q + ureg))**m).
+
+    For q >> ureg, this approaches 1/q with relative error
+    O((ureg/q)**m), so the corresponding mean approaches the
+    logarithmic mean.
+    For q << ureg, dw/dq approaches the constant m/ureg,
+    so the corresponding mean approaches the arithmetic mean.
+
+    Parameters
+    ----------
+    ureg : regularization scale
+    m    : regularization order, integer >= 2
+    """
+
+    xL = qL + ureg
+    xR = qR + ureg
+    rL = ureg / xL
+    rR = ureg / xR
+    dq = qR - qL
+
+    # Secant slope of log(1 + q/ureg):
+    #
+    # [log(1 + q/ureg)] / [q].
+    #
+    # Written using log1p to remain accurate when qL ~ qR.
+    z = dq / xL
+    if z == 0.0:
+        log_sec = 1.0 / xL
+    else:
+        log_sec = np.log1p(z) / (z * xL)
+
+    # Secant slope [w]/[q].
+    w_sec = log_sec
+    for j in range(1, m):
+        power_sum = _logreg_power_sum(rL, rR, j)
+
+        w_sec += (
+            ureg
+            / (j * xL * xR)
+            * power_sum
+        )
+
+    # Secant slope [psi]/[q], where
+    # psi(q) = q - ureg/(m-1) * (1 - (ureg/(q + ureg))**(m-1)).
+    n = m - 1
+    power_sum = _logreg_power_sum(rL, rR, n)
+    psi_sec = (
+        1.0
+        - ureg * ureg
+        / (n * xL * xR)
+        * power_sum
+    )
+
+    # [psi]/[w] = ([psi]/[q]) / ([w]/[q])
+    qmean = psi_sec / w_sec
+    return qmean
 
 def is_pos_def(A):
     ''' check if a matrix A is symmetric positive definite '''

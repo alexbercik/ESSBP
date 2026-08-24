@@ -31,10 +31,16 @@ class LinearConv(PdeBase):
     a_fix = 1
     para_fix = [a_fix]
 
-    def __init__(self, para, q0_type='SinWave', had_flux='central'):
+    def __init__(self, para, q0_type='SinWave', had_flux='central',
+                 arcsinh_ureg=0.1, arcsinh_eps=0.0,
+                 logreg_ureg=0.1, logreg_m=2):
 
         super().__init__(para, q0_type)
         self.a = self.para[0]
+        self._arcsinh_ureg = float(arcsinh_ureg)
+        self._arcsinh_eps = float(arcsinh_eps)
+        self._logreg_ureg = float(logreg_ureg)
+        self._logreg_m = int(logreg_m)
         
         if self.a == self.a_fix:
             print('Using the fixed a={} diffeq functions since params match.'.format(self.a_fix))
@@ -47,7 +53,8 @@ class LinearConv(PdeBase):
             self.central_flux = self.central_fix_flux
             self.logarithmic_flux = self.logarithmic_fix_flux
             self.geometric_flux = self.geometric_fix_flux
-            self.arcsinh_flux = self.arcsinh_fix_flux
+            self.harmonic_flux = self.harmonic_fix_flux
+            self.logreg_flux = self.logreg_fix_flux
         
         if had_flux.lower() == 'central':
             self.entropy = self.entropy_central
@@ -65,14 +72,25 @@ class LinearConv(PdeBase):
             self.dqdw = self.dqdw_geom
             self.maxeig_dqdw = self.maxeig_dqdw_geom
         elif had_flux.lower() == 'arcsinh':
-            self.beta = 1.0 #0.001
-            self.eps = 0.0
             self.entropy = self.entropy_arcsinh
             self.entropy_var = self.entropy_var_arcsinh
             self.dqdw = self.dqdw_arcsinh
             self.maxeig_dqdw = self.maxeig_dqdw_arcsinh
+            self._bind_arcsinh_flux()
+        elif had_flux.lower() == 'harmonic':
+            self.entropy = self.entropy_harm
+            self.entropy_var = self.entropy_var_harm
+            self.dqdw = self.dqdw_harm
+            self.maxeig_dqdw = self.maxeig_dqdw_harm
+        elif had_flux.lower() == 'logreg':
+            self.entropy = self.entropy_logreg
+            self.entropy_var = self.entropy_var_logreg
+            self.dqdw = self.dqdw_logreg
+            self.maxeig_dqdw = self.maxeig_dqdw_logreg
+            self._bind_logreg_flux()
         else:
-            raise ValueError(f'Invalid had_flux: {had_flux}. Must be "central", "logarithmic", or "geometric".')
+            raise ValueError(f'Invalid had_flux: {had_flux}. Must be "central", "logarithmic", "geometric", "harmonic", "arcsinh", or "logreg".')
+
 
     def exact_sol(self, time=0, x=None, **kwargs):
 
@@ -156,12 +174,25 @@ class LinearConv(PdeBase):
         f = fn.geom_mean(qL,qR)
         return f
 
-    @njit   
-    def arcsinh_fix_flux(qL,qR):
+    @njit
+    def arcsinh_fix_flux(qL, qR, ureg, eps=0.0):
         ''' a regularized version of the logarithmic 2-point flux for hadamard form but with a fixed at 1.
         This allows us to jit the hadamard flux functions. '''
-        f = fn.arcsinh_mean(qL,qR)
+        return fn.arcsinh_mean(qL, qR, ureg, eps)
+
+    @njit
+    def harmonic_fix_flux(qL, qR):
+        '''A harmonic 2-point flux for hadamard form but with a fixed at 1.'''
+        f = fn.harm_mean(qL, qR)
         return f
+
+    @njit
+    def logreg_fix_flux(qL, qR, ureg, m):
+        """
+        Regularized logarithmic 2-point flux for Hadamard form
+        with the advection speed fixed at 1.
+        """
+        return fn.logreg_mean(qL, qR, ureg, m)
 
     def entropy_central(self, q):
         ''' nodal values of the entropy for the central flux '''
@@ -213,18 +244,177 @@ class LinearConv(PdeBase):
 
     def entropy_arcsinh(self, q):
         ''' nodal values of the entropy for the arcsinh flux '''
-        qe = q - self.eps
-        return qe*np.arcsinh(qe/self.beta) - np.sqrt(qe*qe + self.beta*self.beta) + self.beta
+        ureg = self.arcsinh_ureg
+        qe = q - self._arcsinh_eps
+        return qe*np.arcsinh(qe/ureg) - np.sqrt(qe*qe + ureg*ureg) + ureg
 
     def entropy_var_arcsinh(self, q):
         ''' nodal values of the entropy variables w(q) for the arcsinh flux '''
-        return np.arcsinh((q - self.eps)/self.beta)
+        return np.arcsinh((q - self._arcsinh_eps)/self.arcsinh_ureg)
 
     def dqdw_arcsinh(self, q):
         ''' hessian P = dq/dw for the arcsinh flux '''
-        p = np.sqrt((q - self.eps)*(q - self.eps) + self.beta*self.beta)
+        qe = q - self._arcsinh_eps
+        ureg = self.arcsinh_ureg
+        p = np.sqrt(qe*qe + ureg*ureg)
         return fn.gdiag_to_gbdiag(p)
 
     def maxeig_dqdw_arcsinh(self, q):
         ''' maximum eigenvalues of hessian P, i.e. abs(dq/dw) for scalar '''
-        return np.sqrt((q - self.eps)*(q - self.eps) + self.beta*self.beta)
+        qe = q - self._arcsinh_eps
+        ureg = self.arcsinh_ureg
+        return np.sqrt(qe*qe + ureg*ureg)
+
+    def entropy_harm(self, q):
+        '''Nodal values of the entropy for the harmonic flux.'''
+        return 0.5 / q
+
+    def entropy_var_harm(self, q):
+        '''Nodal values of the entropy variables w(q) for the harmonic flux.'''
+        return -0.5 / (q*q)
+
+    def dqdw_harm(self, q):
+        '''Hessian P = dq/dw for the harmonic flux.'''
+        p = q*q*q
+        return fn.gdiag_to_gbdiag(p)
+
+    def maxeig_dqdw_harm(self, q):
+        '''Maximum eigenvalues of Hessian P, i.e. abs(dq/dw) for scalar.'''
+        return np.abs(q*q*q)
+
+    def entropy_var_logreg(self, q):
+        """Nodal values of the entropy variables w(q) for the logreg flux."""
+        ureg = self.logreg_ureg
+        m = self.logreg_m
+        r = ureg / (q + ureg)
+        w = np.log1p(q / ureg)
+        rpow = r
+        for j in range(1, m):
+            w += (1.0 / j) * (1.0 - rpow)
+            rpow = rpow * r
+        return w
+
+
+    def entropy_logreg(self, q):
+        """Nodal values of the entropy for the logreg flux."""
+
+        ureg = self.logreg_ureg
+        m = self.logreg_m
+        r = ureg / (q + ureg)
+        w = np.log1p(q / ureg)
+        rpow = r
+        for j in range(1, m):
+            w += (1.0 / j) * (1.0 - rpow)
+            rpow = rpow * r
+        psi = (
+            q
+            - ureg / (m - 1)
+            * (1.0 - r**(m - 1))
+        )
+        # U = q*w - psi
+        return q * w - psi
+
+
+    def dqdw_logreg(self, q):
+        """Hessian P = dq/dw for the logreg flux."""
+        ureg = self.logreg_ureg
+        m = self.logreg_m
+        r = ureg / (q + ureg)
+        # dw/dq = 1/(q+ureg) * sum_{j=0}^{m-1} r**j
+        s = np.ones_like(q)
+        rpow = r
+        for j in range(1, m):
+            s += rpow
+            rpow = rpow * r
+        p = (q + ureg) / s
+        return fn.gdiag_to_gbdiag(p)
+
+
+    def maxeig_dqdw_logreg(self, q):
+        """Maximum eigenvalues of Hessian P, i.e. abs(dq/dw) for scalar."""
+        ureg = self.logreg_ureg
+        m = self.logreg_m
+        r = ureg / (q + ureg)
+        s = np.ones_like(q)
+        rpow = r
+        for j in range(1, m):
+            s += rpow
+            rpow = rpow * r
+        p = (q + ureg) / s
+        return np.abs(p)
+
+
+    @property
+    def arcsinh_ureg(self):
+        return self._arcsinh_ureg
+
+    @arcsinh_ureg.setter
+    def arcsinh_ureg(self, value):
+        """Set the arcsinh smoothing width and rebind the jitted 2-point flux.
+
+        Must be set before the SBP solver is constructed (the solver snapshots
+        diffeq.arcsinh_flux as calc_had_flux).
+        """
+        self._arcsinh_ureg = float(value)
+        self._bind_arcsinh_flux()
+
+    def _bind_arcsinh_flux(self):
+        """Capture ureg/eps in a 2-arg njit closure so Hadamard kernels stay compiled."""
+        ureg = float(self._arcsinh_ureg)
+        eps = float(self._arcsinh_eps)
+
+        @njit
+        def arcsinh_flux(qL, qR):
+            return fn.arcsinh_mean(qL, qR, ureg, eps)
+
+        self.arcsinh_flux = arcsinh_flux
+
+    @property
+    def logreg_ureg(self):
+        return self._logreg_ureg
+
+    @logreg_ureg.setter
+    def logreg_ureg(self, value):
+        """Set the logreg regularization scale and rebind the jitted 2-point flux.
+
+        Must be set before the SBP solver is constructed (the solver snapshots
+        diffeq.logreg_flux as calc_had_flux).
+        """
+        self._logreg_ureg = float(value)
+        self._bind_logreg_flux()
+
+    @property
+    def logreg_m(self):
+        return self._logreg_m
+
+    @logreg_m.setter
+    def logreg_m(self, value):
+        """Set the logreg regularization order and rebind the jitted 2-point flux.
+
+        Must be an integer >= 2 and must be set before the SBP solver is
+        constructed.
+        """
+        value = int(value)
+
+        if value < 2:
+            raise ValueError("logreg_m must be an integer >= 2.")
+
+        self._logreg_m = value
+        self._bind_logreg_flux()
+
+
+    def _bind_logreg_flux(self):
+        """Capture ureg/m in a 2-arg njit closure so Hadamard kernels stay compiled."""
+
+        # Allow either parameter to be initialized first.
+        if not hasattr(self, "_logreg_ureg") or not hasattr(self, "_logreg_m"):
+            return
+
+        ureg = float(self._logreg_ureg)
+        m = int(self._logreg_m)
+
+        @njit
+        def logreg_flux(qL, qR):
+            return fn.logreg_mean(qL, qR, ureg, m)
+
+        self.logreg_flux = logreg_flux
