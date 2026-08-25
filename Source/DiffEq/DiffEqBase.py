@@ -350,6 +350,24 @@ class PdeBase:
             q0[x_scaled <= 0.25] = 0.
             q0[x_scaled >= 0.75] = 0.
             if 'shift' in q0_type: q0 = q0 + 0.5
+        elif q0_type == 'dissipation_test':
+            # Jiang & Shu, J. Comput. Phys. 126, 202–228 (1996), Sec. 8.1
+            assert self.dim == 1, 'dissipation_test only works for dim = 1.'
+            x_scaled = 2.0 * (xy - self.xmin) / self.dom_len - 1.0  # map to [-1, 1]
+            a, z, delta, alpha = 0.5, -0.7, 0.005, 10.0
+            beta = np.log(2.0) / (36.0 * delta**2)
+            q0 = np.zeros_like(xy, dtype=float)
+            mask = (x_scaled >= -0.8) & (x_scaled <= -0.6)
+            q0[mask] = (np.exp(-beta*(x_scaled[mask]-(z-delta))**2)
+                        + np.exp(-beta*(x_scaled[mask]-(z+delta))**2)
+                        + 4.0*np.exp(-beta*(x_scaled[mask]-z)**2)) / 6.0
+            q0[(x_scaled >= -0.4) & (x_scaled <= -0.2)] = 1.0
+            mask = (x_scaled >= 0.0) & (x_scaled <= 0.2)
+            q0[mask] = 1.0 - np.abs(10.0*(x_scaled[mask] - 0.1))
+            mask = (x_scaled >= 0.4) & (x_scaled <= 0.6)
+            q0[mask] = (np.sqrt(np.maximum(1.0 - alpha**2*(x_scaled[mask]-(a-delta))**2, 0.0))
+                        + np.sqrt(np.maximum(1.0 - alpha**2*(x_scaled[mask]-(a+delta))**2, 0.0))
+                        + 4.0*np.sqrt(np.maximum(1.0 - alpha**2*(x_scaled[mask]-a)**2, 0.0))) / 6.0
         elif ('sinwave' in q0_type) and not ('gassner' in q0_type) \
             or ('coswave' in q0_type) and not ('gassner' in q0_type):
             if self.dim == 1:

@@ -13,6 +13,7 @@ from Source.Disc.MakeSbpOp import MakeSbpOp
 from Source.Disc.Sat import Sat
 from Source.Disc.ADiss import ADiss
 from Source.Disc.ADissNew import ADissNew
+from Source.Disc.ADissNewDirectional import ADissNewDirectional
 from Source.Solvers.PdeSolver import PdeSolver
 import Source.Methods.Functions as fn
 import Source.Methods.Sparse as sp
@@ -124,8 +125,11 @@ class PdeSolverSbp(PdeSolver):
 
         # Keep the entropy-budgeted formulation separate from the legacy
         # artificial-dissipation implementations in ADiss.
-        if self.vol_diss['diss_type'].lower() == 'new':
+        dissipation_type = self.vol_diss['diss_type'].lower()
+        if dissipation_type == 'new':
             self.adiss = ADissNew(self)
+        elif dissipation_type == 'new_directional':
+            self.adiss = ADissNewDirectional(self)
         else:
             self.adiss = ADiss(self)
         self.dissipation = self.adiss.dissipation

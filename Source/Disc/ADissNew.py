@@ -26,6 +26,10 @@ class ADissNew:
     # it in terms of the public attributes shared by both classes.
     calc_RHS_jac = ADiss.calc_RHS_jac
 
+    # Subclasses can select a separate public configuration name while
+    # reusing the common entropy-budgeted setup.
+    required_diss_type = 'new'
+
     def __init__(self, solver):
         if solver.print_progress:
             print('... Setting up Entropy-Budgeted Artificial Dissipation')
@@ -38,14 +42,18 @@ class ADissNew:
         self.nelem = solver.nelem
         self.np = self.nen ** self.dim
 
-        if self.type != 'new':
-            raise ValueError("ADissNew requires diss_type='new'.")
+        if self.type != self.required_diss_type:
+            raise ValueError(
+                f"{type(self).__name__} requires "
+                f"diss_type='{self.required_diss_type}'."
+            )
 
         config = solver.vol_diss
         self.kappa = config.get('kappa', 1.0)
         self.beta = config.get('beta')
         self.sensor_s = config.get('sensor_s')
         self.distribution_s = config.get('distribution_s')
+        self.store_diagnostics = config.get('store_diagnostics', False)
 
         if (
             isinstance(self.kappa, bool)
@@ -68,6 +76,10 @@ class ADissNew:
                     f'Entropy-budgeted dissipation: {name} must be provided as '
                     'a positive integer.'
                 )
+        if not isinstance(self.store_diagnostics, (bool, np.bool_)):
+            raise ValueError(
+                'Entropy-budgeted dissipation: store_diagnostics must be boolean.'
+            )
 
         self.sensor_type = config.get('sensor_type', 'cons')
         self.distribution_type = config.get('distribution_type', 'cons_sca')
@@ -117,6 +129,11 @@ class ADissNew:
         self.epsilon_theta = np.finfo(float).eps
         self.theta = None
         self.element_coefficient = None
+        self.entropy_viscosity_budget = None
+        self.entropy_budget = None
+        self.entropy_contraction = None
+        self.distribution_vector = None
+        self.normalized_distribution_vector = None
 
         # Match the simple element-type defaults in legacy entdcp: include the
         # reference H weights and do not apply a boundary correction matrix.
@@ -302,42 +319,7 @@ class ADissNew:
             # The 1D cofactor metric J d(xi)/dx is identically one, so only
             # multidimensional distributions need frozen metric directions.
             if self.dim > 1:
-                if not hasattr(self.solver, 'mesh') or not hasattr(
-                    self.solver.mesh, 'metrics'
-                ):
-                    raise ValueError(
-                        "distribution_type='cons_mat' requires mesh metric terms."
-                    )
-
-                nodal_metrics = np.asarray(self.solver.mesh.metrics)
-                expected_metric_shape = (
-                    self.np,
-                    self.dim * self.dim,
-                    self.n_elem,
-                )
-                if nodal_metrics.shape != expected_metric_shape:
-                    raise ValueError(
-                        f'Mesh metrics must have shape {expected_metric_shape}; '
-                        f'got {nodal_metrics.shape}.'
-                    )
-
-                # Mesh metrics are stored row-major as
-                # J d(xi_alpha)/d(x_j). Freeze each reference direction at its
-                # reference-H-weighted element average.
-                nodal_metrics = nodal_metrics.reshape(
-                    self.np, self.dim, self.dim, self.n_elem
-                )
-                self.element_metrics = np.einsum(
-                    'i,iaje->aje', self.H_ref, nodal_metrics
-                ) * self.ref_measure_inv
-                if not np.all(np.isfinite(self.element_metrics)):
-                    raise FloatingPointError(
-                        'Element-average contravariant metric terms are nonfinite.'
-                    )
-                if np.any(np.all(self.element_metrics == 0.0, axis=1)):
-                    raise ValueError(
-                        'Each element-average contravariant direction must be nonzero.'
-                    )
+                self._set_element_average_metrics()
 
         # Linear-convection speeds are constant and need not be reconstructed
         # during every residual evaluation.
@@ -354,6 +336,45 @@ class ADissNew:
                 )
             self.linear_speed = np.sqrt(
                 sum(component * component for component in speeds)
+            )
+
+    def _set_element_average_metrics(self):
+        """Freeze every contravariant metric direction at its element mean."""
+        if not hasattr(self.solver, 'mesh') or not hasattr(
+            self.solver.mesh, 'metrics'
+        ):
+            raise ValueError(
+                'Entropy-budgeted dissipation requires mesh metric terms in '
+                'multiple dimensions.'
+            )
+
+        nodal_metrics = np.asarray(self.solver.mesh.metrics)
+        expected_metric_shape = (
+            self.np,
+            self.dim * self.dim,
+            self.n_elem,
+        )
+        if nodal_metrics.shape != expected_metric_shape:
+            raise ValueError(
+                f'Mesh metrics must have shape {expected_metric_shape}; '
+                f'got {nodal_metrics.shape}.'
+            )
+
+        # Mesh metrics are row-major J d(xi_alpha)/d(x_j). The reference-H
+        # mean preserves the element-frozen approximation used by dEndq_abs.
+        nodal_metrics = nodal_metrics.reshape(
+            self.np, self.dim, self.dim, self.n_elem
+        )
+        self.element_metrics = np.einsum(
+            'i,iaje->aje', self.H_ref, nodal_metrics
+        ) * self.ref_measure_inv
+        if not np.all(np.isfinite(self.element_metrics)):
+            raise FloatingPointError(
+                'Element-average contravariant metric terms are nonfinite.'
+            )
+        if np.any(np.all(self.element_metrics == 0.0, axis=1)):
+            raise ValueError(
+                'Each element-average contravariant direction must be nonzero.'
             )
 
     def _active_max(self, values):
@@ -632,6 +653,10 @@ class ADissNew:
             bnu = self._entropy_viscosity_budget(w_nodes, A0_bar, wave_speed)
         # Store the complete scalar multiplying the distribution vector so
         # drivers can inspect the amount selected in every element.
+        entropy_budget = self.kappa * self.theta ** self.beta * bnu
+        normalization = b / (b * b + self.epsilon)
+        # Keep the original operation order for diss_type='new'; the two
+        # factored quantities above are diagnostic views of the same formula.
         self.element_coefficient = (
             -self.kappa
             * self.theta ** self.beta
@@ -641,6 +666,17 @@ class ADissNew:
         )
         strong_dissipation = distribution * self.element_coefficient[None, None, :]
         strong_dissipation *= self.H_inv_phys[:, None, :]
+
+        if self.store_diagnostics:
+            # These arrays can be large, so production runs retain them only
+            # when explicitly requested by a diagnostic driver.
+            self.entropy_viscosity_budget = bnu.copy()
+            self.entropy_budget = entropy_budget.copy()
+            self.entropy_contraction = b.copy()
+            self.distribution_vector = distribution.copy()
+            self.normalized_distribution_vector = (
+                distribution * normalization[None, None, :]
+            )
 
         if not np.all(np.isfinite(strong_dissipation)):
             raise FloatingPointError('Entropy-budgeted dissipation produced nonfinite values.')
