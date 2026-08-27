@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""RK4 timestep study of volume-dissipation flavours for 1D linear convection."""
+"""Study RK4 timestep limits for 1D linear-convection dissipation choices.
+
+Edit the parameter block, then run this file directly or in an interactive
+Jupyter/VS Code window. The study results, snapshot solutions, and figure are
+created at module scope for later inspection.
+"""
 
 from contextlib import redirect_stdout
 from io import StringIO
@@ -25,58 +30,58 @@ from Source.Solvers.PdeSolverSbp import PdeSolverSbp
 
 
 # Problem and discretization parameters.
-WAVE_SPEED = 1.0
-XMIN = 0.0
-XMAX = 1.0
-T_FINAL = 4.0
-P = 4
-NELEM = 40
-NEN = 0
-OP_TYPE = 'lgl'
-DISC_TYPE = 'div'
-HAD_FLUX = 'central'
+WAVE_SPEED = 1.0              # Constant convection speed.
+XMIN = 0.0                    # Left boundary of the periodic interval.
+XMAX = 1.0                    # Right boundary of the periodic interval.
+T_FINAL = 4.0                 # Final solution time.
+P = 4                         # Polynomial degree.
+NELEM = 40                    # Number of uniform elements.
+NEN = 0                       # Nodes per element; 0 selects the P default.
+OP_TYPE = 'lgl'               # Nodes: 'lgl', 'lg', 'nc', or an SBP family.
+DISC_TYPE = 'div'             # Volume form: 'div' or 'had'.
+HAD_FLUX = 'central'          # Two-point flux used when DISC_TYPE='had'.
 
 # 'test', 'gaussian', 'square', or 'morlet'.
-INITIAL_CONDITION = 'test'
+INITIAL_CONDITION = 'test'    # 'test', 'gaussian', 'square', or 'morlet'.
 
 # Select C-SBP or D-SBP. Interface dissipation only acts on D-SBP element
 # faces; periodic C-SBP has no interior SATs.
-USE_CSBP = False
-USE_INTERFACE_DISSIPATION = True
+USE_CSBP = False              # True: C-SBP; False: D-SBP.
+USE_INTERFACE_DISSIPATION = True # Add the D-SBP interface LLF term.
 
 # Entropy-budgeted volume-dissipation parameters. The three comparison
 # flavours share these values; only the sensor, distribution, and budget
 # selectors change. The nonlinear flavour uses the cons/cheap choices below.
 # The standard (linear) flavour recovers entropy-DCP dissipation by setting
 # sensor_type='none' with distribution_type=budget_type='entdcp'.
-KAPPA = 1.0
-SENSOR_S = int(np.ceil(P / 2) + 1)
-DISTRIBUTION_S = 1
-BETA = (P + 1) / (2 * np.ceil(P / 2))
-SENSOR_TYPE = 'cons'
-DISTRIBUTION_TYPE = 'cons_sca'
-BUDGET_TYPE = 'cheap'
+KAPPA = 1.0                            # Overall dissipation strength.
+SENSOR_S = int(np.ceil(P / 2) + 1)     # Sensor derivative order.
+DISTRIBUTION_S = 1                     # Distribution derivative order.
+BETA = (P + 1) / (2 * np.ceil(P / 2)) # Sensor exponent.
+SENSOR_TYPE = 'cons'                   # 'cons' or 'none'.
+DISTRIBUTION_TYPE = 'cons_sca'         # 'cons_sca', 'cons_mat', or 'entdcp'.
+BUDGET_TYPE = 'cheap'                  # 'cheap' or paired 'entdcp'.
 
 # CFL is a * dt * p / h, with h the element width. The study first evaluates
 # N_INITIAL geometrically spaced CFLs from CFL_MIN to CFL_MAX (endpoints
 # included). If that scan brackets an instability, it spends up to N_BISECT
 # extra runs bisecting the last-stable / first-unstable step counts.
-CFL_MIN = 0.1
-CFL_MAX = 2.0
+CFL_MIN = 0.1                 # Smallest CFL in the initial scan.
+CFL_MAX = 2.0                 # Largest CFL in the initial scan.
 N_INITIAL = 8  # geometric CFL samples in [CFL_MIN, CFL_MAX]
 N_BISECT = 6   # extra RK4 runs used to refine the stability cutoff
 
 # After the CFL study, plot u(x) at this fraction of the most restrictive
 # last-stable CFL (the smallest cutoff among the flavours).
-SOLUTION_CFL_FRACTION = 0.9
-INTERPOLATE = True
-INTERPOLATION_POINTS = 50
+SOLUTION_CFL_FRACTION = 0.9   # Fraction of the tightest stable CFL to plot.
+INTERPOLATE = True            # Plot interpolated polynomials instead of nodes.
+INTERPOLATION_POINTS = 50     # Plot points per element when interpolating.
 
 # Errors larger than this are treated as blow-up and omitted from the plot.
-MAX_STABLE_ERROR = 10.0
+MAX_STABLE_ERROR = 10.0       # Errors above this mark a run unstable.
 
 # Set to a string or Path to save the figure. Leave as None to display it.
-SAVEFILE = None  # "Timstep_study.pdf"
+SAVEFILE = None                # None: show; otherwise save to this path.
 
 Q0_TYPES = {
     'test': 'dissipation_test',
@@ -653,29 +658,29 @@ def plot_timestep_study(results, cfl_snapshot, solution_curves, x_exact, q_exact
         plt.close(fig)
     else:
         plt.show()
+    return fig
 
 
-if __name__ == '__main__':
-    if USE_CSBP and USE_INTERFACE_DISSIPATION:
-        print(
-            'Note: periodic C-SBP has no interior interfaces, so '
-            'USE_INTERFACE_DISSIPATION is ignored.'
-        )
-
-    results = []
-    for case in VOLUME_CASES:
-        results.append(run_flavour(case))
-
-    n_snap, cfl_snapshot, cfl_cut = snapshot_n_ts(results)
+# Run at module scope so every scan and plotting array remains interactive.
+if USE_CSBP and USE_INTERFACE_DISSIPATION:
     print(
-        f'Solution snapshot at CFL={cfl_snapshot:g} '
-        f'({SOLUTION_CFL_FRACTION:g} of the most restrictive cutoff '
-        f'{cfl_cut:g}, n_ts={n_snap})'
+        'Note: periodic C-SBP has no interior interfaces, so '
+        'USE_INTERFACE_DISSIPATION is ignored.'
     )
-    solution_curves = collect_snapshot_solutions(results, n_snap)
-    solver0 = results[0][0]
-    x_exact = np.linspace(XMIN, XMAX, 2001)
-    q_exact = np.asarray(
-        solver0.diffeq.exact_sol(time=T_FINAL, x=x_exact)
-    ).reshape(-1)
-    plot_timestep_study(results, cfl_snapshot, solution_curves, x_exact, q_exact)
+
+results = [run_flavour(case) for case in VOLUME_CASES]
+n_snap, cfl_snapshot, cfl_cut = snapshot_n_ts(results)
+print(
+    f'Solution snapshot at CFL={cfl_snapshot:g} '
+    f'({SOLUTION_CFL_FRACTION:g} of the most restrictive cutoff '
+    f'{cfl_cut:g}, n_ts={n_snap})'
+)
+solution_curves = collect_snapshot_solutions(results, n_snap)
+solver0 = results[0][0]
+x_exact = np.linspace(XMIN, XMAX, 2001)
+q_exact = np.asarray(
+    solver0.diffeq.exact_sol(time=T_FINAL, x=x_exact)
+).reshape(-1)
+figure = plot_timestep_study(
+    results, cfl_snapshot, solution_curves, x_exact, q_exact
+)

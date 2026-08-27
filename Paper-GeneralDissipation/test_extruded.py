@@ -5,6 +5,10 @@ The square mesh uses the same element count and SBP operator in both physical
 directions. With velocity (1, 0), every horizontal profile of the 2D solution
 must therefore reproduce the 1D solution. The comparison is performed first
 without volume dissipation and then with direction-split volume dissipation.
+
+Edit the parameters below, then run this file directly or in an interactive
+Jupyter/VS Code window. The comparison arrays and optional figure are returned
+to module scope for later inspection.
 """
 
 from contextlib import redirect_stdout
@@ -32,27 +36,28 @@ from Source.DiffEq.LinearConv2D import LinearConv as LinearConv2D
 from Source.Solvers.PdeSolverCSbp import PdeSolverCSbp
 
 
-POLYNOMIAL_DEGREE = 4
-ELEMENTS_PER_DIRECTION = 10
-TIME_STEP = 2.5e-4
-FINAL_TIME = 1.0
-INTERPOLATION_POINTS = 30
-PLOT_SLICE_COUNT = 10
+POLYNOMIAL_DEGREE = 4         # Polynomial degree in both directions.
+ELEMENTS_PER_DIRECTION = 10   # Elements in 1D and along each 2D axis.
+TIME_STEP = 2.5e-4            # Fixed RK4 step.
+FINAL_TIME = 1.0              # Final comparison time.
+INTERPOLATION_POINTS = 30     # Plot points per element edge.
+PLOT_SLICE_COUNT = 10         # Number of horizontal 2D profiles to compare.
 
 # Set this to False when only the numerical regression output is wanted.
-PLOT_RESULTS = True
+PLOT_RESULTS = True            # Show the profile and difference plots.
 
 # The directional xi sensor must reproduce the 1D sensor, while the eta
 # sensor must vanish for an exactly extruded state.
 DISSIPATION = {
-    'diss_type': 'new_directional',
-    'kappa': 1.0,
-    'beta': (POLYNOMIAL_DEGREE + 1) / (2 * np.ceil(POLYNOMIAL_DEGREE / 2)),
-    'sensor_s': int(np.ceil(POLYNOMIAL_DEGREE / 2) + 1),
-    'distribution_s': 1,
-    'sensor_type': 'cons',
-    'distribution_type': 'cons_sca',
-    'budget_type': 'cheap',
+    'diss_type': 'new_directional', # Direction-split entropy budgets.
+    'kappa': 1.0,                   # Overall dissipation strength.
+    'beta': (POLYNOMIAL_DEGREE + 1)
+            / (2 * np.ceil(POLYNOMIAL_DEGREE / 2)), # Sensor exponent.
+    'sensor_s': int(np.ceil(POLYNOMIAL_DEGREE / 2) + 1), # Sensor order.
+    'distribution_s': 1,            # Distribution derivative order.
+    'sensor_type': 'cons',          # 'cons' or 'none'.
+    'distribution_type': 'cons_sca', # 'cons_sca' or 'cons_mat'.
+    'budget_type': 'cheap',         # Cheap entropy-viscosity budget.
 }
 
 
@@ -271,6 +276,7 @@ def run_comparison(label, volume_dissipation, final_tolerance=None):
 
 def main(plot=False):
     """Run the comparisons without and with volume dissipation."""
+    figure = None
     x, baseline_1d, baseline_2d, baseline_failures = run_comparison(
         'No volume dissipation',
         None,
@@ -355,8 +361,24 @@ def main(plot=False):
     if failures:
         raise AssertionError('\n'.join(failures))
     print('Extrusion diagnostics passed: the 2D profiles reproduce the 1D case.')
+    return (
+        x,
+        baseline_1d,
+        baseline_2d,
+        dissipative_1d,
+        dissipative_2d,
+        dissipative_effect,
+        figure,
+    )
 
 
-# Deliberately run at module scope so "Run File in Interactive Window" works
-# without command-line arguments or a special __main__ environment.
-main(plot=PLOT_RESULTS)
+# Keep every comparison array available in an interactive namespace.
+(
+    x,
+    baseline_1d,
+    baseline_2d,
+    dissipative_1d,
+    dissipative_2d,
+    dissipative_effect,
+    figure,
+) = main(plot=PLOT_RESULTS)

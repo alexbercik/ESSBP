@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Measure the smooth-vortex scaling of entropy-budgeted dissipation terms."""
+"""Measure smooth-vortex scaling of every entropy-dissipation ingredient.
+
+Edit the study parameters below, then run this file directly or in an
+interactive Jupyter/VS Code window. The returned series, rates, warnings, and
+figures are assigned at module scope for later inspection.
+"""
 
 from contextlib import redirect_stdout
 import io
@@ -26,24 +31,24 @@ from Source.DiffEq.Euler2d import Euler
 from Source.Solvers.PdeSolverSbp import PdeSolverSbp
 
 
-GAMMA = 1.4
-XMIN = (0.0, -5.0)
-XMAX = (20.0, 5.0)
-DIMENSION = 2
+GAMMA = 1.4                   # Ratio of specific heats.
+XMIN = (0.0, -5.0)           # Lower-left vortex domain corner.
+XMAX = (20.0, 5.0)           # Upper-right vortex domain corner.
+DIMENSION = 2                 # Physical dimension used by the rate formulas.
 
-POLYNOMIAL_DEGREE = 4
-SENSOR_ORDERS = (3,)
+POLYNOMIAL_DEGREE = 4         # Polynomial degree.
+SENSOR_ORDERS = (3,)          # Sensor derivative orders to study.
 # Change this independently of the sensor orders to study D_{s_a} in a.
-DISTRIBUTION_S = 1
-BETAS = (1.0, 1.25, 1.5)
+DISTRIBUTION_S = 1            # Distribution derivative order.
+BETAS = (1.0, 1.25, 1.5)     # Sensor exponents to study.
 # Retain the requested four grids and add N=128 so the finest-three fit for
 # the s=2 sensor is beyond its visible pre-asymptotic range.
-GRID_SIZES = (8, 16, 32, 64, 128)
-DISSIPATION_TYPES = ('new', 'new_directional')
+GRID_SIZES = (8, 16, 32, 64, 128) # Elements in y; x uses twice as many.
+DISSIPATION_TYPES = ('new', 'new_directional') # Aggregate/directional forms.
 
-RATE_TOLERANCE = 0.5
-MINIMUM_FIT_POINTS = 3
-PLOT_RESULTS = True
+RATE_TOLERANCE = 0.5          # Allowed difference from the predicted slope.
+MINIMUM_FIT_POINTS = 3        # Finest grids used in each log-log fit.
+PLOT_RESULTS = True           # Show scaling plots after printing the table.
 
 QUANTITY_LABELS = {
     'sensor': r'Sensor $\theta$',
@@ -437,7 +442,7 @@ def main(plot=False):
                     dissipation_type, sensor_order, elements_y, series
                 )
 
-    _rates, failures = report_rates(series, mesh_widths)
+    rates, failures = report_rates(series, mesh_widths)
     figures = plot_rates(series, mesh_widths) if plot else []
     if plot and 'agg' not in plt.get_backend().lower():
         plt.show()
@@ -454,8 +459,8 @@ def main(plot=False):
         print('\nStudy completed with convergence-rate warnings.')
     else:
         print('\nAll dissipation-term convergence rates are within tolerance.')
+    return series, rates, failures, figures
 
 
-# Run at module scope so VS Code's "Run File in Interactive Window" executes
-# the complete study without command-line handling.
-main(plot=PLOT_RESULTS)
+# Keep the complete numerical output available in an interactive namespace.
+series, rates, convergence_warnings, figures = main(plot=PLOT_RESULTS)

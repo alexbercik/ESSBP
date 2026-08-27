@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Compare entropy-budgeted dissipation for the Sod shock tube."""
+"""Compare entropy-budgeted dissipation for the Sod shock tube.
+
+Edit the parameters below, then run this file directly or in an interactive
+Jupyter/VS Code window. The cases and plotting arrays are created at module
+scope and remain available after the run.
+"""
 
 from pathlib import Path
 import sys
@@ -23,46 +28,46 @@ from Source.Solvers.PdeSolverSbp import PdeSolverSbp
 # rest states u=0. The textbook tube is otherwise dimensional: Omega=[0,10],
 # membrane at x=5, (pL, pR)=(1e5, 1e4), and t_final=0.0061. Override only the
 # values that differ from the classic problem on Omega=[0,1] until t_f=0.2.
-XMIN = 0.0
-XMAX = 1.0
-XMEMBRANE = 0.5
-PL = 1.0
-PR = 0.1
-T_FINAL = 0.2
-P = 4
-NELEM = 20
-INTERPOLATE = True
-INTERPOLATION_POINTS = 50
-OP_TYPE = 'lgl'
-NEN = 0
-DISC_TYPE = 'had'
-HAD_FLUX = 'ranocha'
-MATRIX_INT_DISSIPATION = True
+XMIN = 0.0                    # Left boundary of the tube.
+XMAX = 1.0                    # Right boundary of the tube.
+XMEMBRANE = 0.5               # Initial left/right discontinuity.
+PL = 1.0                      # Initial pressure to the left.
+PR = 0.1                      # Initial pressure to the right.
+T_FINAL = 0.2                 # Final solution time.
+P = 4                         # Polynomial degree.
+NELEM = 20                    # Number of uniform elements.
+INTERPOLATE = True            # Plot interpolated polynomials instead of nodes.
+INTERPOLATION_POINTS = 50     # Plot points per element when interpolating.
+OP_TYPE = 'lgl'               # Nodes: 'lgl', 'lg', 'nc', or an SBP family.
+NEN = 0                       # Nodes per element; 0 selects the P default.
+DISC_TYPE = 'had'             # Volume form: 'had' or 'div'.
+HAD_FLUX = 'ranocha'          # Two-point flux; e.g. 'ranocha' or 'central'.
+MATRIX_INT_DISSIPATION = True # True: Derigs matrix; False: scalar LLF.
 
 # Select one plot at a time. The C-SBP plot contains the AD run, while the
 # D-SBP plot compares AD plus upwinding against upwinding alone. C-SBP currently
 # requires periodic boundaries, so the shock tube defaults to D-SBP.
-USE_CSBP = True
+USE_CSBP = True               # True: C-SBP; False: D-SBP comparison.
 
 # Set to a string or Path to save the figure, for example "SodShockTube_DSBP.pdf".
 # Leave as None to display the plot without writing a file.
-SAVEFILE = None #"SodShockTube_CSBP.pdf"
+SAVEFILE = None                # None: show; otherwise save to this path.
 
 # Variable shown in the top panel. One of 'density', 'pressure', or 'mach'.
-PLOT_VAR = 'density'
+PLOT_VAR = 'density'           # Plot 'density', 'pressure', or 'mach'.
 
 # Entropy-budgeted volume-dissipation parameters. These are kept near the top
 # of the driver so later parameter studies only require changing this block.
-KAPPA = 1.0
-SENSOR_S = int(np.ceil(P/2)+1)
-DISTRIBUTION_S = 1
-BETA = (P+1)/(2*np.ceil(P/2))
-DISTRIBUTION_TYPE = 'cons_sca'
+KAPPA = 1.0                              # Overall dissipation strength.
+SENSOR_S = int(np.ceil(P / 2) + 1)       # Sensor derivative order.
+DISTRIBUTION_S = 1                       # Distribution derivative order.
+BETA = (P + 1) / (2 * np.ceil(P / 2))   # Exponent applied to the sensor.
+DISTRIBUTION_TYPE = 'cons_sca'           # 'cons_sca' or 'cons_mat'.
 
-TM_METHOD = 'rk8'
-DT = 0.1 * (XMAX - XMIN) / (P * NELEM * 3.0)
-TM_RTOL = 1.0e-10
-TM_ATOL = 1.0e-10
+TM_METHOD = 'rk8'              # Time marcher; common options: 'rk4', 'rk8'.
+DT = 0.1 * (XMAX - XMIN) / (P * NELEM * 3.0)  # Initial RK8 step.
+TM_RTOL = 1.0e-10              # Adaptive relative tolerance.
+TM_ATOL = 1.0e-10              # Adaptive absolute tolerance.
 
 
 def apply_sod_overrides(diffeq):
@@ -106,7 +111,7 @@ def make_solver(solver_class, use_volume_dissipation):
 
     if MATRIX_INT_DISSIPATION:
         surface_dissipation = {
-        'diss_type': 'ent',
+            'diss_type': 'ent',
             'jac_type': 'matmat',
             'coeff': 1.0,
             'average': 'none',

@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Direction-split entropy-budgeted artificial volume dissipation."""
+"""Direction-split entropy-budgeted artificial volume dissipation.
+
+This variant repeats the same sensor, budget, entropy normalization, and weak
+distribution construction as :mod:`ADissNew` in each reference direction,
+then sums the directional weak terms before converting to strong form.
+"""
 
 import numpy as np
 
@@ -257,6 +262,8 @@ class ADissNewDirectional(ADissNew):
         self, q, q_nodes, w_nodes, q_bar, A0_bar, scaled_state
     ):
         """Assemble, normalize, and sum all directional contributions."""
+        # These are the same ingredients as ADissNew, with one scalar sensor,
+        # entropy budget, and contraction for each reference direction.
         if self.sensor_type == 'none':
             self.theta = np.ones((self.dim, self.n_elem), dtype=q.dtype)
         else:
@@ -272,6 +279,8 @@ class ADissNewDirectional(ADissNew):
         )
         self.element_coefficient = -entropy_budgets * normalizations
 
+        # Sum the weak directional contributions first, then apply the one
+        # physical inverse norm shared by the element-local residual.
         weak_dissipation = np.sum(
             distributions * self.element_coefficient[:, None, None, :],
             axis=0,

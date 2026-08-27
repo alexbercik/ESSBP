@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Compare entropy-budgeted dissipation for a periodic Burgers shock."""
+"""Compare entropy-budgeted dissipation for a periodic Burgers shock.
+
+Edit the parameters below, then run this file directly or with Jupyter/VS
+Code's ``Run File in Interactive Window``. The solve and plot run at module
+scope so ``ad_case``, the plotted arrays, and ``fig`` remain available.
+"""
 
 from pathlib import Path
 import sys
@@ -21,35 +26,35 @@ from Source.Solvers.PdeSolverSbp import PdeSolverSbp
 
 
 # Problem and discretization parameters.
-XMIN = 0.0
-XMAX = 1.0
-T_FINAL = 0.1
-P = 4
-NELEM = 50
-INTERPOLATE = False
-INTERPOLATION_POINTS = 50
-OP_TYPE = 'lgl'
-NEN = 0
+XMIN = 0.0                    # Left boundary of the periodic interval.
+XMAX = 1.0                    # Right boundary of the periodic interval.
+T_FINAL = 0.1                 # Final solution time; the shock forms near 0.159.
+P = 4                         # Polynomial degree of the SBP operator.
+NELEM = 50                    # Number of uniform elements.
+INTERPOLATE = False           # Plot interpolated polynomials instead of nodes.
+INTERPOLATION_POINTS = 50     # Plot points per element when interpolating.
+OP_TYPE = 'lgl'               # Nodes: 'lgl', 'lg', 'nc', or an SBP family.
+NEN = 0                       # Nodes per element; 0 selects the default for P.
 
 # Select one plot at a time. The C-SBP plot contains the AD run, while the
 # D-SBP plot compares AD plus upwinding against upwinding alone.
-USE_CSBP = True
+USE_CSBP = True               # True: C-SBP; False: D-SBP comparison.
 
 # Set to a string or Path to save the figure, for example "Burgers_CSBP.pdf".
 # Leave as None to display the plot without writing a file.
-SAVEFILE = None #"Burgers_CSBP.pdf"
+SAVEFILE = None                # None: show; otherwise save to this path.
 
 # Entropy-budgeted volume-dissipation parameters. These are kept near the top
 # of the driver so later parameter studies only require changing this block.
-KAPPA = 1.0
-SENSOR_S = int(np.ceil(P/2)+1)
-DISTRIBUTION_S = 1
-BETA = (P+3)/(2*np.ceil(P/2))
+KAPPA = 0.0                              # Overall dissipation strength.
+SENSOR_S = int(np.ceil(P / 2) + 1)       # Sensor derivative order.
+DISTRIBUTION_S = 1                       # Distribution derivative order.
+BETA = (P + 3) / (2 * np.ceil(P / 2))   # Exponent applied to the sensor.
 
-TM_METHOD = 'rk8'
-DT = 0.1 * (XMAX - XMIN) / (P * NELEM * 3.0)
-TM_RTOL = 1.0e-10
-TM_ATOL = 1.0e-10
+TM_METHOD = 'rk8'              # Time marcher; common options: 'rk4', 'rk8'.
+DT = 0.1 * (XMAX - XMIN) / (P * NELEM * 3.0)  # Initial RK8 step.
+TM_RTOL = 1.0e-10              # Adaptive relative tolerance.
+TM_ATOL = 1.0e-10              # Adaptive absolute tolerance.
 
 
 def make_solver(solver_class, use_volume_dissipation):
@@ -60,21 +65,21 @@ def make_solver(solver_class, use_volume_dissipation):
         split_alpha=2.0 / 3.0,
     )
     surface_dissipation = {
-        'diss_type': 'es',
-        'jac_type': 'scasca',
-        'maxeig': 'rusanov',
-        'coeff': 1.0,
+        'diss_type': 'es',       # Interface type: entropy-stable.
+        'jac_type': 'scasca',    # Scalar jump and scalar wave speed.
+        'maxeig': 'rusanov',     # Wave-speed estimate: Rusanov maximum.
+        'coeff': 1.0,            # Interface-dissipation multiplier.
     }
     if use_volume_dissipation:
         volume_dissipation = {
-            'diss_type': 'new',
-            'kappa': KAPPA,
-            'beta': BETA,
-            'sensor_s': SENSOR_S,
-            'distribution_s': DISTRIBUTION_S,
-            'sensor_type': 'cons',
-            'distribution_type': 'cons_sca',
-            'budget_type': 'cheap',
+            'diss_type': 'new',            # Entropy-budgeted dissipation.
+            'kappa': KAPPA,                # Overall strength.
+            'beta': BETA,                  # Sensor exponent.
+            'sensor_s': SENSOR_S,          # Sensor derivative order.
+            'distribution_s': DISTRIBUTION_S,  # Distribution order.
+            'sensor_type': 'cons',         # 'cons' or 'none'.
+            'distribution_type': 'cons_sca',  # 'cons_sca' or 'cons_mat'.
+            'budget_type': 'cheap',        # 'cheap' for the paper budget.
         }
     else:
         volume_dissipation = {'diss_type': 'nd'}

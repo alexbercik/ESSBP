@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Run one Kelvin--Helmholtz instability case and plot its diagnostics."""
+"""Run one Kelvin--Helmholtz case and plot selected solution diagnostics.
+
+Edit the parameter block, then run this file directly or in an interactive
+Jupyter/VS Code window. The module-level ``run`` dictionary retains the solver,
+snapshots, archive data, and figure for later inspection.
+"""
 
 import json
 from pathlib import Path
@@ -23,87 +28,87 @@ from Source.Solvers.PdeSolverSbp import PdeSolverSbp
 
 
 # Kelvin--Helmholtz problem parameters.
-GAS_CONSTANT = 287.0
-GAMMA = 1.4
-TEST_CASE = 'kelvin-helmholtz'
-BOUNDARY_CONDITION = 'periodic'
-NONDIMENSIONALIZE = False
-XMIN = (-1.0, -1.0)
-XMAX = (1.0, 1.0)
-T_FINAL = 15.0
+GAS_CONSTANT = 287.0          # Specific gas constant.
+GAMMA = 1.4                   # Ratio of specific heats.
+TEST_CASE = 'kelvin-helmholtz' # Euler initial-condition/test-case name.
+BOUNDARY_CONDITION = 'periodic' # Boundary type; this case uses 'periodic'.
+NONDIMENSIONALIZE = False     # Keep the repository's dimensional variables.
+XMIN = (-1.0, -1.0)          # Lower-left domain corner.
+XMAX = (1.0, 1.0)            # Upper-right domain corner.
+T_FINAL = 15.0                # Final solution time.
 
 # This driver runs exactly one spatial discretization. OPERATOR may be
 # 'C-SBP' or 'D-SBP'. C-SBP ignores INTERFACE_DISSIPATION because its
 # conforming global operator has no discontinuous interior interfaces.
-NELEM = (64, 64)
-P = 4
-OPERATOR = 'C-SBP'
-DISC_NODES = 'lgl'
-NEN = 0
-DISC_TYPE = 'had'
-HAD_FLUX = 'ranocha'
+NELEM = (64, 64)              # Elements in x and y.
+P = 4                         # Polynomial degree.
+OPERATOR = 'C-SBP'            # Spatial operator: 'C-SBP' or 'D-SBP'.
+DISC_NODES = 'lgl'            # Nodes: 'lgl', 'lg', 'nc', or an SBP family.
+NEN = 0                       # Nodes per edge; 0 selects the P default.
+DISC_TYPE = 'had'             # Volume form: 'had' or 'div'.
+HAD_FLUX = 'ranocha'          # Two-point flux; e.g. 'ranocha' or 'central'.
 SETTINGS = {
-    'metric_method': 'exact',
-    'use_optz_metrics': False,
+    'metric_method': 'exact',       # Metrics: 'exact' or a solver method.
+    'use_optz_metrics': False,      # Disable optimized discrete metrics.
 }
 
 # Available volume choices are 'new', 'old', and 'none'. Available D-SBP
 # interface choices are 'llf', 'derigs', and 'none'.
-VOLUME_DISSIPATION = 'new'
-INTERFACE_DISSIPATION = 'llf'
+VOLUME_DISSIPATION = 'new'     # 'new', 'new_directional', 'old', or 'none'.
+INTERFACE_DISSIPATION = 'llf'  # D-SBP: 'llf', 'derigs', or 'none'.
 
 # New entropy-budgeted volume-dissipation parameters.
-KAPPA = 1.0
-SENSOR_S = int(np.ceil(P / 2) + 1)
-DISTRIBUTION_S = 3
-BETA = (P + 1) / (2 * np.ceil(P / 2))
-SENSOR_TYPE = 'cons'
-DISTRIBUTION_TYPE = 'cons_sca'
-BUDGET_TYPE = 'cheap'
+KAPPA = 1.0                            # Overall dissipation strength.
+SENSOR_S = int(np.ceil(P / 2) + 1)     # Sensor derivative order.
+DISTRIBUTION_S = 3                     # Distribution derivative order.
+BETA = (P + 1) / (2 * np.ceil(P / 2)) # Sensor exponent.
+SENSOR_TYPE = 'cons'                   # 'cons' or 'none'.
+DISTRIBUTION_TYPE = 'cons_sca'         # 'cons_sca' or 'cons_mat'.
+BUDGET_TYPE = 'cheap'                  # 'cheap'; 'entdcp' pairs with entdcp.
 
 # Legacy entropy-DCP volume-dissipation parameters.
-OLD_AD_S = P
-OLD_AD_COEFF = 0.004
-OLD_AD_USE_H = False
-OLD_AD_BDY_FIX = False
-OLD_AD_AVG_HALF_NODES = False
+OLD_AD_S = P                  # Legacy DCP derivative order.
+OLD_AD_COEFF = 0.004          # Legacy dissipation coefficient.
+OLD_AD_USE_H = False          # Include the norm in the legacy operator.
+OLD_AD_BDY_FIX = False        # Apply the legacy boundary correction.
+OLD_AD_AVG_HALF_NODES = False # Average odd-order coefficients at half nodes.
 
 # RK8 uses DT only for its first step and then adapts its step size. The 150
 # uniform time intervals store the initial state plus t=0.1, ..., 15.0.
-TM_METHOD = 'rk8'
-CFL = 0.1
+TM_METHOD = 'rk8'             # Time marcher; common options: 'rk4', 'rk8'.
+CFL = 0.1                     # Sets the initial adaptive RK8 step.
 MIN_ELEMENT_WIDTH = min(
     (XMAX[0] - XMIN[0]) / NELEM[0],
     (XMAX[1] - XMIN[1]) / NELEM[1],
 )
 DT = CFL * MIN_ELEMENT_WIDTH / (P * 3.0)
-TM_RTOL = 1.0e-7
-TM_ATOL = 1.0e-7
-TM_NFRAMES = 150
-PLOT_TIMES = (3.7, 6.7)
+TM_RTOL = 1.0e-7              # Adaptive relative tolerance.
+TM_ATOL = 1.0e-7              # Adaptive absolute tolerance.
+TM_NFRAMES = 150              # Uniform time intervals retained by RK8.
+PLOT_TIMES = (3.7, 6.7)       # Requested diagnostic snapshot times.
 
 # Plot controls. None selects the range from the data in that panel.
-PLOT_LEVELS = 100
+PLOT_LEVELS = 100              # Filled density-contour levels.
 # When a reference-element polynomial basis exists (LGL, LG, NC), evaluate
 # it on INTERPOLATION_POINTS nodes per element edge before contouring.
-INTERPOLATE = True
-INTERPOLATION_POINTS = 10
-DENSITY_CMAP = 'viridis'
-DENSITY_VMIN = None
-DENSITY_VMAX = None
-THETA_CMAP = 'magma'
-THETA_VMIN = None
-THETA_VMAX = None
-ENTROPY_BUDGET_CMAP = 'magma'
-ENTROPY_BUDGET_VMIN = None
-ENTROPY_BUDGET_VMAX = None
+INTERPOLATE = True             # Interpolate each element before contouring.
+INTERPOLATION_POINTS = 10      # Plot points per element edge.
+DENSITY_CMAP = 'viridis'       # Matplotlib colormap for density.
+DENSITY_VMIN = None            # Density lower color limit; None uses data.
+DENSITY_VMAX = None            # Density upper color limit; None uses data.
+THETA_CMAP = 'magma'           # Matplotlib colormap for the sensor.
+THETA_VMIN = None              # Sensor lower color limit; None uses data.
+THETA_VMAX = None              # Sensor upper color limit; None uses data.
+ENTROPY_BUDGET_CMAP = 'magma'  # Colormap for the entropy budget.
+ENTROPY_BUDGET_VMIN = None     # Budget lower color limit; None uses data.
+ENTROPY_BUDGET_VMAX = None     # Budget upper color limit; None uses data.
 
 # Set SAVEFILE to a base filename, such as 'kelvin_helmholtz', to save the
 # combined figure as kelvin_helmholtz.pdf. Any supplied suffix is replaced by
 # .pdf. With None, no figure is written. The requested solution archive is
 # always written; it shares the figure stem when SAVEFILE is provided.
-SAVEFILE = 'KH_csbp_lgl_p4_64_new_s3_p0'
-DEFAULT_DATAFILE = 'Euler2d_kelvin_helmholtz_data.npz'
+SAVEFILE = 'KH_csbp_lgl_p4_64_new_s3_p0' # Output stem; None skips the figure.
+DEFAULT_DATAFILE = 'Euler2d_kelvin_helmholtz_data.npz' # Used if no stem.
 
 
 SURFACE_DISSIPATIONS = {
@@ -583,7 +588,7 @@ def load_and_plot(datafile, savefile=None):
 
 
 def main():
-    """Run, report, save the selected states, and make the requested plots."""
+    """Run the case and return all data useful for interactive inspection."""
     solver, surface_dissipation, volume_dissipation = make_solver()
     if OPERATOR.lower().replace('-', '') == 'csbp':
         interface_description = 'ignored by C-SBP'
@@ -720,29 +725,39 @@ def main():
     np.savez_compressed(datafile, **archive)
     print(f'Saved solution data to {datafile}.')
 
-    if not snapshots:
-        return
+    fig = None
+    if snapshots:
+        fig, was_interactive = build_snapshot_figure(
+            snapshots,
+            solver.mesh.xy_elem,
+            NELEM,
+            XMIN,
+            XMAX,
+            using_new_dissipation,
+            basis=solver.sbp.basis if INTERPOLATE else None,
+        )
+        try:
+            if figure_file is not None:
+                figure_file.parent.mkdir(parents=True, exist_ok=True)
+                fig.savefig(figure_file, format='pdf', bbox_inches='tight')
+                print(f'Saved figure to {figure_file}.')
 
-    fig, was_interactive = build_snapshot_figure(
-        snapshots,
-        solver.mesh.xy_elem,
-        NELEM,
-        XMIN,
-        XMAX,
-        using_new_dissipation,
-        basis=solver.sbp.basis if INTERPOLATE else None,
-    )
-    try:
-        if figure_file is not None:
-            figure_file.parent.mkdir(parents=True, exist_ok=True)
-            fig.savefig(figure_file, format='pdf', bbox_inches='tight')
-            print(f'Saved figure to {figure_file}.')
+            display_figure(fig, block=not was_interactive)
+        finally:
+            if was_interactive:
+                plt.ion()
 
-        display_figure(fig, block=not was_interactive)
-    finally:
-        if was_interactive:
-            plt.ion()
+    return {
+        'solver': solver,
+        'surface_dissipation': surface_dissipation,
+        'volume_dissipation': volume_dissipation,
+        'snapshots': snapshots,
+        'archive': archive,
+        'datafile': datafile,
+        'figure': fig,
+        'completed': completed,
+    }
 
 
-if __name__ == '__main__':
-    main()
+# Run at module scope and retain everything needed for notebook-style analysis.
+run = main()

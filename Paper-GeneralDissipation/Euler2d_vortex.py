@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Compare artificial-dissipation choices for the 2D isentropic vortex."""
+"""Compare artificial-dissipation choices for the 2D isentropic vortex.
+
+Edit the parameter block and run this file directly or in an interactive
+Jupyter/VS Code window. All case histories and figures remain at module scope.
+"""
 
 from pathlib import Path
 import sys
@@ -20,56 +24,56 @@ from Source.Solvers.PdeSolverSbp import PdeSolverSbp
 
 
 # Problem parameters. The vortex crosses the x-period once every 20 time units.
-GAMMA = 1.4
-XMIN = (0.0, -5.0)
-XMAX = (20.0, 5.0)
-T_FINAL = 40.0
-NELEM = (32, 32)
+GAMMA = 1.4                   # Ratio of specific heats.
+XMIN = (0.0, -5.0)           # Lower-left domain corner.
+XMAX = (20.0, 5.0)           # Upper-right domain corner.
+T_FINAL = 40.0                # Final time; two x-period crossings.
+NELEM = (32, 32)              # Elements in x and y.
 
 # Spatial-discretization hooks.
-P = 4
-NEN = 0
-DISC_NODES = 'lgl'
-DISC_TYPE = 'had'
-HAD_FLUX = 'ranocha'
+P = 4                         # Polynomial degree.
+NEN = 0                       # Nodes per edge; 0 selects the P default.
+DISC_NODES = 'lgl'            # Nodes: 'lgl', 'lg', 'nc', or an SBP family.
+DISC_TYPE = 'had'             # Volume form: 'had' or 'div'.
+HAD_FLUX = 'ranocha'          # Two-point flux; e.g. 'ranocha' or 'central'.
 SETTINGS = {
-    'metric_method': 'exact',
-    'use_optz_metrics': False,
+    'metric_method': 'exact',       # Metrics: 'exact' or a solver method.
+    'use_optz_metrics': False,      # Disable optimized discrete metrics.
 }
 
 # Change this to 'derigs' to use the matrix-matrix Derigs interface
-INTERFACE_DISSIPATION = 'llf'
+INTERFACE_DISSIPATION = 'llf'  # 'llf' or 'derigs'.
 
 # New entropy-budgeted volume-dissipation hooks.
-KAPPA = 1.0
-SENSOR_S = int(np.ceil(P/2) + 1)
-DISTRIBUTION_S = 1
-BETA = (P + 1)/(2*np.ceil(P/2))
+KAPPA = 1.0                              # Overall dissipation strength.
+SENSOR_S = int(np.ceil(P / 2) + 1)       # Sensor derivative order.
+DISTRIBUTION_S = 1                       # Distribution derivative order.
+BETA = (P + 1) / (2 * np.ceil(P / 2))   # Sensor exponent.
 
 # Legacy entropy-DCP volume-dissipation hooks. An LGL operator has P + 1
 # nodes, so its highest admissible DCP derivative order is P.
-OLD_AD_S = P
-OLD_AD_COEFF = 0.004
-OLD_AD_USE_H = False
-OLD_AD_BDY_FIX = False
-OLD_AD_AVG_HALF_NODES = False
+OLD_AD_S = P                  # Legacy DCP derivative order.
+OLD_AD_COEFF = 0.004          # Legacy dissipation coefficient.
+OLD_AD_USE_H = False          # Include the norm in the legacy operator.
+OLD_AD_BDY_FIX = False        # Apply the legacy boundary correction.
+OLD_AD_AVG_HALF_NODES = False # Average odd-order coefficients at half nodes.
 
 # RK8 uses DT as its first step and subsequently adapts it. Diagnostics are
 # retained every CONS_OBJ_SKIP + 1 accepted steps and at the final time.
-TM_METHOD = 'rk8'
-CFL = 0.1
+TM_METHOD = 'rk8'             # Time marcher; common options: 'rk4', 'rk8'.
+CFL = 0.1                     # Sets the initial adaptive RK8 step.
 MIN_ELEMENT_WIDTH = min(
     (XMAX[0] - XMIN[0])/NELEM[0],
     (XMAX[1] - XMIN[1])/NELEM[1],
 )
-DT = CFL*MIN_ELEMENT_WIDTH/(P*3.0)
-TM_RTOL = 1.0e-8
-TM_ATOL = 1.0e-8
-CONS_OBJ_SKIP = 9
+DT = CFL * MIN_ELEMENT_WIDTH / (P * 3.0)  # Initial RK8 step.
+TM_RTOL = 1.0e-8              # Adaptive relative tolerance.
+TM_ATOL = 1.0e-8              # Adaptive absolute tolerance.
+CONS_OBJ_SKIP = 9             # Accepted steps skipped between diagnostics.
 
 # Set this to None to display the figures without saving them. Otherwise the
 # driver writes <SAVE_PREFIX>_{conservation,entropy,error}.pdf.
-SAVE_PREFIX = None #'Euler2d_vortex'
+SAVE_PREFIX = None             # None: show; otherwise output filename prefix.
 
 
 SURFACE_DISSIPATIONS = {
